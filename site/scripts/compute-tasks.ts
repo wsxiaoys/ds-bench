@@ -36,6 +36,7 @@ type ArtifactNode = {
 
 type TaskRecord = {
 	instruction: string;
+  tags?: string[];
 	trials: TaskTrial[];
 };
 
@@ -144,6 +145,23 @@ async function readTaskInstruction(
 	}
 }
 
+async function readTaskTags(repoRoot: string, taskName: string): Promise<string[]> {
+  const tomlPath = path.join(repoRoot, 'tasks', taskName, 'task.toml');
+  try {
+    const content = await fs.readFile(tomlPath, 'utf-8');
+    const match = content.match(/tags\s*=\s*\[(.*?)\]/);
+    if (match && match[1]) {
+      return match[1]
+        .split(',')
+        .map(t => t.trim().replace(/^["']|["']$/g, ''))
+        .filter(t => t.length > 0);
+    }
+  } catch (_e) {
+    // Ignore
+  }
+  return [];
+}
+
 async function countPendingSampleCases(repoRoot: string): Promise<number> {
 	const pendingTasksDir = path.join(repoRoot, "scratchpad", "pending-tasks");
 	try {
@@ -180,6 +198,7 @@ async function main() {
 		if (!tasks[taskName]) {
 			tasks[taskName] = {
 				instruction: await readTaskInstruction(repoRoot, taskName),
+        tags: await readTaskTags(repoRoot, taskName),
 				trials: [],
 			};
 		}
