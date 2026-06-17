@@ -1,6 +1,7 @@
 "use client";
 
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { type ClassValue, clsx } from "clsx";
 import {
 	AlertTriangle,
@@ -17,9 +18,11 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+	memo,
 	type ReactNode,
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -79,6 +82,13 @@ export type CompactTask = {
 	trials: CompactTrial[];
 };
 
+type TableTask = {
+	taskName: string;
+	tags?: string[];
+	comboMap: Record<string, CompactTrial>;
+	avgDuration: number;
+};
+
 type TasksPageClientProps = {
 	tasksData: CompactTask[];
 };
@@ -116,6 +126,9 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 	const [selectedTask, setSelectedTask] = useState<string | null>(null);
 	const [isInstructionOpen, setIsInstructionOpen] = useState(false);
 	const replaceUrlTimerRef = useRef<number | null>(null);
+	const tableScrollRef = useRef<HTMLDivElement | null>(null);
+	const [tableScrollElement, setTableScrollElement] =
+		useState<HTMLDivElement | null>(null);
 	const isDesktop = useMediaQuery("(min-width: 1024px)");
 	const [devMode, setDevMode] = useState(
 		process.env.NODE_ENV === "development",
@@ -151,6 +164,11 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		},
 		[],
 	);
+
+	const setTableScrollRef = useCallback((node: HTMLDivElement | null) => {
+		tableScrollRef.current = node;
+		setTableScrollElement(node);
+	}, []);
 
 	const updateParams = useCallback(
 		(updates: {
@@ -340,7 +358,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 
 	const noTrials = activeCombos.length === 0;
 
-	const tableTasks = useMemo(() => {
+	const tableTasks = useMemo<TableTask[]>(() => {
 		const query = queryQ.trim().toLowerCase();
 
 		const filteredByTags =
@@ -477,6 +495,61 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		selectedTags.some,
 		selectedTags.length,
 	]);
+
+	const rowVirtualizer = useVirtualizer({
+		count: tableTasks.length,
+		getScrollElement: () => tableScrollRef.current,
+		estimateSize: (index) =>
+			tableTasks[index]?.tags && tableTasks[index].tags.length > 0 ? 60 : 36,
+		overscan: 12,
+	});
+	const rowVirtualizerRef = useRef(rowVirtualizer);
+	rowVirtualizerRef.current = rowVirtualizer;
+	const measureVirtualRow = useCallback((node: HTMLTableRowElement | null) => {
+		if (node) {
+			rowVirtualizerRef.current.measureElement(node);
+		}
+	}, []);
+	const virtualResetKey = useMemo(
+		() =>
+			[
+				queryQ,
+				queryOrder,
+				querySort,
+				activeCombos.join("\u0000"),
+				selectedModels.join("\u0000"),
+				selectedStatuses.join("\u0000"),
+				selectedTags.join("\u0000"),
+				tableTasks.length,
+			].join("\u0001"),
+		[
+			activeCombos,
+			queryOrder,
+			queryQ,
+			querySort,
+			selectedModels,
+			selectedStatuses,
+			selectedTags,
+			tableTasks.length,
+		],
+	);
+	const virtualRows = rowVirtualizer.getVirtualItems();
+	const virtualPaddingTop = virtualRows[0]?.start ?? 0;
+	const virtualPaddingBottom =
+		virtualRows.length > 0
+			? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+			: 0;
+
+	useLayoutEffect(() => {
+		void virtualResetKey;
+		tableScrollRef.current?.scrollTo({ top: 0 });
+		rowVirtualizer.scrollToOffset(0);
+	}, [rowVirtualizer, virtualResetKey]);
+
+	const handleOpenTaskInstruction = useCallback((taskName: string) => {
+		setSelectedTask(taskName);
+		setIsInstructionOpen(true);
+	}, []);
 
 	const toggleSort = (field: string) => {
 		if (querySort === field) {
@@ -659,7 +732,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 				{noTrials ? (
 					<TableWrapper
 						hasRows={tableTasks.length > 0}
-						onScroll={hideCellPreview}
+						viewportRef={setTableScrollRef}
 					>
 						<table className="w-full border-collapse text-left text-sm">
 							<thead className="sticky top-0 z-30 select-none border-border border-b font-medium text-muted-foreground shadow-sm">
@@ -684,8 +757,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 											<button
 												type="button"
 												onClick={() => {
-													setSelectedTask(task.taskName);
-													setIsInstructionOpen(true);
+													handleOpenTaskInstruction(task.taskName);
 												}}
 												className="group/task flex h-full w-full cursor-pointer flex-col items-start justify-center gap-1 bg-transparent px-3 py-2 text-left text-foreground transition-colors even:bg-secondary/5 hover:bg-secondary/30 hover:text-primary focus:outline-none sm:px-6"
 												title={`View ${task.taskName} instruction`}
@@ -725,7 +797,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 				) : (
 					<TableWrapper
 						hasRows={tableTasks.length > 0}
-						onScroll={hideCellPreview}
+						viewportRef={setTableScrollRef}
 					>
 						<table className="w-full border-collapse text-left text-sm">
 							<thead className="sticky top-0 z-30 select-none border-border border-b bg-secondary font-medium text-muted-foreground shadow-sm backdrop-blur">
@@ -762,108 +834,44 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-border/30">
-								{tableTasks.map((task) => (
-									<tr
-										key={task.taskName}
-										className="group transition-colors duration-200 even:bg-secondary/5 hover:bg-secondary/30"
-									>
-										<td className="relative left-0 z-20 w-50 min-w-50 max-w-50 bg-background p-0 font-mono after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5">
-											<button
-												type="button"
-												onClick={() => {
-													setSelectedTask(task.taskName);
-													setIsInstructionOpen(true);
-												}}
-												className="group/task flex h-full w-full cursor-pointer flex-col items-start justify-center gap-1 bg-transparent px-3 py-2 text-left text-foreground transition-colors hover:text-primary focus:outline-none group-even:bg-secondary/5 group-hover:bg-secondary/30 sm:px-6"
-												title={`View ${task.taskName} instruction`}
-											>
-												<span className="block w-full truncate text-xs group-hover/task:underline md:text-sm">
-													{task.taskName}
-												</span>
-												{task.tags && task.tags.length > 0 && (
-													<div className="mt-0.5 flex flex-wrap gap-1">
-														{task.tags.map((tag) => (
-															<span
-																key={tag}
-																className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 font-medium text-[10px] text-primary"
-															>
-																{tag}
-															</span>
-														))}
-													</div>
-												)}
-											</button>
-										</td>
-										{activeCombos.map((combo, index) => {
-											const trial = task.comboMap[combo];
-											return (
-												<td
-													key={combo}
-													className={cn(
-														"relative z-10 h-full min-w-30 p-0 md:min-w-37.5",
-														index > 0 && "border-border/50 border-l",
-													)}
-												>
-													{trial ? (
-														<Link
-															href={`/jobs/${encodeURIComponent(trial.job_name)}/${encodeURIComponent(trial.trial_name)}/run`}
-															target="_blank"
-															rel="noopener noreferrer"
-															className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-pointer items-center justify-start gap-1.5 border-none bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/50 focus:outline-none sm:px-6 md:gap-2"
-															onPointerEnter={(event) =>
-																showCellPreview(event.currentTarget, trial)
-															}
-															onPointerLeave={hideCellPreview}
-															onFocus={(event) =>
-																showCellPreview(event.currentTarget, trial)
-															}
-															onBlur={hideCellPreview}
-															onClick={hideCellPreview}
-														>
-															{trial.error ? (
-																<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500/90 md:h-4 md:w-4" />
-															) : trial.passed ? (
-																<Check
-																	className="h-3.5 w-3.5 shrink-0 text-emerald-500/90 md:h-4 md:w-4"
-																	strokeWidth={3}
-																/>
-															) : (
-																<XIcon
-																	className="h-3.5 w-3.5 shrink-0 text-amber-500/90 md:h-4 md:w-4"
-																	strokeWidth={3}
-																/>
-															)}
-															<span className="font-mono text-muted-foreground/80 text-xs transition-colors group-hover/cell:text-foreground group-hover/cell:underline md:text-sm">
-																{trial.exec_duration
-																	? `${trial.exec_duration.toFixed(1)}s`
-																	: "-"}
-															</span>
-														</Link>
-													) : (
-														<div
-															className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-help items-center justify-start bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/20 focus:outline-none sm:px-6"
-															onPointerEnter={(event) =>
-																showCellPreview(event.currentTarget, null)
-															}
-															onPointerLeave={hideCellPreview}
-														>
-															<span className="font-mono text-muted-foreground/30 text-xs md:text-sm">
-																-
-															</span>
-														</div>
-													)}
-												</td>
-											);
-										})}
+								{virtualPaddingTop > 0 ? (
+									<tr>
+										<td
+											colSpan={activeCombos.length + 1}
+											className="border-0 p-0"
+											style={{ height: `${virtualPaddingTop}px` }}
+										/>
 									</tr>
-								))}
+								) : null}
+								{virtualRows.map((virtualRow) => {
+									const task = tableTasks[virtualRow.index];
+									return (
+										<VirtualTaskRow
+											key={task.taskName}
+											task={task}
+											rowIndex={virtualRow.index}
+											activeCombos={activeCombos}
+											measureElement={measureVirtualRow}
+											onSelectTask={handleOpenTaskInstruction}
+										/>
+									);
+								})}
+								{virtualPaddingBottom > 0 ? (
+									<tr>
+										<td
+											colSpan={activeCombos.length + 1}
+											className="border-0 p-0"
+											style={{ height: `${virtualPaddingBottom}px` }}
+										/>
+									</tr>
+								) : null}
 							</tbody>
 						</table>
 					</TableWrapper>
 				)}
 			</div>
 
-			<TaskCellPreviewLayer />
+			<TaskCellPreviewLayer scrollElement={tableScrollElement} />
 
 			{isDesktop ? (
 				<Sheet open={isInstructionOpen} onOpenChange={setIsInstructionOpen}>
@@ -915,10 +923,10 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 type TableWrapperProps = {
 	hasRows: boolean;
 	children: ReactNode;
-	onScroll?: () => void;
+	viewportRef?: (node: HTMLDivElement | null) => void;
 };
 
-function TableWrapper({ hasRows, children, onScroll }: TableWrapperProps) {
+function TableWrapper({ hasRows, children, viewportRef }: TableWrapperProps) {
 	if (!hasRows) {
 		return (
 			<div className="flex flex-1 items-center justify-center py-12 text-center text-muted-foreground">
@@ -930,8 +938,8 @@ function TableWrapper({ hasRows, children, onScroll }: TableWrapperProps) {
 	return (
 		<ScrollAreaPrimitive.Root className="relative min-h-0 flex-1">
 			<ScrollAreaPrimitive.Viewport
+				ref={viewportRef}
 				className="h-full w-full rounded-[inherit]"
-				onScroll={onScroll}
 			>
 				{children}
 			</ScrollAreaPrimitive.Viewport>
@@ -941,6 +949,120 @@ function TableWrapper({ hasRows, children, onScroll }: TableWrapperProps) {
 		</ScrollAreaPrimitive.Root>
 	);
 }
+
+type VirtualTaskRowProps = {
+	task: TableTask;
+	rowIndex: number;
+	activeCombos: string[];
+	measureElement: (node: HTMLTableRowElement | null) => void;
+	onSelectTask: (taskName: string) => void;
+};
+
+const VirtualTaskRow = memo(function VirtualTaskRow({
+	task,
+	rowIndex,
+	activeCombos,
+	measureElement,
+	onSelectTask,
+}: VirtualTaskRowProps) {
+	return (
+		<tr
+			data-index={rowIndex}
+			ref={measureElement}
+			className={cn(
+				"group transition-colors duration-200 hover:bg-secondary/30",
+				rowIndex % 2 === 1 && "bg-secondary/5",
+			)}
+		>
+			<td className="relative left-0 z-20 w-50 min-w-50 max-w-50 bg-background p-0 font-mono after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5">
+				<button
+					type="button"
+					onClick={() => onSelectTask(task.taskName)}
+					className={cn(
+						"group/task flex h-full w-full cursor-pointer flex-col items-start justify-center gap-1 bg-transparent px-3 py-2 text-left text-foreground transition-colors hover:text-primary focus:outline-none group-hover:bg-secondary/30 sm:px-6",
+						rowIndex % 2 === 1 && "bg-secondary/5",
+					)}
+					title={`View ${task.taskName} instruction`}
+				>
+					<span className="block w-full truncate text-xs group-hover/task:underline md:text-sm">
+						{task.taskName}
+					</span>
+					{task.tags && task.tags.length > 0 && (
+						<div className="mt-0.5 flex flex-wrap gap-1">
+							{task.tags.map((tag) => (
+								<span
+									key={tag}
+									className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 font-medium text-[10px] text-primary"
+								>
+									{tag}
+								</span>
+							))}
+						</div>
+					)}
+				</button>
+			</td>
+			{activeCombos.map((combo, index) => {
+				const trial = task.comboMap[combo];
+				return (
+					<td
+						key={combo}
+						className={cn(
+							"relative z-10 h-full min-w-30 p-0 md:min-w-37.5",
+							index > 0 && "border-border/50 border-l",
+						)}
+					>
+						{trial ? (
+							<Link
+								href={`/jobs/${encodeURIComponent(trial.job_name)}/${encodeURIComponent(trial.trial_name)}/run`}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-pointer items-center justify-start gap-1.5 border-none bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/50 focus:outline-none sm:px-6 md:gap-2"
+								onPointerEnter={(event) =>
+									showCellPreview(event.currentTarget, trial)
+								}
+								onPointerLeave={hideCellPreview}
+								onFocus={(event) => showCellPreview(event.currentTarget, trial)}
+								onBlur={hideCellPreview}
+								onClick={hideCellPreview}
+							>
+								{trial.error ? (
+									<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500/90 md:h-4 md:w-4" />
+								) : trial.passed ? (
+									<Check
+										className="h-3.5 w-3.5 shrink-0 text-emerald-500/90 md:h-4 md:w-4"
+										strokeWidth={3}
+									/>
+								) : (
+									<XIcon
+										className="h-3.5 w-3.5 shrink-0 text-amber-500/90 md:h-4 md:w-4"
+										strokeWidth={3}
+									/>
+								)}
+								<span className="font-mono text-muted-foreground/80 text-xs transition-colors group-hover/cell:text-foreground group-hover/cell:underline md:text-sm">
+									{trial.exec_duration
+										? `${trial.exec_duration.toFixed(1)}s`
+										: "-"}
+								</span>
+							</Link>
+						) : (
+							<div
+								className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-help items-center justify-start bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/20 focus:outline-none sm:px-6"
+								onPointerEnter={(event) =>
+									showCellPreview(event.currentTarget, null)
+								}
+								onPointerLeave={hideCellPreview}
+							>
+								<span className="font-mono text-muted-foreground/30 text-xs md:text-sm">
+									-
+								</span>
+							</div>
+						)}
+					</td>
+				);
+			})}
+		</tr>
+	);
+});
 
 type TaskSearchInputProps = {
 	value: string;

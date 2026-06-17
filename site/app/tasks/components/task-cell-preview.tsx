@@ -134,7 +134,13 @@ function TaskCellPreview({ preview }: { preview: CellPreview }) {
 	);
 }
 
-export function TaskCellPreviewLayer() {
+type TaskCellPreviewLayerProps = {
+	scrollElement: HTMLElement | null;
+};
+
+export function TaskCellPreviewLayer({
+	scrollElement,
+}: TaskCellPreviewLayerProps) {
 	const [preview, setPreview] = useState<CellPreview | null>(null);
 	const previewRef = useRef<CellPreview | null>(null);
 	const timerRef = useRef<number | null>(null);
@@ -151,7 +157,12 @@ export function TaskCellPreviewLayer() {
 	}, []);
 
 	const closePreview = useCallback(() => {
+		if (!previewRef.current && !timerRef.current) {
+			return;
+		}
+
 		clearTimer();
+		previewRef.current = null;
 		setPreview(null);
 	}, [clearTimer]);
 
@@ -164,10 +175,13 @@ export function TaskCellPreviewLayer() {
 					return;
 				}
 
-				setPreview({
+				timerRef.current = null;
+				const nextPreview = {
 					trial,
 					...getCellPreviewPosition(target.getBoundingClientRect()),
-				});
+				};
+				previewRef.current = nextPreview;
+				setPreview(nextPreview);
 			};
 
 			if (previewRef.current) {
@@ -194,6 +208,18 @@ export function TaskCellPreviewLayer() {
 			clearTimer();
 		};
 	}, [clearTimer, closePreview, schedulePreview]);
+
+	useEffect(() => {
+		if (!scrollElement) {
+			return;
+		}
+
+		scrollElement.addEventListener("scroll", closePreview, { passive: true });
+
+		return () => {
+			scrollElement.removeEventListener("scroll", closePreview);
+		};
+	}, [closePreview, scrollElement]);
 
 	return preview ? <TaskCellPreview preview={preview} /> : null;
 }
