@@ -150,7 +150,7 @@ export default function Home() {
 								<div className="hidden h-4 w-px bg-border sm:block"></div>
 								<span className="flex w-full items-center justify-center gap-2 sm:w-auto">
 									<ClipboardList className="h-4 w-4" />
-									<span>Total tasks: {totalTasks}</span>
+									<span># Tasks: {totalTasks}</span>
 								</span>
 							</>
 						)}
