@@ -1,5 +1,6 @@
 "use client";
 
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { type ClassValue, clsx } from "clsx";
 import {
 	AlertTriangle,
@@ -36,6 +37,7 @@ import {
 	HoverCardContent,
 	HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import { ScrollBar } from "@/components/ui/scroll-area";
 import {
 	Sheet,
 	SheetContent,
@@ -115,7 +117,14 @@ function TableWrapper({ hasRows, children }: TableWrapperProps) {
 	}
 
 	return (
-		<div className="custom-scrollbar relative overflow-auto">{children}</div>
+		<ScrollAreaPrimitive.Root className="relative min-h-0 flex-1">
+			<ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
+				{children}
+			</ScrollAreaPrimitive.Viewport>
+			<ScrollBar className="top-11 bottom-2 h-auto" />
+			<ScrollBar orientation="horizontal" />
+			<ScrollAreaPrimitive.Corner />
+		</ScrollAreaPrimitive.Root>
 	);
 }
 
@@ -652,13 +661,13 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 				</div>
 			</div>
 
-			<div className="fade-in relative flex max-h-full animate-in flex-col overflow-hidden rounded-lg border border-border bg-card/50 pb-1 shadow-sm backdrop-blur-sm duration-500">
+			<div className="fade-in relative flex max-h-full animate-in flex-col overflow-hidden rounded-lg border border-border bg-card/50 shadow-sm backdrop-blur-sm duration-500">
 				{noTrials ? (
 					<TableWrapper hasRows={tableTasks.length > 0}>
 						<table className="w-full border-collapse text-left text-sm">
 							<thead className="sticky top-0 z-30 select-none border-border border-b font-medium text-muted-foreground shadow-sm">
 								<tr>
-									<th className="left-0 z-40 w-50 min-w-50 max-w-50 border-border/50 border-r bg-secondary/95 px-3 py-3 backdrop-blur sm:px-6 md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5 md:bg-[#f6f6f6] dark:md:bg-[#0f0f0f]">
+									<th className="relative left-0 z-40 w-50 min-w-50 max-w-50 bg-secondary px-3 py-3 backdrop-blur after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] sm:px-6 md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5">
 										<div className="flex items-center gap-1 sm:gap-2">
 											<span className="truncate">
 												Task Name ({tableTasks.length} tasks)
@@ -674,7 +683,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 										key={task.taskName}
 										className="transition-colors duration-200"
 									>
-										<td className="left-0 z-20 w-50 min-w-50 max-w-50 border-border/50 border-r bg-background p-0 font-mono md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5 md:shadow-[1px_0_0_rgba(0,0,0,0.05)]">
+										<td className="relative left-0 z-20 w-50 min-w-50 max-w-50 bg-background p-0 font-mono after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5">
 											<button
 												type="button"
 												onClick={() => {
@@ -704,7 +713,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 										{index === 0 ? (
 											<td
 												rowSpan={tableTasks.length}
-												className="min-w-55 border-border/50 border-l px-3 pt-10 pb-2 text-center align-top text-xs sm:px-6 md:text-sm"
+												className="min-w-55 px-3 pt-10 pb-2 text-center align-top text-xs sm:px-6 md:text-sm"
 											>
 												<span className="font-medium text-foreground/90">
 													No evaluation data yet
@@ -719,10 +728,10 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 				) : (
 					<TableWrapper hasRows={tableTasks.length > 0}>
 						<table className="w-full border-collapse text-left text-sm">
-							<thead className="sticky top-0 z-30 select-none border-border border-b bg-secondary/95 font-medium text-muted-foreground shadow-sm backdrop-blur">
+							<thead className="sticky top-0 z-30 select-none border-border border-b bg-secondary font-medium text-muted-foreground shadow-sm backdrop-blur">
 								<tr>
 									<th
-										className="group left-0 z-40 w-50 min-w-50 max-w-50 cursor-pointer border-border/50 border-r bg-transparent px-3 py-3 transition-colors hover:bg-secondary/50 hover:text-foreground sm:px-6 md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5 md:bg-[#f6f6f6] md:shadow-[1px_0_0_rgba(0,0,0,0.05)] dark:md:bg-[#0f0f0f]"
+										className="group relative left-0 z-40 w-50 min-w-50 max-w-50 cursor-pointer bg-transparent px-3 py-3 transition-colors after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] hover:bg-secondary/50 hover:text-foreground sm:px-6 md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5 md:bg-secondary"
 										onClick={() => toggleSort("taskName")}
 									>
 										<div className="flex items-center gap-1 sm:gap-2">
@@ -732,10 +741,13 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 											{renderSortIcon("taskName")}
 										</div>
 									</th>
-									{activeCombos.map((combo) => (
+									{activeCombos.map((combo, index) => (
 										<th
 											key={combo}
-											className="min-w-30 border-border/50 border-l px-3 py-3 text-left sm:px-6 md:min-w-37.5"
+											className={cn(
+												"min-w-30 px-3 py-3 text-left sm:px-6 md:min-w-37.5",
+												index > 0 && "border-border/50 border-l",
+											)}
 										>
 											<div className="flex flex-col items-start">
 												<span
@@ -755,7 +767,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 										key={task.taskName}
 										className="group transition-colors duration-200 even:bg-secondary/5 hover:bg-secondary/30"
 									>
-										<td className="left-0 z-20 w-50 min-w-50 max-w-50 border-border/50 border-r bg-background p-0 font-mono md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5 md:shadow-[1px_0_0_rgba(0,0,0,0.05)]">
+										<td className="relative left-0 z-20 w-50 min-w-50 max-w-50 bg-background p-0 font-mono after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5">
 											<button
 												type="button"
 												onClick={() => {
@@ -782,12 +794,15 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 												)}
 											</button>
 										</td>
-										{activeCombos.map((combo) => {
+										{activeCombos.map((combo, index) => {
 											const trial = task.comboMap[combo];
 											return (
 												<td
 													key={combo}
-													className="relative z-10 h-full min-w-30 border-border/50 border-l p-0 md:min-w-37.5"
+													className={cn(
+														"relative z-10 h-full min-w-30 p-0 md:min-w-37.5",
+														index > 0 && "border-border/50 border-l",
+													)}
 												>
 													{trial ? (
 														<HoverCard openDelay={200} closeDelay={0}>
