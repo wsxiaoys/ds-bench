@@ -12,7 +12,7 @@ You have an existing simple Go application built with the Gin framework. To simp
 - Deploy the migrated application to Encore Cloud.
 
 ## Implementation Hints
-- Read the current `run-id` from the `ZEALT_RUN_ID` environment variable.
+- Read the current `run-id` from `/logs/artifacts/run-id`.
 - Define APIs in Go using the `//encore:api public path=...` annotation.
 - Ensure your Go structs use JSON tags (e.g., ``json:"message"``) to match the required response format.
 - **IMPORTANT**: Docker is NOT available in the task execution environment. You MUST deploy the app to Encore Cloud for verification.

@@ -21,14 +21,14 @@ Your job is to build a small Node.js + TypeScript CLI that demonstrates this beh
   - groups `["eng", "v2"]`, key `ENG_V2_DOC` — content describes engineering notes for API version 2.
   - groups `["product", "v1"]`, key `PRODUCT_V1_DOC` — content describes product notes for release version 1.
   - groups `["product", "v2"]`, key `PRODUCT_V2_DOC` — content describes product notes for release version 2.
-- Each ingested document must use a stable `file_name` metadata of the form `<KEY>-<run-id>.md` (e.g., `ENG_V1_DOC-${ZEALT_RUN_ID}.md`) so the CLI can be rerun safely without 409 conflicts.
+- Each ingested document must use a stable `file_name` metadata of the form `<KEY>-<run-id>.md` (e.g., `ENG_V1_DOC-<run-id>.md`) so the CLI can be rerun safely without 409 conflicts.
 - The CLI must accept its filter groups as positional arguments after `--groups`. Example: `node dist/main.js --groups eng v1`.
 - The search must use the camelCase TypeScript SDK form: `metadata: { groupName: [...] }`.
 - Each printed result object must contain at least the field `key` (the embedded document key, e.g., `ENG_V1_DOC`). It may also contain other fields (e.g., `content`, `file_name`), but `key` is required.
-- Re-running the CLI with the same `ZEALT_RUN_ID` must not crash on 409 conflicts. The CLI is responsible for handling existing documents (e.g., by deleting them first or by tolerating duplicate-add errors) and finishing successfully.
+- Re-running the CLI with the same `/logs/artifacts/run-id` must not crash on 409 conflicts. The CLI is responsible for handling existing documents (e.g., by deleting them first or by tolerating duplicate-add errors) and finishing successfully.
 
 ## Implementation Hints
-- Read `ZEALT_RUN_ID` from the environment and append it to every `file_name` to keep parallel runs isolated and avoid `409 Conflict` errors when re-adding documents.
+- Read `/logs/artifacts/run-id` from the environment and append it to every `file_name` to keep parallel runs isolated and avoid `409 Conflict` errors when re-adding documents.
 - The TypeScript SDK is parameter-asymmetric: use **`group_name`** (snake_case) inside `metadata` for `v1.context.add`, and use **`groupName`** (camelCase) inside `metadata` for `v1.context.search`.
 - For intersection semantics, pass the *full* list of CLI groups as the `groupName` array in a single search call. The engine will return only documents that belong to **every** group in the list.
 - Choose a `similarity_threshold` low enough (e.g., around 0.1) so the semantic filter does not accidentally exclude valid intersection members during verification. Use a broad query string that loosely matches every seed document.
@@ -50,6 +50,6 @@ Your job is to build a small Node.js + TypeScript CLI that demonstrates this beh
   - `--groups eng` ⇒ exactly `ENG_V1_DOC` and `ENG_V2_DOC`.
   - `--groups v1` ⇒ exactly `ENG_V1_DOC` and `PRODUCT_V1_DOC`.
   - `--groups eng product` ⇒ empty array `[]`.
-- The CLI must be safely rerunnable with the same `ZEALT_RUN_ID` (no fatal 409 errors).
+- The CLI must be safely rerunnable with the same `/logs/artifacts/run-id` (no fatal 409 errors).
 - The CLI must read the Alchemyst API key from the `ALCHEMYST_AI_API_KEY` environment variable and call the real Alchemyst service (no mocks or hardcoded results).
 

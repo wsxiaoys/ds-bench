@@ -8,7 +8,7 @@ You have a sample invoice PDF at `/home/user/myproject/data/invoice.pdf`. Build 
 ## Requirements
 - Use the Python `llama-cloud` SDK (v2, not the legacy `llama-cloud-services` package).
 - Read the `LLAMA_CLOUD_API_KEY` from the environment (already exported in the container).
-- Read `run-id` from the `ZEALT_RUN_ID` environment variable and use it to give the uploaded LlamaCloud file a unique `external_file_id`.
+- Read `run-id` from `/logs/artifacts/run-id` and use it to give the uploaded LlamaCloud file a unique `external_file_id`.
 - Upload `data/invoice.pdf` with `purpose="parse"`.
 - Run a Parse job on the uploaded file with `tier="agentic"` and `version="latest"`, requesting markdown output, and save the markdown of the first page to `parsed.md`.
 - Reuse the **parse-job ID** (the `pjb-…` identifier) as the `file_input` for an Extract job — do **NOT** upload the file a second time.
@@ -36,5 +36,5 @@ You have a sample invoice PDF at `/home/user/myproject/data/invoice.pdf`. Build 
     - `Extract Job ID: <id>`
 - The Parse job ID printed in `output.log` MUST exist in LlamaCloud and have status `COMPLETED` when queried via the SDK.
 - The Extract job ID printed in `output.log` MUST exist in LlamaCloud, have status `COMPLETED`, and its `file_input` field MUST equal the Parse job ID (proving the chain pattern was used rather than a re-upload).
-- The uploaded source file's `external_file_id` MUST end with the `run-id` from `ZEALT_RUN_ID` to make the upload run-isolated.
+- The uploaded source file's `external_file_id` MUST end with the `run-id` from `/logs/artifacts/run-id` to make the upload run-isolated.
 

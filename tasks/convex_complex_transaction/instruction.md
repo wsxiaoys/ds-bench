@@ -29,5 +29,5 @@ Convex mutations provide deterministic, transactional guarantees. In this task, 
 - The `transfer` mutation must accept `{ fromName: string, toName: string, amount: number }`.
 - The `getBalance` query must accept `{ name: string }` and return the balance as a number.
 - The `transfer` mutation must fail and rollback if the `fromName` account has insufficient funds, or if `amount` <= 0.
-- To avoid collisions, account names used during testing will be suffixed with the `run-id` from the `ZEALT_RUN_ID` environment variable.
+- To avoid collisions, account names used during testing will be suffixed with the `run-id` from `/logs/artifacts/run-id`.
 

@@ -14,7 +14,7 @@ You are building a real-time graph analytics pipeline using Bytewax (v0.21.1). T
 - **Execution**: The pipeline must be executable via the Bytewax CLI with SQLite recovery enabled.
 
 ## Implementation Hints
-- Read the `ZEALT_RUN_ID` environment variable to construct the output filename.
+- Read the `/logs/artifacts/run-id` to construct the output filename.
 - Use a constant key to route all edges to a single `stateful_map` partition.
 - Ensure your Union-Find state is fully picklable to support Bytewax's SQLite recovery.
 

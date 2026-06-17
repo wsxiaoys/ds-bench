@@ -19,7 +19,7 @@ Convex is a reactive backend-as-a-service. Expo is a framework for React Native.
 - Use `npx expo install react-native-web react-dom` to ensure web support is fully installed.
 - The Convex backend requires `CONVEX_DEPLOY_KEY` to deploy. Run `npx convex deploy` to push your schema and functions to the cloud.
 - To connect the Expo app to Convex, you need to pass the Convex URL to `ConvexReactClient`. You can expose the `CONVEX_URL` environment variable to the Expo app by prefixing it, e.g., setting `EXPO_PUBLIC_CONVEX_URL=$CONVEX_URL` and using `process.env.EXPO_PUBLIC_CONVEX_URL` in your code.
-- To isolate test runs, the app must filter tasks by `runId`. Expose the `ZEALT_RUN_ID` environment variable to the Expo app (e.g., `EXPO_PUBLIC_RUN_ID=$ZEALT_RUN_ID`) and use it when querying and mutating data.
+- To isolate test runs, the app must filter tasks by `runId`. Expose the `/logs/artifacts/run-id` to the Expo app (e.g., `EXPO_PUBLIC_RUN_ID=$`/logs/artifacts/run-id``) and use it when querying and mutating data.
 - In your UI, add `testID="task-input"` to the `TextInput` and `testID="add-button"` to the add `Button` or `Pressable` so they can be easily found by the verifier.
 - Add `testID="task-item"` to the component wrapping each task text.
 

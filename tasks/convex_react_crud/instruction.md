@@ -17,7 +17,7 @@ Convex is a reactive backend-as-a-service (BaaS) that provides a real-time datab
   - Update a task's status.
   - Delete a task.
 - Build a React UI to interact with these functions.
-- The UI MUST pass the `ZEALT_RUN_ID` environment variable to the backend functions to ensure data isolation.
+- The UI MUST pass the `/logs/artifacts/run-id` to the backend functions to ensure data isolation.
 - Deploy the Convex backend using `npx convex deploy` (which uses the `CONVEX_DEPLOY_KEY` environment variable).
 
 ## Implementation Hints
@@ -27,7 +27,7 @@ Convex is a reactive backend-as-a-service (BaaS) that provides a real-time datab
 - Write your queries and mutations in `convex/tasks.ts`. Ensure they accept `runId` as an argument.
 - In your React app, wrap the root with `ConvexProvider` and pass a `ConvexReactClient` initialized with `import.meta.env.VITE_CONVEX_URL`.
 - Use Convex React hooks (`useQuery`, `useMutation`) in your components to read and write data.
-- Expose the `ZEALT_RUN_ID` to your Vite React app by prefixing it as `VITE_ZEALT_RUN_ID` in your `.env` or passing it during the build/dev process.
+- Expose the `/logs/artifacts/run-id` to your Vite React app by prefixing it as `VITE_RUN_ID` in your `.env` or passing it during the build/dev process.
 
 ## Acceptance Criteria
 - Project path: /home/user/my-app

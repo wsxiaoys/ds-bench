@@ -14,7 +14,7 @@ In this task, you will use the Daytona Python SDK to create a sandbox configured
 - The sandbox name and the value of `MY_VAR` must both incorporate the current `run-id` to avoid collisions when the task runs concurrently.
 
 ## Implementation Hints
-- Read the `run-id` from the `ZEALT_RUN_ID` environment variable before creating the sandbox.
+- Read the `run-id` from `/logs/artifacts/run-id` before creating the sandbox.
 - The Daytona Python SDK is installed (`pip install daytona`). Authentication is handled via the `DAYTONA_API_KEY` environment variable, which is already set; do not hard-code keys.
 - Use `CreateSandboxFromSnapshotParams` to pass a custom sandbox name and a dictionary of environment variables when creating the sandbox.
 - Use `sandbox.process.exec(...)` to run shell commands inside the sandbox; the `.result` attribute on the response contains the captured stdout.
@@ -24,7 +24,7 @@ In this task, you will use the Daytona Python SDK to create a sandbox configured
 ## Acceptance Criteria
 - Project path: /home/user/myproject
 - Log file: /home/user/myproject/output.log
-- The sandbox name must be `envvar-py-${run-id}` where `run-id` is read from the `ZEALT_RUN_ID` environment variable.
+- The sandbox name must be `envvar-py-${run-id}` where `run-id` is read from `/logs/artifacts/run-id`.
 - The sandbox must be created with environment variables:
   - `MY_VAR=hello-${run-id}`
   - `APP_MODE=production`

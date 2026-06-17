@@ -12,7 +12,7 @@ Convex provides built-in file storage for large files like images, videos, and P
 - Deploy the Convex functions to the cloud using `npx convex deploy`.
 
 ## Implementation Hints
-- Read the current `run-id` from the `ZEALT_RUN_ID` environment variable when running any client scripts, but for the backend, just accept `runId` as an argument.
+- Read the current `run-id` from `/logs/artifacts/run-id` when running any client scripts, but for the backend, just accept `runId` as an argument.
 - Use `v.id("_storage")` to validate the `storageId` argument.
 - Use `ctx.storage.getUrl(storageId)` in your query to get the download URL for a file.
 - Use `npx convex deploy` to deploy your backend. It will automatically use the `CONVEX_DEPLOY_KEY` provided in the environment.

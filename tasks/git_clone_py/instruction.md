@@ -5,8 +5,8 @@ Daytona provides a managed cloud sandbox environment with a built-in Git module 
 
 ## Requirements
 - Use the Daytona Python SDK (`daytona`) to interact with Daytona Cloud.
-- Read the current `run-id` from the `ZEALT_RUN_ID` environment variable and use it to name the sandbox.
-- Create a sandbox with the base name `git-py` suffixed with `-${run-id}` (i.e. `git-py-${ZEALT_RUN_ID}`).
+- Read the current `run-id` from `/logs/artifacts/run-id` and use it to name the sandbox.
+- Create a sandbox with the base name `git-py` suffixed with `-${run-id}` (i.e. `git-py-<run-id>`).
 - Inside the sandbox, clone the public repository `https://github.com/octocat/Hello-World` into the directory `/home/daytona/hello-world` using `sandbox.git.clone(...)`.
 - Call `sandbox.git.status(...)` on the cloned repository and write the current branch name to the task log file in the format `Branch: <name>`.
 - Read the `README` file from the cloned repository inside the sandbox (using `sandbox.fs.download_file` or `sandbox.process.exec("cat ...")`) and append the first line of the file to the log file with the prefix `README: `.
@@ -22,7 +22,7 @@ Daytona provides a managed cloud sandbox environment with a built-in Git module 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
 - Log file: /home/user/myproject/output.log
-- The sandbox name must be `git-py-${run-id}` where `run-id` comes from the `ZEALT_RUN_ID` environment variable.
+- The sandbox name must be `git-py-${run-id}` where `run-id` comes from `/logs/artifacts/run-id`.
 - The clone target path inside the sandbox is `/home/daytona/hello-world` and is created via `sandbox.git.clone`.
 - After execution, the log file must contain a line in the format: `Branch: <name>` (the current branch reported by `sandbox.git.status`).
 - After execution, the log file must contain a line in the format: `README: <first line of README>` (the first line of the cloned repository's README file).

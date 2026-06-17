@@ -13,7 +13,7 @@ You need to demonstrate transferring files in and out of a Daytona sandbox using
 - Write a confirmation line to a log file once the upload and download both succeed.
 
 ## Implementation Hints
-- Read the current `run-id` from the `ZEALT_RUN_ID` environment variable.
+- Read the current `run-id` from `/logs/artifacts/run-id`.
 - The `DAYTONA_API_KEY` environment variable is preconfigured for authenticating to the Daytona SaaS.
 - Use `Daytona().create(...)` to provision a sandbox and pass a label/name derived from `run-id`.
 - Use `sandbox.fs.upload_file(content, remote_path)` to push the local file into the sandbox.
@@ -24,7 +24,7 @@ You need to demonstrate transferring files in and out of a Daytona sandbox using
 ## Acceptance Criteria
 - Project path: /home/user/myproject
 - Log file: /home/user/myproject/output.log
-- Sandbox name: `fs-py-${run-id}` where `run-id` is read from the `ZEALT_RUN_ID` environment variable.
+- Sandbox name: `fs-py-${run-id}` where `run-id` is read from `/logs/artifacts/run-id`.
 - Local input file: `/home/user/myproject/input.txt` with content exactly `Hello Daytona ${run-id}`.
 - Local output file: `/home/user/myproject/output.txt` containing the uppercased content of the input file (produced by a shell `tr` transformation inside the sandbox).
 - The log file must contain the line: `Upload+Download OK`.
