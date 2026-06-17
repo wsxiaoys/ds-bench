@@ -1,0 +1,40 @@
+# Async Batch Extraction with LlamaCloud (Python)
+
+## Background
+LlamaCloud (the LlamaParse platform) exposes a structured-data **Extract** product that can process many documents in parallel. For high-throughput production pipelines, the recommended Python pattern is to use the `AsyncLlamaCloud` client together with an `asyncio.Semaphore` to bound concurrency and avoid throttling.
+
+You are given a small folder of three invoice PDFs at `/home/user/myproject/data/` (filenames: `invoice_a.pdf`, `invoice_b.pdf`, `invoice_c.pdf`). Each invoice was generated with a known vendor name baked into it. Build a Python script that performs **concurrent extraction across all of them** using the v2 LlamaCloud SDK (`llama-cloud>=2`).
+
+## Requirements
+- Use the Python `llama-cloud` SDK v2 (NOT the legacy `llama-cloud-services` package).
+- Use `AsyncLlamaCloud` and `asyncio` (not the sync client).
+- Bound concurrency to at most 3 simultaneous in-flight extract jobs using an `asyncio.Semaphore`.
+- Read the API key from the `LLAMA_CLOUD_API_KEY` environment variable (already exported).
+- Read `run-id` from the `ZEALT_RUN_ID` environment variable and append it as a suffix to each uploaded file's `external_file_id` (e.g. `invoice_a-<run-id>`).
+- Upload all three PDFs from `/home/user/myproject/data/` with `purpose="extract"`.
+- Define a Pydantic schema for invoices with at least: `vendor_name` (string), `invoice_number` (string), `total_amount` (number), and `line_items` (list of strings).
+- For each uploaded file, create an extract job with `extraction_target="per_doc"` and `tier="cost_effective"` using the above schema (passed via `data_schema` in the `configuration` dict).
+- Wait for all jobs to finish (`COMPLETED`/`FAILED`/`CANCELLED`).
+- Persist the consolidated per-file results to `results.json` as a JSON object mapping `original_filename` → extracted record.
+- Append a single line to `output.log` for each finished extract job in the format `Extract Job: <filename> <job_id> <status>`.
+
+## Implementation Hints
+- The v2 async client is imported as `from llama_cloud import AsyncLlamaCloud`. All methods are coroutines (`await async_client.files.create(...)`, `await async_client.extract.create(...)`, `await async_client.extract.get(...)`).
+- Use `MyModel.model_json_schema()` to obtain a JSON Schema from a Pydantic model for the `data_schema` configuration.
+- `client.files.create(...)` accepts `external_file_id=` as a kwarg to label the upload.
+- The Extract API in v2 uses `file_input=` (which accepts either a file ID `dfl-…` or a parse-job ID `pjb-…`) and a flattened `configuration={...}` dict (NOT the legacy `config={"extract_options": ...}` wrapper).
+- After polling (`await async_client.extract.get(job.id)`), inspect `job.status`; on success, the structured result is in `job.extract_result`.
+- Use `asyncio.gather(...)` to fan out per-file processing tasks. Each task should acquire the shared `asyncio.Semaphore(3)` before contacting LlamaCloud.
+- Poll job status with a non-trivial `await asyncio.sleep(...)` interval (a couple of seconds is fine) — busy-waiting will trip rate limits.
+
+## Acceptance Criteria
+- Project path: /home/user/myproject
+- The executor is responsible for performing the real Extract actions against LlamaCloud; the verifier will not re-run them.
+- Log file: /home/user/myproject/output.log
+- All output artifacts must live under the project path:
+  - `/home/user/myproject/results.json` — a valid JSON object whose top-level keys are the three filenames `invoice_a.pdf`, `invoice_b.pdf`, `invoice_c.pdf`. Each value must contain the keys `vendor_name`, `invoice_number`, `total_amount`, and `line_items`.
+  - `/home/user/myproject/output.log` — must contain exactly three lines matching the pattern `Extract Job: <filename> <job_id> <status>` (one per uploaded file, in any order, surrounded by any other log output is fine). All three `<status>` values must be `COMPLETED`.
+- Each of the three job IDs printed in `output.log` MUST exist in LlamaCloud and have status `COMPLETED` when queried via the SDK.
+- The three uploaded source files MUST each have an `external_file_id` whose suffix is the `run-id` from `ZEALT_RUN_ID` (e.g. ends with `-${run-id}`).
+- The job IDs MUST be distinct (the script must not reuse a single job for multiple files).
+

@@ -126,6 +126,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 	const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
 	const [selectedModels, setSelectedModels] = useState<string[]>([]);
 	const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+	const [selectedTags, setSelectedTags] = useState<string[]>([]);
 	const [querySort, setQuerySort] = useState("default");
 	const [queryOrder, setQueryOrder] = useState("asc");
 	const [searchQuery, setSearchQuery] = useState("");
@@ -140,7 +141,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		selectedStatuses.length > 0 ||
 		selectedModels.length > 0 ||
 		selectedAgents.length > 0 ||
-    	selectedTags.length > 0 ||
+		selectedTags.length > 0 ||
 		searchQuery !== "" ||
 		querySort !== "default";
 
@@ -150,7 +151,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			status?: string[];
 			model?: string[];
 			agent?: string[];
-      		tags?: string[];
+			tags?: string[];
 			sort?: string;
 			order?: string;
 		}) => {
@@ -158,7 +159,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			const nextStatuses = updates.status ?? selectedStatuses;
 			const nextModels = updates.model ?? selectedModels;
 			const nextAgents = updates.agent ?? selectedAgents;
-      		const nextTags = updates.tags ?? selectedTags;
+			const nextTags = updates.tags ?? selectedTags;
 			const nextSort = updates.sort ?? querySort;
 			const nextOrder = updates.order ?? queryOrder;
 
@@ -200,7 +201,8 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			selectedAgents,
 			selectedModels,
 			selectedStatuses,
-		, selectedTags],
+			selectedTags,
+		],
 	);
 
 	useEffect(() => {
@@ -216,7 +218,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		const initialAgents = (params.get("agent") || "")
 			.split(",")
 			.filter(Boolean);
-    	const initialTags = (params.get("tags") || "").split(",").filter(Boolean);
+		const initialTags = (params.get("tags") || "").split(",").filter(Boolean);
 		const initialSort = params.get("sort") || "default";
 		const initialOrder = params.get("order") || "asc";
 		const initialDevMode =
@@ -228,7 +230,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		setSelectedStatuses(initialStatuses);
 		setSelectedModels(initialModels);
 		setSelectedAgents(initialAgents);
-    	setSelectedTags(initialTags);
+		setSelectedTags(initialTags);
 		setQuerySort(initialSort);
 		setQueryOrder(initialOrder);
 		setDevMode(initialDevMode);
@@ -273,13 +275,17 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		[allTrialsFlat],
 	);
 
-  const allTags = useMemo(() => {
-    const tags = new Set<string>();
-    tasksData.forEach((task) => {
-      task.tags?.forEach((tag) => tags.add(tag));
-    });
-    return Array.from(tags).sort();
-  }, [tasksData]);
+	const allTags = useMemo(() => {
+		const tags = new Set<string>();
+
+		tasksData.forEach((task) => {
+			task.tags?.forEach((tag) => {
+				tags.add(tag);
+			});
+		});
+
+		return Array.from(tags).sort();
+	}, [tasksData]);
 
 	const allCombos = useMemo(
 		() =>
@@ -335,9 +341,12 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 	const tableTasks = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
 
-    const filteredByTags = selectedTags.length > 0
-      ? tasksData.filter((task) => selectedTags.some(tag => task.tags?.includes(tag)))
-      : tasksData;
+		const filteredByTags =
+			selectedTags.length > 0
+				? tasksData.filter((task) =>
+						selectedTags.some((tag) => task.tags?.includes(tag)),
+					)
+				: tasksData;
 
 		if (noTrials) {
 			const filtered = query
@@ -349,7 +358,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			return [...filtered]
 				.map((task) => ({
 					taskName: task.taskName,
-          tags: task.tags,
+					tags: task.tags,
 					comboMap: {} as Record<string, CompactTrial>,
 					avgDuration: 0,
 				}))
@@ -423,7 +432,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 
 				return {
 					taskName: task.taskName,
-          			tags: task.tags,
+					tags: task.tags,
 					comboMap,
 					hasMatchingTrial,
 					avgDuration,
@@ -448,7 +457,8 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		});
 
 		return result.map(({ taskName, tags, comboMap, avgDuration }) => ({
-			taskName, tags,
+			taskName,
+			tags,
 			comboMap,
 			avgDuration,
 		}));
@@ -458,11 +468,12 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		queryOrder,
 		querySort,
 		searchQuery,
-    selectedTags.join(","),
 		tasksData,
 		selectedStatuses.length,
 		selectedStatuses.includes,
 		selectedModels[0],
+		selectedTags.some,
+		selectedTags.length,
 	]);
 
 	const toggleSort = (field: string) => {
@@ -593,18 +604,18 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 							className="w-full sm:w-auto sm:min-w-45"
 						/>
 
-            {allTags.length > 0 && (
-              <MultiSelect
-                title="Tags"
-                options={allTags}
-                selected={selectedTags}
-                onChange={(vals) => {
-                  setSelectedTags(vals);
-                  updateParams({ tags: vals });
-                }}
-                className="w-full sm:min-w-[180px] sm:w-auto"
-              />
-            )}
+						{allTags.length > 0 && (
+							<MultiSelect
+								title="Tags"
+								options={allTags}
+								selected={selectedTags}
+								onChange={(vals) => {
+									setSelectedTags(vals);
+									updateParams({ tags: vals });
+								}}
+								className="w-full sm:w-auto sm:min-w-45"
+							/>
+						)}
 					</div>
 
 					{hasActiveFilters && (
@@ -616,7 +627,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 								setSelectedStatuses([]);
 								setSelectedModels([]);
 								setSelectedAgents([]);
-                setSelectedTags([]);
+								setSelectedTags([]);
 								setQuerySort("default");
 								setQueryOrder("asc");
 								router.replace(pathname, { scroll: false });
@@ -676,15 +687,18 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 												<span className="block w-full truncate text-xs group-hover/task:underline md:text-sm">
 													{task.taskName}
 												</span>
-                        {task.tags && task.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-0.5">
-                            {task.tags.map(tag => (
-                              <span key={tag} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+												{task.tags && task.tags.length > 0 && (
+													<div className="mt-0.5 flex flex-wrap gap-1">
+														{task.tags.map((tag) => (
+															<span
+																key={tag}
+																className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 font-medium text-[10px] text-primary"
+															>
+																{tag}
+															</span>
+														))}
+													</div>
+												)}
 											</button>
 										</td>
 										{index === 0 ? (
@@ -754,15 +768,18 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 												<span className="block w-full truncate text-xs group-hover/task:underline md:text-sm">
 													{task.taskName}
 												</span>
-                        {task.tags && task.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-0.5">
-                            {task.tags.map(tag => (
-                              <span key={tag} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+												{task.tags && task.tags.length > 0 && (
+													<div className="mt-0.5 flex flex-wrap gap-1">
+														{task.tags.map((tag) => (
+															<span
+																key={tag}
+																className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 font-medium text-[10px] text-primary"
+															>
+																{tag}
+															</span>
+														))}
+													</div>
+												)}
 											</button>
 										</td>
 										{activeCombos.map((combo) => {

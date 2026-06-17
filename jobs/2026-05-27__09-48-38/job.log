@@ -1,0 +1,1540 @@
+Skipping image OS validation for hb__classify_route_extract_ts: docker inspect returned 1
+Skipping image OS validation for hb__classify_route_extract_ts: docker inspect returned 1
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-9y6xwdm > /logs/artifacts/run-id && echo classify_route_extract_ts__9y6XwDM > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model google/gemini-3-flash --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Classify → Route → Per-Category Extract (TypeScript)
+
+## Background
+Document-AI pipelines in production rarely deal with a single homogeneous file type. The canonical LlamaCloud pattern for mixed inboxes is **Classify → Route → Extract**: first run the LlamaClassify product to label each file with its document type, then route each file to a *different* Extract schema based on that label. You will implement this pattern end-to-end with the official `@llamaindex/llama-cloud` Node SDK (v2.x) and `zod` for schema definition.
+
+A starter project lives at `/home/user/myproject`. It contains four mixed PDFs under `./inputs/`:
+
+- `inputs/acme_invoice.pdf`         — commercial invoice (vendor, invoice number, line items, total)
+- `inputs/globex_invoice.pdf`       — commercial invoice (vendor, invoice number, line items, total)
+- `inputs/services_contract.pdf`    — service agreement (two parties, effective date, term)
+- `inputs/nda_contract.pdf`         — mutual non-disclosure agreement (two parties, effective date, term)
+
+The filenames hint at the category, but your script **must not hard-code the routing by filename** — it must drive the routing decision from the Classify result returned by LlamaCloud. The verifier will check both the artifacts on disk and the LlamaCloud-side state through the SDK.
+
+## Requirements
+- Use the LlamaCloud Node SDK `@llamaindex/llama-cloud` (v2.x). Define your Extract schemas with **Zod** and convert each to JSON Schema (e.g., `z.toJSONSchema`) when calling Extract.
+- **Phase 1 — Classify.** Upload all four PDFs to LlamaCloud and run a *single* Classify job over all four file ids with these two rules and `mode: 'FAST'`:
+  - `invoice` — commercial invoice with an invoice number, line items, and a grand total
+  - `contract` — legal agreement signed by two or more parties with an effective date and term
+  Capture the per-file `type` and `confidence` returned by the SDK. Confidence must be a number; both files in each category must end up with the same `type`.
+- **Phase 2 — Per-category Extract (concurrent).** For each classified file, run an Extract job using the schema dictated by its category. The two schemas are:
+  - **`invoice` schema** (top-level Zod object):
+    - `invoice_number` (string)
+    - `vendor_name`    (string)
+    - `total_amount`   (number; the grand total)
+    - `line_items`     (array of objects with `description` (string), `quantity` (number), `unit_price` (number), `total` (number))
+  - **`contract` schema** (top-level Zod object):
+    - `parties`         (array of strings, length ≥ 2)
+    - `effective_date`  (string, ISO `YYYY-MM-DD` if possible)
+    - `term`            (string, e.g., `"12 months"`)
+  All Extract jobs must use `extraction_target: 'per_doc'` and `tier: 'agentic'`. Run the four Extract jobs **concurrently** (e.g., `Promise.all`) with a concurrency cap of **at most 2 in flight** (use `p-limit`, a semaphore, or an equivalent).
+- **Parallel-run safety.** Read the run id from the `ZEALT_RUN_ID` environment variable. Tag every uploaded source file with an `external_file_id` equal to `${ZEALT_RUN_ID}-<basename_without_ext>` (for example, `zr-abc123-acme_invoice` for `acme_invoice.pdf`).
+- **Aggregate artifacts.** Write two artifacts:
+  - `./outputs/results.json` — a JSON object keyed by the input file basename (e.g. `"acme_invoice.pdf"`) where each value is an object with exactly these keys:
+    - `category`   (string — `"invoice"` or `"contract"`, as returned by Classify)
+    - `confidence` (number — confidence from Classify)
+    - `file_id`    (string — the file id of the uploaded source PDF as returned by the API)
+    - `data`       (object — the `extract_result` payload from the appropriate Extract schema)
+  - `./output.log` — one summary line per input file in **exactly** this format (one line per file, in any order):
+    `Routed: <basename>.pdf | category: <invoice|contract> | confidence: <conf> | fields: <N>`
+    where `<N>` is the number of top-level keys in the file's extracted `data` object (must be `4` for invoices and `3` for contracts).
+- The script must exit with code 0 when every file is classified and extracted successfully.
+
+## Implementation Hints
+- Install `@llamaindex/llama-cloud`, `zod`, `tsx`, and a concurrency helper such as `p-limit`.
+- The single-shot Classify helper is `client.classifier.classify({ file_ids, rules, mode })`. Each rule is `{ type, description }`. The result has an `items` array; each item has `file_id` and `result.{type, confidence, reasoning}`. **Items may be returned in a different order than the input `file_ids`** — index by `file_id`, not by array position.
+- File uploads in Node.js use `fs.createReadStream(...)` with `client.files.create({ file, purpose, external_file_id })`. Note that you can re-use the same uploaded file id when calling Extract (`file_input: fileObj.id`). You do not need to re-upload the same file for each phase.
+- The Extract v2 SDK call is `client.extract.create({ file_input, configuration })` where `configuration` is a **flattened** object containing `data_schema`, `extraction_target`, and `tier` (there is no `extract_options` wrapper in v2). Poll completion with `client.extract.get(jobId)` until `status` is `COMPLETED`/`FAILED`/`CANCELLED`.
+- The SDK picks up `LLAMA_CLOUD_API_KEY` from the environment automatically.
+- Make sure `./outputs/` exists before writing files.
+
+## Acceptance Criteria
+- Project path: `/home/user/myproject`
+- Ensure the script is executed against the real LlamaCloud Classify + Extract APIs and that all artifacts exist on disk after execution.
+- Log file: `/home/user/myproject/output.log` must contain **exactly four** lines, each matching `^Routed: [A-Za-z0-9_.-]+\.pdf \| category: (invoice|contract) \| confidence: [0-9]*\.?[0-9]+([eE][+-]?[0-9]+)? \| fields: (3|4)$`. Across the four lines, exactly two must have `category: invoice` with `fields: 4` and exactly two must have `category: contract` with `fields: 3`. The four basenames must be the four input PDFs.
+- `/home/user/myproject/outputs/results.json` must exist and parse as a JSON object with exactly four keys (the four input PDF basenames). Each value must have keys `category`, `confidence`, `file_id`, and `data`:
+  - For every entry whose `category == "invoice"`, `data` must contain non-empty string `invoice_number`, non-empty string `vendor_name`, positive numeric `total_amount`, and `line_items` as a non-empty array of objects each with numeric `quantity`, `unit_price`, and `total`.
+  - For every entry whose `category == "contract"`, `data` must contain `parties` as an array of strings with length ≥ 2, a non-empty string `effective_date`, and a non-empty string `term`.
+  - Each `file_id` must be a non-empty string matching the file id returned by the LlamaCloud API.
+- Every uploaded source file in LlamaCloud must carry an `external_file_id` exactly equal to `${ZEALT_RUN_ID}-<basename_without_ext>` for its corresponding input PDF. The verifier will query the LlamaCloud SDK for each expected external id and assert it exists.
+
+
+EOF
+Skipping image OS validation for hb__classify_route_extract_ts: docker inspect returned 1
+Running command: apt-get update && apt-get install -y curl ripgrep
+Skipping image OS validation for hb__classify_route_extract_ts: docker inspect returned 1
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-hzrlpi9 > /logs/artifacts/run-id && echo classify_route_extract_ts__hzrLPi9 > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model google/gemini-3.1-pro --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Classify → Route → Per-Category Extract (TypeScript)
+
+## Background
+Document-AI pipelines in production rarely deal with a single homogeneous file type. The canonical LlamaCloud pattern for mixed inboxes is **Classify → Route → Extract**: first run the LlamaClassify product to label each file with its document type, then route each file to a *different* Extract schema based on that label. You will implement this pattern end-to-end with the official `@llamaindex/llama-cloud` Node SDK (v2.x) and `zod` for schema definition.
+
+A starter project lives at `/home/user/myproject`. It contains four mixed PDFs under `./inputs/`:
+
+- `inputs/acme_invoice.pdf`         — commercial invoice (vendor, invoice number, line items, total)
+- `inputs/globex_invoice.pdf`       — commercial invoice (vendor, invoice number, line items, total)
+- `inputs/services_contract.pdf`    — service agreement (two parties, effective date, term)
+- `inputs/nda_contract.pdf`         — mutual non-disclosure agreement (two parties, effective date, term)
+
+The filenames hint at the category, but your script **must not hard-code the routing by filename** — it must drive the routing decision from the Classify result returned by LlamaCloud. The verifier will check both the artifacts on disk and the LlamaCloud-side state through the SDK.
+
+## Requirements
+- Use the LlamaCloud Node SDK `@llamaindex/llama-cloud` (v2.x). Define your Extract schemas with **Zod** and convert each to JSON Schema (e.g., `z.toJSONSchema`) when calling Extract.
+- **Phase 1 — Classify.** Upload all four PDFs to LlamaCloud and run a *single* Classify job over all four file ids with these two rules and `mode: 'FAST'`:
+  - `invoice` — commercial invoice with an invoice number, line items, and a grand total
+  - `contract` — legal agreement signed by two or more parties with an effective date and term
+  Capture the per-file `type` and `confidence` returned by the SDK. Confidence must be a number; both files in each category must end up with the same `type`.
+- **Phase 2 — Per-category Extract (concurrent).** For each classified file, run an Extract job using the schema dictated by its category. The two schemas are:
+  - **`invoice` schema** (top-level Zod object):
+    - `invoice_number` (string)
+    - `vendor_name`    (string)
+    - `total_amount`   (number; the grand total)
+    - `line_items`     (array of objects with `description` (string), `quantity` (number), `unit_price` (number), `total` (number))
+  - **`contract` schema** (top-level Zod object):
+    - `parties`         (array of strings, length ≥ 2)
+    - `effective_date`  (string, ISO `YYYY-MM-DD` if possible)
+    - `term`            (string, e.g., `"12 months"`)
+  All Extract jobs must use `extraction_target: 'per_doc'` and `tier: 'agentic'`. Run the four Extract jobs **concurrently** (e.g., `Promise.all`) with a concurrency cap of **at most 2 in flight** (use `p-limit`, a semaphore, or an equivalent).
+- **Parallel-run safety.** Read the run id from the `ZEALT_RUN_ID` environment variable. Tag every uploaded source file with an `external_file_id` equal to `${ZEALT_RUN_ID}-<basename_without_ext>` (for example, `zr-abc123-acme_invoice` for `acme_invoice.pdf`).
+- **Aggregate artifacts.** Write two artifacts:
+  - `./outputs/results.json` — a JSON object keyed by the input file basename (e.g. `"acme_invoice.pdf"`) where each value is an object with exactly these keys:
+    - `category`   (string — `"invoice"` or `"contract"`, as returned by Classify)
+    - `confidence` (number — confidence from Classify)
+    - `file_id`    (string — the file id of the uploaded source PDF as returned by the API)
+    - `data`       (object — the `extract_result` payload from the appropriate Extract schema)
+  - `./output.log` — one summary line per input file in **exactly** this format (one line per file, in any order):
+    `Routed: <basename>.pdf | category: <invoice|contract> | confidence: <conf> | fields: <N>`
+    where `<N>` is the number of top-level keys in the file's extracted `data` object (must be `4` for invoices and `3` for contracts).
+- The script must exit with code 0 when every file is classified and extracted successfully.
+
+## Implementation Hints
+- Install `@llamaindex/llama-cloud`, `zod`, `tsx`, and a concurrency helper such as `p-limit`.
+- The single-shot Classify helper is `client.classifier.classify({ file_ids, rules, mode })`. Each rule is `{ type, description }`. The result has an `items` array; each item has `file_id` and `result.{type, confidence, reasoning}`. **Items may be returned in a different order than the input `file_ids`** — index by `file_id`, not by array position.
+- File uploads in Node.js use `fs.createReadStream(...)` with `client.files.create({ file, purpose, external_file_id })`. Note that you can re-use the same uploaded file id when calling Extract (`file_input: fileObj.id`). You do not need to re-upload the same file for each phase.
+- The Extract v2 SDK call is `client.extract.create({ file_input, configuration })` where `configuration` is a **flattened** object containing `data_schema`, `extraction_target`, and `tier` (there is no `extract_options` wrapper in v2). Poll completion with `client.extract.get(jobId)` until `status` is `COMPLETED`/`FAILED`/`CANCELLED`.
+- The SDK picks up `LLAMA_CLOUD_API_KEY` from the environment automatically.
+- Make sure `./outputs/` exists before writing files.
+
+## Acceptance Criteria
+- Project path: `/home/user/myproject`
+- Ensure the script is executed against the real LlamaCloud Classify + Extract APIs and that all artifacts exist on disk after execution.
+- Log file: `/home/user/myproject/output.log` must contain **exactly four** lines, each matching `^Routed: [A-Za-z0-9_.-]+\.pdf \| category: (invoice|contract) \| confidence: [0-9]*\.?[0-9]+([eE][+-]?[0-9]+)? \| fields: (3|4)$`. Across the four lines, exactly two must have `category: invoice` with `fields: 4` and exactly two must have `category: contract` with `fields: 3`. The four basenames must be the four input PDFs.
+- `/home/user/myproject/outputs/results.json` must exist and parse as a JSON object with exactly four keys (the four input PDF basenames). Each value must have keys `category`, `confidence`, `file_id`, and `data`:
+  - For every entry whose `category == "invoice"`, `data` must contain non-empty string `invoice_number`, non-empty string `vendor_name`, positive numeric `total_amount`, and `line_items` as a non-empty array of objects each with numeric `quantity`, `unit_price`, and `total`.
+  - For every entry whose `category == "contract"`, `data` must contain `parties` as an array of strings with length ≥ 2, a non-empty string `effective_date`, and a non-empty string `term`.
+  - Each `file_id` must be a non-empty string matching the file id returned by the LlamaCloud API.
+- Every uploaded source file in LlamaCloud must carry an `external_file_id` exactly equal to `${ZEALT_RUN_ID}-<basename_without_ext>` for its corresponding input PDF. The verifier will query the LlamaCloud SDK for each expected external id and assert it exists.
+
+
+EOF
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-6tcrdc8 > /logs/artifacts/run-id && echo classify_route_extract_ts__6TcRdC8 > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model openai/gpt-5.2-codex --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Classify → Route → Per-Category Extract (TypeScript)
+
+## Background
+Document-AI pipelines in production rarely deal with a single homogeneous file type. The canonical LlamaCloud pattern for mixed inboxes is **Classify → Route → Extract**: first run the LlamaClassify product to label each file with its document type, then route each file to a *different* Extract schema based on that label. You will implement this pattern end-to-end with the official `@llamaindex/llama-cloud` Node SDK (v2.x) and `zod` for schema definition.
+
+A starter project lives at `/home/user/myproject`. It contains four mixed PDFs under `./inputs/`:
+
+- `inputs/acme_invoice.pdf`         — commercial invoice (vendor, invoice number, line items, total)
+- `inputs/globex_invoice.pdf`       — commercial invoice (vendor, invoice number, line items, total)
+- `inputs/services_contract.pdf`    — service agreement (two parties, effective date, term)
+- `inputs/nda_contract.pdf`         — mutual non-disclosure agreement (two parties, effective date, term)
+
+The filenames hint at the category, but your script **must not hard-code the routing by filename** — it must drive the routing decision from the Classify result returned by LlamaCloud. The verifier will check both the artifacts on disk and the LlamaCloud-side state through the SDK.
+
+## Requirements
+- Use the LlamaCloud Node SDK `@llamaindex/llama-cloud` (v2.x). Define your Extract schemas with **Zod** and convert each to JSON Schema (e.g., `z.toJSONSchema`) when calling Extract.
+- **Phase 1 — Classify.** Upload all four PDFs to LlamaCloud and run a *single* Classify job over all four file ids with these two rules and `mode: 'FAST'`:
+  - `invoice` — commercial invoice with an invoice number, line items, and a grand total
+  - `contract` — legal agreement signed by two or more parties with an effective date and term
+  Capture the per-file `type` and `confidence` returned by the SDK. Confidence must be a number; both files in each category must end up with the same `type`.
+- **Phase 2 — Per-category Extract (concurrent).** For each classified file, run an Extract job using the schema dictated by its category. The two schemas are:
+  - **`invoice` schema** (top-level Zod object):
+    - `invoice_number` (string)
+    - `vendor_name`    (string)
+    - `total_amount`   (number; the grand total)
+    - `line_items`     (array of objects with `description` (string), `quantity` (number), `unit_price` (number), `total` (number))
+  - **`contract` schema** (top-level Zod object):
+    - `parties`         (array of strings, length ≥ 2)
+    - `effective_date`  (string, ISO `YYYY-MM-DD` if possible)
+    - `term`            (string, e.g., `"12 months"`)
+  All Extract jobs must use `extraction_target: 'per_doc'` and `tier: 'agentic'`. Run the four Extract jobs **concurrently** (e.g., `Promise.all`) with a concurrency cap of **at most 2 in flight** (use `p-limit`, a semaphore, or an equivalent).
+- **Parallel-run safety.** Read the run id from the `ZEALT_RUN_ID` environment variable. Tag every uploaded source file with an `external_file_id` equal to `${ZEALT_RUN_ID}-<basename_without_ext>` (for example, `zr-abc123-acme_invoice` for `acme_invoice.pdf`).
+- **Aggregate artifacts.** Write two artifacts:
+  - `./outputs/results.json` — a JSON object keyed by the input file basename (e.g. `"acme_invoice.pdf"`) where each value is an object with exactly these keys:
+    - `category`   (string — `"invoice"` or `"contract"`, as returned by Classify)
+    - `confidence` (number — confidence from Classify)
+    - `file_id`    (string — the file id of the uploaded source PDF as returned by the API)
+    - `data`       (object — the `extract_result` payload from the appropriate Extract schema)
+  - `./output.log` — one summary line per input file in **exactly** this format (one line per file, in any order):
+    `Routed: <basename>.pdf | category: <invoice|contract> | confidence: <conf> | fields: <N>`
+    where `<N>` is the number of top-level keys in the file's extracted `data` object (must be `4` for invoices and `3` for contracts).
+- The script must exit with code 0 when every file is classified and extracted successfully.
+
+## Implementation Hints
+- Install `@llamaindex/llama-cloud`, `zod`, `tsx`, and a concurrency helper such as `p-limit`.
+- The single-shot Classify helper is `client.classifier.classify({ file_ids, rules, mode })`. Each rule is `{ type, description }`. The result has an `items` array; each item has `file_id` and `result.{type, confidence, reasoning}`. **Items may be returned in a different order than the input `file_ids`** — index by `file_id`, not by array position.
+- File uploads in Node.js use `fs.createReadStream(...)` with `client.files.create({ file, purpose, external_file_id })`. Note that you can re-use the same uploaded file id when calling Extract (`file_input: fileObj.id`). You do not need to re-upload the same file for each phase.
+- The Extract v2 SDK call is `client.extract.create({ file_input, configuration })` where `configuration` is a **flattened** object containing `data_schema`, `extraction_target`, and `tier` (there is no `extract_options` wrapper in v2). Poll completion with `client.extract.get(jobId)` until `status` is `COMPLETED`/`FAILED`/`CANCELLED`.
+- The SDK picks up `LLAMA_CLOUD_API_KEY` from the environment automatically.
+- Make sure `./outputs/` exists before writing files.
+
+## Acceptance Criteria
+- Project path: `/home/user/myproject`
+- Ensure the script is executed against the real LlamaCloud Classify + Extract APIs and that all artifacts exist on disk after execution.
+- Log file: `/home/user/myproject/output.log` must contain **exactly four** lines, each matching `^Routed: [A-Za-z0-9_.-]+\.pdf \| category: (invoice|contract) \| confidence: [0-9]*\.?[0-9]+([eE][+-]?[0-9]+)? \| fields: (3|4)$`. Across the four lines, exactly two must have `category: invoice` with `fields: 4` and exactly two must have `category: contract` with `fields: 3`. The four basenames must be the four input PDFs.
+- `/home/user/myproject/outputs/results.json` must exist and parse as a JSON object with exactly four keys (the four input PDF basenames). Each value must have keys `category`, `confidence`, `file_id`, and `data`:
+  - For every entry whose `category == "invoice"`, `data` must contain non-empty string `invoice_number`, non-empty string `vendor_name`, positive numeric `total_amount`, and `line_items` as a non-empty array of objects each with numeric `quantity`, `unit_price`, and `total`.
+  - For every entry whose `category == "contract"`, `data` must contain `parties` as an array of strings with length ≥ 2, a non-empty string `effective_date`, and a non-empty string `term`.
+  - Each `file_id` must be a non-empty string matching the file id returned by the LlamaCloud API.
+- Every uploaded source file in LlamaCloud must carry an `external_file_id` exactly equal to `${ZEALT_RUN_ID}-<basename_without_ext>` for its corresponding input PDF. The verifier will query the LlamaCloud SDK for each expected external id and assert it exists.
+
+
+EOF
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-akuxs9q > /logs/artifacts/run-id && echo classify_route_extract_ts__AkUXs9Q > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model anthropic/claude-4-6-sonnet --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Classify → Route → Per-Category Extract (TypeScript)
+
+## Background
+Document-AI pipelines in production rarely deal with a single homogeneous file type. The canonical LlamaCloud pattern for mixed inboxes is **Classify → Route → Extract**: first run the LlamaClassify product to label each file with its document type, then route each file to a *different* Extract schema based on that label. You will implement this pattern end-to-end with the official `@llamaindex/llama-cloud` Node SDK (v2.x) and `zod` for schema definition.
+
+A starter project lives at `/home/user/myproject`. It contains four mixed PDFs under `./inputs/`:
+
+- `inputs/acme_invoice.pdf`         — commercial invoice (vendor, invoice number, line items, total)
+- `inputs/globex_invoice.pdf`       — commercial invoice (vendor, invoice number, line items, total)
+- `inputs/services_contract.pdf`    — service agreement (two parties, effective date, term)
+- `inputs/nda_contract.pdf`         — mutual non-disclosure agreement (two parties, effective date, term)
+
+The filenames hint at the category, but your script **must not hard-code the routing by filename** — it must drive the routing decision from the Classify result returned by LlamaCloud. The verifier will check both the artifacts on disk and the LlamaCloud-side state through the SDK.
+
+## Requirements
+- Use the LlamaCloud Node SDK `@llamaindex/llama-cloud` (v2.x). Define your Extract schemas with **Zod** and convert each to JSON Schema (e.g., `z.toJSONSchema`) when calling Extract.
+- **Phase 1 — Classify.** Upload all four PDFs to LlamaCloud and run a *single* Classify job over all four file ids with these two rules and `mode: 'FAST'`:
+  - `invoice` — commercial invoice with an invoice number, line items, and a grand total
+  - `contract` — legal agreement signed by two or more parties with an effective date and term
+  Capture the per-file `type` and `confidence` returned by the SDK. Confidence must be a number; both files in each category must end up with the same `type`.
+- **Phase 2 — Per-category Extract (concurrent).** For each classified file, run an Extract job using the schema dictated by its category. The two schemas are:
+  - **`invoice` schema** (top-level Zod object):
+    - `invoice_number` (string)
+    - `vendor_name`    (string)
+    - `total_amount`   (number; the grand total)
+    - `line_items`     (array of objects with `description` (string), `quantity` (number), `unit_price` (number), `total` (number))
+  - **`contract` schema** (top-level Zod object):
+    - `parties`         (array of strings, length ≥ 2)
+    - `effective_date`  (string, ISO `YYYY-MM-DD` if possible)
+    - `term`            (string, e.g., `"12 months"`)
+  All Extract jobs must use `extraction_target: 'per_doc'` and `tier: 'agentic'`. Run the four Extract jobs **concurrently** (e.g., `Promise.all`) with a concurrency cap of **at most 2 in flight** (use `p-limit`, a semaphore, or an equivalent).
+- **Parallel-run safety.** Read the run id from the `ZEALT_RUN_ID` environment variable. Tag every uploaded source file with an `external_file_id` equal to `${ZEALT_RUN_ID}-<basename_without_ext>` (for example, `zr-abc123-acme_invoice` for `acme_invoice.pdf`).
+- **Aggregate artifacts.** Write two artifacts:
+  - `./outputs/results.json` — a JSON object keyed by the input file basename (e.g. `"acme_invoice.pdf"`) where each value is an object with exactly these keys:
+    - `category`   (string — `"invoice"` or `"contract"`, as returned by Classify)
+    - `confidence` (number — confidence from Classify)
+    - `file_id`    (string — the file id of the uploaded source PDF as returned by the API)
+    - `data`       (object — the `extract_result` payload from the appropriate Extract schema)
+  - `./output.log` — one summary line per input file in **exactly** this format (one line per file, in any order):
+    `Routed: <basename>.pdf | category: <invoice|contract> | confidence: <conf> | fields: <N>`
+    where `<N>` is the number of top-level keys in the file's extracted `data` object (must be `4` for invoices and `3` for contracts).
+- The script must exit with code 0 when every file is classified and extracted successfully.
+
+## Implementation Hints
+- Install `@llamaindex/llama-cloud`, `zod`, `tsx`, and a concurrency helper such as `p-limit`.
+- The single-shot Classify helper is `client.classifier.classify({ file_ids, rules, mode })`. Each rule is `{ type, description }`. The result has an `items` array; each item has `file_id` and `result.{type, confidence, reasoning}`. **Items may be returned in a different order than the input `file_ids`** — index by `file_id`, not by array position.
+- File uploads in Node.js use `fs.createReadStream(...)` with `client.files.create({ file, purpose, external_file_id })`. Note that you can re-use the same uploaded file id when calling Extract (`file_input: fileObj.id`). You do not need to re-upload the same file for each phase.
+- The Extract v2 SDK call is `client.extract.create({ file_input, configuration })` where `configuration` is a **flattened** object containing `data_schema`, `extraction_target`, and `tier` (there is no `extract_options` wrapper in v2). Poll completion with `client.extract.get(jobId)` until `status` is `COMPLETED`/`FAILED`/`CANCELLED`.
+- The SDK picks up `LLAMA_CLOUD_API_KEY` from the environment automatically.
+- Make sure `./outputs/` exists before writing files.
+
+## Acceptance Criteria
+- Project path: `/home/user/myproject`
+- Ensure the script is executed against the real LlamaCloud Classify + Extract APIs and that all artifacts exist on disk after execution.
+- Log file: `/home/user/myproject/output.log` must contain **exactly four** lines, each matching `^Routed: [A-Za-z0-9_.-]+\.pdf \| category: (invoice|contract) \| confidence: [0-9]*\.?[0-9]+([eE][+-]?[0-9]+)? \| fields: (3|4)$`. Across the four lines, exactly two must have `category: invoice` with `fields: 4` and exactly two must have `category: contract` with `fields: 3`. The four basenames must be the four input PDFs.
+- `/home/user/myproject/outputs/results.json` must exist and parse as a JSON object with exactly four keys (the four input PDF basenames). Each value must have keys `category`, `confidence`, `file_id`, and `data`:
+  - For every entry whose `category == "invoice"`, `data` must contain non-empty string `invoice_number`, non-empty string `vendor_name`, positive numeric `total_amount`, and `line_items` as a non-empty array of objects each with numeric `quantity`, `unit_price`, and `total`.
+  - For every entry whose `category == "contract"`, `data` must contain `parties` as an array of strings with length ≥ 2, a non-empty string `effective_date`, and a non-empty string `term`.
+  - Each `file_id` must be a non-empty string matching the file id returned by the LlamaCloud API.
+- Every uploaded source file in LlamaCloud must carry an `external_file_id` exactly equal to `${ZEALT_RUN_ID}-<basename_without_ext>` for its corresponding input PDF. The verifier will query the LlamaCloud SDK for each expected external id and assert it exists.
+
+
+EOF
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Skipping image OS validation for hb__parse_with_image_extraction_py: docker inspect returned 1
+Skipping image OS validation for hb__parse_with_image_extraction_py: docker inspect returned 1
+Running command: apt-get update && apt-get install -y curl ripgrep
+Skipping image OS validation for hb__parse_with_image_extraction_py: docker inspect returned 1
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Running command: echo zr-pfvwsdt > /logs/artifacts/run-id && echo parse_with_image_extraction_py__PFvWsdt > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model google/gemini-3-flash --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Parse a PDF and Extract Per-Page Screenshots with LlamaParse
+
+## Background
+LlamaCloud's LlamaParse platform offers agentic, layout-aware document parsing through the `llama-cloud` Python SDK. In addition to producing clean markdown output, Parse can emit image assets (per-page screenshots, embedded images, or layout crops) that downstream pipelines need for grounding, citations, or visual review.
+
+Your job is to parse a PDF located at `/home/user/myproject/input.pdf` using the LlamaCloud Python SDK, retrieve both the markdown content and the per-page screenshot images, save them to disk, and write a small log file summarizing the result.
+
+## Requirements
+- Use the **`llama-cloud` Python SDK (v2.x)** to interact with the LlamaCloud Parse API. The SDK reads `LLAMA_CLOUD_API_KEY` from the environment.
+- Upload `/home/user/myproject/input.pdf` to LlamaCloud as a parse source file.
+- Submit a Parse job and request **per-page screenshot images** in the parse output options. Use a non-deprecated parse tier and ask for the markdown content as well.
+- After the job completes, save:
+  - The full parsed markdown text to `/home/user/myproject/output/markdown.md`.
+  - One PNG image file per page screenshot under `/home/user/myproject/output/images/`. Name each file `page_<N>.png` where `<N>` is the 1-based page number (e.g., `page_1.png`, `page_2.png`).
+- Write a log file to `/home/user/myproject/output/output.log` summarizing the parse run.
+
+## Implementation Hints
+- Install with `pip install "llama-cloud>=2.7"` (already preinstalled in the environment) and instantiate `LlamaCloud()` — it reads the API key from the env automatically.
+- Upload the PDF with `client.files.create(file=..., purpose="parse")`.
+- The synchronous helper `client.parsing.parse(...)` uploads-or-references the file, submits the job, polls until completion, and returns the parsed result. To request per-page screenshots, configure `output_options.images_to_save` and include the appropriate `expand` entries (markdown + image content metadata) so the SDK returns both outputs in one call.
+- The image content metadata returned by the SDK contains downloadable references for each screenshot; for each image you need to fetch the bytes and write them to disk under the `images/` directory.
+- The markdown response object exposes the parsed pages — concatenate the per-page markdown content (separated by blank lines) when writing `markdown.md`.
+
+## Acceptance Criteria
+- Project path: /home/user/myproject
+- Ensure the parse job is actually executed against LlamaCloud and the artifacts described below exist on disk.
+- Log file: /home/user/myproject/output/output.log
+- The log file must contain, on separate lines, the following entries (in any order):
+  - `Parse job ID: <job_id>` where `<job_id>` is the LlamaCloud parse job identifier (it starts with `pjb-`).
+  - `Markdown chars: <n>` where `<n>` is the integer character length of the markdown file written to disk.
+  - `Image count: <n>` where `<n>` is the integer number of screenshot files written under `/home/user/myproject/output/images/`.
+- Markdown output file: `/home/user/myproject/output/markdown.md` must exist and be non-empty (at least 50 characters of text).
+- Image directory: `/home/user/myproject/output/images/` must exist and contain at least one PNG file named `page_<N>.png` (1-based page numbering). Each PNG file must be a valid PNG (start with the standard PNG magic bytes `\x89PNG\r\n\x1a\n`).
+
+
+EOF
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-tavbpqn > /logs/artifacts/run-id && echo parse_with_image_extraction_py__Tavbpqn > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model google/gemini-3.1-pro --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Parse a PDF and Extract Per-Page Screenshots with LlamaParse
+
+## Background
+LlamaCloud's LlamaParse platform offers agentic, layout-aware document parsing through the `llama-cloud` Python SDK. In addition to producing clean markdown output, Parse can emit image assets (per-page screenshots, embedded images, or layout crops) that downstream pipelines need for grounding, citations, or visual review.
+
+Your job is to parse a PDF located at `/home/user/myproject/input.pdf` using the LlamaCloud Python SDK, retrieve both the markdown content and the per-page screenshot images, save them to disk, and write a small log file summarizing the result.
+
+## Requirements
+- Use the **`llama-cloud` Python SDK (v2.x)** to interact with the LlamaCloud Parse API. The SDK reads `LLAMA_CLOUD_API_KEY` from the environment.
+- Upload `/home/user/myproject/input.pdf` to LlamaCloud as a parse source file.
+- Submit a Parse job and request **per-page screenshot images** in the parse output options. Use a non-deprecated parse tier and ask for the markdown content as well.
+- After the job completes, save:
+  - The full parsed markdown text to `/home/user/myproject/output/markdown.md`.
+  - One PNG image file per page screenshot under `/home/user/myproject/output/images/`. Name each file `page_<N>.png` where `<N>` is the 1-based page number (e.g., `page_1.png`, `page_2.png`).
+- Write a log file to `/home/user/myproject/output/output.log` summarizing the parse run.
+
+## Implementation Hints
+- Install with `pip install "llama-cloud>=2.7"` (already preinstalled in the environment) and instantiate `LlamaCloud()` — it reads the API key from the env automatically.
+- Upload the PDF with `client.files.create(file=..., purpose="parse")`.
+- The synchronous helper `client.parsing.parse(...)` uploads-or-references the file, submits the job, polls until completion, and returns the parsed result. To request per-page screenshots, configure `output_options.images_to_save` and include the appropriate `expand` entries (markdown + image content metadata) so the SDK returns both outputs in one call.
+- The image content metadata returned by the SDK contains downloadable references for each screenshot; for each image you need to fetch the bytes and write them to disk under the `images/` directory.
+- The markdown response object exposes the parsed pages — concatenate the per-page markdown content (separated by blank lines) when writing `markdown.md`.
+
+## Acceptance Criteria
+- Project path: /home/user/myproject
+- Ensure the parse job is actually executed against LlamaCloud and the artifacts described below exist on disk.
+- Log file: /home/user/myproject/output/output.log
+- The log file must contain, on separate lines, the following entries (in any order):
+  - `Parse job ID: <job_id>` where `<job_id>` is the LlamaCloud parse job identifier (it starts with `pjb-`).
+  - `Markdown chars: <n>` where `<n>` is the integer character length of the markdown file written to disk.
+  - `Image count: <n>` where `<n>` is the integer number of screenshot files written under `/home/user/myproject/output/images/`.
+- Markdown output file: `/home/user/myproject/output/markdown.md` must exist and be non-empty (at least 50 characters of text).
+- Image directory: `/home/user/myproject/output/images/` must exist and contain at least one PNG file named `page_<N>.png` (1-based page numbering). Each PNG file must be a valid PNG (start with the standard PNG magic bytes `\x89PNG\r\n\x1a\n`).
+
+
+EOF
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-jxlehi2 > /logs/artifacts/run-id && echo parse_with_image_extraction_py__jXLEhi2 > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model openai/gpt-5.2-codex --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Parse a PDF and Extract Per-Page Screenshots with LlamaParse
+
+## Background
+LlamaCloud's LlamaParse platform offers agentic, layout-aware document parsing through the `llama-cloud` Python SDK. In addition to producing clean markdown output, Parse can emit image assets (per-page screenshots, embedded images, or layout crops) that downstream pipelines need for grounding, citations, or visual review.
+
+Your job is to parse a PDF located at `/home/user/myproject/input.pdf` using the LlamaCloud Python SDK, retrieve both the markdown content and the per-page screenshot images, save them to disk, and write a small log file summarizing the result.
+
+## Requirements
+- Use the **`llama-cloud` Python SDK (v2.x)** to interact with the LlamaCloud Parse API. The SDK reads `LLAMA_CLOUD_API_KEY` from the environment.
+- Upload `/home/user/myproject/input.pdf` to LlamaCloud as a parse source file.
+- Submit a Parse job and request **per-page screenshot images** in the parse output options. Use a non-deprecated parse tier and ask for the markdown content as well.
+- After the job completes, save:
+  - The full parsed markdown text to `/home/user/myproject/output/markdown.md`.
+  - One PNG image file per page screenshot under `/home/user/myproject/output/images/`. Name each file `page_<N>.png` where `<N>` is the 1-based page number (e.g., `page_1.png`, `page_2.png`).
+- Write a log file to `/home/user/myproject/output/output.log` summarizing the parse run.
+
+## Implementation Hints
+- Install with `pip install "llama-cloud>=2.7"` (already preinstalled in the environment) and instantiate `LlamaCloud()` — it reads the API key from the env automatically.
+- Upload the PDF with `client.files.create(file=..., purpose="parse")`.
+- The synchronous helper `client.parsing.parse(...)` uploads-or-references the file, submits the job, polls until completion, and returns the parsed result. To request per-page screenshots, configure `output_options.images_to_save` and include the appropriate `expand` entries (markdown + image content metadata) so the SDK returns both outputs in one call.
+- The image content metadata returned by the SDK contains downloadable references for each screenshot; for each image you need to fetch the bytes and write them to disk under the `images/` directory.
+- The markdown response object exposes the parsed pages — concatenate the per-page markdown content (separated by blank lines) when writing `markdown.md`.
+
+## Acceptance Criteria
+- Project path: /home/user/myproject
+- Ensure the parse job is actually executed against LlamaCloud and the artifacts described below exist on disk.
+- Log file: /home/user/myproject/output/output.log
+- The log file must contain, on separate lines, the following entries (in any order):
+  - `Parse job ID: <job_id>` where `<job_id>` is the LlamaCloud parse job identifier (it starts with `pjb-`).
+  - `Markdown chars: <n>` where `<n>` is the integer character length of the markdown file written to disk.
+  - `Image count: <n>` where `<n>` is the integer number of screenshot files written under `/home/user/myproject/output/images/`.
+- Markdown output file: `/home/user/myproject/output/markdown.md` must exist and be non-empty (at least 50 characters of text).
+- Image directory: `/home/user/myproject/output/images/` must exist and contain at least one PNG file named `page_<N>.png` (1-based page numbering). Each PNG file must be a valid PNG (start with the standard PNG magic bytes `\x89PNG\r\n\x1a\n`).
+
+
+EOF
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Skipping image OS validation for hb__parse_with_image_extraction_py: docker inspect returned 1
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-zesvvaz > /logs/artifacts/run-id && echo parse_with_image_extraction_py__zeSvvAZ > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model anthropic/claude-4-6-sonnet --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Parse a PDF and Extract Per-Page Screenshots with LlamaParse
+
+## Background
+LlamaCloud's LlamaParse platform offers agentic, layout-aware document parsing through the `llama-cloud` Python SDK. In addition to producing clean markdown output, Parse can emit image assets (per-page screenshots, embedded images, or layout crops) that downstream pipelines need for grounding, citations, or visual review.
+
+Your job is to parse a PDF located at `/home/user/myproject/input.pdf` using the LlamaCloud Python SDK, retrieve both the markdown content and the per-page screenshot images, save them to disk, and write a small log file summarizing the result.
+
+## Requirements
+- Use the **`llama-cloud` Python SDK (v2.x)** to interact with the LlamaCloud Parse API. The SDK reads `LLAMA_CLOUD_API_KEY` from the environment.
+- Upload `/home/user/myproject/input.pdf` to LlamaCloud as a parse source file.
+- Submit a Parse job and request **per-page screenshot images** in the parse output options. Use a non-deprecated parse tier and ask for the markdown content as well.
+- After the job completes, save:
+  - The full parsed markdown text to `/home/user/myproject/output/markdown.md`.
+  - One PNG image file per page screenshot under `/home/user/myproject/output/images/`. Name each file `page_<N>.png` where `<N>` is the 1-based page number (e.g., `page_1.png`, `page_2.png`).
+- Write a log file to `/home/user/myproject/output/output.log` summarizing the parse run.
+
+## Implementation Hints
+- Install with `pip install "llama-cloud>=2.7"` (already preinstalled in the environment) and instantiate `LlamaCloud()` — it reads the API key from the env automatically.
+- Upload the PDF with `client.files.create(file=..., purpose="parse")`.
+- The synchronous helper `client.parsing.parse(...)` uploads-or-references the file, submits the job, polls until completion, and returns the parsed result. To request per-page screenshots, configure `output_options.images_to_save` and include the appropriate `expand` entries (markdown + image content metadata) so the SDK returns both outputs in one call.
+- The image content metadata returned by the SDK contains downloadable references for each screenshot; for each image you need to fetch the bytes and write them to disk under the `images/` directory.
+- The markdown response object exposes the parsed pages — concatenate the per-page markdown content (separated by blank lines) when writing `markdown.md`.
+
+## Acceptance Criteria
+- Project path: /home/user/myproject
+- Ensure the parse job is actually executed against LlamaCloud and the artifacts described below exist on disk.
+- Log file: /home/user/myproject/output/output.log
+- The log file must contain, on separate lines, the following entries (in any order):
+  - `Parse job ID: <job_id>` where `<job_id>` is the LlamaCloud parse job identifier (it starts with `pjb-`).
+  - `Markdown chars: <n>` where `<n>` is the integer character length of the markdown file written to disk.
+  - `Image count: <n>` where `<n>` is the integer number of screenshot files written under `/home/user/myproject/output/images/`.
+- Markdown output file: `/home/user/myproject/output/markdown.md` must exist and be non-empty (at least 50 characters of text).
+- Image directory: `/home/user/myproject/output/images/` must exist and contain at least one PNG file named `page_<N>.png` (1-based page numbering). Each PNG file must be a valid PNG (start with the standard PNG magic bytes `\x89PNG\r\n\x1a\n`).
+
+
+EOF
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+Skipping image OS validation for hb__auto_generate_extract_schema_py: docker inspect returned 1
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Running command: apt-get update && apt-get install -y curl ripgrep
+Skipping image OS validation for hb__auto_generate_extract_schema_py: docker inspect returned 1
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-trjyvlm > /logs/artifacts/run-id && echo auto_generate_extract_schema_py__TRJyvLM > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model google/gemini-3-flash --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Auto-Generate a LlamaExtract Schema and Run Extraction (Python)
+
+## Background
+LlamaCloud's **LlamaExtract** v2 SDK can synthesize a JSON Schema directly from a natural-language prompt via `client.extract.generate_schema(...)`. This is useful when you don't yet know the exact shape of the data you want to pull from a document. Once you have a generated schema, you can feed it straight into `client.extract.create(...)` to perform structured extraction. In this task you will combine both steps end-to-end against a real invoice PDF using the Python SDK (`llama-cloud>=2`).
+
+## Requirements
+- Auto-generate a JSON Schema for invoice data using `client.extract.generate_schema` and save it to disk.
+- Use that generated schema to run a structured extraction on the provided invoice PDF and save the extracted JSON to disk.
+- Write a log file recording the generated schema's top-level field names and the extraction job ID.
+- Append the current `run-id` (from `ZEALT_RUN_ID`) to the uploaded file's `external_file_id` so concurrent runs don't collide.
+
+## Implementation Hints
+- The Python SDK (`llama-cloud>=2`) is already installed system-wide; import `LlamaCloud` from `llama_cloud` and authenticate via the `LLAMA_CLOUD_API_KEY` environment variable.
+- Read `run-id` from `ZEALT_RUN_ID` and use it in `external_file_id` (e.g. `invoice-<run-id>.pdf`) when calling `client.files.create(file=..., purpose="extract", external_file_id=...)`.
+- Pass both `prompt=` and `file_id=` to `client.extract.generate_schema(...)` so the generator can look at the sample document, then use `generated.parameters.data_schema` as the `data_schema` in the extraction configuration.
+- Use a single-document configuration (`extraction_target="per_doc"`, `tier="agentic"`) and poll until the job reaches a terminal state (`COMPLETED`, `FAILED`, or `CANCELLED`).
+- The extracted record is available on the completed job's `extract_result` attribute.
+
+## Acceptance Criteria
+- Project path: /home/user/extract_task
+- Ensure the script is actually executed against the real LlamaCloud API; do not mock any SDK calls.
+- Input PDF: /home/user/extract_task/data/invoice.pdf (provided)
+- Generated schema file: /home/user/extract_task/schema.json
+  - Valid JSON.
+  - Must be a JSON Schema object (contains `"type": "object"` and a `"properties"` map).
+  - Must include at least 3 distinct properties whose key names collectively reference invoice-style concepts (invoice number/id, vendor/supplier/seller, and total/amount/summary/subtotal).
+- Extraction result file: /home/user/extract_task/result.json
+  - Valid JSON object with at least one populated field.
+- Log file: /home/user/extract_task/output.log
+  - Contains a line exactly matching `Schema fields: <comma-separated property names>` listing the top-level properties of the generated schema.
+  - Contains a line exactly matching `Job ID: <job_id>` where `<job_id>` is the LlamaCloud extract job id (begins with `ej-`, `exj-`, or `ext-`).
+  - Contains a line exactly matching `Status: COMPLETED`.
+- The uploaded file's `external_file_id` must end with `-${ZEALT_RUN_ID}.pdf`.
+
+
+EOF
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-qbxxmhy > /logs/artifacts/run-id && echo auto_generate_extract_schema_py__qBxXMHY > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model google/gemini-3.1-pro --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Auto-Generate a LlamaExtract Schema and Run Extraction (Python)
+
+## Background
+LlamaCloud's **LlamaExtract** v2 SDK can synthesize a JSON Schema directly from a natural-language prompt via `client.extract.generate_schema(...)`. This is useful when you don't yet know the exact shape of the data you want to pull from a document. Once you have a generated schema, you can feed it straight into `client.extract.create(...)` to perform structured extraction. In this task you will combine both steps end-to-end against a real invoice PDF using the Python SDK (`llama-cloud>=2`).
+
+## Requirements
+- Auto-generate a JSON Schema for invoice data using `client.extract.generate_schema` and save it to disk.
+- Use that generated schema to run a structured extraction on the provided invoice PDF and save the extracted JSON to disk.
+- Write a log file recording the generated schema's top-level field names and the extraction job ID.
+- Append the current `run-id` (from `ZEALT_RUN_ID`) to the uploaded file's `external_file_id` so concurrent runs don't collide.
+
+## Implementation Hints
+- The Python SDK (`llama-cloud>=2`) is already installed system-wide; import `LlamaCloud` from `llama_cloud` and authenticate via the `LLAMA_CLOUD_API_KEY` environment variable.
+- Read `run-id` from `ZEALT_RUN_ID` and use it in `external_file_id` (e.g. `invoice-<run-id>.pdf`) when calling `client.files.create(file=..., purpose="extract", external_file_id=...)`.
+- Pass both `prompt=` and `file_id=` to `client.extract.generate_schema(...)` so the generator can look at the sample document, then use `generated.parameters.data_schema` as the `data_schema` in the extraction configuration.
+- Use a single-document configuration (`extraction_target="per_doc"`, `tier="agentic"`) and poll until the job reaches a terminal state (`COMPLETED`, `FAILED`, or `CANCELLED`).
+- The extracted record is available on the completed job's `extract_result` attribute.
+
+## Acceptance Criteria
+- Project path: /home/user/extract_task
+- Ensure the script is actually executed against the real LlamaCloud API; do not mock any SDK calls.
+- Input PDF: /home/user/extract_task/data/invoice.pdf (provided)
+- Generated schema file: /home/user/extract_task/schema.json
+  - Valid JSON.
+  - Must be a JSON Schema object (contains `"type": "object"` and a `"properties"` map).
+  - Must include at least 3 distinct properties whose key names collectively reference invoice-style concepts (invoice number/id, vendor/supplier/seller, and total/amount/summary/subtotal).
+- Extraction result file: /home/user/extract_task/result.json
+  - Valid JSON object with at least one populated field.
+- Log file: /home/user/extract_task/output.log
+  - Contains a line exactly matching `Schema fields: <comma-separated property names>` listing the top-level properties of the generated schema.
+  - Contains a line exactly matching `Job ID: <job_id>` where `<job_id>` is the LlamaCloud extract job id (begins with `ej-`, `exj-`, or `ext-`).
+  - Contains a line exactly matching `Status: COMPLETED`.
+- The uploaded file's `external_file_id` must end with `-${ZEALT_RUN_ID}.pdf`.
+
+
+EOF
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Skipping image OS validation for hb__auto_generate_extract_schema_py: docker inspect returned 1
+Skipping image OS validation for hb__auto_generate_extract_schema_py: docker inspect returned 1
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Skipping image OS validation for hb__split_then_extract_resume_book_ts: docker inspect returned 1
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Running command: echo zr-es3nciv > /logs/artifacts/run-id && echo auto_generate_extract_schema_py__eS3Nciv > /logs/artifacts/trial_id
+Command outputs captured
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Running command: echo zr-suprtwp > /logs/artifacts/run-id && echo auto_generate_extract_schema_py__SUPRTwP > /logs/artifacts/trial_id
+Command outputs captured
+Running command: pochi --model anthropic/claude-4-6-sonnet --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Auto-Generate a LlamaExtract Schema and Run Extraction (Python)
+
+## Background
+LlamaCloud's **LlamaExtract** v2 SDK can synthesize a JSON Schema directly from a natural-language prompt via `client.extract.generate_schema(...)`. This is useful when you don't yet know the exact shape of the data you want to pull from a document. Once you have a generated schema, you can feed it straight into `client.extract.create(...)` to perform structured extraction. In this task you will combine both steps end-to-end against a real invoice PDF using the Python SDK (`llama-cloud>=2`).
+
+## Requirements
+- Auto-generate a JSON Schema for invoice data using `client.extract.generate_schema` and save it to disk.
+- Use that generated schema to run a structured extraction on the provided invoice PDF and save the extracted JSON to disk.
+- Write a log file recording the generated schema's top-level field names and the extraction job ID.
+- Append the current `run-id` (from `ZEALT_RUN_ID`) to the uploaded file's `external_file_id` so concurrent runs don't collide.
+
+## Implementation Hints
+- The Python SDK (`llama-cloud>=2`) is already installed system-wide; import `LlamaCloud` from `llama_cloud` and authenticate via the `LLAMA_CLOUD_API_KEY` environment variable.
+- Read `run-id` from `ZEALT_RUN_ID` and use it in `external_file_id` (e.g. `invoice-<run-id>.pdf`) when calling `client.files.create(file=..., purpose="extract", external_file_id=...)`.
+- Pass both `prompt=` and `file_id=` to `client.extract.generate_schema(...)` so the generator can look at the sample document, then use `generated.parameters.data_schema` as the `data_schema` in the extraction configuration.
+- Use a single-document configuration (`extraction_target="per_doc"`, `tier="agentic"`) and poll until the job reaches a terminal state (`COMPLETED`, `FAILED`, or `CANCELLED`).
+- The extracted record is available on the completed job's `extract_result` attribute.
+
+## Acceptance Criteria
+- Project path: /home/user/extract_task
+- Ensure the script is actually executed against the real LlamaCloud API; do not mock any SDK calls.
+- Input PDF: /home/user/extract_task/data/invoice.pdf (provided)
+- Generated schema file: /home/user/extract_task/schema.json
+  - Valid JSON.
+  - Must be a JSON Schema object (contains `"type": "object"` and a `"properties"` map).
+  - Must include at least 3 distinct properties whose key names collectively reference invoice-style concepts (invoice number/id, vendor/supplier/seller, and total/amount/summary/subtotal).
+- Extraction result file: /home/user/extract_task/result.json
+  - Valid JSON object with at least one populated field.
+- Log file: /home/user/extract_task/output.log
+  - Contains a line exactly matching `Schema fields: <comma-separated property names>` listing the top-level properties of the generated schema.
+  - Contains a line exactly matching `Job ID: <job_id>` where `<job_id>` is the LlamaCloud extract job id (begins with `ej-`, `exj-`, or `ext-`).
+  - Contains a line exactly matching `Status: COMPLETED`.
+- The uploaded file's `external_file_id` must end with `-${ZEALT_RUN_ID}.pdf`.
+
+
+EOF
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model openai/gpt-5.2-codex --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Auto-Generate a LlamaExtract Schema and Run Extraction (Python)
+
+## Background
+LlamaCloud's **LlamaExtract** v2 SDK can synthesize a JSON Schema directly from a natural-language prompt via `client.extract.generate_schema(...)`. This is useful when you don't yet know the exact shape of the data you want to pull from a document. Once you have a generated schema, you can feed it straight into `client.extract.create(...)` to perform structured extraction. In this task you will combine both steps end-to-end against a real invoice PDF using the Python SDK (`llama-cloud>=2`).
+
+## Requirements
+- Auto-generate a JSON Schema for invoice data using `client.extract.generate_schema` and save it to disk.
+- Use that generated schema to run a structured extraction on the provided invoice PDF and save the extracted JSON to disk.
+- Write a log file recording the generated schema's top-level field names and the extraction job ID.
+- Append the current `run-id` (from `ZEALT_RUN_ID`) to the uploaded file's `external_file_id` so concurrent runs don't collide.
+
+## Implementation Hints
+- The Python SDK (`llama-cloud>=2`) is already installed system-wide; import `LlamaCloud` from `llama_cloud` and authenticate via the `LLAMA_CLOUD_API_KEY` environment variable.
+- Read `run-id` from `ZEALT_RUN_ID` and use it in `external_file_id` (e.g. `invoice-<run-id>.pdf`) when calling `client.files.create(file=..., purpose="extract", external_file_id=...)`.
+- Pass both `prompt=` and `file_id=` to `client.extract.generate_schema(...)` so the generator can look at the sample document, then use `generated.parameters.data_schema` as the `data_schema` in the extraction configuration.
+- Use a single-document configuration (`extraction_target="per_doc"`, `tier="agentic"`) and poll until the job reaches a terminal state (`COMPLETED`, `FAILED`, or `CANCELLED`).
+- The extracted record is available on the completed job's `extract_result` attribute.
+
+## Acceptance Criteria
+- Project path: /home/user/extract_task
+- Ensure the script is actually executed against the real LlamaCloud API; do not mock any SDK calls.
+- Input PDF: /home/user/extract_task/data/invoice.pdf (provided)
+- Generated schema file: /home/user/extract_task/schema.json
+  - Valid JSON.
+  - Must be a JSON Schema object (contains `"type": "object"` and a `"properties"` map).
+  - Must include at least 3 distinct properties whose key names collectively reference invoice-style concepts (invoice number/id, vendor/supplier/seller, and total/amount/summary/subtotal).
+- Extraction result file: /home/user/extract_task/result.json
+  - Valid JSON object with at least one populated field.
+- Log file: /home/user/extract_task/output.log
+  - Contains a line exactly matching `Schema fields: <comma-separated property names>` listing the top-level properties of the generated schema.
+  - Contains a line exactly matching `Job ID: <job_id>` where `<job_id>` is the LlamaCloud extract job id (begins with `ej-`, `exj-`, or `ext-`).
+  - Contains a line exactly matching `Status: COMPLETED`.
+- The uploaded file's `external_file_id` must end with `-${ZEALT_RUN_ID}.pdf`.
+
+
+EOF
+Running command: apt-get update && apt-get install -y curl ripgrep
+Skipping image OS validation for hb__split_then_extract_resume_book_ts: docker inspect returned 1
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-kf6jzzb > /logs/artifacts/run-id && echo split_then_extract_resume_book_t__Kf6Jzzb > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model google/gemini-3-flash --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Split-then-Extract a Concatenated Resume Book (TypeScript)
+
+## Background
+A recruiting team has handed you a single concatenated PDF ("a resume book") that bundles a cover page, multiple individual candidate resumes, and one program-curriculum page. You need to ingest the whole document, identify which pages belong to which type of content, and pull a structured profile out of each candidate's resume — *without* re-uploading or re-parsing the PDF for every candidate. The official LlamaCloud pattern for this is the **Resume Book Processing Agent**: upload once → `beta.split.split(...)` to label page ranges by category → `extract.create(...)` per resume segment, scoping the extraction with `target_pages` so each Extract job only sees one candidate's pages.
+
+You will build a TypeScript pipeline against the v2 LlamaCloud Node SDK (`@llamaindex/llama-cloud`) that automates this workflow end-to-end against the real LlamaCloud API. A starter project already exists at `/home/user/myproject` with the input PDF at `./inputs/resume_book.pdf`. Your job is to implement the script (single TS entry-point) and run it to produce the required artifacts.
+
+## Requirements
+- Use the LlamaCloud Node SDK `@llamaindex/llama-cloud` (v2.x). Define the per-resume schema with **Zod** and convert it to JSON Schema (e.g., `z.toJSONSchema`) when handing it to Extract.
+- **Upload the PDF exactly once**, with the correct `purpose`. Tag the uploaded source file with an `external_file_id` so concurrent test runs do not collide. Build the tag as `${ZEALT_RUN_ID}-resume-book` (e.g., `zr-abc123-resume-book`).
+- **Split** the document with `client.beta.split.split(...)` using **three** categories (with natural-language descriptions): `resume`, `curriculum`, and `cover_page`. The split must run against the uploaded `file_id` (`document_input: { type: 'file_id', value: <file_id> }`).
+- **For each segment with `category === 'resume'`**, run a **separate Extract job** that:
+  - reuses the same uploaded `file_id` as `file_input` (do NOT re-upload),
+  - scopes the extraction to exactly that segment's pages via the `target_pages` configuration field (string form, e.g., `"3"` or `"3-4"`, derived from `min(pages)`/`max(pages)`),
+  - uses `extraction_target: 'per_doc'`, `tier: 'agentic'`, and a Zod-defined `Resume` schema with at least the fields `name` (string), `email` (string|null), and `skills` (string[]).
+  - Extract jobs for different resume segments **must run concurrently** (e.g., via `Promise.all`). Poll each job until its `status` is one of `COMPLETED` / `FAILED` / `CANCELLED`.
+- The script must:
+  - persist the raw split result to `./outputs/split.json`,
+  - persist the aggregated extraction result to `./outputs/resumes.json` (one entry per `resume` segment, in segment order),
+  - emit a human-readable summary log to `./output.log`,
+  - exit with code `0` only if every resume Extract job finishes `COMPLETED`.
+- Authenticate using the `LLAMA_CLOUD_API_KEY` environment variable (the SDK reads it automatically). Read the run-id from `ZEALT_RUN_ID`.
+
+## Implementation Hints
+- Install `@llamaindex/llama-cloud`, `zod`, and `tsx` (so you can run TypeScript directly without a build step). Run the script with `npx tsx run.ts` (or similar). Node 20+ is provided in the environment.
+- `client.files.create({ file: fs.createReadStream(...), purpose: 'extract', external_file_id: <tag> })` returns a file object whose `.id` is what you pass to Split and Extract.
+- The Split helper `client.beta.split.split({...})` is asynchronous on the server but returns a fully-resolved job on the client; inspect `response.result.segments[i].{category,pages,confidence_category}`. `pages` is a 1-based list of integers.
+- For each `resume` segment, build `target_pages` as a string range like `"${min}-${max}"` (or `"<page>"` if the segment is one page). Pass it inside the `configuration` object to `client.extract.create`.
+- After polling, the Extract job exposes `extract_result` (the data matching your schema) and `status`.
+- The PDF has been preprocessed and contains a deterministic mix of one cover page, several candidate resumes (one or two pages each), and one curriculum page.
+- Make sure the `./outputs/` directory exists before writing JSON files.
+
+## Acceptance Criteria
+- Project path: `/home/user/myproject`
+- Ensure the script is executed against the real LlamaCloud Split + Extract APIs and that all artifacts exist on disk after the run.
+- Log file: `/home/user/myproject/output.log` containing at minimum:
+  - one line matching `^File uploaded: [A-Za-z0-9_-]+$`
+  - one line matching `^Split segments: \d+$` where the integer is the total segment count
+  - one line matching `^Resume segments: \d+$` where the integer is `>= 2`
+  - one line matching `^Resumes extracted: \d+$` whose value equals the previous `Resume segments` count
+  - one line of the form `Resume <i>: pages=<min>-<max> | name=<NAME>` (or `pages=<page>` when the segment is a single page) for **each** extracted resume, where `<i>` is 1-based and `<NAME>` is the resume holder's full name (non-empty)
+- `/home/user/myproject/outputs/split.json` must exist and be valid JSON with a top-level `segments` array. Each element must contain `category` (string), `pages` (int[], 1-based, non-empty), and `confidence_category` (string).
+- `/home/user/myproject/outputs/resumes.json` must exist and be valid JSON with a top-level `resumes` array. Each element must contain at least:
+  - `pages` (int[], 1-based)
+  - `data.name` (non-empty string)
+  - `data.skills` (non-empty array of strings)
+  - `data.email` (string or null)
+  - The number of elements must equal the number of `resume` segments returned by Split.
+  - Element order must match the segment order.
+- The uploaded source PDF must be discoverable in LlamaCloud with `external_file_id === "${ZEALT_RUN_ID}-resume-book"`.
+- The Extract jobs created during the run must be retrievable via the SDK and their status must be `COMPLETED`.
+
+
+EOF
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-7sm8udt > /logs/artifacts/run-id && echo split_then_extract_resume_book_t__7sM8UDT > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model google/gemini-3.1-pro --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Split-then-Extract a Concatenated Resume Book (TypeScript)
+
+## Background
+A recruiting team has handed you a single concatenated PDF ("a resume book") that bundles a cover page, multiple individual candidate resumes, and one program-curriculum page. You need to ingest the whole document, identify which pages belong to which type of content, and pull a structured profile out of each candidate's resume — *without* re-uploading or re-parsing the PDF for every candidate. The official LlamaCloud pattern for this is the **Resume Book Processing Agent**: upload once → `beta.split.split(...)` to label page ranges by category → `extract.create(...)` per resume segment, scoping the extraction with `target_pages` so each Extract job only sees one candidate's pages.
+
+You will build a TypeScript pipeline against the v2 LlamaCloud Node SDK (`@llamaindex/llama-cloud`) that automates this workflow end-to-end against the real LlamaCloud API. A starter project already exists at `/home/user/myproject` with the input PDF at `./inputs/resume_book.pdf`. Your job is to implement the script (single TS entry-point) and run it to produce the required artifacts.
+
+## Requirements
+- Use the LlamaCloud Node SDK `@llamaindex/llama-cloud` (v2.x). Define the per-resume schema with **Zod** and convert it to JSON Schema (e.g., `z.toJSONSchema`) when handing it to Extract.
+- **Upload the PDF exactly once**, with the correct `purpose`. Tag the uploaded source file with an `external_file_id` so concurrent test runs do not collide. Build the tag as `${ZEALT_RUN_ID}-resume-book` (e.g., `zr-abc123-resume-book`).
+- **Split** the document with `client.beta.split.split(...)` using **three** categories (with natural-language descriptions): `resume`, `curriculum`, and `cover_page`. The split must run against the uploaded `file_id` (`document_input: { type: 'file_id', value: <file_id> }`).
+- **For each segment with `category === 'resume'`**, run a **separate Extract job** that:
+  - reuses the same uploaded `file_id` as `file_input` (do NOT re-upload),
+  - scopes the extraction to exactly that segment's pages via the `target_pages` configuration field (string form, e.g., `"3"` or `"3-4"`, derived from `min(pages)`/`max(pages)`),
+  - uses `extraction_target: 'per_doc'`, `tier: 'agentic'`, and a Zod-defined `Resume` schema with at least the fields `name` (string), `email` (string|null), and `skills` (string[]).
+  - Extract jobs for different resume segments **must run concurrently** (e.g., via `Promise.all`). Poll each job until its `status` is one of `COMPLETED` / `FAILED` / `CANCELLED`.
+- The script must:
+  - persist the raw split result to `./outputs/split.json`,
+  - persist the aggregated extraction result to `./outputs/resumes.json` (one entry per `resume` segment, in segment order),
+  - emit a human-readable summary log to `./output.log`,
+  - exit with code `0` only if every resume Extract job finishes `COMPLETED`.
+- Authenticate using the `LLAMA_CLOUD_API_KEY` environment variable (the SDK reads it automatically). Read the run-id from `ZEALT_RUN_ID`.
+
+## Implementation Hints
+- Install `@llamaindex/llama-cloud`, `zod`, and `tsx` (so you can run TypeScript directly without a build step). Run the script with `npx tsx run.ts` (or similar). Node 20+ is provided in the environment.
+- `client.files.create({ file: fs.createReadStream(...), purpose: 'extract', external_file_id: <tag> })` returns a file object whose `.id` is what you pass to Split and Extract.
+- The Split helper `client.beta.split.split({...})` is asynchronous on the server but returns a fully-resolved job on the client; inspect `response.result.segments[i].{category,pages,confidence_category}`. `pages` is a 1-based list of integers.
+- For each `resume` segment, build `target_pages` as a string range like `"${min}-${max}"` (or `"<page>"` if the segment is one page). Pass it inside the `configuration` object to `client.extract.create`.
+- After polling, the Extract job exposes `extract_result` (the data matching your schema) and `status`.
+- The PDF has been preprocessed and contains a deterministic mix of one cover page, several candidate resumes (one or two pages each), and one curriculum page.
+- Make sure the `./outputs/` directory exists before writing JSON files.
+
+## Acceptance Criteria
+- Project path: `/home/user/myproject`
+- Ensure the script is executed against the real LlamaCloud Split + Extract APIs and that all artifacts exist on disk after the run.
+- Log file: `/home/user/myproject/output.log` containing at minimum:
+  - one line matching `^File uploaded: [A-Za-z0-9_-]+$`
+  - one line matching `^Split segments: \d+$` where the integer is the total segment count
+  - one line matching `^Resume segments: \d+$` where the integer is `>= 2`
+  - one line matching `^Resumes extracted: \d+$` whose value equals the previous `Resume segments` count
+  - one line of the form `Resume <i>: pages=<min>-<max> | name=<NAME>` (or `pages=<page>` when the segment is a single page) for **each** extracted resume, where `<i>` is 1-based and `<NAME>` is the resume holder's full name (non-empty)
+- `/home/user/myproject/outputs/split.json` must exist and be valid JSON with a top-level `segments` array. Each element must contain `category` (string), `pages` (int[], 1-based, non-empty), and `confidence_category` (string).
+- `/home/user/myproject/outputs/resumes.json` must exist and be valid JSON with a top-level `resumes` array. Each element must contain at least:
+  - `pages` (int[], 1-based)
+  - `data.name` (non-empty string)
+  - `data.skills` (non-empty array of strings)
+  - `data.email` (string or null)
+  - The number of elements must equal the number of `resume` segments returned by Split.
+  - Element order must match the segment order.
+- The uploaded source PDF must be discoverable in LlamaCloud with `external_file_id === "${ZEALT_RUN_ID}-resume-book"`.
+- The Extract jobs created during the run must be retrievable via the SDK and their status must be `COMPLETED`.
+
+
+EOF
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Skipping image OS validation for hb__split_then_extract_resume_book_ts: docker inspect returned 1
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-crrfh6c > /logs/artifacts/run-id && echo split_then_extract_resume_book_t__cRrFh6c > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model openai/gpt-5.2-codex --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Split-then-Extract a Concatenated Resume Book (TypeScript)
+
+## Background
+A recruiting team has handed you a single concatenated PDF ("a resume book") that bundles a cover page, multiple individual candidate resumes, and one program-curriculum page. You need to ingest the whole document, identify which pages belong to which type of content, and pull a structured profile out of each candidate's resume — *without* re-uploading or re-parsing the PDF for every candidate. The official LlamaCloud pattern for this is the **Resume Book Processing Agent**: upload once → `beta.split.split(...)` to label page ranges by category → `extract.create(...)` per resume segment, scoping the extraction with `target_pages` so each Extract job only sees one candidate's pages.
+
+You will build a TypeScript pipeline against the v2 LlamaCloud Node SDK (`@llamaindex/llama-cloud`) that automates this workflow end-to-end against the real LlamaCloud API. A starter project already exists at `/home/user/myproject` with the input PDF at `./inputs/resume_book.pdf`. Your job is to implement the script (single TS entry-point) and run it to produce the required artifacts.
+
+## Requirements
+- Use the LlamaCloud Node SDK `@llamaindex/llama-cloud` (v2.x). Define the per-resume schema with **Zod** and convert it to JSON Schema (e.g., `z.toJSONSchema`) when handing it to Extract.
+- **Upload the PDF exactly once**, with the correct `purpose`. Tag the uploaded source file with an `external_file_id` so concurrent test runs do not collide. Build the tag as `${ZEALT_RUN_ID}-resume-book` (e.g., `zr-abc123-resume-book`).
+- **Split** the document with `client.beta.split.split(...)` using **three** categories (with natural-language descriptions): `resume`, `curriculum`, and `cover_page`. The split must run against the uploaded `file_id` (`document_input: { type: 'file_id', value: <file_id> }`).
+- **For each segment with `category === 'resume'`**, run a **separate Extract job** that:
+  - reuses the same uploaded `file_id` as `file_input` (do NOT re-upload),
+  - scopes the extraction to exactly that segment's pages via the `target_pages` configuration field (string form, e.g., `"3"` or `"3-4"`, derived from `min(pages)`/`max(pages)`),
+  - uses `extraction_target: 'per_doc'`, `tier: 'agentic'`, and a Zod-defined `Resume` schema with at least the fields `name` (string), `email` (string|null), and `skills` (string[]).
+  - Extract jobs for different resume segments **must run concurrently** (e.g., via `Promise.all`). Poll each job until its `status` is one of `COMPLETED` / `FAILED` / `CANCELLED`.
+- The script must:
+  - persist the raw split result to `./outputs/split.json`,
+  - persist the aggregated extraction result to `./outputs/resumes.json` (one entry per `resume` segment, in segment order),
+  - emit a human-readable summary log to `./output.log`,
+  - exit with code `0` only if every resume Extract job finishes `COMPLETED`.
+- Authenticate using the `LLAMA_CLOUD_API_KEY` environment variable (the SDK reads it automatically). Read the run-id from `ZEALT_RUN_ID`.
+
+## Implementation Hints
+- Install `@llamaindex/llama-cloud`, `zod`, and `tsx` (so you can run TypeScript directly without a build step). Run the script with `npx tsx run.ts` (or similar). Node 20+ is provided in the environment.
+- `client.files.create({ file: fs.createReadStream(...), purpose: 'extract', external_file_id: <tag> })` returns a file object whose `.id` is what you pass to Split and Extract.
+- The Split helper `client.beta.split.split({...})` is asynchronous on the server but returns a fully-resolved job on the client; inspect `response.result.segments[i].{category,pages,confidence_category}`. `pages` is a 1-based list of integers.
+- For each `resume` segment, build `target_pages` as a string range like `"${min}-${max}"` (or `"<page>"` if the segment is one page). Pass it inside the `configuration` object to `client.extract.create`.
+- After polling, the Extract job exposes `extract_result` (the data matching your schema) and `status`.
+- The PDF has been preprocessed and contains a deterministic mix of one cover page, several candidate resumes (one or two pages each), and one curriculum page.
+- Make sure the `./outputs/` directory exists before writing JSON files.
+
+## Acceptance Criteria
+- Project path: `/home/user/myproject`
+- Ensure the script is executed against the real LlamaCloud Split + Extract APIs and that all artifacts exist on disk after the run.
+- Log file: `/home/user/myproject/output.log` containing at minimum:
+  - one line matching `^File uploaded: [A-Za-z0-9_-]+$`
+  - one line matching `^Split segments: \d+$` where the integer is the total segment count
+  - one line matching `^Resume segments: \d+$` where the integer is `>= 2`
+  - one line matching `^Resumes extracted: \d+$` whose value equals the previous `Resume segments` count
+  - one line of the form `Resume <i>: pages=<min>-<max> | name=<NAME>` (or `pages=<page>` when the segment is a single page) for **each** extracted resume, where `<i>` is 1-based and `<NAME>` is the resume holder's full name (non-empty)
+- `/home/user/myproject/outputs/split.json` must exist and be valid JSON with a top-level `segments` array. Each element must contain `category` (string), `pages` (int[], 1-based, non-empty), and `confidence_category` (string).
+- `/home/user/myproject/outputs/resumes.json` must exist and be valid JSON with a top-level `resumes` array. Each element must contain at least:
+  - `pages` (int[], 1-based)
+  - `data.name` (non-empty string)
+  - `data.skills` (non-empty array of strings)
+  - `data.email` (string or null)
+  - The number of elements must equal the number of `resume` segments returned by Split.
+  - Element order must match the segment order.
+- The uploaded source PDF must be discoverable in LlamaCloud with `external_file_id === "${ZEALT_RUN_ID}-resume-book"`.
+- The Extract jobs created during the run must be retrievable via the SDK and their status must be `COMPLETED`.
+
+
+EOF
+Skipping image OS validation for hb__split_then_extract_resume_book_ts: docker inspect returned 1
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.12 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-wgtm9sm > /logs/artifacts/run-id && echo split_then_extract_resume_book_t__wgTm9Sm > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model anthropic/claude-4-6-sonnet --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Split-then-Extract a Concatenated Resume Book (TypeScript)
+
+## Background
+A recruiting team has handed you a single concatenated PDF ("a resume book") that bundles a cover page, multiple individual candidate resumes, and one program-curriculum page. You need to ingest the whole document, identify which pages belong to which type of content, and pull a structured profile out of each candidate's resume — *without* re-uploading or re-parsing the PDF for every candidate. The official LlamaCloud pattern for this is the **Resume Book Processing Agent**: upload once → `beta.split.split(...)` to label page ranges by category → `extract.create(...)` per resume segment, scoping the extraction with `target_pages` so each Extract job only sees one candidate's pages.
+
+You will build a TypeScript pipeline against the v2 LlamaCloud Node SDK (`@llamaindex/llama-cloud`) that automates this workflow end-to-end against the real LlamaCloud API. A starter project already exists at `/home/user/myproject` with the input PDF at `./inputs/resume_book.pdf`. Your job is to implement the script (single TS entry-point) and run it to produce the required artifacts.
+
+## Requirements
+- Use the LlamaCloud Node SDK `@llamaindex/llama-cloud` (v2.x). Define the per-resume schema with **Zod** and convert it to JSON Schema (e.g., `z.toJSONSchema`) when handing it to Extract.
+- **Upload the PDF exactly once**, with the correct `purpose`. Tag the uploaded source file with an `external_file_id` so concurrent test runs do not collide. Build the tag as `${ZEALT_RUN_ID}-resume-book` (e.g., `zr-abc123-resume-book`).
+- **Split** the document with `client.beta.split.split(...)` using **three** categories (with natural-language descriptions): `resume`, `curriculum`, and `cover_page`. The split must run against the uploaded `file_id` (`document_input: { type: 'file_id', value: <file_id> }`).
+- **For each segment with `category === 'resume'`**, run a **separate Extract job** that:
+  - reuses the same uploaded `file_id` as `file_input` (do NOT re-upload),
+  - scopes the extraction to exactly that segment's pages via the `target_pages` configuration field (string form, e.g., `"3"` or `"3-4"`, derived from `min(pages)`/`max(pages)`),
+  - uses `extraction_target: 'per_doc'`, `tier: 'agentic'`, and a Zod-defined `Resume` schema with at least the fields `name` (string), `email` (string|null), and `skills` (string[]).
+  - Extract jobs for different resume segments **must run concurrently** (e.g., via `Promise.all`). Poll each job until its `status` is one of `COMPLETED` / `FAILED` / `CANCELLED`.
+- The script must:
+  - persist the raw split result to `./outputs/split.json`,
+  - persist the aggregated extraction result to `./outputs/resumes.json` (one entry per `resume` segment, in segment order),
+  - emit a human-readable summary log to `./output.log`,
+  - exit with code `0` only if every resume Extract job finishes `COMPLETED`.
+- Authenticate using the `LLAMA_CLOUD_API_KEY` environment variable (the SDK reads it automatically). Read the run-id from `ZEALT_RUN_ID`.
+
+## Implementation Hints
+- Install `@llamaindex/llama-cloud`, `zod`, and `tsx` (so you can run TypeScript directly without a build step). Run the script with `npx tsx run.ts` (or similar). Node 20+ is provided in the environment.
+- `client.files.create({ file: fs.createReadStream(...), purpose: 'extract', external_file_id: <tag> })` returns a file object whose `.id` is what you pass to Split and Extract.
+- The Split helper `client.beta.split.split({...})` is asynchronous on the server but returns a fully-resolved job on the client; inspect `response.result.segments[i].{category,pages,confidence_category}`. `pages` is a 1-based list of integers.
+- For each `resume` segment, build `target_pages` as a string range like `"${min}-${max}"` (or `"<page>"` if the segment is one page). Pass it inside the `configuration` object to `client.extract.create`.
+- After polling, the Extract job exposes `extract_result` (the data matching your schema) and `status`.
+- The PDF has been preprocessed and contains a deterministic mix of one cover page, several candidate resumes (one or two pages each), and one curriculum page.
+- Make sure the `./outputs/` directory exists before writing JSON files.
+
+## Acceptance Criteria
+- Project path: `/home/user/myproject`
+- Ensure the script is executed against the real LlamaCloud Split + Extract APIs and that all artifacts exist on disk after the run.
+- Log file: `/home/user/myproject/output.log` containing at minimum:
+  - one line matching `^File uploaded: [A-Za-z0-9_-]+$`
+  - one line matching `^Split segments: \d+$` where the integer is the total segment count
+  - one line matching `^Resume segments: \d+$` where the integer is `>= 2`
+  - one line matching `^Resumes extracted: \d+$` whose value equals the previous `Resume segments` count
+  - one line of the form `Resume <i>: pages=<min>-<max> | name=<NAME>` (or `pages=<page>` when the segment is a single page) for **each** extracted resume, where `<i>` is 1-based and `<NAME>` is the resume holder's full name (non-empty)
+- `/home/user/myproject/outputs/split.json` must exist and be valid JSON with a top-level `segments` array. Each element must contain `category` (string), `pages` (int[], 1-based, non-empty), and `confidence_category` (string).
+- `/home/user/myproject/outputs/resumes.json` must exist and be valid JSON with a top-level `resumes` array. Each element must contain at least:
+  - `pages` (int[], 1-based)
+  - `data.name` (non-empty string)
+  - `data.skills` (non-empty array of strings)
+  - `data.email` (string or null)
+  - The number of elements must equal the number of `resume` segments returned by Split.
+  - Element order must match the segment order.
+- The uploaded source PDF must be discoverable in LlamaCloud with `external_file_id === "${ZEALT_RUN_ID}-resume-book"`.
+- The Extract jobs created during the run must be retrievable via the SDK and their status must be `COMPLETED`.
+
+
+EOF
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.

@@ -1,0 +1,90 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.4.0
+rootdir: /tests
+plugins: json-ctrf-0.5.0
+collected 1 item
+
+tests/test_final_state.py F                                              [100%]
+
+=================================== FAILURES ===================================
+____________________________ test_webhook_and_query ____________________________
+
+    def test_webhook_and_query():
+        run_id = os.environ.get("ZEALT_RUN_ID")
+        assert run_id, "ZEALT_RUN_ID environment variable not set"
+    
+        convex_url = os.environ.get("CONVEX_URL")
+        assert convex_url, "CONVEX_URL environment variable not set"
+    
+        # HTTP actions are exposed on the .site domain instead of .cloud
+        site_url = convex_url.replace(".cloud", ".site")
+        webhook_url = f"{site_url}/webhook"
+    
+        payload = {
+            "payload": "test_payload_data",
+            "runId": run_id
+        }
+    
+        resp = requests.post(webhook_url, json=payload)
+        assert resp.status_code in [200, 201], f"Webhook POST failed with status {resp.status_code}: {resp.text}"
+    
+        # Create Node.js script to query the data
+        script_content = """
+    const { ConvexHttpClient } = require("convex/browser");
+    const client = new ConvexHttpClient(process.env.CONVEX_URL);
+    
+    async function main() {
+      const result = await client.query("webhooks:get_webhook", { runId: process.env.ZEALT_RUN_ID });
+      if (!Array.isArray(result)) {
+        console.error("Result is not an array:", result);
+        process.exit(1);
+      }
+      const found = result.some(r => r.payload === "test_payload_data");
+      if (!found) {
+        console.error("Payload not found in result:", result);
+        process.exit(1);
+      }
+      console.log("Success");
+    }
+    main().catch(err => {
+      console.error(err);
+      process.exit(1);
+    });
+    """
+        script_path = "/tmp/verify.js"
+        with open(script_path, "w") as f:
+            f.write(script_content)
+    
+        # Run the verification script in the project directory where `convex` should be installed
+        result = subprocess.run(["node", script_path], capture_output=True, text=True, cwd=PROJECT_DIR)
+>       assert result.returncode == 0, f"Verification script failed:\\nSTDOUT: {result.stdout}\\nSTDERR: {result.stderr}"
+E       AssertionError: Verification script failed:\nSTDOUT: \nSTDERR: node:internal/modules/cjs/loader:1479
+E           throw err;
+E           ^
+E         
+E         Error: Cannot find module 'convex/browser'
+E         Require stack:
+E         - /tmp/verify.js
+E             at Module._resolveFilename (node:internal/modules/cjs/loader:1476:15)
+E             at wrapResolveFilename (node:internal/modules/cjs/loader:1049:27)
+E             at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1073:10)
+E             at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1094:12)
+E             at Module._load (node:internal/modules/cjs/loader:1262:25)
+E             at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+E             at Module.require (node:internal/modules/cjs/loader:1576:12)
+E             at require (node:internal/modules/helpers:153:16)
+E             at Object.<anonymous> (/tmp/verify.js:2:30)
+E             at Module._compile (node:internal/modules/cjs/loader:1830:14) {
+E           code: 'MODULE_NOT_FOUND',
+E           requireStack: [ '/tmp/verify.js' ]
+E         }
+E         
+E         Node.js v24.15.0
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['node', '/tmp/verify.js'], returncode=1, stdout='', stderr="node:internal/modules/cjs/loader:14...les/cjs/loader:1830:14) {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: [ '/tmp/verify.js' ]\n}\n\nNode.js v24.15.0\n").returncode
+
+tests/test_final_state.py:56: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_final_state.py::test_webhook_and_query - AssertionError: Ve...
+============================== 1 failed in 0.79s ===============================

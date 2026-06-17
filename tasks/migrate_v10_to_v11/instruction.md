@@ -1,0 +1,15 @@
+# Migrate tRPC v10 to v11
+
+## Background
+We have a Next.js application using tRPC v10 at `/home/user/app`. We need to upgrade it to tRPC v11. The upgrade introduces breaking changes, specifically regarding how transformers are configured in the client and how the request context accesses raw input.
+
+## Requirements
+- Upgrade `@trpc/server`, `@trpc/client`, `@trpc/react-query`, and `@trpc/next` to `@next` (v11) in `package.json`. Also upgrade `@tanstack/react-query` to `latest` (v5).
+- Update the client configuration in `src/utils/trpc.ts` to move the `transformer` from the root configuration object into the `links` array (e.g., inside `httpBatchLink`).
+- Update the server context creation in `src/server/context.ts` to handle the new `TRPCRequestInfo` constraints. `createContext` no longer has immediate access to the procedure input. You must use `info.calls[0].getRawInput()` to access raw request data before the procedure executes. Return `rawInput` from the context.
+- Ensure the application builds successfully after the migration.
+
+## Constraints
+- Project path: `/home/user/app`
+- Start command: `npm run dev`
+- Port: 3000

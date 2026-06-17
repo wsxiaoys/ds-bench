@@ -1,0 +1,14 @@
+const { match, type } = require('arktype');
+
+const Length = type({ kind: "'length'", meters: "number" });
+const Mass = type({ kind: "'mass'", kilograms: "number" });
+const Temperature = type({ kind: "'temperature'", celsius: "number" });
+
+const convert = match({
+    [Length]: (data) => `${(data.meters * 3.28).toFixed(2)} feet`,
+    [Mass]: (data) => `${(data.kilograms * 2.2).toFixed(2)} pounds`,
+    [Temperature]: (data) => `${(data.celsius * 9/5 + 32)} Fahrenheit`,
+    default: "assert"
+});
+
+console.log(convert({ kind: "length", meters: 1 }));

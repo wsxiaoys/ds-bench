@@ -1,0 +1,35 @@
+# Sequelize Paranoid Models: Soft Delete and Restore
+
+## Background
+Sequelize provides a `paranoid` option for models, which enables soft deletes. Instead of permanently removing a record from the database, a `deletedAt` timestamp is set. You need to implement a CLI script that manages users with soft delete functionality.
+
+## Requirements
+- Set up a Sequelize connection using SQLite.
+- Define a `User` model with the `paranoid: true` option.
+- The `User` model should have a `username` string field.
+- Implement a CLI script `run.js` that performs the following actions based on the provided arguments:
+  - `create <username>`: Creates a new user.
+  - `delete <id>`: Soft deletes the user with the given ID.
+  - `restore <id>`: Restores the soft-deleted user with the given ID.
+  - `list`: Lists all active (non-deleted) users.
+  - `list-all`: Lists all users, including those that have been soft-deleted.
+- Ensure the database tables are synced before executing the commands.
+
+## Implementation Hints
+- Initialize Sequelize with the SQLite dialect pointing to a local file (e.g., `./database.sqlite`).
+- Use `paranoid: true` in the model options to enable soft deletes.
+- Use `Model.destroy()` to soft delete a record.
+- Use `Model.restore()` to recover a soft-deleted record.
+- Use the `paranoid: false` option in `findAll()` to include soft-deleted records in the results.
+- Use `process.argv` to parse the CLI arguments.
+
+## Acceptance Criteria
+- Project path: /home/user/project
+- Command: `node run.js <action> [args]`
+- Actions and expected output formats:
+  - `create <username>`: Prints `Created user <username> with ID <id>` to stdout.
+  - `delete <id>`: Prints `Soft deleted user <id>` to stdout.
+  - `restore <id>`: Prints `Restored user <id>` to stdout.
+  - `list`: Prints a JSON array of active users to stdout (e.g., `[{"id": 1, "username": "alice", "deletedAt": null}]`).
+  - `list-all`: Prints a JSON array of all users to stdout, including soft-deleted ones (where `deletedAt` is not null).
+

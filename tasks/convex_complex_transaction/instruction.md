@@ -1,0 +1,33 @@
+# Convex Bank Transfer Transaction
+
+## Background
+Convex mutations provide deterministic, transactional guarantees. In this task, you will implement a bank transfer mutation that ensures atomicity across multiple table updates, handling edge cases like insufficient funds.
+
+## Requirements
+- Initialize a Convex project in `/home/user/myproject`.
+- Define a schema with an `accounts` table containing `name` (string) and `balance` (number).
+- Create a mutation `createAccount` in `convex/accounts.ts` that takes `name` and `initialBalance` and creates an account.
+- Create a mutation `transfer` in `convex/accounts.ts` that takes `fromName`, `toName`, and `amount` (all strings/numbers).
+- The `transfer` mutation must atomically deduct `amount` from the `fromName` account and add it to the `toName` account.
+- The `transfer` mutation must throw an error if the `fromName` account has insufficient balance.
+- The `transfer` mutation must throw an error if the `amount` is negative or zero.
+- Create a query `getBalance` in `convex/accounts.ts` that takes `name` and returns the account's balance.
+- Deploy the Convex functions using `npx convex deploy` and save the output to a log file.
+
+## Implementation Hints
+- Use `ctx.db.query` with an index or filter to find accounts by `name`.
+- Use `ctx.db.patch` to update the balances.
+- Remember that mutations in Convex are automatically transactional; if you throw an error, all database changes in that mutation are rolled back.
+- You will need to configure the project and deploy it using `npx convex deploy` using the provided `CONVEX_DEPLOY_KEY`.
+
+## Acceptance Criteria
+- Project path: /home/user/myproject
+- Ensure the Convex backend is deployed.
+- Log file: /home/user/myproject/deploy.log (redirect the output of `npx convex deploy` to this file).
+- The `accounts` table must exist and store `name` and `balance`.
+- The `createAccount` mutation must accept `{ name: string, initialBalance: number }`.
+- The `transfer` mutation must accept `{ fromName: string, toName: string, amount: number }`.
+- The `getBalance` query must accept `{ name: string }` and return the balance as a number.
+- The `transfer` mutation must fail and rollback if the `fromName` account has insufficient funds, or if `amount` <= 0.
+- To avoid collisions, account names used during testing will be suffixed with the `run-id` from the `ZEALT_RUN_ID` environment variable.
+

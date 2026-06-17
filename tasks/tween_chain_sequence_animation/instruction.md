@@ -1,0 +1,36 @@
+# tween_chain_sequence_animation
+
+Build a complex Godot 4 Tween-driven animation system in `/home/user/godot_project`.
+
+## Required structure
+- Project path: `/home/user/godot_project`, runnable under `godot --headless`.
+- Scene `res://scenes/Animator.tscn` with this exact node tree (names mandatory):
+  - `Animator` (`Node2D`)
+    - `Target` (`Node2D`)
+    - `TweenController` (`Node`, script attached)
+- Controller script: `res://scripts/TweenController.gd`.
+
+## TweenController public API
+- Signals (each emitted exactly once over the full run):
+  - `step_a_complete()` — when the first sequential step finishes.
+  - `step_b_complete()` — when the first parallel block finishes.
+  - `step_c_complete()` — when the rotation step finishes.
+  - `animation_complete()` — when the full sequence finishes.
+- Methods:
+  - `play_sequence() -> Tween` — builds and returns the active `Tween` driving the animation on `Target`. The verifier will `pause()` the returned tween and drive it with `custom_step(0.01)`.
+  - `is_running() -> bool` — `false` only after `animation_complete` has fired.
+
+## Initial `Target` state (when scene is freshly instantiated)
+`position = (0, 0)`, `rotation = 0`, `scale = (1, 1)`, `modulate = (1, 1, 1, 1)`.
+
+## Expected animation timeline (deterministic via `custom_step(0.01)`)
+| t (s) | Target state                                                                      | Cumulative signal counts |
+|-------|-----------------------------------------------------------------------------------|--------------------------|
+| 0.50  | `position ≈ (100, 50)` (step 1 must use `TRANS_LINEAR`)                           | a=0 b=0 c=0 done=0       |
+| 1.00  | `position = (200, 100)`                                                           | a=1 b=0 c=0 done=0       |
+| 1.50  | `scale ≈ (1.5, 1.5)`, `modulate.a ≈ 0.75` (step 2 runs in parallel, `TRANS_LINEAR`)| a=1 b=0 c=0 done=0       |
+| 2.00  | `scale = (2, 2)`, `modulate.a = 0.5`                                              | a=1 b=1 c=0 done=0       |
+| 3.00  | `rotation = PI/2` (step 3 must use `TRANS_QUAD` / `EASE_OUT`, duration 1.0 s)     | a=1 b=1 c=1 done=0       |
+| 3.50  | `modulate = (0.5, 1.0, 1.0, 1.0)` (step 4 parallel, `TRANS_CUBIC` / `EASE_IN`, 0.5 s); `is_running() == false` | a=1 b=1 c=1 done=1 |
+
+The sequence must combine sequential steps, at least two parallel blocks, `tween_callback` checkpoints, and per-step `set_trans()` / `set_ease()` overrides. Endpoints, intermediate values, and signal counts at each checkpoint are all verified.

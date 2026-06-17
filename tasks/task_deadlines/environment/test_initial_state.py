@@ -1,0 +1,15 @@
+import subprocess
+import os
+
+def test_wasp_installed():
+    try:
+        result = subprocess.run(["wasp", "--version"], capture_output=True, text=True)
+        assert result.returncode == 0
+    except FileNotFoundError:
+        assert False, "Wasp is not installed."
+
+def test_project_dir_empty():
+    project_dir = "/home/user/task-deadlines"
+    if os.path.exists(project_dir):
+        files = os.listdir(project_dir)
+        assert len(files) == 0

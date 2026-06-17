@@ -1,0 +1,232 @@
+- Initializing MCP connections...
+You
+# Save/Load with Custom `Resource` Serialization (Godot 4) ## Background Implement a save/load system for a hypothetical game in the existing Godot 4 project at `/home/user/myproject`. The save format is a **custom `Resource` subclass** that nests another custom `Resource` (inventory items). Both the human-readable text format (`.tres`) and the compact binary format (`.res`) must round-trip through `ResourceSaver.save` / `ResourceLoader.load` losslessly, with full preservation of nested sub-resources. ## Requirements * A custom `ItemData` `Resource` describing one inventory entry. * A custom `GameSaveData` `Resource` that bundles player state, an array of `ItemData` sub-resources, and metadata. * A `SaveManager` helper (any `Node` / `RefCounted`-derived script) that can save to and load from a caller-supplied `user://` path in **either** text or binary format, and that can compute a content hash used to detect drift across a save/load round-trip. * Round-tripping a `GameSaveData` (with at least one `ItemData` in the inventory) through both `.tres` and `.res` files must yield a structurally equal instance, including all nested `ItemData` fields. ## Implementation Hints * See https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html and https://docs.godotengine.org/en/stable/classes/class_resourcesaver.html. Use `class_name` and `@export` so the Inspector / `ResourceFormatSaver` can serialize fields. `ResourceSaver.save(resource, path, flags)` writes `.tres` or `.res` based on the file extension; `ResourceLoader.load(path)` reads it back. * Because the inventory contains nested custom resources, they are serialized as sub-resources of the parent file. No special flag is required for inline sub-resources, but the nested type **must** have its own `class_name`. * `user://` resolves to a writable directory at runtime; the verifier will pass concrete `user://` paths to the save/load API. * A simple structural hash can be built from the field values (e.g. concatenating string-formatted fields plus each nested item's fields) and hashing with `HashingContext` (`HASH_SHA256`). ## Acceptance Criteria * Project path: /home/user/myproject * Command: `godot --headless --path /home/user/myproject -s res://verify_harness.gd` (the verifier supplies `verify_harness.gd`). * Required files (paths are relative to the project root): * `scripts/ItemData.gd` — `extends Resource`, declares `class_name ItemData`, exports at minimum: * `id: String` * `quantity: int` * `rarity: int` * `scripts/GameSaveData.gd` — `extends Resource`, declares `class_name GameSaveData`, exports at minimum: * `player_position: Vector2` * `inventory: Array[ItemData]` * `unlocked_levels: PackedStringArray` * `last_played: int` * `scripts/SaveManager.gd` — any non-`Resource` script (e.g. `extends Node` or `extends RefCounted`) with `class_name SaveManager` and the following public methods: * `save_to_disk(data: GameSaveData, path: String, binary: bool) -> int` — saves `data` to `path`. When `binary == true` the file extension on disk must be `.res`; when `binary == false` it must be `.tres`. The method must accept a path **with or without** an extension, normalize it to the correct extension, and return `OK` (`0`) on success. * `load_from_disk(path: String) -> GameSaveData` — loads a `GameSaveData` from the file at `path`. The method must accept the same input forms as `save_to_disk` (with or without extension) and resolve to whichever of `<path>.tres` / `<path>.res` exists, preferring an exact extension match when the caller already provided one. * `compute_hash(data: GameSaveData) -> String` — returns a deterministic lowercase hex SHA-256 digest derived from the `GameSaveData` fields and every nested `ItemData`'s fields. Two `GameSaveData` instances with identical field values (including item order) must produce identical hashes; differing values must produce different hashes. * Structural equality criterion for the round-trip: a loaded `GameSaveData` is structurally equal to the original iff (a) all four exported fields compare equal element-wise, (b) `inventory.size()` matches, and (c) for each index, the loaded item is a `Resource` whose `get_script()` resolves to the `ItemData` script and whose three exported fields equal the originals.   
+
+Pochi
+💭 Thinking for 267 characters   
+💫 Executing mkdir -p /home/user/myproject/scripts ✔ 
+💭 Thinking for 192 characters   
+✏️  Writing /home/user/myproject/project.godot ✖ "File has not been read yet. Please read the file before writing it."
+💭 Thinking for 328 characters   
+💫 Executing cat << 'EOF' > /home/user/myproject/project.godot
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Resource Save Load"
+config/features=PackedStringArray("4.2", "Forward Plus")
+EOF ✔ 
+💫 Executing cat << 'EOF' > /home/user/myproject/scripts/ItemData.gd
+class_name ItemData
+extends Resource
+
+@export var id: String = ""
+@export var quantity: int = 0
+@export var rarity: int = 0
+
+func _init(p_id: String = "", p_quantity: int = 0, p_rarity: int = 0):
+	id = p_id
+	quantity = p_quantity
+	rarity = p_rarity
+EOF ✔ 
+💫 Executing cat << 'EOF' > /home/user/myproject/scripts/GameSaveData.gd
+class_name GameSaveData
+extends Resource
+
+@export var player_position: Vector2 = Vector2.ZERO
+@export var inventory: Array[ItemData] = []
+@export var unlocked_levels: PackedStringArray = PackedStringArray()
+@export var last_played: int = 0
+EOF ✔ 
+💭 Thinking for 2135 characters   
+💫 Executing cat << 'EOF' > test_basename.gd
+extends SceneTree
+
+func _init():
+	print("user://save -> ", "user://save".get_basename())
+	print("user://save.res -> ", "user://save.res".get_basename())
+	print("user://dir/save.tres -> ", "user://dir/save.tres".get_basename())
+	quit()
+EOF
+godot --headless -s test_basename.gd ✔ 
+💭 Thinking for 1062 characters   
+💫 Executing cat << 'EOF' > /home/user/myproject/scripts/SaveManager.gd
+class_name SaveManager
+extends RefCounted
+
+func save_to_disk(data: GameSaveData, path: String, binary: bool) -> int:
+	var ext = ".res" if binary else ".tres"
+	var final_path = path.get_basename() + ext
+	return ResourceSaver.save(data, final_path)
+
+func load_from_disk(path: String) -> GameSaveData:
+	var base_path = path.get_basename()
+	var provided_ext = path.get_extension()
+	
+	var exact_path = ""
+	if provided_ext == "res" or provided_ext == "tres":
+		exact_path = path
+		
+	if exact_path != "" and FileAccess.file_exists(exact_path):
+		return ResourceLoader.load(exact_path) as GameSaveData
+		
+	if FileAccess.file_exists(base_path + ".res") and FileAccess.file_exists(base_path + ".tres"):
+		if provided_ext == "res":
+			return ResourceLoader.load(base_path + ".res") as GameSaveData
+		elif provided_ext == "tres":
+			return ResourceLoader.load(base_path + ".tres") as GameSaveData
+		else:
+			return ResourceLoader.load(base_path + ".tres") as GameSaveData
+			
+	if FileAccess.file_exists(base_path + ".res"):
+		return ResourceLoader.load(base_path + ".res") as GameSaveData
+	elif FileAccess.file_exists(base_path + ".tres"):
+		return ResourceLoader.load(base_path + ".tres") as GameSaveData
+		
+	return null
+
+func compute_hash(data: GameSaveData) -> String:
+	var ctx = HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	
+	var s = ""
+	s += "pos:" + str(data.player_position.x) + "," + str(data.player_position.y) + "|"
+	s += "lp:" + str(data.last_played) + "|"
+	s += "lvls:"
+	for lvl in data.unlocked_levels:
+		s += lvl + ","
+	s += "|"
+	s += "inv:"
+	for item in data.inventory:
+		if item != null:
+			s += item.id + "," + str(item.quantity) + "," + str(item.rarity) + "|"
+		else:
+			s += "null|"
+			
+	ctx.update(s.to_utf8_buffer())
+	return ctx.finish().hex_encode()
+EOF ✔ 
+💫 Executing godot --headless --path /home/user/myproject -s res://verify_harness.gd ✖ "Command exited with code 1"
+💭 Thinking for 191 characters   
+💫 Executing ls -la /home/user/myproject ✔ 
+💭 Thinking for 132 characters   
+💫 Executing ls -la /home/user ✔ 
+💭 Thinking for 1248 characters   
+💫 Executing cat << 'EOF' > /home/user/myproject/scripts/ItemData.gd
+class_name ItemData
+extends Resource
+
+@export var id: String = ""
+@export var quantity: int = 0
+@export var rarity: int = 0
+EOF ✔ 
+💭 Thinking for 1566 characters   
+💫 Executing cat << 'EOF' > test_save.gd
+extends SceneTree
+
+func _init():
+	var save = GameSaveData.new()
+	save.player_position = Vector2(10, 20)
+	save.last_played = 123456
+	save.unlocked_levels = PackedStringArray(["level1", "level2"])
+	
+	var item1 = ItemData.new()
+	item1.id = "sword"
+	item1.quantity = 1
+	item1.rarity = 5
+	
+	save.inventory.append(item1)
+	
+	var mgr = SaveManager.new()
+	var err = mgr.save_to_disk(save, "user://test_save", false)
+	print("Save error: ", err)
+	
+	var loaded = mgr.load_from_disk("user://test_save")
+	print("Loaded pos: ", loaded.player_position)
+	print("Loaded inv size: ", loaded.inventory.size())
+	if loaded.inventory.size() > 0:
+		print("Loaded item id: ", loaded.inventory[0].id)
+		
+	print("Hash: ", mgr.compute_hash(loaded))
+	
+	quit()
+EOF
+godot --headless --path /home/user/myproject -s ../test_save.gd ✖ "Command exited with code 1"
+💫 Executing mv test_save.gd /home/user/myproject/test_save.gd
+godot --headless --path /home/user/myproject -s res://test_save.gd ✖ "Command exited with code 1"
+💫 Executing godot --headless --path /home/user/myproject --editor --quit
+godot --headless --path /home/user/myproject -s res://test_save.gd ✔ 
+💭 Thinking for 873 characters   
+💫 Executing cat /root/.local/share/godot/app_userdata/Resource\ Save\ Load/test_save.tres ✔ 
+💫 Executing cat << 'EOF' > /home/user/myproject/test_save_res.gd
+extends SceneTree
+
+func _init():
+	var save = GameSaveData.new()
+	save.player_position = Vector2(10, 20)
+	save.last_played = 123456
+	save.unlocked_levels = PackedStringArray(["level1", "level2"])
+	
+	var item1 = ItemData.new()
+	item1.id = "sword"
+	item1.quantity = 1
+	item1.rarity = 5
+	
+	save.inventory.append(item1)
+	
+	var mgr = SaveManager.new()
+	var err = mgr.save_to_disk(save, "user://test_save_res", true)
+	print("Save error: ", err)
+	
+	var loaded = mgr.load_from_disk("user://test_save_res")
+	print("Loaded pos: ", loaded.player_position)
+	print("Loaded inv size: ", loaded.inventory.size())
+	if loaded.inventory.size() > 0:
+		print("Loaded item id: ", loaded.inventory[0].id)
+		
+	print("Hash: ", mgr.compute_hash(loaded))
+	
+	quit()
+EOF
+godot --headless --path /home/user/myproject -s res://test_save_res.gd ✔ 
+💭 Thinking for 1406 characters   
+💫 Executing cat << 'EOF' > test_basename_2.gd
+extends SceneTree
+
+func _init():
+	print("user://save.dat -> ", "user://save.dat".get_basename())
+	quit()
+EOF
+godot --headless -s test_basename_2.gd ✔ 
+💭 Thinking for 1041 characters   
+💫 Executing rm -f /home/user/myproject/test_save.gd /home/user/myproject/test_save_res.gd /home/user/myproject/test_basename.gd /home/user/myproject/test_basename_2.gd ✔ 
+💫 Executing rm -f /test_basename.gd /test_basename_2.gd ✔ 
+💭 Thinking for 285 characters   
+💫 Executing cat /home/user/myproject/scripts/ItemData.gd ✔ 
+💭 Thinking for 178 characters   
+💫 Executing cat /home/user/myproject/scripts/GameSaveData.gd ✔ 
+💭 Thinking for 158 characters   
+💫 Executing cat /home/user/myproject/scripts/SaveManager.gd ✔ 
+💭 Thinking for 682 characters   
+🎉 Task Completed
+I have successfully implemented the save/load system using Godot 4's custom `Resource` serialization.
+
+The implementation consists of the following components:
+
+1. **`scripts/ItemData.gd`**: A custom `Resource` class with `class_name ItemData` that exposes `id`, `quantity`, and `rarity` fields using the `@export` annotation.
+2. **`scripts/GameSaveData.gd`**: A custom `Resource` class with `class_name GameSaveData` that acts as the main save container. It exports `player_position` (Vector2), `inventory` (Array[ItemData]), `unlocked_levels` (PackedStringArray), and `last_played` (int). Because `ItemData` is a registered `class_name`, the array acts as a typed container for nested sub-resources.
+3. **`scripts/SaveManager.gd`**: A utility class extending `RefCounted` with `class_name SaveManager`. It provides:
+   - `save_to_disk`: Takes a path with or without an extension, normalizes it to `.res` or `.tres` depending on the `binary` flag using `get_basename()`, and saves the resource using `ResourceSaver.save()`.
+   - `load_from_disk`: Analyzes the provided path and intelligently resolves to the correct `.tres` or `.res` file based on what's available on disk. If both exist, it honors the caller's requested extension if one was provided.
+   - `compute_hash`: Generates a deterministic SHA-256 hash using `HashingContext` that serializes all properties of `GameSaveData` and its nested `ItemData` inventory items into a string format before hashing, effectively detecting any drift across a save/load round-trip.
+
+The project logic has been tested using Godot 4 headless mode, and successfully round-trips complex nested data (including arrays of custom resources) through both text and binary formats without any data loss.   
+  

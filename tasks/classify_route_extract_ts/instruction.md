@@ -1,0 +1,61 @@
+# Classify → Route → Per-Category Extract (TypeScript)
+
+## Background
+Document-AI pipelines in production rarely deal with a single homogeneous file type. The canonical LlamaCloud pattern for mixed inboxes is **Classify → Route → Extract**: first run the LlamaClassify product to label each file with its document type, then route each file to a *different* Extract schema based on that label. You will implement this pattern end-to-end with the official `@llamaindex/llama-cloud` Node SDK (v2.x) and `zod` for schema definition.
+
+A starter project lives at `/home/user/myproject`. It contains four mixed PDFs under `./inputs/`:
+
+- `inputs/acme_invoice.pdf`         — commercial invoice (vendor, invoice number, line items, total)
+- `inputs/globex_invoice.pdf`       — commercial invoice (vendor, invoice number, line items, total)
+- `inputs/services_contract.pdf`    — service agreement (two parties, effective date, term)
+- `inputs/nda_contract.pdf`         — mutual non-disclosure agreement (two parties, effective date, term)
+
+The filenames hint at the category, but your script **must not hard-code the routing by filename** — it must drive the routing decision from the Classify result returned by LlamaCloud. The verifier will check both the artifacts on disk and the LlamaCloud-side state through the SDK.
+
+## Requirements
+- Use the LlamaCloud Node SDK `@llamaindex/llama-cloud` (v2.x). Define your Extract schemas with **Zod** and convert each to JSON Schema (e.g., `z.toJSONSchema`) when calling Extract.
+- **Phase 1 — Classify.** Upload all four PDFs to LlamaCloud and run a *single* Classify job over all four file ids with these two rules and `mode: 'FAST'`:
+  - `invoice` — commercial invoice with an invoice number, line items, and a grand total
+  - `contract` — legal agreement signed by two or more parties with an effective date and term
+  Capture the per-file `type` and `confidence` returned by the SDK. Confidence must be a number; both files in each category must end up with the same `type`.
+- **Phase 2 — Per-category Extract (concurrent).** For each classified file, run an Extract job using the schema dictated by its category. The two schemas are:
+  - **`invoice` schema** (top-level Zod object):
+    - `invoice_number` (string)
+    - `vendor_name`    (string)
+    - `total_amount`   (number; the grand total)
+    - `line_items`     (array of objects with `description` (string), `quantity` (number), `unit_price` (number), `total` (number))
+  - **`contract` schema** (top-level Zod object):
+    - `parties`         (array of strings, length ≥ 2)
+    - `effective_date`  (string, ISO `YYYY-MM-DD` if possible)
+    - `term`            (string, e.g., `"12 months"`)
+  All Extract jobs must use `extraction_target: 'per_doc'` and `tier: 'agentic'`. Run the four Extract jobs **concurrently** (e.g., `Promise.all`) with a concurrency cap of **at most 2 in flight** (use `p-limit`, a semaphore, or an equivalent).
+- **Parallel-run safety.** Read the run id from the `ZEALT_RUN_ID` environment variable. Tag every uploaded source file with an `external_file_id` equal to `${ZEALT_RUN_ID}-<basename_without_ext>` (for example, `zr-abc123-acme_invoice` for `acme_invoice.pdf`).
+- **Aggregate artifacts.** Write two artifacts:
+  - `./outputs/results.json` — a JSON object keyed by the input file basename (e.g. `"acme_invoice.pdf"`) where each value is an object with exactly these keys:
+    - `category`   (string — `"invoice"` or `"contract"`, as returned by Classify)
+    - `confidence` (number — confidence from Classify)
+    - `file_id`    (string — the file id of the uploaded source PDF as returned by the API)
+    - `data`       (object — the `extract_result` payload from the appropriate Extract schema)
+  - `./output.log` — one summary line per input file in **exactly** this format (one line per file, in any order):
+    `Routed: <basename>.pdf | category: <invoice|contract> | confidence: <conf> | fields: <N>`
+    where `<N>` is the number of top-level keys in the file's extracted `data` object (must be `4` for invoices and `3` for contracts).
+- The script must exit with code 0 when every file is classified and extracted successfully.
+
+## Implementation Hints
+- Install `@llamaindex/llama-cloud`, `zod`, `tsx`, and a concurrency helper such as `p-limit`.
+- The single-shot Classify helper is `client.classifier.classify({ file_ids, rules, mode })`. Each rule is `{ type, description }`. The result has an `items` array; each item has `file_id` and `result.{type, confidence, reasoning}`. **Items may be returned in a different order than the input `file_ids`** — index by `file_id`, not by array position.
+- File uploads in Node.js use `fs.createReadStream(...)` with `client.files.create({ file, purpose, external_file_id })`. Note that you can re-use the same uploaded file id when calling Extract (`file_input: fileObj.id`). You do not need to re-upload the same file for each phase.
+- The Extract v2 SDK call is `client.extract.create({ file_input, configuration })` where `configuration` is a **flattened** object containing `data_schema`, `extraction_target`, and `tier` (there is no `extract_options` wrapper in v2). Poll completion with `client.extract.get(jobId)` until `status` is `COMPLETED`/`FAILED`/`CANCELLED`.
+- The SDK picks up `LLAMA_CLOUD_API_KEY` from the environment automatically.
+- Make sure `./outputs/` exists before writing files.
+
+## Acceptance Criteria
+- Project path: `/home/user/myproject`
+- Ensure the script is executed against the real LlamaCloud Classify + Extract APIs and that all artifacts exist on disk after execution.
+- Log file: `/home/user/myproject/output.log` must contain **exactly four** lines, each matching `^Routed: [A-Za-z0-9_.-]+\.pdf \| category: (invoice|contract) \| confidence: [0-9]*\.?[0-9]+([eE][+-]?[0-9]+)? \| fields: (3|4)$`. Across the four lines, exactly two must have `category: invoice` with `fields: 4` and exactly two must have `category: contract` with `fields: 3`. The four basenames must be the four input PDFs.
+- `/home/user/myproject/outputs/results.json` must exist and parse as a JSON object with exactly four keys (the four input PDF basenames). Each value must have keys `category`, `confidence`, `file_id`, and `data`:
+  - For every entry whose `category == "invoice"`, `data` must contain non-empty string `invoice_number`, non-empty string `vendor_name`, positive numeric `total_amount`, and `line_items` as a non-empty array of objects each with numeric `quantity`, `unit_price`, and `total`.
+  - For every entry whose `category == "contract"`, `data` must contain `parties` as an array of strings with length ≥ 2, a non-empty string `effective_date`, and a non-empty string `term`.
+  - Each `file_id` must be a non-empty string matching the file id returned by the LlamaCloud API.
+- Every uploaded source file in LlamaCloud must carry an `external_file_id` exactly equal to `${ZEALT_RUN_ID}-<basename_without_ext>` for its corresponding input PDF. The verifier will query the LlamaCloud SDK for each expected external id and assert it exists.
+
