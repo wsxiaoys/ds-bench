@@ -1,0 +1,1 @@
+# undo_mistaken_rebase\n\n## Background\nPerform a rebase, then use `jj undo` to revert it.\n\n## Requirements\nComplete the task as described.\n\n## Implementation\nUse jj commands in `/home/user/repo`.\n\n## Output\n- Project path: `/home/user/repo`\n- Start command: `None`\n- Port: `None`
