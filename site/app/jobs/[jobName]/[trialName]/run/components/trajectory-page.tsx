@@ -205,7 +205,7 @@ export function TrajectoryPage({
 
 	return (
 		<div className="h-full w-full pt-4 pb-4 sm:pt-5 sm:pb-6">
-			<div className="mx-auto h-full w-full max-w-[1400px] px-4 sm:px-7 lg:px-10">
+			<div className="mx-auto h-full w-full max-w-350 px-4 sm:px-7 lg:px-10">
 				<Tabs
 					value={activeTab}
 					onValueChange={handleTabChange}
@@ -214,7 +214,7 @@ export function TrajectoryPage({
 					<div className="border-border border-b bg-background/40 px-3 py-3 sm:px-4">
 						<TabsList
 							className={`flex h-11 w-full ${
-								visibleTabsConfig.length <= 3 ? "sm:w-[480px]" : "sm:w-[640px]"
+								visibleTabsConfig.length <= 3 ? "sm:w-120" : "sm:w-160"
 							} max-w-full items-stretch gap-1 rounded-lg bg-muted/55 p-1`}
 						>
 							{visibleTabsConfig.map((tab) => (

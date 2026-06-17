@@ -555,7 +555,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 								setSelectedStatuses(vals);
 								updateParams({ status: vals });
 							}}
-							className="w-full sm:w-[140px]"
+							className="w-full sm:w-35"
 						/>
 
 						<MultiSelect
@@ -566,7 +566,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 								setSelectedModels(vals);
 								updateParams({ model: vals });
 							}}
-							className="w-full sm:w-auto sm:min-w-[180px]"
+							className="w-full sm:w-auto sm:min-w-45"
 						/>
 					</div>
 
@@ -609,14 +609,14 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 						<table className="w-full border-collapse text-left text-sm">
 							<thead className="sticky top-0 z-30 select-none border-border border-b font-medium text-muted-foreground shadow-sm">
 								<tr>
-									<th className="left-0 z-40 w-[200px] min-w-[200px] max-w-[200px] border-border/50 border-r bg-secondary/95 px-3 py-3 backdrop-blur sm:px-6 md:sticky md:w-[350px] md:min-w-[350px] md:max-w-[350px] md:bg-[#f6f6f6] dark:md:bg-[#0f0f0f]">
+									<th className="left-0 z-40 w-50 min-w-50 max-w-50 border-border/50 border-r bg-secondary/95 px-3 py-3 backdrop-blur sm:px-6 md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5 md:bg-[#f6f6f6] dark:md:bg-[#0f0f0f]">
 										<div className="flex items-center gap-1 sm:gap-2">
 											<span className="truncate">
 												Task Name ({tableTasks.length} tasks)
 											</span>
 										</div>
 									</th>
-									<th className="min-w-[220px] border-0 bg-transparent p-0"></th>
+									<th className="min-w-55 border-0 bg-transparent p-0"></th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-border/30">
@@ -625,7 +625,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 										key={task.taskName}
 										className="transition-colors duration-200"
 									>
-										<td className="left-0 z-20 w-[200px] min-w-[200px] max-w-[200px] border-border/50 border-r bg-background p-0 font-mono md:sticky md:w-[350px] md:min-w-[350px] md:max-w-[350px] md:shadow-[1px_0_0_rgba(0,0,0,0.05)]">
+										<td className="left-0 z-20 w-50 min-w-50 max-w-50 border-border/50 border-r bg-background p-0 font-mono md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5 md:shadow-[1px_0_0_rgba(0,0,0,0.05)]">
 											<button
 												type="button"
 												onClick={() => {
@@ -643,7 +643,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 										{index === 0 ? (
 											<td
 												rowSpan={tableTasks.length}
-												className="min-w-[220px] border-border/50 border-l px-3 pt-10 pb-2 text-center align-top text-xs sm:px-6 md:text-sm"
+												className="min-w-55 border-border/50 border-l px-3 pt-10 pb-2 text-center align-top text-xs sm:px-6 md:text-sm"
 											>
 												<span className="font-medium text-foreground/90">
 													No evaluation data yet
@@ -661,7 +661,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 							<thead className="sticky top-0 z-30 select-none border-border border-b bg-secondary/95 font-medium text-muted-foreground shadow-sm backdrop-blur">
 								<tr>
 									<th
-										className="group left-0 z-40 w-[200px] min-w-[200px] max-w-[200px] cursor-pointer border-border/50 border-r bg-transparent px-3 py-3 transition-colors hover:bg-secondary/50 hover:text-foreground sm:px-6 md:sticky md:w-[350px] md:min-w-[350px] md:max-w-[350px] md:bg-[#f6f6f6] md:shadow-[1px_0_0_rgba(0,0,0,0.05)] dark:md:bg-[#0f0f0f]"
+										className="group left-0 z-40 w-50 min-w-50 max-w-50 cursor-pointer border-border/50 border-r bg-transparent px-3 py-3 transition-colors hover:bg-secondary/50 hover:text-foreground sm:px-6 md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5 md:bg-[#f6f6f6] md:shadow-[1px_0_0_rgba(0,0,0,0.05)] dark:md:bg-[#0f0f0f]"
 										onClick={() => toggleSort("taskName")}
 									>
 										<div className="flex items-center gap-1 sm:gap-2">
@@ -674,11 +674,11 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 									{activeCombos.map((combo) => (
 										<th
 											key={combo}
-											className="min-w-[120px] border-border/50 border-l px-3 py-3 text-left sm:px-6 md:min-w-[150px]"
+											className="min-w-30 border-border/50 border-l px-3 py-3 text-left sm:px-6 md:min-w-37.5"
 										>
 											<div className="flex flex-col items-start">
 												<span
-													className="max-w-[100px] truncate font-medium text-foreground md:max-w-[130px]"
+													className="max-w-25 truncate font-medium text-foreground md:max-w-32.5"
 													title={combo.split(" (")[0]}
 												>
 													{combo.split(" (")[0]}
@@ -694,7 +694,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 										key={task.taskName}
 										className="group transition-colors duration-200 even:bg-secondary/5 hover:bg-secondary/30"
 									>
-										<td className="left-0 z-20 w-[200px] min-w-[200px] max-w-[200px] border-border/50 border-r bg-background p-0 font-mono md:sticky md:w-[350px] md:min-w-[350px] md:max-w-[350px] md:shadow-[1px_0_0_rgba(0,0,0,0.05)]">
+										<td className="left-0 z-20 w-50 min-w-50 max-w-50 border-border/50 border-r bg-background p-0 font-mono md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5 md:shadow-[1px_0_0_rgba(0,0,0,0.05)]">
 											<button
 												type="button"
 												onClick={() => {
@@ -714,7 +714,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 											return (
 												<td
 													key={combo}
-													className="relative z-10 h-full min-w-[120px] border-border/50 border-l p-0 md:min-w-[150px]"
+													className="relative z-10 h-full min-w-30 border-border/50 border-l p-0 md:min-w-37.5"
 												>
 													{trial ? (
 														<HoverCard openDelay={200} closeDelay={0}>
@@ -869,7 +869,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 				<Sheet open={isInstructionOpen} onOpenChange={setIsInstructionOpen}>
 					<SheetContent
 						side="right"
-						className="data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 h-full min-h-0 w-[640px] max-w-[90vw] border-border/70 border-l bg-card/80 p-0 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-md data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:duration-220 data-[state=open]:duration-320 lg:w-[680px] xl:w-[760px] 2xl:w-[820px]"
+						className="data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 h-full min-h-0 w-160 max-w-[90vw] border-border/70 border-l bg-card/80 p-0 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-md data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:duration-220 data-[state=open]:duration-320 lg:w-170 xl:w-190 2xl:w-205"
 					>
 						<div className="flex h-full min-h-0 flex-col">
 							<SheetHeader className="border-border/60 border-b bg-card/80 px-7 py-5 pr-14">

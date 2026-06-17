@@ -64,7 +64,7 @@ export function MultiSelect({
 								<Badge
 									variant="secondary"
 									key={s}
-									className="max-w-[120px] overflow-hidden rounded-sm px-1 font-normal"
+									className="max-w-30 overflow-hidden rounded-sm px-1 font-normal"
 								>
 									<span className="truncate">{s}</span>
 								</Badge>
@@ -81,7 +81,7 @@ export function MultiSelect({
 					<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
 				</button>
 			</PopoverTrigger>
-			<PopoverContent className="w-[200px] p-0" align="start">
+			<PopoverContent className="w-50 p-0" align="start">
 				<Command>
 					<CommandInput placeholder={`Search ${title}...`} />
 					<CommandList>

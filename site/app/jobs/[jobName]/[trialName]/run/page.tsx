@@ -408,7 +408,7 @@ export default async function TrajectoryRoutePage({
 		<div className="flex h-screen w-full flex-col overflow-hidden bg-background font-sans text-foreground selection:bg-primary/20">
 			<div className="mask-[radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] fixed inset-0 -z-10 h-full w-full bg-[radial-gradient(#2a2a2a_1px,transparent_1px)] bg-background bg-size-[16px_16px] opacity-20 dark:opacity-40"></div>
 			<div className="z-40 shrink-0 bg-background/85 backdrop-blur-sm">
-				<div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+				<div className="mx-auto w-full max-w-350 px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
 					<div className="mb-4 flex items-center gap-4">
 						<BackToLeaderboard />
 					</div>
