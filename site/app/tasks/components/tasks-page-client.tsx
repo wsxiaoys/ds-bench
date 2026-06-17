@@ -14,6 +14,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
+import { BackToLeaderboard } from "@/components/back-to-leaderboard";
 import { useRouter, usePathname } from "next/navigation";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -440,9 +441,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
     <div className="container mx-auto px-4 sm:px-8 lg:px-12 py-8 max-w-screen-2xl h-[100dvh] flex flex-col overflow-hidden">
       <div className="mb-6 space-y-4 shrink-0">
         <div className="flex items-center gap-4">
-          <Link href="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            &larr; Back to Leaderboard
-          </Link>
+          <BackToLeaderboard />
         </div>
         <div>
           <h1 className="text-4xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-b from-foreground to-foreground/50">

@@ -5,6 +5,7 @@ import zealtConfig from "@/zealt/config.json";
 import { redirect } from "next/navigation";
 import { AlertTriangle, Check, ExternalLink, HelpCircle, X as XIcon } from "lucide-react";
 import { Suspense } from "react";
+import { BackToLeaderboard } from "@/components/back-to-leaderboard";
 
 
 type RouteParams = {
@@ -348,6 +349,9 @@ export default async function TrajectoryRoutePage({
       <div className="fixed inset-0 -z-10 h-full w-full bg-background bg-[radial-gradient(#2a2a2a_1px,transparent_1px)] [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-20 dark:opacity-40"></div>
       <div className="z-40 shrink-0 bg-background/85 backdrop-blur-sm">
         <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+          <div className="mb-4 flex items-center gap-4">
+            <BackToLeaderboard />
+          </div>
           <div className="flex flex-col gap-1">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-start sm:gap-2">
               <h1 className="min-w-0 truncate whitespace-nowrap font-bold text-2xl">
