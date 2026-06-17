@@ -7,8 +7,8 @@ declare module "@/jobs/*/result.json" {
 		n_trials: number;
 		n_errors: number;
 		metrics: EvalMetric[];
-		reward_stats?: Record<string, any>;
-		exception_stats?: Record<string, any>;
+		reward_stats?: Record<string, unknown>;
+		exception_stats?: Record<string, unknown>;
 	}
 
 	export interface ResultStats {

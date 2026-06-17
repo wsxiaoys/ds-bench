@@ -66,7 +66,7 @@ async function readArtifactTree(
 	absDir: string,
 	relPath: string,
 ): Promise<ArtifactNode[]> {
-	let entries;
+	let entries: import("node:fs").Dirent[];
 	try {
 		entries = await fs.readdir(absDir, { withFileTypes: true });
 	} catch {
