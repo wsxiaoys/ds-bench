@@ -1,41 +1,41 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { ArrowUp } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export function BackToTop() {
-  const [isVisible, setIsVisible] = useState(false);
+	const [isVisible, setIsVisible] = useState(false);
 
-  useEffect(() => {
-    const toggleVisibility = () => {
-      if (window.scrollY > 300) {
-        setIsVisible(true);
-      } else {
-        setIsVisible(false);
-      }
-    };
+	useEffect(() => {
+		const toggleVisibility = () => {
+			if (window.scrollY > 300) {
+				setIsVisible(true);
+			} else {
+				setIsVisible(false);
+			}
+		};
 
-    window.addEventListener("scroll", toggleVisibility);
-    return () => window.removeEventListener("scroll", toggleVisibility);
-  }, []);
+		window.addEventListener("scroll", toggleVisibility);
+		return () => window.removeEventListener("scroll", toggleVisibility);
+	}, []);
 
-  const scrollToTop = () => {
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth"
-    });
-  };
+	const scrollToTop = () => {
+		window.scrollTo({
+			top: 0,
+			behavior: "smooth",
+		});
+	};
 
-  if (!isVisible) return null;
+	if (!isVisible) return null;
 
-  return (
-    <button
-      type="button"
-      onClick={scrollToTop}
-      className="fixed bottom-8 right-8 p-3 bg-secondary text-foreground rounded-full shadow-lg border border-border hover:bg-secondary/80 transition-all z-50 flex items-center justify-center group backdrop-blur-sm"
-      aria-label="Back to top"
-    >
-      <ArrowUp className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
-    </button>
-  );
+	return (
+		<button
+			type="button"
+			onClick={scrollToTop}
+			className="group fixed right-8 bottom-8 z-50 flex items-center justify-center rounded-full border border-border bg-secondary p-3 text-foreground shadow-lg backdrop-blur-sm transition-all hover:bg-secondary/80"
+			aria-label="Back to top"
+		>
+			<ArrowUp className="h-5 w-5 transition-transform group-hover:-translate-y-1" />
+		</button>
+	);
 }
