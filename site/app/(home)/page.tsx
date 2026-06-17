@@ -117,7 +117,7 @@ export default function Home() {
 	return (
 		<div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary/20">
 			{/* Background Gradient Effect */}
-			<div className="fixed inset-0 -z-10 h-full w-full bg-[radial-gradient(#2a2a2a_1px,transparent_1px)] bg-background opacity-20 [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] dark:opacity-40"></div>
+			<div className="fixed inset-0 -z-10 h-full w-full bg-[radial-gradient(#2a2a2a_1px,transparent_1px)] bg-background opacity-20 bg-size-[16px_16px] mask-[radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] dark:opacity-40"></div>
 
 			<div className="container mx-auto max-w-6xl px-4 py-16">
 				{/* Header Section */}
@@ -127,7 +127,7 @@ export default function Home() {
 						<span className="px-2 font-medium text-xs">Live Benchmarks</span>
 					</div>
 
-					<h1 className="bg-gradient-to-b from-foreground to-foreground/50 bg-clip-text pb-2 font-bold text-5xl text-transparent tracking-tight md:text-7xl">
+					<h1 className="bg-linear-to-b from-foreground to-foreground/50 bg-clip-text pb-2 font-bold text-5xl text-transparent tracking-tight md:text-7xl">
 						{zealtConfig.title}
 					</h1>
 

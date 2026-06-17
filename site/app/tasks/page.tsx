@@ -109,16 +109,16 @@ export default function TasksPage() {
 
 	return (
 		<div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary/20">
-			<div className="fixed inset-0 -z-10 h-full w-full bg-[radial-gradient(#2a2a2a_1px,transparent_1px)] bg-background opacity-20 [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] dark:opacity-40"></div>
+			<div className="fixed inset-0 -z-10 h-full w-full bg-[radial-gradient(#2a2a2a_1px,transparent_1px)] bg-background opacity-20 bg-size-[16px_16px] mask-[radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] dark:opacity-40"></div>
 
 			{compactTasksData.length === 0 ? (
-				<div className="container mx-auto flex h-[100dvh] max-w-screen-2xl flex-col overflow-hidden px-4 py-8 sm:px-8 lg:px-12">
+				<div className="container mx-auto flex h-dvh max-w-(--breakpoint-2xl) flex-col overflow-hidden px-4 py-8 sm:px-8 lg:px-12">
 					<div className="mb-6 shrink-0 space-y-4">
 						<div className="flex items-center gap-4">
 							<BackToLeaderboard />
 						</div>
 						<div>
-							<h1 className="bg-gradient-to-b from-foreground to-foreground/50 bg-clip-text font-bold text-4xl text-transparent tracking-tight">
+							<h1 className="bg-linear-to-b from-foreground to-foreground/50 bg-clip-text font-bold text-4xl text-transparent tracking-tight">
 								Task
 							</h1>
 						</div>

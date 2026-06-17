@@ -516,13 +516,13 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 	);
 
 	return (
-		<div className="container mx-auto flex h-[100dvh] max-w-screen-2xl flex-col overflow-hidden px-4 py-8 sm:px-8 lg:px-12">
+		<div className="container mx-auto flex h-dvh max-w-(--breakpoint-2xl) flex-col overflow-hidden px-4 py-8 sm:px-8 lg:px-12">
 			<div className="mb-6 shrink-0 space-y-4">
 				<div className="flex items-center gap-4">
 					<BackToLeaderboard />
 				</div>
 				<div>
-					<h1 className="bg-gradient-to-b from-foreground to-foreground/50 bg-clip-text font-bold text-4xl text-transparent tracking-tight">
+					<h1 className="bg-linear-to-b from-foreground to-foreground/50 bg-clip-text font-bold text-4xl text-transparent tracking-tight">
 						Task
 					</h1>
 					<p className="mt-2 max-w-2xl text-muted-foreground leading-relaxed">
