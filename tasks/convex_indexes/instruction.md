@@ -16,7 +16,7 @@ In Convex, queries are fast when they use indexes. You need to define a schema w
 - After deploying, write the string `Deployed successfully` to `/home/user/myproject/output.log`.
 
 ## Implementation Hints
-- Read the current `run-id` from the `ZEALT_RUN_ID` environment variable when testing your code.
+- Read the current `run-id` from `/logs/artifacts/run-id` when testing your code.
 - Use `npx convex deploy` to deploy your schema and functions to the Convex cloud.
 - Make sure to use `.withIndex` and pass the correct index name and range expressions (`q.eq`, `q.lte`). Note that `q.eq` expressions must match the index fields in order.
 - The environment variables `CONVEX_DEPLOY_KEY` and `CONVEX_URL` are already provided in the environment.

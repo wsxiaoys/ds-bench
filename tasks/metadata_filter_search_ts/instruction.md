@@ -7,7 +7,7 @@ Your task is to build a small, rerunnable Node.js CLI in TypeScript that exercis
 
 ## Requirements
 - Build a Node.js + TypeScript project that uses the official `@alchemystai/sdk` package.
-- The CLI must read the API key from the `ALCHEMYST_AI_API_KEY` environment variable (do not hardcode it) and the run id from the `ZEALT_RUN_ID` environment variable.
+- The CLI must read the API key from the `ALCHEMYST_AI_API_KEY` environment variable (do not hardcode it) and the run id from `/logs/artifacts/run-id`.
 - The CLI must seed (idempotently, so it can be re-run without errors) four resource documents into Alchemyst with distinct `file_name`s and `group_name`s:
   - Two documents tagged with `group_name: ["support"]`.
   - Two documents tagged with `group_name: ["engineering"]`.
@@ -30,7 +30,7 @@ Your task is to build a small, rerunnable Node.js CLI in TypeScript that exercis
 - Command: `node dist/main.js --group <group_name>`
 - Input argument format: `--group <group_name>` where `<group_name>` is one of `support` or `engineering`.
 - The compiled output must exist at `/home/user/myproject/dist/main.js` after building.
-- The CLI must read `ALCHEMYST_AI_API_KEY` and `ZEALT_RUN_ID` from environment variables.
+- The CLI must read `ALCHEMYST_AI_API_KEY` and `/logs/artifacts/run-id` from environment variables.
 - The CLI must seed four documents (two in `support`, two in `engineering`), with each `file_name` suffixed by the current `run-id`. Seeding must be idempotent across reruns.
 - The CLI must perform a real metadata-filtered search via `client.v1.context.search` using `metadata: { groupName: [<group>] }` (camelCase).
 - The stdout of the CLI must be a single JSON array of strings (the deduplicated `file_name`s returned by the filtered search) and nothing else on the final line. Logs may be printed to stderr.

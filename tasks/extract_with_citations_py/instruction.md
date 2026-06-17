@@ -7,7 +7,7 @@ You have a small text invoice already placed in the project directory. Your job 
 
 ## Requirements
 - Use the `llama-cloud` v2 Python SDK (NOT the legacy `llama-cloud-services` v1 wrapper).
-- Upload `sample_invoice.txt` from the project directory using `client.files.create(..., purpose="extract")`. Use an `external_file_id` that includes the current run-id read from the `ZEALT_RUN_ID` environment variable so that concurrent runs do not collide in the LlamaCloud dashboard.
+- Upload `sample_invoice.txt` from the project directory using `client.files.create(..., purpose="extract")`. Use an `external_file_id` that includes the current run-id read from `/logs/artifacts/run-id` so that concurrent runs do not collide in the LlamaCloud dashboard.
 - Define a schema (Pydantic model or raw JSON Schema) for the invoice with at least these top-level string/number leaf fields:
   - `company_name` (string)
   - `invoice_number` (string)
@@ -34,5 +34,5 @@ You have a small text invoice already placed in the project directory. Your job 
   - Top-level object with at least the keys `data` and `extract_metadata`.
   - `data` is an object with the leaf keys `company_name`, `invoice_number`, and `total_amount` populated with the values extracted from the document.
   - `extract_metadata` is an object containing a `field_metadata` object. `field_metadata` must contain entries for the leaf fields above, and each entry must contain a non-empty `citation` array whose items have at least the keys `page` and `matching_text`.
-- The agent must read the current `run-id` from the `ZEALT_RUN_ID` environment variable and pass `external_file_id="invoice-${run-id}.txt"` (with `${run-id}` substituted) to `client.files.create`.
+- The agent must read the current `run-id` from `/logs/artifacts/run-id` and pass `external_file_id="invoice-${run-id}.txt"` (with `${run-id}` substituted) to `client.files.create`.
 

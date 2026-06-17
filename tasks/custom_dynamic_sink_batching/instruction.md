@@ -10,7 +10,7 @@ Bytewax provides `DynamicSink` and `StatelessSinkPartition` for implementing cus
 - The custom sink must implement strict file rotation: a single file must contain **exactly 20 records** (except possibly the last file for a worker, which may have fewer). 
 - Once a file has 20 records written to it, it must be closed, and subsequent records for that worker must be written to the next part number.
 - The records written to the JSONL file must be JSON objects with the format `{"worker": <worker_index>, "value": <value>}`.
-- You must read the `run-id` from the `ZEALT_RUN_ID` environment variable.
+- You must read the `run-id` from `/logs/artifacts/run-id`.
 - The output files must be saved in the `out/` directory and named using the format: `output-<run-id>-worker-<worker_index>-part-<part_number>.jsonl` (starting with part 0).
 
 ## Implementation Hints
@@ -25,5 +25,5 @@ Bytewax provides `DynamicSink` and `StatelessSinkPartition` for implementing cus
 - The output files must be created in the `/home/user/bytewax-sink/out/` directory.
 - There must be exactly 200 records written in total across all files.
 - No single file can have more than 20 lines.
-- The files must be named `output-<run-id>-worker-<worker_index>-part-<part_number>.jsonl` where `run-id` is read from the `ZEALT_RUN_ID` environment variable.
+- The files must be named `output-<run-id>-worker-<worker_index>-part-<part_number>.jsonl` where `run-id` is read from `/logs/artifacts/run-id`.
 

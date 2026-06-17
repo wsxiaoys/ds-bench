@@ -7,8 +7,8 @@ A single-page resume PDF has been prepared for you at `/home/user/myproject/resu
 
 ## Requirements
 - Write a Python script at `/home/user/myproject/extract_resume.py` that:
-  - Reads the `LLAMA_CLOUD_API_KEY` and `ZEALT_RUN_ID` environment variables.
-  - Uploads `/home/user/myproject/resume.pdf` to LlamaCloud with `purpose="extract"`. To keep file uploads isolated across concurrent runs, pass `external_file_id="harbor-resume-${run-id}"` where `run-id` comes from `ZEALT_RUN_ID`.
+  - Reads the `LLAMA_CLOUD_API_KEY` and `/logs/artifacts/run-id`s.
+  - Uploads `/home/user/myproject/resume.pdf` to LlamaCloud with `purpose="extract"`. To keep file uploads isolated across concurrent runs, pass `external_file_id="harbor-resume-${run-id}"` where `run-id` comes from `/logs/artifacts/run-id`.
   - Defines a Pydantic model `Resume` with the fields `name: str`, `email: str`, and `skills: list[str]`, each carrying a `description`.
   - Creates an Extract job using `client.extract.create(...)` with `extraction_target="per_doc"` and the `agentic` tier, using the Pydantic-derived JSON schema.
   - Waits for the job to reach a terminal state (`COMPLETED`, `FAILED`, or `CANCELLED`).
@@ -22,7 +22,7 @@ A single-page resume PDF has been prepared for you at `/home/user/myproject/resu
 - `client.files.create(...)` accepts a path string, a `Path`, a `BytesIO`, or a `(filename, bytes, mime_type)` tuple.
 - Poll with `client.extract.get(job.id)` or call `client.extract.wait_for_completion(job.id)` until status is terminal.
 - The `extract_result` is already a JSON-serializable dict — `json.dump(job.extract_result, fp, indent=2)` is sufficient.
-- Read `ZEALT_RUN_ID` with `os.environ["ZEALT_RUN_ID"]` so that the `external_file_id` is `harbor-resume-<run-id>` (e.g., `harbor-resume-zr-abc123`).
+- Read `/logs/artifacts/run-id` with `os.environ["`/logs/artifacts/run-id`"]` so that the `external_file_id` is `harbor-resume-<run-id>` (e.g., `harbor-resume-zr-abc123`).
 
 ## Acceptance Criteria
 - Project path: `/home/user/myproject`
@@ -30,6 +30,6 @@ A single-page resume PDF has been prepared for you at `/home/user/myproject/resu
 - Script path: `/home/user/myproject/extract_resume.py`
 - Output JSON: `/home/user/myproject/output.json` — a JSON object containing the keys `name` (string), `email` (string), and `skills` (array of strings).
 - Log file: `/home/user/myproject/output.log` — contains exactly one line in the format `Job ID: <job_id>` where `<job_id>` is the id of the Extract job created via the v2 SDK.
-- The uploaded file's `external_file_id` must equal `harbor-resume-${run-id}` where `${run-id}` is the value of the `ZEALT_RUN_ID` environment variable.
+- The uploaded file's `external_file_id` must equal `harbor-resume-${run-id}` where `${run-id}` is the value of the `/logs/artifacts/run-id`.
 - The Extract job id recorded in `output.log` must correspond to a real LlamaCloud Extract job whose status is `COMPLETED`.
 

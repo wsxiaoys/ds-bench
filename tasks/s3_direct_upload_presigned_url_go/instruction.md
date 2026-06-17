@@ -8,7 +8,7 @@ When PocketBase is configured with S3 storage, file uploads are proxied through 
 - Implement a custom REST API route `GET /api/s3-presign`.
 - The route must accept a query parameter `filename`.
 - The route must generate and return an AWS S3 presigned URL for a `PUT` operation, allowing a client to upload a file directly to the S3 bucket.
-- The S3 object key must be formatted as `uploads/<run-id>/<filename>`, where `<run-id>` is read from the `ZEALT_RUN_ID` environment variable.
+- The S3 object key must be formatted as `uploads/<run-id>/<filename>`, where `<run-id>` is read from `/logs/artifacts/run-id`.
 - The application should read S3 configuration from the environment variables: `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_BUCKET`.
 
 ## Implementation Hints

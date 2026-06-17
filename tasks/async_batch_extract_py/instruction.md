@@ -10,7 +10,7 @@ You are given a small folder of three invoice PDFs at `/home/user/myproject/data
 - Use `AsyncLlamaCloud` and `asyncio` (not the sync client).
 - Bound concurrency to at most 3 simultaneous in-flight extract jobs using an `asyncio.Semaphore`.
 - Read the API key from the `LLAMA_CLOUD_API_KEY` environment variable (already exported).
-- Read `run-id` from the `ZEALT_RUN_ID` environment variable and append it as a suffix to each uploaded file's `external_file_id` (e.g. `invoice_a-<run-id>`).
+- Read `run-id` from `/logs/artifacts/run-id` and append it as a suffix to each uploaded file's `external_file_id` (e.g. `invoice_a-<run-id>`).
 - Upload all three PDFs from `/home/user/myproject/data/` with `purpose="extract"`.
 - Define a Pydantic schema for invoices with at least: `vendor_name` (string), `invoice_number` (string), `total_amount` (number), and `line_items` (list of strings).
 - For each uploaded file, create an extract job with `extraction_target="per_doc"` and `tier="cost_effective"` using the above schema (passed via `data_schema` in the `configuration` dict).
@@ -35,6 +35,6 @@ You are given a small folder of three invoice PDFs at `/home/user/myproject/data
   - `/home/user/myproject/results.json` — a valid JSON object whose top-level keys are the three filenames `invoice_a.pdf`, `invoice_b.pdf`, `invoice_c.pdf`. Each value must contain the keys `vendor_name`, `invoice_number`, `total_amount`, and `line_items`.
   - `/home/user/myproject/output.log` — must contain exactly three lines matching the pattern `Extract Job: <filename> <job_id> <status>` (one per uploaded file, in any order, surrounded by any other log output is fine). All three `<status>` values must be `COMPLETED`.
 - Each of the three job IDs printed in `output.log` MUST exist in LlamaCloud and have status `COMPLETED` when queried via the SDK.
-- The three uploaded source files MUST each have an `external_file_id` whose suffix is the `run-id` from `ZEALT_RUN_ID` (e.g. ends with `-${run-id}`).
+- The three uploaded source files MUST each have an `external_file_id` whose suffix is the `run-id` from `/logs/artifacts/run-id` (e.g. ends with `-${run-id}`).
 - The job IDs MUST be distinct (the script must not reuse a single job for multiple files).
 

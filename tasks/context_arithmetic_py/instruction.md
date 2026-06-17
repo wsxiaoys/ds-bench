@@ -21,13 +21,13 @@ Note: In the Python SDK, both add and search use `group_name` (snake_case) consi
   - Document C: belongs to groups `["docs", "v1"]`
 - After ingestion, the CLI must call `client.v1.context.search(...)` with `metadata={"group_name": [<groups from --groups>]}` and print to stdout a single JSON array containing one object per matching document. Each object must contain at minimum the field `file_name` (string) corresponding to the document's `metadata.file_name`. Any other fields are allowed but ignored by the verifier.
 - The CLI must read the API key from the environment variable `ALCHEMYST_AI_API_KEY`. Do NOT hardcode any API key.
-- The CLI must be **rerunnable** without crashing: avoid 409 Conflict errors by namespacing every `file_name` with the current `ZEALT_RUN_ID`. For example, name the documents `docA-${run-id}.md`, `docB-${run-id}.md`, `docC-${run-id}.md` where `${run-id}` is the value of the `ZEALT_RUN_ID` environment variable.
+- The CLI must be **rerunnable** without crashing: avoid 409 Conflict errors by namespacing every `file_name` with the current `/logs/artifacts/run-id`. For example, name the documents `docA-${run-id}.md`, `docB-${run-id}.md`, `docC-${run-id}.md` where `${run-id}` is the value of the `/logs/artifacts/run-id`.
 - Documents must be added with `context_type="resource"`, `source="docs"`, `scope="internal"`, and matching `scope="internal"` on search.
 - The output JSON array must be printed as the **last** line of stdout (so the verifier can parse it). Any logging/diagnostic prints should go to stderr or appear before the final JSON line.
 - Provide a `requirements.txt` listing `alchemystai` (pin to `==0.10.0` is acceptable).
 
 ## Implementation Hints
-- Read `ZEALT_RUN_ID` from the environment and build the per-document `file_name` values using it as a suffix.
+- Read `/logs/artifacts/run-id` from the environment and build the per-document `file_name` values using it as a suffix.
 - Use `argparse` with `nargs="+"` for `--groups`.
 - Each document passed to `client.v1.context.add(...)` should have `metadata` containing both `file_name` (run-id namespaced) and `group_name` (the list of group strings).
 - The search call should pass `metadata={"group_name": [...]}` for the intersection filter, plus a sensible `query` string (e.g. one of the document contents or a generic prompt) and `scope="internal"`. A low `similarity_threshold` (e.g. 0.1) is recommended so the metadata filter — not the embedding score — drives recall.
@@ -39,12 +39,12 @@ Note: In the Python SDK, both add and search use `group_name` (snake_case) consi
 - Project path: /home/user/myproject
 - Command: `python3 main.py --groups <group1> [<group2> ...]`
 - Input argument format: `--groups <group_name> [<group_name> ...]` (one or more group names, space-separated).
-- The command must read the `ALCHEMYST_AI_API_KEY` and `ZEALT_RUN_ID` environment variables.
+- The command must read the `ALCHEMYST_AI_API_KEY` and `/logs/artifacts/run-id`s.
 - The stdout's **last non-empty line** must be a valid JSON array. Each element must be a JSON object containing the key `file_name` (string).
 - The set of `file_name` values returned must equal exactly the set of documents that belong to **all** of the supplied groups (intersection semantics), where document membership is:
   - `docA-${run-id}.md` → `{eng, v1}`
   - `docB-${run-id}.md` → `{eng, v2}`
   - `docC-${run-id}.md` → `{docs, v1}`
-- The CLI must be rerunnable: invoking it twice in a row with the same `ZEALT_RUN_ID` must not raise a 409 Conflict (handle duplicate ingestion gracefully, e.g. via `client.v1.context.delete(...)` before add, try/except on conflict, or idempotent file naming).
+- The CLI must be rerunnable: invoking it twice in a row with the same `/logs/artifacts/run-id` must not raise a 409 Conflict (handle duplicate ingestion gracefully, e.g. via `client.v1.context.delete(...)` before add, try/except on conflict, or idempotent file naming).
 - A `requirements.txt` at `/home/user/myproject/requirements.txt` declaring the `alchemystai` dependency.
 

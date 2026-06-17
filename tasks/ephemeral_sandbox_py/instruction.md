@@ -6,7 +6,7 @@ Daytona provides isolated compute sandboxes that can be created, controlled, and
 ## Requirements
 - Use the Daytona Python SDK (`pip install daytona`) and the `DAYTONA_API_KEY` environment variable for authentication.
 - Create a new ephemeral sandbox using `CreateSandboxFromSnapshotParams` with `ephemeral=True` and `auto_stop_interval=5`.
-- The sandbox name must be `ephem-py-${run-id}` where `run-id` is read from the `ZEALT_RUN_ID` environment variable.
+- The sandbox name must be `ephem-py-${run-id}` where `run-id` is read from `/logs/artifacts/run-id`.
 - Execute a single shell command (`date +%Y`) inside the sandbox via `sandbox.process.exec(...)` and capture the year that the sandbox reports.
 - Re-read the sandbox object from Daytona (for example, via `daytona.get(sandbox.id)`) and read its `auto_stop_interval` value back from the server-side metadata.
 - Stop the sandbox at the end of the script so that, because it is ephemeral, Daytona auto-deletes it.
@@ -24,7 +24,7 @@ Daytona provides isolated compute sandboxes that can be created, controlled, and
 - Project path: /home/user/myproject
 - Log file: /home/user/myproject/output.log
 - Use the Daytona Python SDK (the `daytona` package) for all interactions; do **NOT** mock the Daytona API.
-- A sandbox named `ephem-py-${run-id}` (with `run-id` from the `ZEALT_RUN_ID` environment variable) must be created with `ephemeral=True` and `auto_stop_interval=5`.
+- A sandbox named `ephem-py-${run-id}` (with `run-id` from `/logs/artifacts/run-id`) must be created with `ephemeral=True` and `auto_stop_interval=5`.
 - The log file must contain exactly two lines, in this order and in these formats:
   - `Year: <year>` where `<year>` is the 4-digit year reported by `date +%Y` inside the sandbox.
   - `AutoStop: <minutes>` where `<minutes>` is the integer value of `auto_stop_interval` returned by Daytona for the created sandbox.

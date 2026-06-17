@@ -6,11 +6,11 @@ You are building a workspace organizer for a SaaS product that uses [Apideck](ht
 Your job is to create a two-level folder hierarchy inside that drive using the official Apideck TypeScript / Node.js SDK (`@apideck/unify`): a parent folder created at the drive root, and a child folder created **inside** that parent folder by referencing its `id` as the new folder's `parent_folder_id`.
 
 ## Requirements
-- Read all credentials and configuration from environment variables: `APIDECK_APP_ID`, `APIDECK_API_KEY`, `APIDECK_CONSUMER_ID`, `APIDECK_FILE_STORAGE_DRIVE_NAME`, and `ZEALT_RUN_ID`.
+- Read all credentials and configuration from environment variables: `APIDECK_APP_ID`, `APIDECK_API_KEY`, `APIDECK_CONSUMER_ID`, `APIDECK_FILE_STORAGE_DRIVE_NAME`, and `/logs/artifacts/run-id`.
 - Use the `@apideck/unify` TypeScript / Node.js SDK to talk to Apideck (do not call `unify.apideck.com` with raw `fetch`/`axios`).
 - Resolve the target drive: list drives in OneDrive and pick the one whose `name` exactly matches `APIDECK_FILE_STORAGE_DRIVE_NAME`. Use its `id` as `drive_id` when creating folders.
-- Create a **parent folder** named `apideck-parent-${ZEALT_RUN_ID}` at the drive's root (`parent_folder_id: "root"`).
-- Create a **child folder** named `apideck-child-${ZEALT_RUN_ID}` whose `parent_folder_id` is the `id` returned by the parent-folder create call (not `"root"` and not a literal path string).
+- Create a **parent folder** named `apideck-parent-<run-id>` at the drive's root (`parent_folder_id: "root"`).
+- Create a **child folder** named `apideck-child-<run-id>` whose `parent_folder_id` is the `id` returned by the parent-folder create call (not `"root"` and not a literal path string).
 - Write a JSON log file with the IDs and names of both folders so the verifier can confirm the hierarchy.
 
 ## Implementation Hints
@@ -27,11 +27,11 @@ Your job is to create a two-level folder hierarchy inside that drive using the o
 - The log file MUST be valid JSON with at least these top-level fields:
   - `drive_id` (string) — id of the drive resolved from `APIDECK_FILE_STORAGE_DRIVE_NAME`.
   - `parent_folder_id` (string) — id returned when creating the parent folder.
-  - `parent_folder_name` (string) — `apideck-parent-${ZEALT_RUN_ID}`.
+  - `parent_folder_name` (string) — `apideck-parent-<run-id>`.
   - `child_folder_id` (string) — id returned when creating the child folder.
-  - `child_folder_name` (string) — `apideck-child-${ZEALT_RUN_ID}`.
+  - `child_folder_name` (string) — `apideck-child-<run-id>`.
 - The two folders MUST be discoverable via the Apideck File Storage API:
-  - A folder named `apideck-parent-${ZEALT_RUN_ID}` exists in the configured drive.
-  - A folder named `apideck-child-${ZEALT_RUN_ID}` exists in the configured drive and lists the parent folder in its `parent_folders` chain (i.e. its `parent_folders[*].id` includes `parent_folder_id`).
+  - A folder named `apideck-parent-<run-id>` exists in the configured drive.
+  - A folder named `apideck-child-<run-id>` exists in the configured drive and lists the parent folder in its `parent_folders` chain (i.e. its `parent_folders[*].id` includes `parent_folder_id`).
 - The TypeScript / Node.js SDK (`@apideck/unify`) MUST be present in the project's `package.json` dependencies.
 

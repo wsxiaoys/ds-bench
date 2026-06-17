@@ -24,7 +24,7 @@ A `LLAMA_CLOUD_API_KEY` environment variable is configured for you, and the netw
 - The Classify resource lives under `client.classifier`. The convenience `client.classifier.classify({...})` call handles upload → poll → result. Each rule is an object with `type` and `description`.
 - File uploads in Node.js use `fs.createReadStream` with `client.files.create({ file, purpose })`. The returned object has an `id` property.
 - The classify result exposes an `items` array; each item has `file_id` plus a `result` object with `type`, `confidence`, and `reasoning`. The order of `items` follows the order of `file_ids` you submit.
-- Read the parallel-run id from the `ZEALT_RUN_ID` environment variable and write it as the very first line of the log file so concurrent runs do not clobber each other's expectations.
+- Read the parallel-run id from `/logs/artifacts/run-id` and write it as the very first line of the log file so concurrent runs do not clobber each other's expectations.
 - The Classify product is in beta; use only fields and methods documented for the v2 SDK.
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ A `LLAMA_CLOUD_API_KEY` environment variable is configured for you, and the netw
 - Ensure the script is executed against the real LlamaCloud API and the log artifact exists.
 - Log file: /home/user/myproject/output.log
 - The log file must contain, in order:
-  1. A first line in the exact format `Run ID: <run-id>` where `<run-id>` is the value of the `ZEALT_RUN_ID` environment variable.
+  1. A first line in the exact format `Run ID: <run-id>` where `<run-id>` is the value of the `/logs/artifacts/run-id`.
   2. One line per sample file in the exact format `Classified: <basename> | Type: <type> | Confidence: <confidence>` where `<basename>` is the file name without any directory prefix (e.g., `invoice.txt`), `<type>` is the predicted category string returned by Classify, and `<confidence>` is the numeric confidence value as returned by Classify.
 - The file `/home/user/myproject/classify.ts` must exist and must import from `@llamaindex/llama-cloud`.
 - The classification of `invoice.txt` must be `invoice`, of `receipt.txt` must be `receipt`, and of `contract.txt` must be `contract`.

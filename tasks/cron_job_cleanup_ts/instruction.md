@@ -4,7 +4,7 @@
 Encore is a backend framework that provides declarative infrastructure. In this task, you will create an Encore.ts application with a PostgreSQL database and a cron job that periodically cleans up stale records.
 
 ## Requirements
-- Create an Encore.ts application. The app name MUST be `cron-app-${run-id}`, where `${run-id}` is read from the `ZEALT_RUN_ID` environment variable.
+- Create an Encore.ts application. The app name MUST be `cron-app-${run-id}`, where `${run-id}` is read from `/logs/artifacts/run-id`.
 - Create a PostgreSQL database named `records_db`.
 - Create a `records` table with `id` (serial primary key), `data` (text), and `created_at` (timestamp, defaults to now).
 - Implement the following API endpoints in a service named `cleanup`:
@@ -15,7 +15,7 @@ Encore is a backend framework that provides declarative infrastructure. In this 
 - Deploy the application to Encore Cloud.
 
 ## Implementation Hints
-- Read the current `run-id` from the `ZEALT_RUN_ID` environment variable.
+- Read the current `run-id` from `/logs/artifacts/run-id`.
 - Use `encore app init cron-app-${run-id} --lang ts` to initialize the project.
 - Use `encore.dev/storage/sqldb` for the database.
 - Use `encore.dev/cron` to define the cron job.
@@ -30,7 +30,7 @@ Encore is a backend framework that provides declarative infrastructure. In this 
 ## Acceptance Criteria
 - Project path: /home/user/cron-app-${run-id}
 - Ensure the application is deployed to Encore Cloud.
-- The Encore app name must be `cron-app-${run-id}` where `run-id` is read from the `ZEALT_RUN_ID` environment variable.
+- The Encore app name must be `cron-app-${run-id}` where `run-id` is read from `/logs/artifacts/run-id`.
 - API Endpoints (accessible at `https://staging-<app-id>.encr.app`):
   - `POST /records`:
     - Request: `{"data": "test", "created_at": "2020-01-01T00:00:00Z"}`

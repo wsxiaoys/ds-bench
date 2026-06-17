@@ -14,7 +14,7 @@ Create a simple REST API for managing a list of books using Encore for Go and it
 - Save the Encore App ID to a log file after deployment.
 
 ## Implementation Hints
-- Read the `run-id` from the `ZEALT_RUN_ID` environment variable.
+- Read the `run-id` from `/logs/artifacts/run-id`.
 - To deploy an Encore app to Encore Cloud:
   1. Initialize a Git repository with `git init`.
   2. Authenticate Encore by writing the provided `ENCORE_AUTH_TOKEN_JSON` value to `~/.config/encore/.auth_token`: `mkdir -p ~/.config/encore && printf '%s' "$ENCORE_AUTH_TOKEN_JSON" > ~/.config/encore/.auth_token`.

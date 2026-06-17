@@ -9,15 +9,15 @@ Convex allows scheduling recurring functions using cron jobs. In this task, you 
 - The mutation should delete all documents in the table `sessions_${run-id}` where the `expiresAt` field is less than the current time (using `Date.now()`).
 - Create a cron job in `convex/crons.ts` that runs the `cleanup` mutation every 1 hour.
 - The cron job must be named `cleanup-sessions-${run-id}`.
-- The `run-id` must be read from the `ZEALT_RUN_ID` environment variable.
-- You must set the `ZEALT_RUN_ID` environment variable in the Convex deployment using the Convex CLI so that it is available at runtime.
+- The `run-id` must be read from `/logs/artifacts/run-id`.
+- You must set the `/logs/artifacts/run-id` in the Convex deployment using the Convex CLI so that it is available at runtime.
 - Deploy the Convex functions to the production environment.
 - Save the text `Deployment: success` to `/home/user/myproject/output.log` after a successful deployment.
 
 ## Implementation Hints
 - Use `npx convex deploy` to deploy your functions. It will automatically use the `CONVEX_DEPLOY_KEY` provided in the environment.
-- Use `npx convex env set ZEALT_RUN_ID <value>` to set the environment variable in your Convex deployment.
-- In your Convex functions and crons, access the environment variable using `process.env.ZEALT_RUN_ID`.
+- Use `npx convex env set `/logs/artifacts/run-id` <value>` to set the environment variable in your Convex deployment.
+- In your Convex functions and crons, access the environment variable using `process.env.`/logs/artifacts/run-id``.
 - You can use `ctx.db.query(tableName).filter(q => q.lt(q.field("expiresAt"), Date.now())).collect()` to find expired sessions, and then `ctx.db.delete(doc._id)` to delete them.
 - Do not create a strict `schema.ts` to avoid table name validation issues with dynamic table names.
 

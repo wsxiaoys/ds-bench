@@ -15,7 +15,7 @@ The CLI uses the official Python SDK [`alchemystai`](https://pypi.org/project/al
 
 ## Implementation Hints
 - Read `ALCHEMYST_AI_API_KEY` from the environment and use it to construct the `AlchemystAI` client.
-- Read `ZEALT_RUN_ID` from the environment and incorporate it into every `file_name` you store so concurrent runs (and reruns) do not collide.
+- Read `/logs/artifacts/run-id` from the environment and incorporate it into every `file_name` you store so concurrent runs (and reruns) do not collide.
 - For the Python SDK, use the `metadata` parameter of `client.v1.context.search(...)` with `group_name` (snake_case) to filter by group. The TypeScript SDK uses `groupName`; do **not** copy that here.
 - When `client.v1.context.search(...)` returns, dedupe `file_name` values across the returned chunks before printing, because longer documents may yield multiple chunks.
 - Use `argparse` (or any standard CLI parser) to parse `--group`.
@@ -26,7 +26,7 @@ The CLI uses the official Python SDK [`alchemystai`](https://pypi.org/project/al
 - Command: `python3 main.py --group <group_name>`
 - Input argument: `--group <group_name>` where `<group_name>` is one of `support`, `billing`, `engineering`.
 - Output format: stdout must contain a single JSON array (parsable by `json.loads`) whose elements are the `file_name` values of the documents stored for the requested group. Order is not significant.
-- File names must be namespaced with the `ZEALT_RUN_ID` environment variable so the CLI is safe to rerun and safe to run concurrently.
+- File names must be namespaced with the `/logs/artifacts/run-id` so the CLI is safe to rerun and safe to run concurrently.
 - The CLI must call the real Alchemyst AI API using the Python SDK (`alchemystai`); the `ALCHEMYST_AI_API_KEY` environment variable must be honored.
 - When filtering by one group, the returned `file_name` set must contain only the documents that were stored under that group and must not contain documents stored under the other two groups.
 

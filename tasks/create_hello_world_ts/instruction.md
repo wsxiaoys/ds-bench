@@ -5,7 +5,7 @@ Encore is a backend framework for building type-safe distributed systems. It aut
 
 ## Requirements
 - Create an Encore.ts application.
-- The application name should be `hello-${run-id}` where `${run-id}` is read from the `ZEALT_RUN_ID` environment variable.
+- The application name should be `hello-${run-id}` where `${run-id}` is read from `/logs/artifacts/run-id`.
 - Implement a single REST API endpoint `GET /hello/:name` that returns `{ "message": "Hello <name>!" }`.
 - Deploy the application to Encore Cloud.
 - Write the deployed app's base URL to a log file after a successful deployment.

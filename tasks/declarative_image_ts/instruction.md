@@ -6,7 +6,7 @@ Daytona's declarative builder lets you define a sandbox image programmatically w
 ## Requirements
 - Write a TypeScript (Node.js) program that uses the `@daytonaio/sdk` package.
 - Build a declarative `Image` using `Image.debianSlim('3.12').pipInstall(['flask', 'click'])`.
-- Create a sandbox from that declarative image. The sandbox name must be `decl-ts-${ZEALT_RUN_ID}` (with `ZEALT_RUN_ID` read from the environment).
+- Create a sandbox from that declarative image. The sandbox name must be `decl-ts-<run-id>` (with `/logs/artifacts/run-id` read from the environment).
 - Inside the sandbox, run the Python command:
 
   ```
@@ -23,13 +23,13 @@ Daytona's declarative builder lets you define a sandbox image programmatically w
 - Use `sandbox.process.executeCommand` and read its `.result` (stdout) field; write that result verbatim to the log file.
 - Always delete the sandbox at the end (use `daytona.delete(sandbox)`), even on errors.
 - Project must live under `/home/user/myproject` (use it as your working directory for the Node.js project: `package.json`, code, and `output.log`).
-- Read `run-id` from the `ZEALT_RUN_ID` environment variable before creating the sandbox and use it as the sandbox name suffix to keep parallel runs isolated.
+- Read `run-id` from `/logs/artifacts/run-id` before creating the sandbox and use it as the sandbox name suffix to keep parallel runs isolated.
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
 - Log file: /home/user/myproject/output.log
 - The sandbox is created from a declarative image built with `Image.debianSlim('3.12').pipInstall(['flask', 'click'])` using the `@daytonaio/sdk` TypeScript SDK.
-- The sandbox name is `decl-ts-${ZEALT_RUN_ID}` where `ZEALT_RUN_ID` is read from the environment.
+- The sandbox name is `decl-ts-<run-id>` where `/logs/artifacts/run-id` is read from the environment.
 - The log file `/home/user/myproject/output.log` must contain, on separate lines, the output of the in-sandbox Python command in the exact format:
   - A line starting with `flask ` followed by a non-empty Flask version string.
   - A line starting with `click ` followed by a non-empty Click version string.

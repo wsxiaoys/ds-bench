@@ -10,7 +10,7 @@ The environment already contains a deterministic, pre-generated dataset at `/app
   - `ingest`: reads a CSV file, splits it into batches of size N, embeds the chosen text column using the OpenAI `text-embedding-3-small` model, and writes all rows (with their embeddings) to a LanceDB table.
   - `search`: embeds a query string with the same OpenAI model, runs a vector search against an existing LanceDB table, and prints the top-k results as a single JSON object to standard output.
 - All embeddings MUST be produced by real OpenAI API calls; no local models, no mock vectors.
-- Run-id isolation: ingest/search MUST work against whatever table name the verifier passes via `--table`. The verifier will pass a name suffixed with the current `ZEALT_RUN_ID` so that concurrent test runs do not collide.
+- Run-id isolation: ingest/search MUST work against whatever table name the verifier passes via `--table`. The verifier will pass a name suffixed with the current `/logs/artifacts/run-id` so that concurrent test runs do not collide.
 - The LanceDB database must live at `/home/user/loader_project/lance_db`. All tables are created inside that directory.
 - Ingestion MUST preserve every CSV row exactly once (no de-duplication, no row drops). Row count in the LanceDB table after ingest MUST equal the row count of the CSV (excluding the header).
 
@@ -46,5 +46,5 @@ The environment already contains a deterministic, pre-generated dataset at `/app
   }
   ```
   The `results` array MUST have length `min(k, table_row_count)` and be ordered from best to worst match. The `score` field may be either a distance or a similarity (any monotonic ordering) but must be a finite number.
-- The verifier will pass the table name `articles_${ZEALT_RUN_ID}` to both subcommands. Read `ZEALT_RUN_ID` is NOT required from your code (the verifier provides the suffix as part of `--table`).
+- The verifier will pass the table name `articles_<run-id>` to both subcommands. Read `/logs/artifacts/run-id` is NOT required from your code (the verifier provides the suffix as part of `--table`).
 

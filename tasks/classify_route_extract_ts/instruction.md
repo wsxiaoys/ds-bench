@@ -29,7 +29,7 @@ The filenames hint at the category, but your script **must not hard-code the rou
     - `effective_date`  (string, ISO `YYYY-MM-DD` if possible)
     - `term`            (string, e.g., `"12 months"`)
   All Extract jobs must use `extraction_target: 'per_doc'` and `tier: 'agentic'`. Run the four Extract jobs **concurrently** (e.g., `Promise.all`) with a concurrency cap of **at most 2 in flight** (use `p-limit`, a semaphore, or an equivalent).
-- **Parallel-run safety.** Read the run id from the `ZEALT_RUN_ID` environment variable. Tag every uploaded source file with an `external_file_id` equal to `${ZEALT_RUN_ID}-<basename_without_ext>` (for example, `zr-abc123-acme_invoice` for `acme_invoice.pdf`).
+- **Parallel-run safety.** Read the run id from `/logs/artifacts/run-id`. Tag every uploaded source file with an `external_file_id` equal to `<run-id>-<basename_without_ext>` (for example, `zr-abc123-acme_invoice` for `acme_invoice.pdf`).
 - **Aggregate artifacts.** Write two artifacts:
   - `./outputs/results.json` — a JSON object keyed by the input file basename (e.g. `"acme_invoice.pdf"`) where each value is an object with exactly these keys:
     - `category`   (string — `"invoice"` or `"contract"`, as returned by Classify)
@@ -57,5 +57,5 @@ The filenames hint at the category, but your script **must not hard-code the rou
   - For every entry whose `category == "invoice"`, `data` must contain non-empty string `invoice_number`, non-empty string `vendor_name`, positive numeric `total_amount`, and `line_items` as a non-empty array of objects each with numeric `quantity`, `unit_price`, and `total`.
   - For every entry whose `category == "contract"`, `data` must contain `parties` as an array of strings with length ≥ 2, a non-empty string `effective_date`, and a non-empty string `term`.
   - Each `file_id` must be a non-empty string matching the file id returned by the LlamaCloud API.
-- Every uploaded source file in LlamaCloud must carry an `external_file_id` exactly equal to `${ZEALT_RUN_ID}-<basename_without_ext>` for its corresponding input PDF. The verifier will query the LlamaCloud SDK for each expected external id and assert it exists.
+- Every uploaded source file in LlamaCloud must carry an `external_file_id` exactly equal to `<run-id>-<basename_without_ext>` for its corresponding input PDF. The verifier will query the LlamaCloud SDK for each expected external id and assert it exists.
 

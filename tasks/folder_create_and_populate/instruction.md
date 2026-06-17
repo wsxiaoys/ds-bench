@@ -4,7 +4,7 @@
 You are working with the Apideck Unified File Storage API connected to OneDrive (service id `onedrive`). Your job is to organize a small batch of run-scoped notes by first creating a dedicated folder at the OneDrive drive root, and then uploading exactly three text files into that folder. The end state — folder plus three child files — must be observable through the unified File Storage API.
 
 ## Requirements
-- Read the `ZEALT_RUN_ID` environment variable. Use its value as `run-id` throughout (use it directly; do not transform it).
+- Read the `/logs/artifacts/run-id`. Use its value as `run-id` throughout (use it directly; do not transform it).
 - Resolve the OneDrive drive whose name equals the value of the `APIDECK_FILE_STORAGE_DRIVE_NAME` environment variable, and operate at that drive's root.
 - Create exactly one folder at the drive root whose name is `FOLDER-${run-id}`.
 - Upload exactly three small text files into the newly created folder (NOT at the drive root). The file names must be:
@@ -33,6 +33,6 @@ You are working with the Apideck Unified File Storage API connected to OneDrive 
   ```
 
   where `folder_id` is the Apideck id returned for the created folder and `file_ids` are the Apideck ids returned for the three uploaded files (order does not matter).
-- After the run, the drive named by `APIDECK_FILE_STORAGE_DRIVE_NAME` must contain at its root exactly one folder named `FOLDER-${ZEALT_RUN_ID}` (type `folder`).
-- That folder must directly contain exactly three files named `NOTE-${ZEALT_RUN_ID}-1.txt`, `NOTE-${ZEALT_RUN_ID}-2.txt`, and `NOTE-${ZEALT_RUN_ID}-3.txt`. Each of these files, when retrieved via `GET /file-storage/files/{id}`, must report the created folder's id as its direct parent folder.
+- After the run, the drive named by `APIDECK_FILE_STORAGE_DRIVE_NAME` must contain at its root exactly one folder named `FOLDER-<run-id>` (type `folder`).
+- That folder must directly contain exactly three files named `NOTE-<run-id>-1.txt`, `NOTE-<run-id>-2.txt`, and `NOTE-<run-id>-3.txt`. Each of these files, when retrieved via `GET /file-storage/files/{id}`, must report the created folder's id as its direct parent folder.
 

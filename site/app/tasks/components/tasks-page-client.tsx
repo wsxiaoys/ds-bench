@@ -1,6 +1,7 @@
 "use client";
 
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { type ClassValue, clsx } from "clsx";
 import {
 	AlertTriangle,
@@ -17,10 +18,13 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+	memo,
 	type ReactNode,
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
+	useRef,
 	useState,
 } from "react";
 import { twMerge } from "tailwind-merge";
@@ -32,11 +36,6 @@ import {
 	DrawerHeader,
 	DrawerTitle,
 } from "@/components/ui/drawer";
-import {
-	HoverCard,
-	HoverCardContent,
-	HoverCardTrigger,
-} from "@/components/ui/hover-card";
 import { ScrollBar } from "@/components/ui/scroll-area";
 import {
 	Sheet,
@@ -49,6 +48,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import zealtConfig from "@/zealt/config.json";
 import { BackToTop } from "./back-to-top";
 import { MultiSelect } from "./multi-select";
+import {
+	hideCellPreview,
+	showCellPreview,
+	TaskCellPreviewLayer,
+} from "./task-cell-preview";
 
 export type CompactTrial = {
 	job_name: string;
@@ -78,6 +82,13 @@ export type CompactTask = {
 	trials: CompactTrial[];
 };
 
+type TableTask = {
+	taskName: string;
+	tags?: string[];
+	comboMap: Record<string, CompactTrial>;
+	avgDuration: number;
+};
+
 type TasksPageClientProps = {
 	tasksData: CompactTask[];
 };
@@ -102,32 +113,6 @@ function useMediaQuery(query: string) {
 	return matches;
 }
 
-type TableWrapperProps = {
-	hasRows: boolean;
-	children: ReactNode;
-};
-
-function TableWrapper({ hasRows, children }: TableWrapperProps) {
-	if (!hasRows) {
-		return (
-			<div className="flex flex-1 items-center justify-center py-12 text-center text-muted-foreground">
-				No tasks found matching your filters
-			</div>
-		);
-	}
-
-	return (
-		<ScrollAreaPrimitive.Root className="relative min-h-0 flex-1">
-			<ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
-				{children}
-			</ScrollAreaPrimitive.Viewport>
-			<ScrollBar className="top-11 bottom-2 h-auto" />
-			<ScrollBar orientation="horizontal" />
-			<ScrollAreaPrimitive.Corner />
-		</ScrollAreaPrimitive.Root>
-	);
-}
-
 export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 	const router = useRouter();
 	const pathname = usePathname();
@@ -138,9 +123,12 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 	const [selectedTags, setSelectedTags] = useState<string[]>([]);
 	const [querySort, setQuerySort] = useState("default");
 	const [queryOrder, setQueryOrder] = useState("asc");
-	const [searchQuery, setSearchQuery] = useState("");
 	const [selectedTask, setSelectedTask] = useState<string | null>(null);
 	const [isInstructionOpen, setIsInstructionOpen] = useState(false);
+	const replaceUrlTimerRef = useRef<number | null>(null);
+	const tableScrollRef = useRef<HTMLDivElement | null>(null);
+	const [tableScrollElement, setTableScrollElement] =
+		useState<HTMLDivElement | null>(null);
 	const isDesktop = useMediaQuery("(min-width: 1024px)");
 	const [devMode, setDevMode] = useState(
 		process.env.NODE_ENV === "development",
@@ -151,8 +139,36 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		selectedModels.length > 0 ||
 		selectedAgents.length > 0 ||
 		selectedTags.length > 0 ||
-		searchQuery !== "" ||
+		queryQ !== "" ||
 		querySort !== "default";
+
+	const scheduleReplaceUrl = useCallback(
+		(nextUrl: string) => {
+			if (replaceUrlTimerRef.current) {
+				window.clearTimeout(replaceUrlTimerRef.current);
+			}
+
+			replaceUrlTimerRef.current = window.setTimeout(() => {
+				router.replace(nextUrl, { scroll: false });
+				replaceUrlTimerRef.current = null;
+			}, 100);
+		},
+		[router],
+	);
+
+	useEffect(
+		() => () => {
+			if (replaceUrlTimerRef.current) {
+				window.clearTimeout(replaceUrlTimerRef.current);
+			}
+		},
+		[],
+	);
+
+	const setTableScrollRef = useCallback((node: HTMLDivElement | null) => {
+		tableScrollRef.current = node;
+		setTableScrollElement(node);
+	}, []);
 
 	const updateParams = useCallback(
 		(updates: {
@@ -199,14 +215,14 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			const nextUrl = params.toString()
 				? `${pathname}?${params.toString()}`
 				: pathname;
-			router.replace(nextUrl, { scroll: false });
+			scheduleReplaceUrl(nextUrl);
 		},
 		[
 			pathname,
 			queryOrder,
 			queryQ,
 			querySort,
-			router,
+			scheduleReplaceUrl,
 			selectedAgents,
 			selectedModels,
 			selectedStatuses,
@@ -235,7 +251,6 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			localStorage.getItem("devMode") === "true";
 
 		setQueryQ(initialQ);
-		setSearchQuery(initialQ);
 		setSelectedStatuses(initialStatuses);
 		setSelectedModels(initialModels);
 		setSelectedAgents(initialAgents);
@@ -245,17 +260,13 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		setDevMode(initialDevMode);
 	}, []);
 
-	useEffect(() => {
-		if (searchQuery === queryQ) {
-			return;
-		}
-
-		const timer = setTimeout(() => {
-			setQueryQ(searchQuery);
-			updateParams({ q: searchQuery });
-		}, 300);
-		return () => clearTimeout(timer);
-	}, [queryQ, searchQuery, updateParams]);
+	const handleSearchQueryChange = useCallback(
+		(nextQuery: string) => {
+			setQueryQ(nextQuery);
+			updateParams({ q: nextQuery });
+		},
+		[updateParams],
+	);
 
 	const allTrialsFlat = useMemo(
 		() =>
@@ -347,8 +358,8 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 
 	const noTrials = activeCombos.length === 0;
 
-	const tableTasks = useMemo(() => {
-		const query = searchQuery.trim().toLowerCase();
+	const tableTasks = useMemo<TableTask[]>(() => {
+		const query = queryQ.trim().toLowerCase();
 
 		const filteredByTags =
 			selectedTags.length > 0
@@ -475,8 +486,8 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		activeCombos,
 		noTrials,
 		queryOrder,
+		queryQ,
 		querySort,
-		searchQuery,
 		tasksData,
 		selectedStatuses.length,
 		selectedStatuses.includes,
@@ -491,6 +502,61 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			tableTasks.some((task) => task.comboMap[combo] !== undefined),
 		);
 	}, [activeCombos, noTrials, tableTasks]);
+
+	const rowVirtualizer = useVirtualizer({
+		count: tableTasks.length,
+		getScrollElement: () => tableScrollRef.current,
+		estimateSize: (index) =>
+			tableTasks[index]?.tags && tableTasks[index].tags.length > 0 ? 60 : 36,
+		overscan: 12,
+	});
+	const rowVirtualizerRef = useRef(rowVirtualizer);
+	rowVirtualizerRef.current = rowVirtualizer;
+	const measureVirtualRow = useCallback((node: HTMLTableRowElement | null) => {
+		if (node) {
+			rowVirtualizerRef.current.measureElement(node);
+		}
+	}, []);
+	const virtualResetKey = useMemo(
+		() =>
+			[
+				queryQ,
+				queryOrder,
+				querySort,
+				visibleCombos.join("\u0000"),
+				selectedModels.join("\u0000"),
+				selectedStatuses.join("\u0000"),
+				selectedTags.join("\u0000"),
+				tableTasks.length,
+			].join("\u0001"),
+		[
+			queryOrder,
+			queryQ,
+			querySort,
+			selectedModels,
+			selectedStatuses,
+			selectedTags,
+			tableTasks.length,
+			visibleCombos,
+		],
+	);
+	const virtualRows = rowVirtualizer.getVirtualItems();
+	const virtualPaddingTop = virtualRows[0]?.start ?? 0;
+	const virtualPaddingBottom =
+		virtualRows.length > 0
+			? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+			: 0;
+
+	useLayoutEffect(() => {
+		void virtualResetKey;
+		tableScrollRef.current?.scrollTo({ top: 0 });
+		rowVirtualizer.scrollToOffset(0);
+	}, [rowVirtualizer, virtualResetKey]);
+
+	const handleOpenTaskInstruction = useCallback((taskName: string) => {
+		setSelectedTask(taskName);
+		setIsInstructionOpen(true);
+	}, []);
 
 	const toggleSort = (field: string) => {
 		if (querySort === field) {
@@ -638,7 +704,6 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 						<button
 							type="button"
 							onClick={() => {
-								setSearchQuery("");
 								setQueryQ("");
 								setSelectedStatuses([]);
 								setSelectedModels([]);
@@ -646,7 +711,15 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 								setSelectedTags([]);
 								setQuerySort("default");
 								setQueryOrder("asc");
-								router.replace(pathname, { scroll: false });
+								updateParams({
+									q: "",
+									status: [],
+									model: [],
+									agent: [],
+									tags: [],
+									sort: "default",
+									order: "asc",
+								});
 							}}
 							className="ml-auto flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border bg-secondary px-4 font-medium text-foreground text-sm shadow-sm transition-colors hover:bg-secondary/80 sm:w-auto md:ml-0"
 						>
@@ -656,21 +729,18 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 					)}
 				</div>
 
-				<div className="relative w-full md:w-72">
-					<Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-					<input
-						type="text"
-						placeholder="Search tasks..."
-						value={searchQuery}
-						onChange={(e) => setSearchQuery(e.target.value)}
-						className="w-full rounded-lg border border-border bg-background py-2 pr-4 pl-9 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary/20"
-					/>
-				</div>
+				<TaskSearchInput
+					value={queryQ}
+					onDebouncedChange={handleSearchQueryChange}
+				/>
 			</div>
 
 			<div className="fade-in relative flex max-h-full animate-in flex-col overflow-hidden rounded-lg border border-border bg-card/50 shadow-sm backdrop-blur-sm duration-500">
 				{noTrials ? (
-					<TableWrapper hasRows={tableTasks.length > 0}>
+					<TableWrapper
+						hasRows={tableTasks.length > 0}
+						viewportRef={setTableScrollRef}
+					>
 						<table className="w-full border-collapse text-left text-sm">
 							<thead className="sticky top-0 z-30 select-none border-border border-b font-medium text-muted-foreground shadow-sm">
 								<tr>
@@ -694,8 +764,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 											<button
 												type="button"
 												onClick={() => {
-													setSelectedTask(task.taskName);
-													setIsInstructionOpen(true);
+													handleOpenTaskInstruction(task.taskName);
 												}}
 												className="group/task flex h-full w-full cursor-pointer flex-col items-start justify-center gap-1 bg-transparent px-3 py-2 text-left text-foreground transition-colors even:bg-secondary/5 hover:bg-secondary/30 hover:text-primary focus:outline-none sm:px-6"
 												title={`View ${task.taskName} instruction`}
@@ -733,12 +802,15 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 						</table>
 					</TableWrapper>
 				) : (
-					<TableWrapper hasRows={tableTasks.length > 0}>
+					<TableWrapper
+						hasRows={tableTasks.length > 0}
+						viewportRef={setTableScrollRef}
+					>
 						<table className="w-full border-collapse text-left text-sm">
 							<thead className="sticky top-0 z-30 select-none border-border border-b bg-secondary font-medium text-muted-foreground shadow-sm backdrop-blur">
 								<tr>
 									<th
-										className="group relative left-0 z-40 w-50 min-w-50 max-w-50 cursor-pointer bg-transparent px-3 py-3 transition-colors after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] hover:bg-secondary/50 hover:text-foreground sm:px-6 md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5 md:bg-secondary"
+										className="group relative left-0 z-40 w-50 min-w-50 max-w-50 cursor-pointer bg-transparent px-3 py-3 transition-colors after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] hover:text-foreground sm:px-6 md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5 md:bg-secondary"
 										onClick={() => toggleSort("taskName")}
 									>
 										<div className="flex items-center gap-1 sm:gap-2">
@@ -781,196 +853,44 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-border/30">
-								{tableTasks.map((task) => (
-									<tr
-										key={task.taskName}
-										className="group transition-colors duration-200 even:bg-secondary/5 hover:bg-secondary/30"
-									>
-										<td className="relative left-0 z-20 w-50 min-w-50 max-w-50 bg-background p-0 font-mono after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5">
-											<button
-												type="button"
-												onClick={() => {
-													setSelectedTask(task.taskName);
-													setIsInstructionOpen(true);
-												}}
-												className="group/task flex h-full w-full cursor-pointer flex-col items-start justify-center gap-1 bg-transparent px-3 py-2 text-left text-foreground transition-colors hover:text-primary focus:outline-none group-even:bg-secondary/5 group-hover:bg-secondary/30 sm:px-6"
-												title={`View ${task.taskName} instruction`}
-											>
-												<span className="block w-full truncate text-xs group-hover/task:underline md:text-sm">
-													{task.taskName}
-												</span>
-												{task.tags && task.tags.length > 0 && (
-													<div className="mt-0.5 flex flex-wrap gap-1">
-														{task.tags.map((tag) => (
-															<span
-																key={tag}
-																className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 font-medium text-[10px] text-primary"
-															>
-																{tag}
-															</span>
-														))}
-													</div>
-												)}
-											</button>
-										</td>
-										{visibleCombos.map((combo, index) => {
-											const trial = task.comboMap[combo];
-											return (
-												<td
-													key={combo}
-													className={cn(
-														"relative z-10 h-full min-w-30 p-0 md:min-w-37.5",
-														index > 0 && "border-border/50 border-l",
-													)}
-												>
-													{trial ? (
-														<HoverCard openDelay={200} closeDelay={0}>
-															<HoverCardTrigger asChild>
-																<Link
-																	href={`/jobs/${encodeURIComponent(trial.job_name)}/${encodeURIComponent(trial.trial_name)}/run`}
-																	target="_blank"
-																	rel="noopener noreferrer"
-																	className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-pointer items-center justify-start gap-1.5 border-none bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/50 focus:outline-none sm:px-6 md:gap-2"
-																>
-																	{trial.error ? (
-																		<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500/90 md:h-4 md:w-4" />
-																	) : trial.passed ? (
-																		<Check
-																			className="h-3.5 w-3.5 shrink-0 text-emerald-500/90 md:h-4 md:w-4"
-																			strokeWidth={3}
-																		/>
-																	) : (
-																		<XIcon
-																			className="h-3.5 w-3.5 shrink-0 text-amber-500/90 md:h-4 md:w-4"
-																			strokeWidth={3}
-																		/>
-																	)}
-																	<span className="font-mono text-muted-foreground/80 text-xs transition-colors group-hover/cell:text-foreground group-hover/cell:underline md:text-sm">
-																		{trial.exec_duration
-																			? `${trial.exec_duration.toFixed(1)}s`
-																			: "-"}
-																	</span>
-																</Link>
-															</HoverCardTrigger>
-															<HoverCardContent
-																side="top"
-																align="center"
-																className="z-50 w-64 border-border bg-popover p-4 shadow-xl"
-															>
-																<div className="mb-3 flex items-center gap-2 border-border/50 border-b pb-3">
-																	{trial.error ? (
-																		<>
-																			<AlertTriangle className="h-4 w-4 text-red-500" />
-																			<span className="font-medium text-red-500">
-																				Error
-																			</span>
-																		</>
-																	) : trial.passed ? (
-																		<>
-																			<Check
-																				className="h-4 w-4 text-emerald-500"
-																				strokeWidth={3}
-																			/>
-																			<span className="font-medium text-emerald-500">
-																				Passed
-																			</span>
-																		</>
-																	) : (
-																		<>
-																			<XIcon
-																				className="h-4 w-4 text-amber-500"
-																				strokeWidth={3}
-																			/>
-																			<span className="font-medium text-amber-500">
-																				Failed
-																			</span>
-																		</>
-																	)}
-																</div>
-																<div className="space-y-2.5 text-left text-popover-foreground text-xs">
-																	<div className="flex items-center justify-between">
-																		<span className="text-muted-foreground">
-																			Setup Environment
-																		</span>
-																		<span className="font-mono">
-																			{trial.latency_breakdown.env_setup?.toFixed(
-																				1,
-																			) || "-"}
-																			s
-																		</span>
-																	</div>
-																	<div className="flex items-center justify-between">
-																		<span className="text-muted-foreground">
-																			Setup
-																		</span>
-																		<span className="font-mono">
-																			{trial.latency_breakdown.agent_setup?.toFixed(
-																				1,
-																			) || "-"}
-																			s
-																		</span>
-																	</div>
-																	<div className="-mx-2 flex items-center justify-between rounded bg-secondary/40 px-2 py-1.5 font-medium">
-																		<span className="text-foreground">
-																			Execution
-																		</span>
-																		<span className="font-mono text-primary">
-																			{trial.latency_breakdown.agent_exec?.toFixed(
-																				1,
-																			) || "-"}
-																			s
-																		</span>
-																	</div>
-																	<div className="flex items-center justify-between">
-																		<span className="text-muted-foreground">
-																			Verify Result
-																		</span>
-																		<span className="font-mono">
-																			{trial.latency_breakdown.verifier?.toFixed(
-																				1,
-																			) || "-"}
-																			s
-																		</span>
-																	</div>
-																</div>
-															</HoverCardContent>
-														</HoverCard>
-													) : (
-														<HoverCard openDelay={200} closeDelay={0}>
-															<HoverCardTrigger asChild>
-																<div className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-help items-center justify-start bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/20 focus:outline-none sm:px-6">
-																	<span className="font-mono text-muted-foreground/30 text-xs md:text-sm">
-																		-
-																	</span>
-																</div>
-															</HoverCardTrigger>
-															<HoverCardContent
-																side="top"
-																align="center"
-																className="z-50 w-64 border-border bg-popover p-4 shadow-xl"
-															>
-																<div className="text-left text-popover-foreground text-xs">
-																	<p className="font-medium text-foreground/90">
-																		Evaluation result is not available yet
-																	</p>
-																	<p className="mt-1 text-muted-foreground">
-																		This model has not evaluated this task or
-																		the evaluation is still in progress.
-																	</p>
-																</div>
-															</HoverCardContent>
-														</HoverCard>
-													)}
-												</td>
-											);
-										})}
+								{virtualPaddingTop > 0 ? (
+									<tr>
+										<td
+											colSpan={visibleCombos.length + 1}
+											className="border-0 p-0"
+											style={{ height: `${virtualPaddingTop}px` }}
+										/>
 									</tr>
-								))}
+								) : null}
+								{virtualRows.map((virtualRow) => {
+									const task = tableTasks[virtualRow.index];
+									return (
+										<VirtualTaskRow
+											key={task.taskName}
+											task={task}
+											rowIndex={virtualRow.index}
+											activeCombos={visibleCombos}
+											measureElement={measureVirtualRow}
+											onSelectTask={handleOpenTaskInstruction}
+										/>
+									);
+								})}
+								{virtualPaddingBottom > 0 ? (
+									<tr>
+										<td
+											colSpan={visibleCombos.length + 1}
+											className="border-0 p-0"
+											style={{ height: `${virtualPaddingBottom}px` }}
+										/>
+									</tr>
+								) : null}
 							</tbody>
 						</table>
 					</TableWrapper>
 				)}
 			</div>
+
+			<TaskCellPreviewLayer scrollElement={tableScrollElement} />
 
 			{isDesktop ? (
 				<Sheet open={isInstructionOpen} onOpenChange={setIsInstructionOpen}>
@@ -1015,6 +935,187 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			)}
 
 			<BackToTop />
+		</div>
+	);
+}
+
+type TableWrapperProps = {
+	hasRows: boolean;
+	children: ReactNode;
+	viewportRef?: (node: HTMLDivElement | null) => void;
+};
+
+function TableWrapper({ hasRows, children, viewportRef }: TableWrapperProps) {
+	if (!hasRows) {
+		return (
+			<div className="flex flex-1 items-center justify-center py-12 text-center text-muted-foreground">
+				No tasks found matching your filters
+			</div>
+		);
+	}
+
+	return (
+		<ScrollAreaPrimitive.Root className="relative min-h-0 flex-1">
+			<ScrollAreaPrimitive.Viewport
+				ref={viewportRef}
+				className="h-full w-full rounded-[inherit]"
+			>
+				{children}
+			</ScrollAreaPrimitive.Viewport>
+			<ScrollBar className="top-11 bottom-2 h-auto" />
+			<ScrollBar orientation="horizontal" />
+			<ScrollAreaPrimitive.Corner />
+		</ScrollAreaPrimitive.Root>
+	);
+}
+
+type VirtualTaskRowProps = {
+	task: TableTask;
+	rowIndex: number;
+	activeCombos: string[];
+	measureElement: (node: HTMLTableRowElement | null) => void;
+	onSelectTask: (taskName: string) => void;
+};
+
+const VirtualTaskRow = memo(function VirtualTaskRow({
+	task,
+	rowIndex,
+	activeCombos,
+	measureElement,
+	onSelectTask,
+}: VirtualTaskRowProps) {
+	return (
+		<tr
+			data-index={rowIndex}
+			ref={measureElement}
+			className={cn(
+				"group transition-colors duration-200 hover:bg-secondary/30",
+				rowIndex % 2 === 1 && "bg-secondary/5",
+			)}
+		>
+			<td className="relative left-0 z-20 w-50 min-w-50 max-w-50 bg-background p-0 font-mono after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] md:sticky md:w-87.5 md:min-w-87.5 md:max-w-87.5">
+				<button
+					type="button"
+					onClick={() => onSelectTask(task.taskName)}
+					className={cn(
+						"group/task flex h-full w-full cursor-pointer flex-col items-start justify-center gap-1 bg-transparent px-3 py-2 text-left text-foreground transition-colors hover:text-primary focus:outline-none group-hover:bg-secondary/30 sm:px-6",
+						rowIndex % 2 === 1 && "bg-secondary/5",
+					)}
+					title={`View ${task.taskName} instruction`}
+				>
+					<span className="block w-full truncate text-xs group-hover/task:underline md:text-sm">
+						{task.taskName}
+					</span>
+					{task.tags && task.tags.length > 0 && (
+						<div className="mt-0.5 flex flex-wrap gap-1">
+							{task.tags.map((tag) => (
+								<span
+									key={tag}
+									className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 font-medium text-[10px] text-primary"
+								>
+									{tag}
+								</span>
+							))}
+						</div>
+					)}
+				</button>
+			</td>
+			{activeCombos.map((combo, index) => {
+				const trial = task.comboMap[combo];
+				return (
+					<td
+						key={combo}
+						className={cn(
+							"relative z-10 h-full min-w-30 p-0 md:min-w-37.5",
+							index > 0 && "border-border/50 border-l",
+						)}
+					>
+						{trial ? (
+							<Link
+								href={`/jobs/${encodeURIComponent(trial.job_name)}/${encodeURIComponent(trial.trial_name)}/run`}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-pointer items-center justify-start gap-1.5 border-none bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/50 focus:outline-none sm:px-6 md:gap-2"
+								onPointerEnter={(event) =>
+									showCellPreview(event.currentTarget, trial)
+								}
+								onPointerLeave={hideCellPreview}
+								onFocus={(event) => showCellPreview(event.currentTarget, trial)}
+								onBlur={hideCellPreview}
+								onClick={hideCellPreview}
+							>
+								{trial.error ? (
+									<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500/90 md:h-4 md:w-4" />
+								) : trial.passed ? (
+									<Check
+										className="h-3.5 w-3.5 shrink-0 text-emerald-500/90 md:h-4 md:w-4"
+										strokeWidth={3}
+									/>
+								) : (
+									<XIcon
+										className="h-3.5 w-3.5 shrink-0 text-amber-500/90 md:h-4 md:w-4"
+										strokeWidth={3}
+									/>
+								)}
+								<span className="font-mono text-muted-foreground/80 text-xs transition-colors group-hover/cell:text-foreground group-hover/cell:underline md:text-sm">
+									{trial.exec_duration
+										? `${trial.exec_duration.toFixed(1)}s`
+										: "-"}
+								</span>
+							</Link>
+						) : (
+							<div
+								className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-help items-center justify-start bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/20 focus:outline-none sm:px-6"
+								onPointerEnter={(event) =>
+									showCellPreview(event.currentTarget, null)
+								}
+								onPointerLeave={hideCellPreview}
+							>
+								<span className="font-mono text-muted-foreground/30 text-xs md:text-sm">
+									-
+								</span>
+							</div>
+						)}
+					</td>
+				);
+			})}
+		</tr>
+	);
+});
+
+type TaskSearchInputProps = {
+	value: string;
+	onDebouncedChange: (value: string) => void;
+};
+
+function TaskSearchInput({ value, onDebouncedChange }: TaskSearchInputProps) {
+	const [inputValue, setInputValue] = useState(value);
+
+	useEffect(() => {
+		setInputValue(value);
+	}, [value]);
+
+	useEffect(() => {
+		if (inputValue === value) {
+			return;
+		}
+
+		const timer = window.setTimeout(() => {
+			onDebouncedChange(inputValue);
+		}, 300);
+		return () => window.clearTimeout(timer);
+	}, [inputValue, onDebouncedChange, value]);
+
+	return (
+		<div className="relative w-full md:w-72">
+			<Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+			<input
+				type="text"
+				placeholder="Search tasks..."
+				value={inputValue}
+				onChange={(event) => setInputValue(event.target.value)}
+				className="w-full rounded-lg border border-border bg-background py-2 pr-4 pl-9 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary/20"
+			/>
 		</div>
 	);
 }
