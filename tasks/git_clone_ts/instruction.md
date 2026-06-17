@@ -6,7 +6,7 @@ Daytona provides a Toolbox `git` module accessible through its SDKs that lets yo
 ## Requirements
 - Write a TypeScript/Node.js program that uses the `@daytonaio/sdk` package to talk to the real Daytona SaaS at `https://app.daytona.io/api`.
 - The program must perform these steps in order:
-  1. Read `run-id` from the `ZEALT_RUN_ID` environment variable and create a sandbox whose name is `git-ts-${run-id}`.
+  1. Read `run-id` from `/logs/artifacts/run-id` and create a sandbox whose name is `git-ts-${run-id}`.
   2. Use `sandbox.git.clone(...)` to clone `https://github.com/octocat/Spoon-Knife` into the absolute path `/home/daytona/spoon-knife` inside the sandbox.
   3. Call `sandbox.git.status(...)` against the cloned path and obtain the current branch name.
   4. Use `sandbox.process.executeCommand("ls /home/daytona/spoon-knife")` to list the files at the root of the cloned repository.
@@ -27,7 +27,7 @@ Daytona provides a Toolbox `git` module accessible through its SDKs that lets yo
 ## Acceptance Criteria
 - Project path: /home/user/myproject
 - Log file: /home/user/myproject/output.log
-- The TypeScript program creates a sandbox named `git-ts-${run-id}` where `run-id` is read from the `ZEALT_RUN_ID` environment variable.
+- The TypeScript program creates a sandbox named `git-ts-${run-id}` where `run-id` is read from `/logs/artifacts/run-id`.
 - The repository `https://github.com/octocat/Spoon-Knife` is cloned into `/home/daytona/spoon-knife` inside the sandbox using `sandbox.git.clone`.
 - The log file `/home/user/myproject/output.log` contains exactly two informational lines, in any order:
   - A line of the form `Branch: <branch_name>` produced from `sandbox.git.status(...)`.

@@ -5,10 +5,10 @@ Daytona Volumes are FUSE-based mounts that provide shared, persistent file stora
 
 ## Requirements
 - Use the Daytona Python SDK (`pip install daytona`) and the `DAYTONA_API_KEY` environment variable to authenticate.
-- Read the `run-id` from the `ZEALT_RUN_ID` environment variable and use it for all resource naming.
-- Get-or-create a Daytona Volume whose name is `vol-${ZEALT_RUN_ID}`.
-- Create a fresh sandbox named `vol-py-${ZEALT_RUN_ID}` that mounts the volume at `/data`.
-- Inside the sandbox, write a marker file to the mounted volume containing the text `persistent ${ZEALT_RUN_ID}`, then read it back.
+- Read the `run-id` from `/logs/artifacts/run-id` and use it for all resource naming.
+- Get-or-create a Daytona Volume whose name is `vol-<run-id>`.
+- Create a fresh sandbox named `vol-py-<run-id>` that mounts the volume at `/data`.
+- Inside the sandbox, write a marker file to the mounted volume containing the text `persistent <run-id>`, then read it back.
 - Record the marker contents and the total number of Daytona volumes visible to your account in a log file.
 - Clean up by deleting the sandbox after the work is complete.
 
@@ -22,9 +22,9 @@ Daytona Volumes are FUSE-based mounts that provide shared, persistent file stora
 ## Acceptance Criteria
 - Project path: /home/user/myproject
 - Log file: /home/user/myproject/output.log
-- A Daytona Volume named `vol-${ZEALT_RUN_ID}` (where `${ZEALT_RUN_ID}` is the value of the `ZEALT_RUN_ID` environment variable) must exist in the Daytona account after the task runs.
+- A Daytona Volume named `vol-<run-id>` (where `<run-id>` is the value of the `/logs/artifacts/run-id`) must exist in the Daytona account after the task runs.
 - The log file must contain exactly two lines (order does not matter), each on its own line:
   - `Marker: <content>` where `<content>` is the exact text read back from `/data/marker.txt` inside the sandbox (expected: `persistent <run-id>`).
   - `VolumeCount: <n>` where `<n>` is the integer count returned by `daytona.volume.list()` (must be a positive integer).
-- The sandbox `vol-py-${ZEALT_RUN_ID}` does not need to still exist at verification time; it MUST be deleted by the task.
+- The sandbox `vol-py-<run-id>` does not need to still exist at verification time; it MUST be deleted by the task.
 

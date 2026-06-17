@@ -5,7 +5,7 @@ Daytona provides secure, isolated sandboxes that can execute code on demand. The
 
 ## Requirements
 - Write a TypeScript/Node.js program that uses the `@daytonaio/sdk` package to talk to the real Daytona SaaS API.
-- Create a Daytona sandbox with `language: 'typescript'`. The sandbox name (label) must be `code-run-ts-${ZEALT_RUN_ID}` where `${ZEALT_RUN_ID}` is read from the `ZEALT_RUN_ID` environment variable.
+- Create a Daytona sandbox with `language: 'typescript'`. The sandbox name (label) must be `code-run-ts-<run-id>` where `<run-id>` is read from `/logs/artifacts/run-id`.
 - Inside the sandbox, use `sandbox.process.codeRun(...)` to execute a snippet that computes the factorial of 6 and prints the integer result on stdout.
 - Capture the captured result from the `codeRun` response back in your host program and write it to a log file in the format `Factorial: <value>` (a single line, exact prefix `Factorial: ` followed by the integer).
 - Delete the sandbox at the end of the run, including on failure paths.
@@ -21,7 +21,7 @@ Daytona provides secure, isolated sandboxes that can execute code on demand. The
 - Project path: /home/user/myproject
 - Log file: /home/user/myproject/output.log
 - The sandbox is created against the real Daytona SaaS using `@daytonaio/sdk` (no mocking).
-- The sandbox is created with `language: 'typescript'` and named `code-run-ts-${ZEALT_RUN_ID}` (read `ZEALT_RUN_ID` from the environment).
+- The sandbox is created with `language: 'typescript'` and named `code-run-ts-<run-id>` (read `/logs/artifacts/run-id` from the environment).
 - The snippet executed via `sandbox.process.codeRun(...)` computes 6! and prints the integer on stdout.
 - The log file `/home/user/myproject/output.log` exists after the program finishes and contains a line matching exactly the format `Factorial: <value>` where `<value>` is the integer factorial result.
 - The sandbox is deleted before the program exits successfully.

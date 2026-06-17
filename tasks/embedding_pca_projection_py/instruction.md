@@ -9,7 +9,7 @@ Your job is to compress those vectors using **Principal Component Analysis** dow
 - Read every row from the source LanceDB table `articles` (at `/home/user/myproject/lancedb/`).
 - Fit a PCA model that reduces the 128-d embeddings to 16 dimensions. The fit must be deterministic.
 - Project all 600 source vectors into the 16-d PCA space.
-- Create a new LanceDB table named `articles_pca_${ZEALT_RUN_ID}` (read `ZEALT_RUN_ID` from the environment) at `/home/user/myproject/lancedb/`. Its schema must contain at least the columns:
+- Create a new LanceDB table named `articles_pca_<run-id>` (read `/logs/artifacts/run-id` from the environment) at `/home/user/myproject/lancedb/`. Its schema must contain at least the columns:
   - `id` (int)
   - `title` (str)
   - `embedding` (fixed-size list of 16 float32 values — the PCA-projected vector)
@@ -25,13 +25,13 @@ Your job is to compress those vectors using **Principal Component Analysis** dow
 ## Implementation Hints
 - The original `articles` table is read-only seed data; do not modify or drop it.
 - You may use `sklearn.decomposition.PCA` (it is installed) or roll your own SVD-based PCA. Either is fine as long as the persisted `components` and `mean` arrays follow the sklearn convention so the verifier can independently re-project a query vector.
-- Read `ZEALT_RUN_ID` from the environment for the new table name.
+- Read `/logs/artifacts/run-id` from the environment for the new table name.
 - The new table must contain exactly 600 rows and the embedding column must be a fixed-size list of 16 float32 values.
 - No GPU, no local model inference, no mocks. Use only NumPy/sklearn/LanceDB.
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- A new LanceDB table named `articles_pca_${ZEALT_RUN_ID}` exists at `/home/user/myproject/lancedb/` with exactly 600 rows. Its `embedding` column is a fixed-size list of 16 float32 values; `id` is int; `title` is str; `original_id` is int and matches the source row's `id`.
+- A new LanceDB table named `articles_pca_<run-id>` exists at `/home/user/myproject/lancedb/` with exactly 600 rows. Its `embedding` column is a fixed-size list of 16 float32 values; `id` is int; `title` is str; `original_id` is int and matches the source row's `id`.
 - A NumPy archive at `/app/pca_model.npz` contains exactly the arrays `components` (shape `(16, 128)`) and `mean` (shape `(128,)`).
 - `/home/user/myproject/solution.py` exposes a top-level `search(query_vec, k)` callable. Calling `search(query_vec, k)` with a length-128 query vector and a positive integer `k` returns a Python `list` of `k` dicts. Each dict has keys `id` (int), `title` (str), and `original_id` (int).
 - The search ordering must place rows that are genuine nearest neighbours of the projected query at the top: for a precomputed query vector, the top-5 results in PCA space must overlap by at least 3 IDs with the brute-force top-5 nearest neighbours of that same query in the original 128-d space.

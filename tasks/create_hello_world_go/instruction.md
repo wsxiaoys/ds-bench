@@ -11,7 +11,7 @@ Encore is an open-source backend framework for building type-safe distributed sy
 - Deploy the application to Encore Cloud.
 
 ## Implementation Hints
-- Read the current `run-id` from the `ZEALT_RUN_ID` environment variable.
+- Read the current `run-id` from `/logs/artifacts/run-id`.
 - Authenticate with Encore using the provided token: `mkdir -p ~/.config/encore && printf '%s' "$ENCORE_AUTH_TOKEN_JSON" > ~/.config/encore/.auth_token`.
 - Initialize the app using `encore app init helloworld-${run-id} --lang go`.
 - Define the API endpoint using the `//encore:api` annotation above a standard Go function.

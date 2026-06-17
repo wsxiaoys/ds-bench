@@ -11,7 +11,7 @@ Convex provides built-in support for cursor-based pagination, allowing you to lo
 - Deploy the Convex functions to the cloud.
 
 ## Implementation Hints
-- Read the `run-id` from the `ZEALT_RUN_ID` environment variable in your deployment or testing scripts if needed, but the API should accept it as an argument.
+- Read the `run-id` from `/logs/artifacts/run-id` in your deployment or testing scripts if needed, but the API should accept it as an argument.
 - Use `npx convex deploy` to push your schema and functions to the Convex cloud. The environment will have `CONVEX_DEPLOY_KEY` set.
 - Use `paginationOptsValidator` from `convex/server` to validate the pagination arguments in your query.
 - Filter by `runId` using `.filter(q => q.eq(q.field("runId"), args.runId))` or an index, then use `.order("desc")` and `.paginate(args.paginationOpts)`.

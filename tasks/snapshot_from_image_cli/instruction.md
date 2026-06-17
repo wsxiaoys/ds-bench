@@ -12,7 +12,7 @@ In this task you will use the `daytona` CLI binary (already installed in the env
 - Capture the full snapshot listing as JSON to disk and write a one-line summary to a log file containing the newly created snapshot's ID.
 
 ## Implementation Hints
-- Read the current `run-id` from the `ZEALT_RUN_ID` environment variable and build the snapshot name as `snap-${run-id}`.
+- Read the current `run-id` from `/logs/artifacts/run-id` and build the snapshot name as `snap-${run-id}`.
 - Use `daytona login --api-key "$DAYTONA_API_KEY"` to authenticate before any other CLI calls.
 - Use `daytona snapshot create <name> --image python:3.11-slim` to create the snapshot. The CLI blocks until the snapshot is validated.
 - Use `daytona snapshot list --format json` to obtain the machine-readable snapshot inventory, and `jq` to extract the `id` field for the entry whose `name` matches `snap-${run-id}`.
@@ -22,8 +22,8 @@ In this task you will use the `daytona` CLI binary (already installed in the env
 - Project path: /home/user/myproject
 - Snapshots JSON file: /home/user/myproject/snapshots.json
 - Log file: /home/user/myproject/output.log
-- The snapshot must be named exactly `snap-${run-id}`, where `run-id` is the value of the `ZEALT_RUN_ID` environment variable.
+- The snapshot must be named exactly `snap-${run-id}`, where `run-id` is the value of the `/logs/artifacts/run-id`.
 - The snapshot must be backed by the image `python:3.11-slim`.
 - `/home/user/myproject/snapshots.json` must contain the JSON output of `daytona snapshot list --format json`, and must include an entry whose `name` equals `snap-${run-id}`.
-- `/home/user/myproject/output.log` must contain a single line in the exact format `Snapshot: snap-<run-id> -> id <snapshot-id>`, where `<run-id>` is the `ZEALT_RUN_ID` value and `<snapshot-id>` is the `id` field reported by the Daytona API for that snapshot.
+- `/home/user/myproject/output.log` must contain a single line in the exact format `Snapshot: snap-<run-id> -> id <snapshot-id>`, where `<run-id>` is the `/logs/artifacts/run-id` value and `<snapshot-id>` is the `id` field reported by the Daytona API for that snapshot.
 

@@ -19,18 +19,18 @@ The CLI must demonstrate this with two phases:
 - The CLI accepts a single argument `--phase <establish|recall>` and reads:
     - `ALCHEMYST_AI_API_KEY` (Alchemyst API key)
     - `OPENAI_API_KEY` (OpenAI API key)
-    - `ZEALT_RUN_ID` (run id used to namespace the user and session ids; see Parallel-Run Safety below)
+    - `/logs/artifacts/run-id` (run id used to namespace the user and session ids; see Parallel-Run Safety below)
 - Use the wrapped function `withAlchemyst(generateText, { apiKey: process.env.ALCHEMYST_AI_API_KEY })` and call it with an OpenAI model from `@ai-sdk/openai` (for example `openai('gpt-4o-mini')` or another small OpenAI chat model). **Do not** call OpenAI directly without the Alchemyst wrapper.
 - Every call to the wrapped `generateText` MUST pass both `userId` and `sessionId`. The middleware will return `MISSING_PARAMETERS` if either is omitted.
 - Print the model's response text to **stdout** (nothing else on stdout other than the model output is required, but it must include the response text).
 - No mocks, stubs, fake clients, or hard-coded model replies: the program must perform real network calls to Alchemyst and OpenAI.
 
 ## Parallel-Run Safety (REQUIRED)
-This task may run multiple times concurrently against the same Alchemyst account. To avoid cross-trial memory contamination you MUST namespace the user and session identifiers with the value of the `ZEALT_RUN_ID` environment variable:
+This task may run multiple times concurrently against the same Alchemyst account. To avoid cross-trial memory contamination you MUST namespace the user and session identifiers with the value of the `/logs/artifacts/run-id`:
 
-- `userId` = `vercel-memory-user-${ZEALT_RUN_ID}`
-- `sessionId` for `--phase establish` = `establish-${ZEALT_RUN_ID}`
-- `sessionId` for `--phase recall`    = `recall-${ZEALT_RUN_ID}`
+- `userId` = `vercel-memory-user-<run-id>`
+- `sessionId` for `--phase establish` = `establish-<run-id>`
+- `sessionId` for `--phase recall`    = `recall-<run-id>`
 
 The two phases intentionally use **different `sessionId` values** so the test confirms cross-session memory, not just same-session chat history.
 
@@ -42,20 +42,20 @@ The two phases intentionally use **different `sessionId` values** so the test co
 - Choose a small OpenAI chat model (e.g. `gpt-4o-mini`) to keep cost and latency low.
 - In `--phase establish`, send a prompt that *clearly states the dietary preference*. A good prompt is something like `"Please remember this about me: I am vegan and I am allergic to peanuts. Acknowledge that you will remember."`. The user message itself is what Alchemyst persists, so it must include the literal word `vegan`.
 - In `--phase recall`, use a **different sessionId** and a prompt that forces the model to surface the stored dietary information, for example: `"Based on what you remember about my dietary restrictions, what should I avoid at a dinner party? List the exact dietary label(s) I told you."`. The recall response must include the word `vegan` (case-insensitive). It is fine if it also mentions peanuts.
-- Make the program fail fast (non-zero exit + helpful stderr) if any of `ALCHEMYST_AI_API_KEY`, `OPENAI_API_KEY`, or `ZEALT_RUN_ID` are missing, or if `--phase` is not one of `establish` / `recall`.
+- Make the program fail fast (non-zero exit + helpful stderr) if any of `ALCHEMYST_AI_API_KEY`, `OPENAI_API_KEY`, or `/logs/artifacts/run-id` are missing, or if `--phase` is not one of `establish` / `recall`.
 
 ## Acceptance Criteria
 - Project path: `/home/user/vercel-ai-memory`
 - The project must declare these dependencies in `package.json`: `ai`, `@ai-sdk/openai`, `@alchemystai/aisdk`.
 - The TypeScript build must produce a runnable entrypoint at `/home/user/vercel-ai-memory/dist/main.js`.
 - Command (establish phase): `node dist/main.js --phase establish`
-    - Reads `ALCHEMYST_AI_API_KEY`, `OPENAI_API_KEY`, and `ZEALT_RUN_ID` from the environment.
-    - Uses `userId = vercel-memory-user-${ZEALT_RUN_ID}` and `sessionId = establish-${ZEALT_RUN_ID}`.
+    - Reads `ALCHEMYST_AI_API_KEY`, `OPENAI_API_KEY`, and `/logs/artifacts/run-id` from the environment.
+    - Uses `userId = vercel-memory-user-<run-id>` and `sessionId = establish-<run-id>`.
     - Calls the `withAlchemyst`-wrapped `generateText` (Vercel AI SDK + an OpenAI model) with a prompt that states the user is vegan.
     - Prints the model response text to stdout.
     - Exits with code 0 on success.
 - Command (recall phase): `node dist/main.js --phase recall`
-    - Uses the same `userId` but `sessionId = recall-${ZEALT_RUN_ID}` (i.e. a different session).
+    - Uses the same `userId` but `sessionId = recall-<run-id>` (i.e. a different session).
     - Calls the wrapped `generateText` again with a prompt that asks the model to recall the user's stored dietary information.
     - Prints the model response text to stdout, and the printed text **must contain the case-insensitive substring `vegan`**.
     - Exits with code 0 on success.

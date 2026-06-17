@@ -5,7 +5,7 @@ Convex provides strong runtime validation using a code-first schema. This ensure
 
 ## Requirements
 - Initialize a Convex project in `/home/user/project`.
-- Read the `ZEALT_RUN_ID` environment variable. Replace any hyphens in the `run-id` with underscores to create a safe suffix (e.g., if `run-id` is `zr-123`, the suffix is `zr_123`).
+- Read the `/logs/artifacts/run-id`. Replace any hyphens in the `run-id` with underscores to create a safe suffix (e.g., if `run-id` is `zr-123`, the suffix is `zr_123`).
 - Define a schema for a table named `products_<suffix>` with the following fields:
   - `name` (string)
   - `price` (number)
@@ -14,7 +14,7 @@ Convex provides strong runtime validation using a code-first schema. This ensure
 - Deploy the project to the Convex cloud using the deployment key.
 
 ## Implementation Hints
-- Read the `ZEALT_RUN_ID` environment variable to determine the table and file names.
+- Read the `/logs/artifacts/run-id` to determine the table and file names.
 - Use `defineSchema` and `defineTable` from `convex/server` to define the schema in `convex/schema.ts`.
 - Use `v.string()`, `v.number()`, and `v.boolean()` from `convex/values` for field types.
 - Ensure the mutation arguments are also validated using the same `v` validators.

@@ -15,13 +15,13 @@ Reference documentation (the agent SHOULD consult these before implementing):
 - The CLI must accept a `--thresholds` argument: a comma-separated list of `similarity_threshold` values (e.g. `0.5,0.7,0.9`). All values must be in the range `[0, 1]`.
 - For each threshold, the CLI must invoke `client.v1.context.search` with the same fixed query and the given `similarity_threshold`, then count the number of returned `contexts`.
 - The CLI must print a single JSON object to stdout summarizing the recall counts per threshold.
-- All ingested documents must be namespaced by the current `run-id` (read from the `ZEALT_RUN_ID` environment variable) so that concurrent runs do not collide on `file_name`. Re-running the CLI in the same run must not crash on 409 conflicts.
+- All ingested documents must be namespaced by the current `run-id` (read from `/logs/artifacts/run-id`) so that concurrent runs do not collide on `file_name`. Re-running the CLI in the same run must not crash on 409 conflicts.
 - The CLI must read the API key from the `ALCHEMYST_AI_API_KEY` environment variable. Do **not** hardcode credentials.
 
 ## Implementation Hints
 - Initialize the SDK with `new AlchemystAI({ apiKey: process.env.ALCHEMYST_AI_API_KEY })`.
 - Build a corpus where some documents are clearly about the query topic and others are unrelated. A larger spread of relevance makes the threshold effect more visible.
-- Use unique, deterministic `file_name` values that include the `ZEALT_RUN_ID`, e.g. `threshold_doc_<idx>_<ZEALT_RUN_ID>.md`, so the corpus is stable across re-runs and isolated per run.
+- Use unique, deterministic `file_name` values that include the `/logs/artifacts/run-id`, e.g. `threshold_doc_<idx>_<run-id>.md`, so the corpus is stable across re-runs and isolated per run.
 - Handle ingestion idempotently: if the API returns a 409 Conflict because the documents are already stored, treat it as success and proceed to the search phase.
 - When invoking `v1.context.search`, pass the same `query` string and `scope` for every threshold; only the `similarity_threshold` value changes.
 - Compile TypeScript to JavaScript so the project can be run with `node dist/main.js ...`.
@@ -30,8 +30,8 @@ Reference documentation (the agent SHOULD consult these before implementing):
 - Project path: /home/user/myproject
 - Command: `node dist/main.js --thresholds <csv>`
   - `<csv>` is a comma-separated list of floats in `[0, 1]`, for example `0.5,0.7,0.9`.
-- The command must read `ALCHEMYST_AI_API_KEY` and `ZEALT_RUN_ID` from the environment.
-- All ingested documents must use `file_name` values that include the value of `ZEALT_RUN_ID`.
+- The command must read `ALCHEMYST_AI_API_KEY` and `/logs/artifacts/run-id` from the environment.
+- All ingested documents must use `file_name` values that include the value from `/logs/artifacts/run-id`.
 - The command must print exactly one JSON object to stdout. Other diagnostic logging may be written to stderr but must not appear on stdout.
 - The stdout JSON must conform to this schema (extra fields are allowed, but the listed fields are required):
 
@@ -49,5 +49,5 @@ Reference documentation (the agent SHOULD consult these before implementing):
   - Each `count` must be a non-negative integer equal to the number of contexts returned by `v1.context.search` at that threshold.
 - When `--thresholds` is sorted ascending (lowest threshold first), the corresponding `count` sequence must be monotonically non-increasing (i.e. higher thresholds must never return more results than lower thresholds for the same query and corpus).
 - The command must exit with status code `0` on success and a non-zero code on failure.
-- The command must be idempotent: running it multiple times in the same environment with the same `ZEALT_RUN_ID` must continue to succeed (no fatal errors on duplicate ingestion).
+- The command must be idempotent: running it multiple times in the same environment with the same `/logs/artifacts/run-id` must continue to succeed (no fatal errors on duplicate ingestion).
 

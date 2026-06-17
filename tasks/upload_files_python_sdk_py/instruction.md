@@ -5,7 +5,7 @@ Apideck Unify exposes a normalized File Storage API over 200+ connectors at `htt
 
 ## Requirements
 - Implement a Python script at `/home/user/myproject/upload_reports.py` that uses the `apideck-unify` SDK (not raw `requests`/`curl`) to upload two text files to the root of the OneDrive drive named `APIDECK_FILE_STORAGE_DRIVE_NAME`.
-- The two uploaded files must be named `report-${run-id}-alpha.txt` and `report-${run-id}-beta.txt`, where `${run-id}` comes from the `ZEALT_RUN_ID` environment variable. Their contents must be the literal strings `alpha payload for ${run-id}\n` and `beta payload for ${run-id}\n` respectively (UTF-8, ending with a single newline).
+- The two uploaded files must be named `report-${run-id}-alpha.txt` and `report-${run-id}-beta.txt`, where `${run-id}` comes from `/logs/artifacts/run-id`. Their contents must be the literal strings `alpha payload for ${run-id}\n` and `beta payload for ${run-id}\n` respectively (UTF-8, ending with a single newline).
 - After both uploads succeed, append a single JSON object to `/home/user/myproject/output.log` containing the two returned Apideck file IDs and the file names, then exit cleanly.
 
 ## Implementation Hints
@@ -19,7 +19,7 @@ Apideck Unify exposes a normalized File Storage API over 200+ connectors at `htt
 - Script path: /home/user/myproject/upload_reports.py
 - Log file: /home/user/myproject/output.log
 - The executor is responsible for actually running the upload; the verifier will not re-run it.
-- File names must be exactly `report-${run-id}-alpha.txt` and `report-${run-id}-beta.txt`, with `${run-id}` taken from the `ZEALT_RUN_ID` environment variable.
+- File names must be exactly `report-${run-id}-alpha.txt` and `report-${run-id}-beta.txt`, with `${run-id}` taken from `/logs/artifacts/run-id`.
 - The two files must end up at the root of the drive named `APIDECK_FILE_STORAGE_DRIVE_NAME` on the OneDrive connector.
 - The log file must contain a single line of JSON with this shape (no extra keys, no trailing comma):
   ```

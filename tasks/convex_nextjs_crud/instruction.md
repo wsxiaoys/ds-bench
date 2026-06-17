@@ -6,7 +6,7 @@ Create a basic CRUD task manager application using Next.js and Convex as the bac
 ## Requirements
 - Initialize a Next.js application and set up Convex.
 - Define a Convex schema for a `tasks` table. Each task should have `text` (string), `isCompleted` (boolean), and `runId` (string).
-- To support parallel testing, every task in the database MUST include a `runId` field, populated from the `NEXT_PUBLIC_ZEALT_RUN_ID` environment variable (which you must pass from `ZEALT_RUN_ID`).
+- To support parallel testing, every task in the database MUST include a `runId` field, populated from the `NEXT_PUBLIC_`/logs/artifacts/run-id`` environment variable (which you must pass from `/logs/artifacts/run-id`).
 - The UI must ONLY display tasks that match the current `runId`.
 - Implement functionality to:
   - List tasks (filtered by `runId`).
@@ -20,7 +20,7 @@ Create a basic CRUD task manager application using Next.js and Convex as the bac
 - Set up a Convex provider in the Next.js app.
 - Define `tasks` in `convex/schema.ts` with `text`, `isCompleted`, and `runId`.
 - Write queries and mutations in `convex/tasks.ts`.
-- Ensure you read `ZEALT_RUN_ID` and expose it to the frontend via `NEXT_PUBLIC_ZEALT_RUN_ID` so the client can filter and create tasks with the correct `runId`.
+- Ensure you read `/logs/artifacts/run-id` and expose it to the frontend via `NEXT_PUBLIC_`/logs/artifacts/run-id`` so the client can filter and create tasks with the correct `runId`.
 - Pass `CONVEX_URL` to `NEXT_PUBLIC_CONVEX_URL` for the frontend.
 - Provide a form to add tasks, and buttons/checkboxes to toggle and delete them.
 - Add `data-testid` attributes to key elements (e.g., `task-input`, `add-button`, `task-item`, `toggle-button`, `delete-button`) to make browser verification easier.

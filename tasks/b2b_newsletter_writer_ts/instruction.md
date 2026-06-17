@@ -15,7 +15,7 @@ This is a non-trivial integration task: the agent must wire together two externa
 - Use the official `@alchemystai/sdk` package to talk to the Alchemyst context engine (the `v1.context.add` and `v1.context.search` primitives).
 - Use the official `openai` package to call the OpenAI Chat Completions API.
 - Read the Alchemyst API key from the `ALCHEMYST_AI_API_KEY` environment variable and the OpenAI API key from the `OPENAI_API_KEY` environment variable. The program must never hardcode keys or use mocked clients.
-- Seed exactly the following five research articles into the context engine on every run. Each article's `metadata.file_name` MUST be namespaced with the current `run-id` (read from the `ZEALT_RUN_ID` environment variable) to avoid `409 Conflict` errors on reruns and to keep concurrent runs isolated. Use `context_type: 'resource'` and `scope: 'internal'`.
+- Seed exactly the following five research articles into the context engine on every run. Each article's `metadata.file_name` MUST be namespaced with the current `run-id` (read from `/logs/artifacts/run-id`) to avoid `409 Conflict` errors on reruns and to keep concurrent runs isolated. Use `context_type: 'resource'` and `scope: 'internal'`.
   - `file_name`: `b2b_article_ai_agents_${run-id}.md`
     - `content`: `AI agents are autonomous software systems built on top of large language models (LLMs). They plan multi-step workflows, call external tools, and reflect on their own outputs. Modern agentic systems combine planning, tool use, memory, and orchestration to automate knowledge work. Keywords: autonomous, agentic, planning, tool use, orchestration.`
   - `file_name`: `b2b_article_rag_${run-id}.md`
@@ -47,6 +47,6 @@ This is a non-trivial integration task: the agent must wire together two externa
 - After the command exits with status 0, the file `/home/user/myproject/output/newsletter.md` MUST exist.
 - `/home/user/myproject/output/newsletter.md` MUST contain at least three distinct Markdown headings (lines starting with `#`, `##`, or `###`).
 - For a run with `--topic "AI agents"`, the generated newsletter MUST mention at least two of the keywords seeded into the AI-agents article: `agent`, `autonomous`, `LLM`, `planning`, `tool` (matched case-insensitively as whole-word substrings).
-- All Alchemyst `v1.context.add` calls MUST set `metadata.file_name` to a value that includes the value of the `ZEALT_RUN_ID` environment variable, so reruns and concurrent runs do not collide.
+- All Alchemyst `v1.context.add` calls MUST set `metadata.file_name` to a value that includes the value of the `/logs/artifacts/run-id`, so reruns and concurrent runs do not collide.
 - The program MUST read `ALCHEMYST_AI_API_KEY` and `OPENAI_API_KEY` from environment variables. No mocking of either API is allowed.
 

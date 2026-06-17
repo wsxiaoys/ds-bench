@@ -4,7 +4,7 @@
 You are working with the Apideck File Storage Unified API connected to OneDrive. Your job is to seed the configured OneDrive drive with four marker files and then exercise the unified `Search Files` endpoint to retrieve only the relevant subset.
 
 ## Requirements
-- Read the `ZEALT_RUN_ID` environment variable. Use it as `run-id` throughout.
+- Read the `/logs/artifacts/run-id`. Use it as `run-id` throughout.
 - Upload exactly four files at the root of the OneDrive drive named `APIDECK_FILE_STORAGE_DRIVE_NAME` with names:
   - `KEEP-${run-id}-1.txt`
   - `KEEP-${run-id}-2.txt`

@@ -9,13 +9,13 @@ Daytona provides on-demand Linux sandboxes that can be controlled programmatical
   1. Create a new Daytona sandbox whose name is derived from the current `run-id`.
   2. Run `cat /etc/os-release` inside the sandbox and record the captured stdout in the local log file.
   3. Run `node --version` inside the sandbox and record the captured stdout in the local log file.
-  4. Run `echo ${ZEALT_RUN_ID}` inside the sandbox (so the sandbox echoes the same run-id value that the local environment sees) and record the captured stdout in the local log file.
+  4. Run `echo <run-id>` inside the sandbox (so the sandbox echoes the same run-id value that the local environment sees) and record the captured stdout in the local log file.
   5. Delete the sandbox before the program exits.
 - Authenticate against the Daytona SaaS using the `DAYTONA_API_KEY` environment variable.
 
 ## Implementation Hints
 - Install `@daytona/sdk` in the project directory and authenticate via the `DAYTONA_API_KEY` environment variable (the SDK reads it automatically when no explicit config is given).
-- Use `daytona.create(...)` to provision a sandbox and pass the `ZEALT_RUN_ID` value into the sandbox environment (e.g. via `envVars`) so the sandbox-side `echo` step can see it.
+- Use `daytona.create(...)` to provision a sandbox and pass the `/logs/artifacts/run-id` value into the sandbox environment (e.g. via `envVars`) so the sandbox-side `echo` step can see it.
 - Use `sandbox.process.executeCommand(<command>)` to run each command and read the captured stdout from the returned response's `result` field.
 - Append the captured output of each command to the local log file with the required line prefix (`OS: `, `NODE: `, `ECHO: `) so each captured payload is preserved on its own labeled line(s).
 - Always tear the sandbox down at the end (use `try`/`finally` or equivalent) so that failures do not leak sandboxes.
@@ -24,10 +24,10 @@ Daytona provides on-demand Linux sandboxes that can be controlled programmatical
 - Project path: /home/user/myproject
 - Log file: /home/user/myproject/output.log
 - The program must use the `@daytona/sdk` TypeScript SDK and the real Daytona SaaS API (no mocking).
-- The sandbox name must be `exec-ts-${run-id}` where `run-id` is read from the `ZEALT_RUN_ID` environment variable.
+- The sandbox name must be `exec-ts-${run-id}` where `run-id` is read from `/logs/artifacts/run-id`.
 - After the program runs, `/home/user/myproject/output.log` must exist and contain:
   - A line that starts with `OS: ` followed by content captured from `cat /etc/os-release` (so it includes recognizable os-release fields such as `ID=` or `PRETTY_NAME=`).
   - A line that starts with `NODE: ` followed by content captured from `node --version` (a string of the form `vMAJOR.MINOR.PATCH`).
-  - A line that starts with `ECHO: ` followed by the same value as `${ZEALT_RUN_ID}`.
+  - A line that starts with `ECHO: ` followed by the same value as `<run-id>`.
 - The sandbox `exec-ts-${run-id}` must be deleted by the program before it exits.
 

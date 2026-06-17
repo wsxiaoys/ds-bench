@@ -9,7 +9,7 @@ You are working with the Apideck Unified Issue Tracking API connected to GitHub 
 - Persist a small log file with the identifiers your script created so the workflow is auditable.
 
 ## Implementation Hints
-- Read all credentials, ids, and `ZEALT_RUN_ID` from environment variables before issuing any request.
+- Read all credentials, ids, and `/logs/artifacts/run-id` from environment variables before issuing any request.
 - Apideck Unified APIs require `Authorization`, `x-apideck-app-id`, `x-apideck-consumer-id`, and `x-apideck-service-id` on every call.
 - Comments live under `/issue-tracking/collections/{collection_id}/tickets/{ticket_id}/comments`; the body field on create/update is `body`.
 - Use the official endpoints to create, update (PATCH), and delete comments — do not work around them with `pass_through` rewrites.
@@ -20,7 +20,7 @@ You are working with the Apideck Unified Issue Tracking API connected to GitHub 
 - Ensure the script is executed and the artifacts exist.
 - Log file: /home/user/apideck_task/output.log
 - The log file must contain a line of the form `Ticket ID: <ticket_id>` for the ticket created by this run.
-- Exactly one ticket exists in the configured collection whose subject contains both `[COMMENT-EDIT-DELETE]` and the current `ZEALT_RUN_ID` value.
-- After the workflow finishes, that ticket has exactly three comments. Their body values, as a set, equal `{"A-<ZEALT_RUN_ID>", "B-EDITED-<ZEALT_RUN_ID>", "D-<ZEALT_RUN_ID>"}`.
-- No remaining comment on that ticket has a body equal to `B-<ZEALT_RUN_ID>` or `C-<ZEALT_RUN_ID>`.
+- Exactly one ticket exists in the configured collection whose subject contains both `[COMMENT-EDIT-DELETE]` and the current `/logs/artifacts/run-id` value.
+- After the workflow finishes, that ticket has exactly three comments. Their body values, as a set, equal `{"A-<run-id>", "B-EDITED-<run-id>", "D-<run-id>"}`.
+- No remaining comment on that ticket has a body equal to `B-<run-id>` or `C-<run-id>`.
 

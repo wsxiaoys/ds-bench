@@ -11,7 +11,7 @@ The CLI proves correctness of shared memory by allowing one user to read back co
 - Implement a Node.js TypeScript CLI under `/home/user/myproject` that:
   - Uses the official `@alchemystai/sdk` package.
   - Authenticates with `ALCHEMYST_AI_API_KEY` from the environment.
-  - Derives a shared `sessionId` from the `ZEALT_RUN_ID` environment variable, namespaced so it cannot collide with other parallel runs.
+  - Derives a shared `sessionId` from `/logs/artifacts/run-id`, namespaced so it cannot collide with other parallel runs.
   - Accepts a required `--user-id <id>` flag (used as the Alchemyst memory `userId`).
   - Accepts exactly one of the following operation flags per invocation:
     - `--add "<content>"` — store a new memory under the given `userId` and the shared `sessionId` using `client.v1.context.memory.add(...)`.
@@ -29,7 +29,7 @@ The CLI proves correctness of shared memory by allowing one user to read back co
 ## Implementation Hints
 - The TypeScript SDK exposes memory operations under `client.v1.context.memory.add({ userId, sessionId, content })` and `client.v1.context.memory.search({ userId, sessionId, ... })`. See the [Memory quickstart](https://getalchemystai.com/docs/getting-started/quickstart-memory) and the [TypeScript SDK guide](https://getalchemystai.com/docs/tutorials/typescript-agent.md).
 - Both `userId` and `sessionId` are mandatory; omitting either yields `MISSING_PARAMETERS` from the API. Validate `--user-id` locally before calling the SDK so the CLI fails fast with the same error code surface.
-- To avoid cross-run collisions when multiple evaluations run in parallel, build the shared `sessionId` as something like `team-standup-${ZEALT_RUN_ID}` (read `ZEALT_RUN_ID` from `process.env`). All invocations within a single run must use the same derived `sessionId`.
+- To avoid cross-run collisions when multiple evaluations run in parallel, build the shared `sessionId` as something like `team-standup-<run-id>` (read `/logs/artifacts/run-id` from `process.env`). All invocations within a single run must use the same derived `sessionId`.
 - Memory entries added by different `userId` values that share the same `sessionId` form one common thread; either user can recall the other's contributions via search.
 - Use a permissive `similarity_threshold` / `minimum_similarity_threshold` (e.g. around `0.1`–`0.3`) so semantically loose queries still retrieve the stored entries.
 - Iterate over the returned `memories` array and print each entry's textual content prefixed with `MEMORY: ` on its own line so it is trivially greppable.
@@ -40,16 +40,16 @@ The CLI proves correctness of shared memory by allowing one user to read back co
 - Project path: `/home/user/myproject`
 - The project builds successfully with `npm install && npm run build` and produces `/home/user/myproject/dist/main.js`.
 - Command: `node dist/main.js --user-id <id> --query "<query>"`
-  - Reads `ALCHEMYST_AI_API_KEY` and `ZEALT_RUN_ID` from the environment.
+  - Reads `ALCHEMYST_AI_API_KEY` and `/logs/artifacts/run-id` from the environment.
   - Prints zero or more lines, each in the format `MEMORY: <content>`.
   - Exit code is `0` on success.
 - Command: `node dist/main.js --user-id <id> --add "<content>"`
-  - Stores the memory in Alchemyst under the given `userId` and the shared `sessionId` derived from `ZEALT_RUN_ID`.
+  - Stores the memory in Alchemyst under the given `userId` and the shared `sessionId` derived from `/logs/artifacts/run-id`.
   - Prints exactly one line in the format `ADDED: <content>` on success.
   - Exit code is `0` on success.
 - Command: `node dist/main.js --query "<query>"` (no `--user-id`)
   - Exits with a non-zero exit code.
   - Combined stdout/stderr contains the substring `MISSING_PARAMETERS`.
-- Shared session semantics: when two different `--user-id` values are used with the same `ZEALT_RUN_ID`, each user's `--query` invocation must be able to surface memories that were added by the other user (i.e. the `MEMORY: ...` lines emitted include the other user's content).
+- Shared session semantics: when two different `--user-id` values are used with the same `/logs/artifacts/run-id`, each user's `--query` invocation must be able to surface memories that were added by the other user (i.e. the `MEMORY: ...` lines emitted include the other user's content).
 - The CLI must use the real Alchemyst AI service via `@alchemystai/sdk`; mocking or hardcoding memory contents is not allowed.
 
