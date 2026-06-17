@@ -206,21 +206,21 @@ export function TrajectoryPage({
 				<Tabs
 					value={activeTab}
 					onValueChange={handleTabChange}
-					className="flex h-full min-h-0 flex-col gap-0 overflow-hidden rounded-lg border border-border bg-background/70 shadow-sm backdrop-blur-sm"
+					className="flex h-full min-h-0 flex-col gap-0 overflow-hidden rounded-xl border border-border bg-background/70 shadow-md backdrop-blur-md"
 				>
-					<div className="border-border border-b bg-background/40 px-3 py-3 sm:px-4">
+					<div className="border-border border-b bg-linear-to-b from-background/50 to-background/30 px-4 py-3.5 sm:px-5">
 						<TabsList
-							className={`flex h-11 w-full ${
+							className={`flex h-10 w-full ${
 								visibleTabsConfig.length <= 3 ? "sm:w-120" : "sm:w-160"
-							} max-w-full items-stretch gap-1 rounded-lg bg-muted/55 p-1`}
+							} max-w-full items-stretch gap-1 rounded-xl border border-border/40 bg-muted/40 p-1`}
 						>
 							{visibleTabsConfig.map((tab) => (
 								<TabsTrigger
 									key={tab.value}
 									value={tab.value}
-									className="h-full flex-1 cursor-pointer rounded-md border-0 py-0 text-muted-foreground leading-none transition-colors hover:bg-primary/10 hover:text-foreground data-[state=active]:bg-primary/18 data-[state=active]:text-foreground data-[state=active]:shadow-none"
+									className="h-full flex-1 cursor-pointer rounded-lg border-0 py-0 font-medium text-muted-foreground text-xs transition-all duration-200 hover:bg-background/20 hover:text-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-[0_2px_8px_rgba(0,0,0,0.06)] sm:text-sm"
 								>
-									{tab.label}
+									<span className="leading-none">{tab.label}</span>
 								</TabsTrigger>
 							))}
 						</TabsList>
@@ -296,8 +296,8 @@ export function TrajectoryPage({
 							</div>
 						) : (
 							<>
-								<div className="mt-3 shrink-0 overflow-x-auto bg-background/20 px-3 py-1.5 sm:px-4">
-									<div className="flex min-w-max gap-1.5">
+								<div className="border-border/40 border-b bg-muted/20 px-4 py-2 sm:px-5">
+									<div className="custom-scrollbar flex min-w-max gap-1.5 overflow-x-auto py-1">
 										{browserVerificationUrls.map((testCase) => (
 											<button
 												key={testCase.name}
@@ -305,13 +305,22 @@ export function TrajectoryPage({
 												onClick={() =>
 													setActiveBrowserVerificationTab(testCase.name)
 												}
-												className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] transition-colors sm:text-xs ${
+												className={`cursor-pointer whitespace-nowrap rounded-full border px-3 py-1 font-medium text-[11px] transition-all duration-200 sm:text-xs ${
 													activeBrowserVerificationTab === testCase.name
-														? "border-primary/20 bg-primary/10 font-medium text-primary"
-														: "border-transparent bg-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+														? "border-primary/30 bg-primary/10 text-primary shadow-xs"
+														: "border-border/40 bg-background/50 text-muted-foreground hover:border-border/80 hover:bg-background hover:text-foreground"
 												}`}
 											>
-												{testCase.name}
+												<span className="flex items-center gap-1.5">
+													<span
+														className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${
+															activeBrowserVerificationTab === testCase.name
+																? "scale-110 bg-primary shadow-[0_0_8px_var(--primary)]"
+																: "bg-muted-foreground/40"
+														}`}
+													/>
+													{testCase.name}
+												</span>
 											</button>
 										))}
 									</div>
