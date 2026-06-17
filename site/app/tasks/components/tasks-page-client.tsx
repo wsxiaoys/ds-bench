@@ -485,6 +485,13 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		selectedTags.length,
 	]);
 
+	const visibleCombos = useMemo(() => {
+		if (noTrials) return [];
+		return activeCombos.filter((combo) =>
+			tableTasks.some((task) => task.comboMap[combo] !== undefined),
+		);
+	}, [activeCombos, noTrials, tableTasks]);
+
 	const toggleSort = (field: string) => {
 		if (querySort === field) {
 			if (queryOrder === "asc") {
@@ -741,24 +748,36 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 											{renderSortIcon("taskName")}
 										</div>
 									</th>
-									{activeCombos.map((combo, index) => (
-										<th
-											key={combo}
-											className={cn(
-												"min-w-30 px-3 py-3 text-left sm:px-6 md:min-w-37.5",
-												index > 0 && "border-border/50 border-l",
-											)}
-										>
-											<div className="flex flex-col items-start">
-												<span
-													className="max-w-25 truncate font-medium text-foreground md:max-w-32.5"
-													title={combo.split(" (")[0]}
-												>
-													{combo.split(" (")[0]}
-												</span>
-											</div>
-										</th>
-									))}
+									{visibleCombos.map((combo, index) => {
+										const passedCount = tableTasks.filter(
+											(t) => t.comboMap[combo]?.passed,
+										).length;
+										const totalCount = tableTasks.filter(
+											(t) => t.comboMap[combo] !== undefined,
+										).length;
+
+										return (
+											<th
+												key={combo}
+												className={cn(
+													"min-w-30 px-3 py-3 text-left sm:px-6 md:min-w-37.5",
+													index > 0 && "border-border/50 border-l",
+												)}
+											>
+												<div className="flex flex-col items-start">
+													<span
+														className="max-w-25 truncate font-medium text-foreground md:max-w-32.5"
+														title={combo.split(" (")[0]}
+													>
+														{combo.split(" (")[0]}
+													</span>
+													<span className="mt-0.5 font-normal text-[10px] text-muted-foreground sm:text-xs">
+														{passedCount} / {totalCount} passed
+													</span>
+												</div>
+											</th>
+										);
+									})}
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-border/30">
@@ -794,7 +813,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 												)}
 											</button>
 										</td>
-										{activeCombos.map((combo, index) => {
+										{visibleCombos.map((combo, index) => {
 											const trial = task.comboMap[combo];
 											return (
 												<td
