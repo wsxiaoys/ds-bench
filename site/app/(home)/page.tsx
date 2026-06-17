@@ -121,13 +121,13 @@ export default function Home() {
 
 			<div className="container mx-auto max-w-6xl px-4 py-16">
 				{/* Header Section */}
-				<div className="mb-16 space-y-6 text-center">
+				<div className="mb-16 space-y-2 text-center">
 					<div className="mb-4 inline-flex items-center justify-center rounded-full border border-border bg-secondary/50 p-1.5 backdrop-blur-sm">
 						<span className="mx-2 flex h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
 						<span className="px-2 font-medium text-xs">Live Benchmarks</span>
 					</div>
 
-					<h1 className="bg-linear-to-b from-foreground to-foreground/50 bg-clip-text pb-2 font-bold text-5xl text-transparent tracking-tight md:text-7xl">
+					<h1 className="bg-linear-to-b from-foreground to-foreground/50 bg-clip-text pb-2 font-bold text-5xl text-transparent tracking-tight md:text-5xl">
 						{zealtConfig.title}
 					</h1>
 
