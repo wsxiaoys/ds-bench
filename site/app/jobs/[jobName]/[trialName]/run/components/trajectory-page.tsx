@@ -9,6 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HttpError } from "@/lib/http-error";
+import { AnsiLog } from "./ansi-log";
 import { type ArtifactNodeWithUrl, ArtifactsPanel } from "./artifacts-panel";
 
 export type TabConfig = {
@@ -196,11 +197,7 @@ export function TrajectoryPage({
 			return <p className="text-muted-foreground text-sm">{emptyMessage}</p>;
 		}
 
-		return (
-			<pre className="w-max min-w-full whitespace-pre font-mono text-foreground/95 text-xs leading-5">
-				{text}
-			</pre>
-		);
+		return <AnsiLog text={text} />;
 	};
 
 	return (
