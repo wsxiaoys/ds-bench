@@ -829,9 +829,30 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 															</HoverCardContent>
 														</HoverCard>
 													) : (
-														<div className="flex h-full w-full items-center justify-start py-2 pl-3 font-mono text-muted-foreground/30 text-xs sm:pl-6 md:text-sm">
-															-
-														</div>
+														<HoverCard openDelay={200} closeDelay={0}>
+															<HoverCardTrigger asChild>
+																<div className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-help items-center justify-start bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/20 focus:outline-none sm:px-6">
+																	<span className="font-mono text-muted-foreground/30 text-xs md:text-sm">
+																		-
+																	</span>
+																</div>
+															</HoverCardTrigger>
+															<HoverCardContent
+																side="top"
+																align="center"
+																className="z-50 w-64 border-border bg-popover p-4 shadow-xl"
+															>
+																<div className="text-left text-popover-foreground text-xs">
+																	<p className="font-medium text-foreground/90">
+																		Evaluation result is not available yet
+																	</p>
+																	<p className="mt-1 text-muted-foreground">
+																		This model has not evaluated this task or
+																		the evaluation is still in progress.
+																	</p>
+																</div>
+															</HoverCardContent>
+														</HoverCard>
 													)}
 												</td>
 											);
