@@ -1,0 +1,32 @@
+# Create an Ephemeral Daytona Sandbox with the Python SDK
+
+## Background
+Daytona provides isolated compute sandboxes that can be created, controlled, and torn down programmatically. The Python SDK exposes an *ephemeral* sandbox mode that automatically deletes the sandbox the moment it stops, which is ideal for short-lived one-off jobs. In this task you will use the Daytona Python SDK to spin up an ephemeral sandbox, run a small command inside it, read back configuration metadata, and finally stop the sandbox so that Daytona auto-deletes it.
+
+## Requirements
+- Use the Daytona Python SDK (`pip install daytona`) and the `DAYTONA_API_KEY` environment variable for authentication.
+- Create a new ephemeral sandbox using `CreateSandboxFromSnapshotParams` with `ephemeral=True` and `auto_stop_interval=5`.
+- The sandbox name must be `ephem-py-${run-id}` where `run-id` is read from the `ZEALT_RUN_ID` environment variable.
+- Execute a single shell command (`date +%Y`) inside the sandbox via `sandbox.process.exec(...)` and capture the year that the sandbox reports.
+- Re-read the sandbox object from Daytona (for example, via `daytona.get(sandbox.id)`) and read its `auto_stop_interval` value back from the server-side metadata.
+- Stop the sandbox at the end of the script so that, because it is ephemeral, Daytona auto-deletes it.
+- Write the two pieces of captured information to a log file.
+
+## Implementation Hints
+- Configure the Daytona client with the API key from the environment.
+- The SDK is synchronous by default; you can use `from daytona import Daytona, CreateSandboxFromSnapshotParams`.
+- `sandbox.process.exec("date +%Y")` returns an object whose `result` attribute contains the captured stdout.
+- After re-fetching the sandbox metadata, the auto-stop interval is exposed as the `auto_stop_interval` attribute (an integer number of minutes).
+- Write both values to the log file in the exact format specified in the Acceptance Criteria. Strip surrounding whitespace from command output before writing.
+- Use `sandbox.stop()` (or `daytona.stop(sandbox)`) to stop the sandbox at the end; do not call `delete` explicitly because the ephemeral flag handles deletion automatically.
+
+## Acceptance Criteria
+- Project path: /home/user/myproject
+- Log file: /home/user/myproject/output.log
+- Use the Daytona Python SDK (the `daytona` package) for all interactions; do **NOT** mock the Daytona API.
+- A sandbox named `ephem-py-${run-id}` (with `run-id` from the `ZEALT_RUN_ID` environment variable) must be created with `ephemeral=True` and `auto_stop_interval=5`.
+- The log file must contain exactly two lines, in this order and in these formats:
+  - `Year: <year>` where `<year>` is the 4-digit year reported by `date +%Y` inside the sandbox.
+  - `AutoStop: <minutes>` where `<minutes>` is the integer value of `auto_stop_interval` returned by Daytona for the created sandbox.
+- The sandbox must be stopped before the script exits so the ephemeral lifecycle deletes it on the Daytona side.
+

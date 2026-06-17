@@ -1,0 +1,126 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.4.0
+rootdir: /tests
+plugins: xprocess-1.0.2, json-ctrf-0.5.0
+collected 4 items
+
+tests/test_final_state.py .F.F                                           [100%]
+
+=================================== FAILURES ===================================
+__________________________ test_initial_count_is_zero __________________________
+
+start_app = None
+
+    def test_initial_count_is_zero(start_app):
+        r = requests.get(f"{BASE_URL}/api/sessions/count", timeout=10)
+        assert r.status_code == 200, f"Expected 200 from /api/sessions/count, got {r.status_code}: {r.text}"
+        body = r.json()
+>       assert body == {"count": 0}, f"Expected initial count {{'count': 0}}, got {body}"
+E       AssertionError: Expected initial count {'count': 0}, got {'count': 1}
+E       assert {'count': 1} == {'count': 0}
+E         Differing items:
+E         {'count': 1} != {'count': 0}
+E         Use -v to get more diff
+
+tests/test_final_state.py:101: AssertionError
+_________________________ test_full_session_lifecycle __________________________
+
+start_app = None
+
+    def test_full_session_lifecycle(start_app):
+        # ---- Step 4: create alice's session ----
+        alice = requests.Session()
+        now_before = int(time.time())
+        r = alice.post(
+            f"{BASE_URL}/api/sessions",
+            json={"userId": "alice"},
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+        now_after = int(time.time())
+        assert r.status_code == 201, (
+            f"Expected 201 from POST /api/sessions, got {r.status_code}: {r.text}"
+        )
+        ct = r.headers.get("Content-Type", "")
+        assert ct.lower().startswith("application/json"), (
+            f"Expected JSON Content-Type from POST /api/sessions, got {ct!r}"
+        )
+        body = r.json()
+        assert "sessionId" in body and "expiresAt" in body, (
+            f"POST /api/sessions response missing required keys; got {body}"
+        )
+        sid_alice = body["sessionId"]
+        expires_at_alice = body["expiresAt"]
+        assert isinstance(sid_alice, str) and SESSION_ID_RE.match(sid_alice), (
+            f"sessionId {sid_alice!r} does not match ^[0-9a-f]{{32}}$"
+        )
+        assert isinstance(expires_at_alice, (int, float)), (
+            f"expiresAt must be a number, got {type(expires_at_alice).__name__}"
+        )
+        assert now_before + 3540 <= expires_at_alice <= now_after + 3660, (
+            f"expiresAt {expires_at_alice} is not within ~3600s of now "
+            f"({now_before}..{now_after}); expected approximately now + 3600."
+        )
+    
+        sid_cookie_header = _find_sid_set_cookie(r)
+        assert sid_cookie_header is not None, (
+            "POST /api/sessions did not set a `sid` cookie via Set-Cookie."
+        )
+        lower_sc = sid_cookie_header.lower()
+        assert f"sid={sid_alice}" in sid_cookie_header, (
+            f"Set-Cookie does not bind sid to the returned sessionId; got {sid_cookie_header!r}"
+        )
+        assert "httponly" in lower_sc, (
+            f"Set-Cookie for sid must include HttpOnly; got {sid_cookie_header!r}"
+        )
+        assert "path=/" in lower_sc, (
+            f"Set-Cookie for sid must include Path=/; got {sid_cookie_header!r}"
+        )
+        assert "max-age=3600" in lower_sc, (
+            f"Set-Cookie for sid must include Max-Age=3600; got {sid_cookie_header!r}"
+        )
+    
+        # ---- Step 5: read /api/sessions/me using the session's cookie jar ----
+        r = alice.get(f"{BASE_URL}/api/sessions/me", timeout=10)
+        assert r.status_code == 200, (
+            f"Expected 200 from GET /api/sessions/me with valid cookie, got {r.status_code}: {r.text}"
+        )
+        body = r.json()
+        for key in ("userId", "createdAt", "expiresAt"):
+            assert key in body, f"GET /api/sessions/me response missing key {key!r}; got {body}"
+        assert body["userId"] == "alice", (
+            f"Expected userId 'alice' in /api/sessions/me, got {body['userId']!r}"
+        )
+        assert abs(int(body["expiresAt"]) - int(expires_at_alice)) <= 2, (
+            f"GET /me expiresAt {body['expiresAt']} differs from POST expiresAt {expires_at_alice}"
+        )
+        assert abs(int(body["createdAt"]) + 3600 - int(body["expiresAt"])) <= 2, (
+            "Expected createdAt + 3600 == expiresAt (±2s); "
+            f"got createdAt={body['createdAt']}, expiresAt={body['expiresAt']}"
+        )
+    
+        # ---- Step 6: count should now be 1 ----
+        r = requests.get(f"{BASE_URL}/api/sessions/count", timeout=10)
+        assert r.status_code == 200, (
+            f"Expected 200 from /api/sessions/count, got {r.status_code}: {r.text}"
+        )
+>       assert r.json() == {"count": 1}, f"Expected count 1 after one POST, got {r.json()}"
+E       AssertionError: Expected count 1 after one POST, got {'count': 2}
+E       assert {'count': 2} == {'count': 1}
+E         Differing items:
+E         {'count': 2} != {'count': 1}
+E         Use -v to get more diff
+
+tests/test_final_state.py:188: AssertionError
+==================================== PASSES ====================================
+__________________ test_wrangler_declares_sessions_kv_binding __________________
+---------------------------- Captured stdout setup -----------------------------
+/tests/.pytest_cache/d/.xprocess/start_rwsdk_app$ npm run dev -- --host 0.0.0.0 --port 5173
+process 'start_rwsdk_app' started pid=1237
+start_rwsdk_app process startup detected
+=========================== short test summary info ============================
+PASSED tests/test_final_state.py::test_wrangler_declares_sessions_kv_binding
+PASSED tests/test_final_state.py::test_unauthenticated_me_returns_401
+FAILED tests/test_final_state.py::test_initial_count_is_zero - AssertionError...
+FAILED tests/test_final_state.py::test_full_session_lifecycle - AssertionErro...
+========================= 2 failed, 2 passed in 6.20s ==========================

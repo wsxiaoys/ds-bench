@@ -1,0 +1,82 @@
+import os
+import subprocess
+import json
+import pytest
+
+PROJECT_DIR = "/home/user/myproject"
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_environment():
+    """Run setup steps: npm install and remove old database."""
+    # npm install
+    subprocess.run(["npm", "install"], cwd=PROJECT_DIR, check=True)
+    
+    # remove database.sqlite if exists
+    db_path = os.path.join(PROJECT_DIR, "database.sqlite")
+    if os.path.exists(db_path):
+        os.remove(db_path)
+
+def test_script_execution_and_output():
+    """Run the script and verify the JSON output structure."""
+    result = subprocess.run(
+        ["node", "index.js"],
+        cwd=PROJECT_DIR,
+        capture_output=True,
+        text=True
+    )
+    
+    assert result.returncode == 0, f"Script execution failed: {result.stderr}"
+    
+    try:
+        # Try to find the JSON in stdout (it might have other logs from Sequelize)
+        # We will parse the first valid JSON object or just try to parse the whole output
+        # Since Sequelize logs SQL queries by default, we should extract the JSON part.
+        # But wait, we can just look for the JSON object by finding the line that starts with '{' or parse it directly if it's the only output.
+        # A robust way is to parse lines until one is valid JSON, or assume the user disabled logging or stringified it properly.
+        
+        # Let's try to extract JSON from stdout
+        stdout = result.stdout.strip()
+        json_start = stdout.find('{')
+        json_end = stdout.rfind('}') + 1
+        
+        assert json_start != -1, "No JSON object found in stdout."
+        
+        json_str = stdout[json_start:json_end]
+        student = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        pytest.fail(f"Failed to parse JSON from stdout: {e}. Stdout was: {result.stdout}")
+
+    assert student.get("name") == "Alice", f"Expected student name to be 'Alice', got: {student.get('name')}"
+    
+    # Check for courses array
+    courses = student.get("Courses") or student.get("courses")
+    assert courses is not None, "Courses array not found in JSON output."
+    assert isinstance(courses, list), "Courses should be a list."
+    assert len(courses) == 2, f"Expected 2 courses, got {len(courses)}."
+    
+    # Helper to find course by title
+    def find_course(title):
+        for c in courses:
+            if c.get("title") == title:
+                return c
+        return None
+        
+    math_course = find_course("Math 101")
+    assert math_course is not None, "Course 'Math 101' not found."
+    
+    history_course = find_course("History 101")
+    assert history_course is not None, "Course 'History 101' not found."
+    
+    # Helper to check enrollment and semester
+    def check_semester(course, expected_semester_name):
+        # The junction object could be named Enrollment, enrollment, Enrollments, etc.
+        enrollment = course.get("Enrollment") or course.get("enrollment") or course.get("Enrollments") or course.get("enrollments")
+        assert enrollment is not None, f"Enrollment junction object not found in course {course.get('title')}."
+        
+        semester = enrollment.get("Semester") or enrollment.get("semester")
+        assert semester is not None, f"Semester object not found in Enrollment for course {course.get('title')}."
+        
+        assert semester.get("name") == expected_semester_name, f"Expected semester name '{expected_semester_name}', got '{semester.get('name')}'."
+
+    check_semester(math_course, "Fall 2023")
+    check_semester(history_course, "Spring 2024")

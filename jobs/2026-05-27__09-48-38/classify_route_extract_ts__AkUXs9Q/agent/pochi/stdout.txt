@@ -1,0 +1,70 @@
+- Initializing MCP connections...
+You
+# Classify → Route → Per-Category Extract (TypeScript) ## Background Document-AI pipelines in production rarely deal with a single homogeneous file type. The canonical LlamaCloud pattern for mixed inboxes is **Classify → Route → Extract**: first run the LlamaClassify product to label each file with its document type, then route each file to a *different* Extract schema based on that label. You will implement this pattern end-to-end with the official `@llamaindex/llama-cloud` Node SDK (v2.x) and `zod` for schema definition. A starter project lives at `/home/user/myproject`. It contains four mixed PDFs under `./inputs/`: - `inputs/acme_invoice.pdf` — commercial invoice (vendor, invoice number, line items, total) - `inputs/globex_invoice.pdf` — commercial invoice (vendor, invoice number, line items, total) - `inputs/services_contract.pdf` — service agreement (two parties, effective date, term) - `inputs/nda_contract.pdf` — mutual non-disclosure agreement (two parties, effective date, term) The filenames hint at the category, but your script **must not hard-code the routing by filename** — it must drive the routing decision from the Classify result returned by LlamaCloud. The verifier will check both the artifacts on disk and the LlamaCloud-side state through the SDK. ## Requirements - Use the LlamaCloud Node SDK `@llamaindex/llama-cloud` (v2.x). Define your Extract schemas with **Zod** and convert each to JSON Schema (e.g., `z.toJSONSchema`) when calling Extract. - **Phase 1 — Classify.** Upload all four PDFs to LlamaCloud and run a *single* Classify job over all four file ids with these two rules and `mode: 'FAST'`: - `invoice` — commercial invoice with an invoice number, line items, and a grand total - `contract` — legal agreement signed by two or more parties with an effective date and term Capture the per-file `type` and `confidence` returned by the SDK. Confidence must be a number; both files in each category must end up with the same `type`. - **Phase 2 — Per-category Extract (concurrent).** For each classified file, run an Extract job using the schema dictated by its category. The two schemas are: - **`invoice` schema** (top-level Zod object): - `invoice_number` (string) - `vendor_name` (string) - `total_amount` (number; the grand total) - `line_items` (array of objects with `description` (string), `quantity` (number), `unit_price` (number), `total` (number)) - **`contract` schema** (top-level Zod object): - `parties` (array of strings, length ≥ 2) - `effective_date` (string, ISO `YYYY-MM-DD` if possible) - `term` (string, e.g., `"12 months"`) All Extract jobs must use `extraction_target: 'per_doc'` and `tier: 'agentic'`. Run the four Extract jobs **concurrently** (e.g., `Promise.all`) with a concurrency cap of **at most 2 in flight** (use `p-limit`, a semaphore, or an equivalent). - **Parallel-run safety.** Read the run id from the `ZEALT_RUN_ID` environment variable. Tag every uploaded source file with an `external_file_id` equal to `${ZEALT_RUN_ID}-<basename_without_ext>` (for example, `zr-abc123-acme_invoice` for `acme_invoice.pdf`). - **Aggregate artifacts.** Write two artifacts: - `./outputs/results.json` — a JSON object keyed by the input file basename (e.g. `"acme_invoice.pdf"`) where each value is an object with exactly these keys: - `category` (string — `"invoice"` or `"contract"`, as returned by Classify) - `confidence` (number — confidence from Classify) - `file_id` (string — the file id of the uploaded source PDF as returned by the API) - `data` (object — the `extract_result` payload from the appropriate Extract schema) - `./output.log` — one summary line per input file in **exactly** this format (one line per file, in any order): `Routed: <basename>.pdf | category: <invoice|contract> | confidence: <conf> | fields: <N>` where `<N>` is the number of top-level keys in the file's extracted `data` object (must be `4` for invoices and `3` for contracts). - The script must exit with code 0 when every file is classified and extracted successfully. ## Implementation Hints - Install `@llamaindex/llama-cloud`, `zod`, `tsx`, and a concurrency helper such as `p-limit`. - The single-shot Classify helper is `client.classifier.classify({ file_ids, rules, mode })`. Each rule is `{ type, description }`. The result has an `items` array; each item has `file_id` and `result.{type, confidence, reasoning}`. **Items may be returned in a different order than the input `file_ids`** — index by `file_id`, not by array position. - File uploads in Node.js use `fs.createReadStream(...)` with `client.files.create({ file, purpose, external_file_id })`. Note that you can re-use the same uploaded file id when calling Extract (`file_input: fileObj.id`). You do not need to re-upload the same file for each phase. - The Extract v2 SDK call is `client.extract.create({ file_input, configuration })` where `configuration` is a **flattened** object containing `data_schema`, `extraction_target`, and `tier` (there is no `extract_options` wrapper in v2). Poll completion with `client.extract.get(jobId)` until `status` is `COMPLETED`/`FAILED`/`CANCELLED`. - The SDK picks up `LLAMA_CLOUD_API_KEY` from the environment automatically. - Make sure `./outputs/` exists before writing files. ## Acceptance Criteria - Project path: `/home/user/myproject` - Ensure the script is executed against the real LlamaCloud Classify + Extract APIs and that all artifacts exist on disk after execution. - Log file: `/home/user/myproject/output.log` must contain **exactly four** lines, each matching `^Routed: [A-Za-z0-9_.-]+\.pdf \| category: (invoice|contract) \| confidence: [0-9]*\.?[0-9]+([eE][+-]?[0-9]+)? \| fields: (3|4)$`. Across the four lines, exactly two must have `category: invoice` with `fields: 4` and exactly two must have `category: contract` with `fields: 3`. The four basenames must be the four input PDFs. - `/home/user/myproject/outputs/results.json` must exist and parse as a JSON object with exactly four keys (the four input PDF basenames). Each value must have keys `category`, `confidence`, `file_id`, and `data`: - For every entry whose `category == "invoice"`, `data` must contain non-empty string `invoice_number`, non-empty string `vendor_name`, positive numeric `total_amount`, and `line_items` as a non-empty array of objects each with numeric `quantity`, `unit_price`, and `total`. - For every entry whose `category == "contract"`, `data` must contain `parties` as an array of strings with length ≥ 2, a non-empty string `effective_date`, and a non-empty string `term`. - Each `file_id` must be a non-empty string matching the file id returned by the LlamaCloud API. - Every uploaded source file in LlamaCloud must carry an `external_file_id` exactly equal to `${ZEALT_RUN_ID}-<basename_without_ext>` for its corresponding input PDF. The verifier will query the LlamaCloud SDK for each expected external id and assert it exists.   
+
+Pochi
+💭 Thinking for 121 characters   
+📂 Listing files in /home/user/myproject recursively ✔ 
+📖 Reading /home/user/myproject/package.json ✔ 
+📖 Reading /home/user/myproject/tsconfig.json ✔ 
+📋 Updating todo list (3 items) ✔ 
+💫 Executing cd /home/user/myproject && npm install @llamaindex/llama-cloud zod tsx p-limit 2>&1 ✔ 
+📋 Updating todo list (3 items) ✔ 
+Let me check the SDK API surface before writing the script:   
+💫 Executing cd /home/user/myproject && find node_modules/@llamaindex/llama-cloud -name "*.d.ts" | head -30 2>&1 ✔ 
+💫 Executing cd /home/user/myproject && ls node_modules/@llamaindex/llama-cloud/ ✔ 
+📖 Reading /home/user/myproject/node_modules/@llamaindex/llama-cloud/resources/classifier.d.ts ✔ 
+📖 Reading /home/user/myproject/node_modules/@llamaindex/llama-cloud/resources/extract.d.ts ✔ 
+📖 Reading /home/user/myproject/node_modules/@llamaindex/llama-cloud/resources/classify.d.ts ✔ 
+💫 Executing find /home/user/myproject/node_modules/@llamaindex/llama-cloud/resources/classifier -name "*.d.ts" 2>/dev/null | xargs ls 2>/dev/null ✔ 
+📖 Reading /home/user/myproject/node_modules/@llamaindex/llama-cloud/resources/classifier/classifier.d.ts ✔ 
+📖 Reading /home/user/myproject/node_modules/@llamaindex/llama-cloud/resources/classifier/jobs.d.ts ✔ 
+Now let me check the files API:   
+💫 Executing find /home/user/myproject/node_modules/@llamaindex/llama-cloud/resources -name "files*" -o -name "file*" 2>/dev/null | grep "\.d\.ts$" ✔ 
+💫 Executing grep -r "files\." /home/user/myproject/node_modules/@llamaindex/llama-cloud/client.d.ts 2>/dev/null | head -20 ✔ 
+📖 Reading /home/user/myproject/node_modules/@llamaindex/llama-cloud/resources/files.d.ts ✔ 
+📖 Reading /home/user/myproject/node_modules/@llamaindex/llama-cloud/resources/files.d.ts ✔ 
+📖 Reading /home/user/myproject/node_modules/@llamaindex/llama-cloud/resources/files.d.ts ✔ 
+📖 Reading /home/user/myproject/node_modules/@llamaindex/llama-cloud/resources/files.d.ts ✔ 
+Now I have all the information I need. Let me also check how `z.toJSONSchema` works in zod v4:   
+💫 Executing cd /home/user/myproject && node -e "const { z } = require('zod'); console.log(typeof z.toJSONSchema);" 2>&1 || node --input-type=module -e "import { z } from 'zod'; console.log(typeof z.toJSONSchema);" 2>&1 ✔ 
+💫 Executing cd /home/user/myproject && node --input-type=module <<'EOF'
+import { z } from 'zod';
+const schema = z.object({ name: z.string(), age: z.number() });
+const jsonSchema = z.toJSONSchema(schema);
+console.log(JSON.stringify(jsonSchema, null, 2));
+EOF
+ ✔ 
+Now I have everything I need. Let me write the pipeline script:   
+✏️  Writing /home/user/myproject/pipeline.ts ✔ 
+📋 Updating todo list (3 items) ✔ 
+💫 Executing cd /home/user/myproject && npx tsx pipeline.ts 2>&1 ✔ 
+The script ran successfully. Let me verify the output artifacts:   
+💫 Executing cat /home/user/myproject/output.log ✔ 
+💫 Executing cat /home/user/myproject/outputs/results.json ✔ 
+📋 Updating todo list (3 items) ✔ 
+🎉 Task Completed
+The Classify → Route → Extract pipeline is implemented and has run successfully. Here's a summary of what was built and what happened:
+
+## Implementation (`/home/user/myproject/pipeline.ts`)
+
+**Dependencies installed:** `@llamaindex/llama-cloud`, `zod`, `tsx`, `p-limit`
+
+**Phase 0 – Upload:** All four PDFs are uploaded concurrently via `client.files.create()`, each tagged with `external_file_id = ${ZEALT_RUN_ID}-<basename_without_ext>`.
+
+**Phase 1 – Classify:** A single `client.classifier.classify()` call is made over all four file IDs with two rules (`invoice` / `contract`) and `mode: 'FAST'`. Results are indexed by `file_id` (not array position) to handle reordering.
+
+**Phase 2 – Extract:** Four extract jobs are launched concurrently via `Promise.all` with a `p-limit(2)` cap. Each uses the Zod-derived JSON schema for its classified category (`z.toJSONSchema(…)`), `extraction_target: 'per_doc'`, and `tier: 'agentic'`. Polling loops on `client.extract.get(jobId)` until `COMPLETED`.
+
+## Artifacts produced
+
+**`output.log`** — 4 lines, all matching the required format:
+```
+Routed: acme_invoice.pdf | category: invoice | confidence: 1 | fields: 4
+Routed: globex_invoice.pdf | category: invoice | confidence: 1 | fields: 4
+Routed: services_contract.pdf | category: contract | confidence: 1 | fields: 3
+Routed: nda_contract.pdf | category: contract | confidence: 1 | fields: 3
+```
+
+**`outputs/results.json`** — 4 keys with `category`, `confidence`, `file_id`, and `data` for each PDF. Invoice entries contain `invoice_number`, `vendor_name`, `total_amount`, `line_items`; contract entries contain `parties` (2 strings), `effective_date` (ISO date), and `term`.   
+  

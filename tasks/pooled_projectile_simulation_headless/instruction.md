@@ -1,0 +1,52 @@
+# libGDX Pooled Projectile Simulation (Headless Backend)
+
+## Background
+libGDX ships a non-rendering `gdx-backend-headless` backend that hosts an `ApplicationListener` outside of any OpenGL context. It is the canonical way to run libGDX game logic deterministically in CI (servers, simulations, automated tests). On top of the headless application, libGDX exposes performance-critical utilities such as `com.badlogic.gdx.utils.Pool<T>` (for object recycling) and `com.badlogic.gdx.math.Vector2` (for 2D math).
+
+Your job is to build a deterministic projectile-physics simulation that runs under `HeadlessApplication`, recycles projectile instances through a libGDX `Pool`, and emits a fully reproducible transcript to a log file.
+
+## Requirements
+- Implement an `ApplicationListener` (an `ApplicationAdapter` subclass is fine) that drives the entire simulation in `create()` / `render()` / `dispose()` and exits via `Gdx.app.exit()` when the scheduled number of ticks has been processed.
+- Boot the listener with `com.badlogic.gdx.backends.headless.HeadlessApplication` using `HeadlessApplicationConfiguration` (no LWJGL3 / no graphics backend allowed).
+- Read the scenario from a text file that the user supplies on the command line and read it through libGDX (`Gdx.files.absolute(...)`).
+- Represent every projectile with a Java class whose mutable state (id, position, velocity) is stored in libGDX `Vector2` instances and that is recycled through a `com.badlogic.gdx.utils.Pool<Projectile>` (the projectile class must implement `Pool.Poolable`).
+- Run the simulation with a fixed integer tick (`delta = 1.0` per `render()` call). On every tick:
+  1. Spawn every projectile scheduled for the current tick.
+  2. For each active projectile (in spawn-id order), apply gravity to its velocity and then add the velocity to its position.
+  3. After integration, any projectile whose `y <= floor_y` is grounded; print a grounded line, free it back to the pool, and remove it from the active list.
+- Track pool reuse: the simulation must report the maximum number of simultaneously-active projectiles ever reached and the number of free instances sitting in the pool at the end of the run.
+- Write every log line to the output file path supplied on the command line. Each line must end with a single `\n`.
+- The task executor is responsible for writing the runnable Gradle project (`settings.gradle`, root `build.gradle`, the headless module with the `application` plugin, the Java sources, and a `gradle/wrapper` populated by `gradle wrapper`). The runnable entrypoint MUST be `/home/user/projectile_sim/run.sh`, a bash script that accepts the two CLI flags described under *Acceptance Criteria* and forwards their values into the launcher.
+
+## Implementation Hints
+- Pin libGDX to version `1.14.2`. The headless module needs `com.badlogicgames.gdx:gdx`, `com.badlogicgames.gdx:gdx-backend-headless`, and `com.badlogicgames.gdx:gdx-platform:1.14.2:natives-desktop`.
+- A `HeadlessApplicationConfiguration` with `updatesPerSecond = 0` gives you maximum throughput, which is appropriate for a CI simulation. Whichever rate you pick, advance the simulation by exactly one tick per `render()` invocation; do not rely on `Gdx.graphics.getDeltaTime()` for the physics step.
+- `HeadlessApplication` is constructed on its own thread. Pass file paths into your `ApplicationListener` constructor before booting the application so the listener can open the files inside `create()`.
+- Use `com.badlogic.gdx.utils.Pool` (parameterised with your projectile type) and call `pool.obtain()` / `pool.free(p)`. `pool.getFree()` returns the number of unused instances currently stored in the pool – use it for the final summary.
+- All numeric values in the scenario and in the log must be printed as Java `int`s (no decimal point, no trailing zeros). The simulation only needs integer arithmetic on `Vector2` components, so cast with `(int)` when printing.
+- Make sure the program exits cleanly: call `Gdx.app.exit()` from inside `render()` once the requested number of ticks has been processed, then close any open writers in `dispose()`. The launcher main must `join` the headless application thread before returning so that the JVM does not exit while the log is still being flushed.
+
+## Acceptance Criteria
+- Project path: `/home/user/projectile_sim`
+- Command: `bash /home/user/projectile_sim/run.sh --scenario <scenario_path> --output <output_path>`
+  - `run.sh` MUST live at `/home/user/projectile_sim/run.sh`. It receives exactly the four positional tokens `--scenario <scenario_path> --output <output_path>` from the verifier (space-separated) and is responsible for delegating to the Gradle build (e.g. `./gradlew --no-daemon -q :headless:run --args="..."`). The internal launcher may parse the flags in any equivalent form.
+  - The command MUST exit with status `0` on success.
+- Scenario file format (UTF-8, one directive per line, `#` lines and blank lines ignored):
+  - `TICKS <n>` (required, exactly once): the number of `render()` ticks to run.
+  - `GRAVITY <gx> <gy>` (required, exactly once): integer acceleration applied to every active projectile's velocity at the start of each tick.
+  - `FLOOR <y>` (required, exactly once): integer floor; any projectile with `y <= floor` after the integration step is grounded this tick.
+  - `SPAWN <tick> <x> <y> <vx> <vy>` (zero or more): an integer projectile spawn. Ids are assigned in the order `SPAWN` lines appear in the file, starting at `0`.
+- Output file format (written to the path passed via `--output`). For tick numbering, the first `render()` call is tick `0`.
+  - Header line: `TICKS <n>` (echo of the scenario's tick count).
+  - For every tick `t` in `[0, n)`:
+    1. `TICK <t> ACTIVE <count>` – number of projectiles active at the END of the tick.
+    2. For each active projectile at the END of the tick, in ascending spawn-id order: `P<id> x=<x> y=<y> vx=<vx> vy=<vy>` (all integers).
+    3. For each projectile grounded during this tick, in ascending spawn-id order: `GROUNDED P<id> tick=<t>`.
+  - Final summary line: `SUMMARY spawned=<S> grounded=<G> pool_free=<F> peak_active=<P>` where:
+    - `S` is the total number of `SPAWN` directives processed.
+    - `G` is the total number of grounded projectiles.
+    - `F` is `pool.getFree()` at the end of the run.
+    - `P` is the maximum number of projectiles ever simultaneously active during the simulation.
+- A scenario that contains no `SPAWN` lines must still emit the header, one `TICK <t> ACTIVE 0` line per tick, and the final summary with all counters set to `0`.
+- The simulation must use the headless backend (`com.badlogic.gdx.backends.headless.HeadlessApplication`). The graphical LWJGL3 backend is forbidden.
+

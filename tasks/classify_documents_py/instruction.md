@@ -1,0 +1,45 @@
+# Classify Documents with LlamaCloud Classifier (Python)
+
+## Background
+You are building a small document-routing pre-processor for a back-office automation pipeline. Documents flow in as a mix of invoices, sales receipts, and signed contracts, and the downstream extraction pipeline needs to know which kind of document it is dealing with before it picks the right schema. You will use the LlamaCloud Classifier (a beta product on the LlamaParse platform) to assign one of three categories to a single input file.
+
+The `llama-cloud` Python SDK (v2.x) exposes a `client.classifier.classify(...)` convenience method that uploads the file (when passed a `file_id`), runs the classify job, polls until completion, and returns the results in one call.
+
+## Requirements
+- Implement a Python CLI script at `/home/user/myproject/classify.py` that:
+  - Accepts a single positional argument: a local file path to a document (PDF).
+  - Uploads the file to LlamaCloud with `purpose="classify"`.
+  - Calls the LlamaCloud Classifier using `mode="FAST"` with exactly the following three rules (in this order):
+    1. `type="invoice"` - documents that contain an invoice number, invoice date, bill-to section, and line items with totals.
+    2. `type="receipt"` - short purchase receipts, typically from POS systems, with merchant, items and total, often a single page.
+    3. `type="contract"` - multi-section legal agreement with parties, terms, and signature lines.
+  - Prints a single line of JSON to stdout containing the classified `type`, the `confidence` score, and the resolved absolute `file` path.
+  - Exits with status code `0` on success and a non-zero code on any error (failed upload, classifier error, empty result, etc.).
+- Read the LlamaCloud API key from the `LLAMA_CLOUD_API_KEY` environment variable.
+- Use the modern `llama-cloud` Python SDK (>= 2.7), not the legacy `llama-cloud-services` wrapper.
+
+## Implementation Hints
+- Instantiate the client with `from llama_cloud import LlamaCloud` and let it pick up `LLAMA_CLOUD_API_KEY` from the environment.
+- Upload the file with `client.files.create(file=<path>, purpose="classify")` and pass the returned `id` as one of the elements of `file_ids` to `client.classifier.classify(...)`.
+- The classify response has an `items` list; each item exposes `result.type`, `result.confidence`, and `result.reasoning`. Pick the single returned item.
+- Use `argparse` (or any equivalent CLI parser) so the script is invokable as `python3 classify.py <file>`.
+- Use `pathlib.Path(...).resolve()` to produce the absolute file path that will be echoed in the JSON output.
+
+## Acceptance Criteria
+- Project path: /home/user/myproject
+- Command: `python3 classify.py <file_path>`
+- Input argument format: a single positional argument, the path to a local PDF file.
+- The stdout MUST contain exactly one JSON object (it may be the only non-empty line) with at least these fields:
+  ```json
+  {
+    "file": string,
+    "type": string,
+    "confidence": number
+  }
+  ```
+  - `file` is the absolute path of the input file (matches `pathlib.Path(<input>).resolve()`).
+  - `type` is one of `"invoice"`, `"receipt"`, or `"contract"`.
+  - `confidence` is a number in the range `[0.0, 1.0]`.
+- The script MUST exit with code `0` on success.
+- The script MUST call the real LlamaCloud Classifier API (no mocks, no hard-coded predictions).
+

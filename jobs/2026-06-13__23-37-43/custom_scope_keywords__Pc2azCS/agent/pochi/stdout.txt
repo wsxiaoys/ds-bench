@@ -1,0 +1,159 @@
+- Initializing MCP connections...
+You
+# Custom Scope Keywords Library (ArkType) ## Background Build a small TypeScript validator library using `arktype@2.2.0` that registers domain-specific keywords inside a single `scope` so they can be reused by bare name in composite schemas. The validator runs from a CLI entry point that consumes a JSON payload from stdin. ## Requirements In `/home/user/myproject`, build a validator that exposes the following three custom keywords through one ArkType scope: * `creditCard`: a string of 13 to 19 digits (no whitespace) that passes the Luhn checksum. * `usPhone`: a string matching the regular expression `^\+?1?[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}$`. * `slug`: a lowercase string of length 3 to 64 containing only `a-z`, `0-9`, and `-`, with no leading or trailing dash. The same scope must also define a composite `Order` schema that references the custom keywords by bare name: ``` Order = { id: slug, customerPhone: usPhone, cardNumber: creditCard, total: number > 0 } ``` A CLI entry point reads one JSON payload from stdin and validates it against `Order`. On success it prints `VALID` on the first line and the validated JSON-stringified object on the second line. On failure it prints a single line beginning with `INVALID: ` followed by a short error description. The process must always exit with code 0. ## Implementation Hints * All three custom keywords MUST live inside a single `scope({...})` call and be referenced by their bare alias name from the `Order` schema (do NOT define them as standalone `type(...)` values and stitch them together afterwards). * The Luhn check for `creditCard` MUST be implemented as a narrow predicate (custom validation logic), not as a regex literal. The digit count constraint can be expressed structurally; only the checksum needs to be in user code. * For `usPhone`, use ArkType's regex constraint mechanism with the exact pattern shown above. * For `slug`, the lowercase + length + no-leading/trailing-dash rule may be expressed using any combination of ArkType length constraints, regex constraints, and narrow predicates. The empty string and strings shorter than 3 characters must be rejected. * The CLI must call the schema's assertion API (or equivalent) and convert thrown ArkType errors into the `INVALID: ...` line. Unexpected JSON parse errors should also surface as `INVALID: ...`. * The project ships with `arktype@2.2.0`, `tsx`, and a `tsconfig.json` configured for NodeNext. Run TypeScript files directly via `npx tsx`. ## Acceptance Criteria * Project path: /home/user/myproject * Command: `npx tsx cli.ts` * Input: one JSON document representing a candidate `Order`, supplied via stdin. * Output (stdout): * If the input validates: print exactly the line `VALID`, then on the next line the JSON-stringified validated object. * If the input is rejected: print exactly one line starting with `INVALID:` followed by a space and any error description. * Exit code: 0 for both valid and invalid inputs. * The TypeScript module file `src/keywords.ts` MUST define the three custom keywords (`creditCard`, `usPhone`, `slug`) and the composite `Order` schema inside a single `scope({...})` call and export the resulting module (e.g. via `.export()`). * `src/keywords.ts` MUST contain at least one narrow predicate (a call to `narrow(...)` or use of the `.narrow(...)` fluent method) used as part of one of the custom keyword definitions. * An importable `Order` schema must be available from `src/keywords.ts` (e.g. `export const Order = ...` or as a member of the exported scope module).   
+
+Pochi
+💭 Thinking for 130 characters   
+📂 Listing files in /home/user/myproject recursively ✔ 
+📖 Reading /home/user/myproject/package.json ✔ 
+📖 Reading /home/user/myproject/tsconfig.json ✔ 
+📖 Reading /home/user/myproject/node_modules/arktype/out/index.d.ts ✔ 
+📖 Reading /home/user/myproject/node_modules/arktype/out/scope.d.ts ✔ 
+📖 Reading /home/user/myproject/node_modules/arktype/out/type.d.ts ✔ 
+Now let me look at how narrow predicates work in ArkType 2.x and check the variants for the string type:   
+📖 Reading /home/user/myproject/node_modules/arktype/out/variants/string.d.ts ✔ 
+📖 Reading /home/user/myproject/node_modules/arktype/out/variants/base.d.ts ✔ 
+Now I have enough information to build the solution. Let me set up the todos and create the files:   
+📋 Updating todo list (4 items) ✔ 
+✏️  Writing /home/user/myproject/src/keywords.ts ✔ 
+📋 Updating todo list (4 items) ✔ 
+✏️  Writing /home/user/myproject/cli.ts ✔ 
+📋 Updating todo list (4 items) ✔ 
+Now let's test with a valid Order payload. The Luhn-valid card I'll use is `4532015112830366` (a well-known test Visa number):   
+💫 Executing cd /home/user/myproject && echo '{"id":"my-order-01","customerPhone":"+1 (555) 123-4567","cardNumber":"4532015112830366","total":99.99}' | npx tsx cli.ts ✖ "Command exited with code 1"
+The issue is that `"string"` (a string literal) doesn't have `.matching()` — I need to use the scope's `type` method. Let me check how to correctly build types within a scope with chaining:   
+📖 Reading /home/user/myproject/node_modules/arktype/out/keywords/string.d.ts ✔ 
+💫 Executing cd /home/user/myproject && node -e "import('arktype').then(({type, scope}) => { console.log(typeof type.string.matching); console.log(Object.keys(type.string)); })" 2>&1 | head -30 ✔ 
+I can see there's an `isLuhnValid` export in arktype's string module, and `string.creditCard` already exists. More importantly, I need to use `type(...)` calls from within the scope rather than chaining on string literals. Let me look at the proper way to define scope entries with predicates:   
+💫 Executing cd /home/user/myproject && node -e "
+import('arktype').then(({type, scope}) => {
+  // Check how to use tuple expressions with narrow predicates
+  const t = type(['string', ':', (s) => s.length > 3]);
+  console.log('tuple narrow works:', typeof t);
+  console.log('assert test:', t.assert('hello'));
+}).catch(e => console.error(e.message));
+" 2>&1 ✔ 
+💫 Executing cd /home/user/myproject && node -e "
+import('arktype').then(({type, scope}) => {
+  // Check how scope entries are defined - can they be Type instances?
+  const myScope = scope({
+    myType: type('string').narrow(s => s.length > 3),
+    myObj: { name: 'myType' }
+  });
+  const mod = myScope.export();
+  console.log('myType:', typeof mod.myType);
+  console.log('assert hello:', mod.myType.assert('hello'));
+  console.log('myObj:', typeof mod.myObj);
+}).catch(e => console.error(e.message, e.stack));
+" 2>&1 ✔ 
+💫 Executing cd /home/user/myproject && node -e "
+import('arktype').then(({type, scope}) => {
+  // Test: can scope entries be Type objects (not just string defs)?
+  // And are they referenced by bare name from Order?
+  const cc = type('string').matching(/^\d{13,19}$/).narrow(s => { 
+    let sum = 0, alt = false;
+    for (let i = s.length - 1; i >= 0; i--) {
+      let n = parseInt(s[i], 10);
+      if (alt) { n *= 2; if (n > 9) n -= 9; }
+      sum += n; alt = !alt;
+    }
+    return sum % 10 === 0;
+  });
+  console.log('cc type:', typeof cc);
+  console.log('cc valid:', cc('4532015112830366'));
+  console.log('cc invalid:', cc('1234567890123'));
+  
+  const myScope = scope({ creditCard: cc, Order: { id: 'string', card: 'creditCard' } });
+  const mod = myScope.export();
+  console.log('Order:', mod.Order({ id: 'foo', card: '4532015112830366' }));
+}).catch(e => console.error(e.message));
+" 2>&1 ✔ 
+The approach works. Now I need to use `type(...)` calls inside the scope (from the scope's own `.type` accessor) rather than using the global `type` to ensure they're in the scope. But since the keywords don't reference other scope aliases, passing pre-built `type(...)` values as scope entries should work fine. Let me also verify the `ctx.mustBe` API works:   
+💫 Executing cd /home/user/myproject && node -e "
+import('arktype').then(({type}) => {
+  const cc = type('string').matching(/^\d{13,19}$/).narrow((s, ctx) => {
+    let sum = 0, alt = false;
+    for (let i = s.length - 1; i >= 0; i--) {
+      let n = parseInt(s[i], 10);
+      if (alt) { n *= 2; if (n > 9) n -= 9; }
+      sum += n; alt = !alt;
+    }
+    return sum % 10 === 0 || ctx.mustBe('a valid credit card (Luhn check failed)');
+  });
+  const result = cc('1234567890123');
+  if (result instanceof type.errors) console.log('Error summary:', result.summary);
+  else console.log('OK:', result);
+}).catch(e => console.error(e.message));
+" 2>&1 ✔ 
+The `ctx.mustBe` API works. Now let me rewrite `src/keywords.ts` to use the correct pattern — using `type(...)` from outside the scope (since these keywords don't cross-reference each other), and verifying the whole flow works before finalizing:   
+✏️  Writing /home/user/myproject/src/keywords.ts ✔ 
+💫 Executing cd /home/user/myproject && echo '{"id":"my-order-01","customerPhone":"+1 (555) 123-4567","cardNumber":"4532015112830366","total":99.99}' | npx tsx cli.ts ✔ 
+Valid input works. Now let's test all the invalid cases:   
+📋 Updating todo list (4 items) ✔ 
+💫 Executing cd /home/user/myproject && echo '{"id":"my-order-01","customerPhone":"+1 (555) 123-4567","cardNumber":"1234567890123","total":99.99}' | npx tsx cli.ts && echo '---' && echo '{"id":"-bad-slug","customerPhone":"+1 (555) 123-4567","cardNumber":"4532015112830366","total":99.99}' | npx tsx cli.ts && echo '---' && echo '{"id":"my-order-01","customerPhone":"not-a-phone","cardNumber":"4532015112830366","total":99.99}' | npx tsx cli.ts && echo '---' && echo '{"id":"my-order-01","customerPhone":"+1 (555) 123-4567","cardNumber":"4532015112830366","total":-5}' | npx tsx cli.ts && echo '---' && echo 'not json at all' | npx tsx cli.ts && echo '---' && echo '{"id":"ab","customerPhone":"+1 (555) 123-4567","cardNumber":"4532015112830366","total":1}' | npx tsx cli.ts ✔ 
+All cases work correctly. Let me run a few more edge-case tests:   
+💫 Executing cd /home/user/myproject && \
+  # trailing dash slug
+  echo '{"id":"bad-slug-","customerPhone":"+15551234567","cardNumber":"4532015112830366","total":1}' | npx tsx cli.ts && echo '---' && \
+  # valid phone formats
+  echo '{"id":"ok-slug","customerPhone":"5551234567","cardNumber":"4532015112830366","total":1}' | npx tsx cli.ts && echo '---' && \
+  # card number with letters (should fail pattern)
+  echo '{"id":"ok-slug","customerPhone":"5551234567","cardNumber":"453201511283036X","total":1}' | npx tsx cli.ts && echo '---' && \
+  # exactly 3-char slug
+  echo '{"id":"abc","customerPhone":"5551234567","cardNumber":"4532015112830366","total":1}' | npx tsx cli.ts && echo '---' && \
+  # missing field
+  echo '{"id":"ok-slug","customerPhone":"5551234567","total":1}' | npx tsx cli.ts ✔ 
+All edge cases pass correctly. Let's also verify the exit code is always 0:   
+💫 Executing cd /home/user/myproject && echo '{"id":"ok","customerPhone":"5551234567","cardNumber":"4532015112830366","total":1}' | npx tsx cli.ts; echo "exit: $?" && echo 'bad' | npx tsx cli.ts; echo "exit: $?" ✔ 
+💫 Executing cd /home/user/myproject && echo '{"id":"ok-slug","customerPhone":"5551234567","cardNumber":"4532015112830366","total":1}' | npx tsx cli.ts; echo "exit: $?" ✔ 
+Exit code is always 0. Let me do a final review of both files to confirm everything is clean:   
+📖 Reading /home/user/myproject/src/keywords.ts ✔ 
+📖 Reading /home/user/myproject/cli.ts ✔ 
+📋 Updating todo list (4 items) ✔ 
+🎉 Task Completed
+The validator library is implemented at `/home/user/myproject` with two files:
+
+---
+
+### `src/keywords.ts`
+
+Defines all three custom keywords and the `Order` schema inside a **single `scope({...})` call**, then exports the resulting module members:
+
+- **`creditCard`** — `type("string").matching(/^\d{13,19}$/)` for the digit/length constraint, then **`.narrow(...)`** for the Luhn checksum (the mandatory narrow predicate lives here).
+- **`usPhone`** — `type("string").matching(/^\+?1?[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}$/)` using the exact spec regex.
+- **`slug`** — `type("string").matching(/^[a-z0-9-]{3,64}$/)` for charset + length, then **`.narrow(...)`** to reject a leading or trailing dash.
+- **`Order`** — an object schema that references all three keywords by bare alias name (`"slug"`, `"usPhone"`, `"creditCard"`, `"number > 0"`).
+
+### `cli.ts`
+
+Reads one JSON document from stdin, calls `Order.assert(parsed)`:
+- **Valid** → prints `VALID` then the JSON-stringified object on the next line.
+- **Invalid** (schema error or JSON parse error) → prints a single line beginning with `INVALID: `.
+- Always exits with code `0`.
+
+---
+
+**Verified output:**
+
+```
+# Valid order
+echo '{"id":"my-order-01","customerPhone":"+1 (555) 123-4567","cardNumber":"4532015112830366","total":99.99}' | npx tsx cli.ts
+VALID
+{"id":"my-order-01","customerPhone":"+1 (555) 123-4567","cardNumber":"4532015112830366","total":99.99}
+
+# Bad Luhn
+INVALID: cardNumber must be a valid credit card number (Luhn check failed) (was "1234567890123")
+
+# Leading-dash slug
+INVALID: id must be a slug with no leading or trailing dash (was "-bad-slug")
+
+# Bad phone
+INVALID: customerPhone must be matched by ^\+?1?[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}$ (was "not-a-phone")
+
+# Negative total
+INVALID: total must be positive (was -5)
+
+# Malformed JSON
+INVALID: Unexpected token 'o', "not json at all\n" is not valid JSON
+```   
+  

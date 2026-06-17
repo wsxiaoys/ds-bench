@@ -1,0 +1,5 @@
+CREATE TABLE records (
+    id SERIAL PRIMARY KEY,
+    data TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);

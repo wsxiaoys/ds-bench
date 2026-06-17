@@ -30,6 +30,7 @@ type RawTaskTrial = {
 
 type RawTaskRecord = {
 	instruction?: string;
+	tags?: string[];
 	trials?: RawTaskTrial[];
 };
 
@@ -92,6 +93,7 @@ function buildCompactTasksData(): CompactTask[] {
 		compactTasks.push({
 			taskName,
 			instruction: taskRecord.instruction || "",
+			tags: taskRecord.tags || [],
 			trials,
 		});
 	}

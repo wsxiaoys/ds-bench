@@ -1,0 +1,26 @@
+import os
+import shutil
+import pytest
+
+PROJECT_DIR = "/home/user/project"
+
+def test_node_binary_available():
+    assert shutil.which("node") is not None, "node binary not found in PATH."
+
+def test_npm_binary_available():
+    assert shutil.which("npm") is not None, "npm binary not found in PATH."
+
+def test_project_dir_exists():
+    assert os.path.isdir(PROJECT_DIR), f"Project directory {PROJECT_DIR} does not exist."
+
+def test_package_json_exists():
+    package_json = os.path.join(PROJECT_DIR, "package.json")
+    assert os.path.isfile(package_json), f"package.json not found at {package_json}."
+
+def test_server_routers_posts_ts_exists():
+    posts_router = os.path.join(PROJECT_DIR, "server/routers/posts.ts")
+    assert os.path.isfile(posts_router), f"Posts router file not found at {posts_router}."
+
+def test_app_components_postlist_tsx_exists():
+    post_list = os.path.join(PROJECT_DIR, "app/components/PostList.tsx")
+    assert os.path.isfile(post_list), f"PostList component file not found at {post_list}."

@@ -72,6 +72,7 @@ export type CompactTrial = {
 export type CompactTask = {
 	taskName: string;
 	instruction: string;
+	tags?: string[];
 	trials: CompactTrial[];
 };
 
@@ -125,6 +126,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 	const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
 	const [selectedModels, setSelectedModels] = useState<string[]>([]);
 	const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+	const [selectedTags, setSelectedTags] = useState<string[]>([]);
 	const [querySort, setQuerySort] = useState("default");
 	const [queryOrder, setQueryOrder] = useState("asc");
 	const [searchQuery, setSearchQuery] = useState("");
@@ -139,6 +141,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		selectedStatuses.length > 0 ||
 		selectedModels.length > 0 ||
 		selectedAgents.length > 0 ||
+		selectedTags.length > 0 ||
 		searchQuery !== "" ||
 		querySort !== "default";
 
@@ -148,6 +151,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			status?: string[];
 			model?: string[];
 			agent?: string[];
+			tags?: string[];
 			sort?: string;
 			order?: string;
 		}) => {
@@ -155,6 +159,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			const nextStatuses = updates.status ?? selectedStatuses;
 			const nextModels = updates.model ?? selectedModels;
 			const nextAgents = updates.agent ?? selectedAgents;
+			const nextTags = updates.tags ?? selectedTags;
 			const nextSort = updates.sort ?? querySort;
 			const nextOrder = updates.order ?? queryOrder;
 
@@ -171,6 +176,9 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			}
 			if (nextAgents.length > 0) {
 				params.set("agent", nextAgents.join(","));
+			}
+			if (nextTags.length > 0) {
+				params.set("tags", nextTags.join(","));
 			}
 			if (nextSort !== "default") {
 				params.set("sort", nextSort);
@@ -193,6 +201,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			selectedAgents,
 			selectedModels,
 			selectedStatuses,
+			selectedTags,
 		],
 	);
 
@@ -209,6 +218,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		const initialAgents = (params.get("agent") || "")
 			.split(",")
 			.filter(Boolean);
+		const initialTags = (params.get("tags") || "").split(",").filter(Boolean);
 		const initialSort = params.get("sort") || "default";
 		const initialOrder = params.get("order") || "asc";
 		const initialDevMode =
@@ -220,6 +230,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		setSelectedStatuses(initialStatuses);
 		setSelectedModels(initialModels);
 		setSelectedAgents(initialAgents);
+		setSelectedTags(initialTags);
 		setQuerySort(initialSort);
 		setQueryOrder(initialOrder);
 		setDevMode(initialDevMode);
@@ -263,6 +274,18 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		() => Array.from(new Set(allTrialsFlat.map((tr) => tr.model))),
 		[allTrialsFlat],
 	);
+
+	const allTags = useMemo(() => {
+		const tags = new Set<string>();
+
+		tasksData.forEach((task) => {
+			task.tags?.forEach((tag) => {
+				tags.add(tag);
+			});
+		});
+
+		return Array.from(tags).sort();
+	}, [tasksData]);
 
 	const allCombos = useMemo(
 		() =>
@@ -318,16 +341,24 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 	const tableTasks = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
 
-		if (noTrials) {
-			const filtered = query
+		const filteredByTags =
+			selectedTags.length > 0
 				? tasksData.filter((task) =>
-						task.taskName.toLowerCase().includes(query),
+						selectedTags.some((tag) => task.tags?.includes(tag)),
 					)
 				: tasksData;
+
+		if (noTrials) {
+			const filtered = query
+				? filteredByTags.filter((task) =>
+						task.taskName.toLowerCase().includes(query),
+					)
+				: filteredByTags;
 
 			return [...filtered]
 				.map((task) => ({
 					taskName: task.taskName,
+					tags: task.tags,
 					comboMap: {} as Record<string, CompactTrial>,
 					avgDuration: 0,
 				}))
@@ -338,7 +369,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 				);
 		}
 
-		const result = tasksData
+		const result = filteredByTags
 			.map((task) => {
 				const comboMap: Record<string, CompactTrial> = {};
 				let hasMatchingTrial = false;
@@ -401,6 +432,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 
 				return {
 					taskName: task.taskName,
+					tags: task.tags,
 					comboMap,
 					hasMatchingTrial,
 					avgDuration,
@@ -424,8 +456,9 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 				: b.taskName.localeCompare(a.taskName);
 		});
 
-		return result.map(({ taskName, comboMap, avgDuration }) => ({
+		return result.map(({ taskName, tags, comboMap, avgDuration }) => ({
 			taskName,
+			tags,
 			comboMap,
 			avgDuration,
 		}));
@@ -439,6 +472,8 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		selectedStatuses.length,
 		selectedStatuses.includes,
 		selectedModels[0],
+		selectedTags.some,
+		selectedTags.length,
 	]);
 
 	const toggleSort = (field: string) => {
@@ -568,6 +603,19 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 							}}
 							className="w-full sm:w-auto sm:min-w-45"
 						/>
+
+						{allTags.length > 0 && (
+							<MultiSelect
+								title="Tags"
+								options={allTags}
+								selected={selectedTags}
+								onChange={(vals) => {
+									setSelectedTags(vals);
+									updateParams({ tags: vals });
+								}}
+								className="w-full sm:w-auto sm:min-w-45"
+							/>
+						)}
 					</div>
 
 					{hasActiveFilters && (
@@ -579,6 +627,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 								setSelectedStatuses([]);
 								setSelectedModels([]);
 								setSelectedAgents([]);
+								setSelectedTags([]);
 								setQuerySort("default");
 								setQueryOrder("asc");
 								router.replace(pathname, { scroll: false });
@@ -632,12 +681,24 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 													setSelectedTask(task.taskName);
 													setIsInstructionOpen(true);
 												}}
-												className="group/task flex h-full w-full cursor-pointer items-center gap-2 bg-transparent px-3 py-2 text-left text-foreground transition-colors even:bg-secondary/5 hover:bg-secondary/30 hover:text-primary focus:outline-none sm:px-6"
+												className="group/task flex h-full w-full cursor-pointer flex-col items-start justify-center gap-1 bg-transparent px-3 py-2 text-left text-foreground transition-colors even:bg-secondary/5 hover:bg-secondary/30 hover:text-primary focus:outline-none sm:px-6"
 												title={`View ${task.taskName} instruction`}
 											>
 												<span className="block w-full truncate text-xs group-hover/task:underline md:text-sm">
 													{task.taskName}
 												</span>
+												{task.tags && task.tags.length > 0 && (
+													<div className="mt-0.5 flex flex-wrap gap-1">
+														{task.tags.map((tag) => (
+															<span
+																key={tag}
+																className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 font-medium text-[10px] text-primary"
+															>
+																{tag}
+															</span>
+														))}
+													</div>
+												)}
 											</button>
 										</td>
 										{index === 0 ? (
@@ -701,12 +762,24 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 													setSelectedTask(task.taskName);
 													setIsInstructionOpen(true);
 												}}
-												className="group/task flex h-full w-full cursor-pointer items-center gap-2 bg-transparent px-3 py-2 text-left text-foreground transition-colors hover:text-primary focus:outline-none group-even:bg-secondary/5 group-hover:bg-secondary/30 sm:px-6"
+												className="group/task flex h-full w-full cursor-pointer flex-col items-start justify-center gap-1 bg-transparent px-3 py-2 text-left text-foreground transition-colors hover:text-primary focus:outline-none group-even:bg-secondary/5 group-hover:bg-secondary/30 sm:px-6"
 												title={`View ${task.taskName} instruction`}
 											>
 												<span className="block w-full truncate text-xs group-hover/task:underline md:text-sm">
 													{task.taskName}
 												</span>
+												{task.tags && task.tags.length > 0 && (
+													<div className="mt-0.5 flex flex-wrap gap-1">
+														{task.tags.map((tag) => (
+															<span
+																key={tag}
+																className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 font-medium text-[10px] text-primary"
+															>
+																{tag}
+															</span>
+														))}
+													</div>
+												)}
 											</button>
 										</td>
 										{activeCombos.map((combo) => {
