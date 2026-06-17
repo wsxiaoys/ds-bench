@@ -117,7 +117,7 @@ export default function Home() {
 	return (
 		<div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary/20">
 			{/* Background Gradient Effect */}
-			<div className="fixed inset-0 -z-10 h-full w-full bg-[radial-gradient(#2a2a2a_1px,transparent_1px)] bg-background opacity-20 bg-size-[16px_16px] mask-[radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] dark:opacity-40"></div>
+			<div className="mask-[radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] fixed inset-0 -z-10 h-full w-full bg-[radial-gradient(#2a2a2a_1px,transparent_1px)] bg-background bg-size-[16px_16px] opacity-20 dark:opacity-40"></div>
 
 			<div className="container mx-auto max-w-6xl px-4 py-16">
 				{/* Header Section */}
@@ -165,7 +165,7 @@ export default function Home() {
 				{!hasTasks ? (
 					<PendingReviewCard pendingSampleCases={pendingSampleCases} />
 				) : data.length === 0 ? (
-					<div className="rounded-2xl border border-border border-dashed bg-card/40 px-8 py-14 text-center backdrop-blur-sm">
+					<div className="rounded-lg border border-border border-dashed bg-card/40 px-8 py-14 text-center backdrop-blur-sm">
 						<h2 className="font-semibold text-2xl tracking-tight">
 							No evaluation data yet
 						</h2>

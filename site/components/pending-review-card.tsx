@@ -6,7 +6,7 @@ export default function PendingReviewCard({
 	pendingSampleCases,
 }: PendingReviewCardProps) {
 	return (
-		<div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-linear-to-br from-primary/10 via-card/90 to-background/90 px-5 pt-6 pb-10 text-center shadow-[0_0_0_1px_hsl(var(--primary)/0.18),0_28px_72px_-32px_hsl(var(--foreground)/0.45)] backdrop-blur-sm sm:px-8 sm:pt-8 sm:pb-14">
+		<div className="relative overflow-hidden rounded-lg border border-primary/30 bg-linear-to-br from-primary/10 via-card/90 to-background/90 px-5 pt-6 pb-10 text-center shadow-[0_0_0_1px_hsl(var(--primary)/0.18),0_28px_72px_-32px_hsl(var(--foreground)/0.45)] backdrop-blur-sm sm:px-8 sm:pt-8 sm:pb-14">
 			<div className="pointer-events-none absolute -top-16 -right-16 h-36 w-36 rounded-full bg-primary/20 blur-3xl sm:-top-14 sm:-right-14 sm:h-40 sm:w-40" />
 			<div className="pointer-events-none absolute bottom-0 -left-20 h-32 w-32 rounded-full bg-foreground/10 blur-3xl sm:h-36 sm:w-36" />
 
@@ -24,7 +24,7 @@ export default function PendingReviewCard({
 				usage.
 			</p>
 
-			<div className="relative mx-auto mt-8 max-w-2xl rounded-xl bg-primary/10 px-4 py-4 text-left sm:px-5">
+			<div className="relative mx-auto mt-8 max-w-2xl rounded-md bg-primary/10 px-4 py-4 text-left sm:px-5">
 				<p className="text-center font-semibold text-base text-foreground sm:text-lg">
 					Next step: join Slack for review
 				</p>

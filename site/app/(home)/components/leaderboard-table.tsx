@@ -138,7 +138,7 @@ export default function LeaderboardTable({
 			</div>
 
 			{/* Leaderboard Table */}
-			<div className="overflow-hidden rounded-xl border border-border bg-card/50 shadow-xl backdrop-blur-sm">
+			<div className="overflow-hidden rounded-lg border border-border bg-card/50 shadow-xl backdrop-blur-sm">
 				<div className="overflow-x-auto">
 					<table className="w-full whitespace-nowrap text-left text-sm">
 						<thead className="border-border border-b bg-secondary/50 font-medium text-muted-foreground">

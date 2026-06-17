@@ -532,7 +532,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 				</div>
 			</div>
 
-			<div className="mb-6 flex shrink-0 flex-col items-start justify-between gap-4 rounded-xl border border-border bg-card/50 p-4 shadow-sm backdrop-blur-sm transition-all md:flex-row md:items-center">
+			<div className="mb-6 flex shrink-0 flex-col items-start justify-between gap-4 rounded-lg border border-border bg-card/50 p-4 shadow-sm backdrop-blur-sm transition-all md:flex-row md:items-center">
 				<div className="flex w-full flex-wrap items-center gap-4 md:w-auto">
 					<div
 						className={cn(
@@ -603,7 +603,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 				</div>
 			</div>
 
-			<div className="fade-in relative flex max-h-full animate-in flex-col overflow-hidden rounded-xl border border-border bg-card/50 pb-1 shadow-sm backdrop-blur-sm duration-500">
+			<div className="fade-in relative flex max-h-full animate-in flex-col overflow-hidden rounded-lg border border-border bg-card/50 pb-1 shadow-sm backdrop-blur-sm duration-500">
 				{noTrials ? (
 					<TableWrapper hasRows={tableTasks.length > 0}>
 						<table className="w-full border-collapse text-left text-sm">
@@ -890,7 +890,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 					onOpenChange={setIsInstructionOpen}
 					direction="bottom"
 				>
-					<DrawerContent className="inset-x-0 bottom-0 h-[76dvh] max-h-[76dvh] rounded-t-2xl border-border/70 border-t bg-card/95 p-0">
+					<DrawerContent className="inset-x-0 bottom-0 h-[76dvh] max-h-[76dvh] rounded-t-lg border-border/70 border-t bg-card/95 p-0">
 						<div className="mx-auto mt-3 h-1.5 w-14 rounded-full bg-muted-foreground/40" />
 						<div className="flex h-full min-h-0 flex-col">
 							<DrawerHeader className="border-border/60 border-b px-5 pb-4">

@@ -209,19 +209,19 @@ export function TrajectoryPage({
 				<Tabs
 					value={activeTab}
 					onValueChange={handleTabChange}
-					className="flex h-full min-h-0 flex-col gap-0 overflow-hidden rounded-xl border border-border bg-background/70 shadow-sm backdrop-blur-sm"
+					className="flex h-full min-h-0 flex-col gap-0 overflow-hidden rounded-lg border border-border bg-background/70 shadow-sm backdrop-blur-sm"
 				>
 					<div className="border-border border-b bg-background/40 px-3 py-3 sm:px-4">
 						<TabsList
 							className={`flex h-11 w-full ${
 								visibleTabsConfig.length <= 3 ? "sm:w-[480px]" : "sm:w-[640px]"
-							} max-w-full items-stretch gap-1 rounded-xl bg-muted/55 p-1`}
+							} max-w-full items-stretch gap-1 rounded-lg bg-muted/55 p-1`}
 						>
 							{visibleTabsConfig.map((tab) => (
 								<TabsTrigger
 									key={tab.value}
 									value={tab.value}
-									className="h-full flex-1 cursor-pointer rounded-lg border-0 py-0 text-muted-foreground leading-none transition-colors hover:bg-primary/10 hover:text-foreground data-[state=active]:bg-primary/18 data-[state=active]:text-foreground data-[state=active]:shadow-none"
+									className="h-full flex-1 cursor-pointer rounded-md border-0 py-0 text-muted-foreground leading-none transition-colors hover:bg-primary/10 hover:text-foreground data-[state=active]:bg-primary/18 data-[state=active]:text-foreground data-[state=active]:shadow-none"
 								>
 									{tab.label}
 								</TabsTrigger>
