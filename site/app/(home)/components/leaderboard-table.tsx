@@ -111,7 +111,7 @@ export default function LeaderboardTable({
 		<>
 			{/* Controls & Filters */}
 			<div className="mb-6 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
-				<h2 className="flex items-center gap-2 font-semibold uppercase text-primary/75">
+				<h2 className="flex items-center gap-2 font-semibold text-primary/75 uppercase">
 					Leaderboard
 				</h2>
 
