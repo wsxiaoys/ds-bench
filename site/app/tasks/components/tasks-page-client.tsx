@@ -817,8 +817,8 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 										<th
 											key={combo}
 											className={cn(
-												"min-w-30 px-3 py-3 text-left sm:px-6 md:min-w-37.5",
-												index > 0 && "border-border/50 border-l",
+												"relative min-w-30 px-3 py-3 text-left after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] sm:px-6 md:min-w-37.5",
+												index === activeCombos.length - 1 && "after:hidden",
 											)}
 										>
 											<div className="flex flex-col items-start">
@@ -943,8 +943,11 @@ function TableWrapper({ hasRows, children, viewportRef }: TableWrapperProps) {
 			>
 				{children}
 			</ScrollAreaPrimitive.Viewport>
-			<ScrollBar className="top-11 bottom-2 h-auto" />
-			<ScrollBar orientation="horizontal" />
+			<ScrollBar className="top-11 bottom-2 z-50 h-auto [&_[data-slot=scroll-area-thumb]]:transition-colors hover:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/30 active:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/45 dark:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/40 dark:active:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/70 dark:hover:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/55" />
+			<ScrollBar
+				orientation="horizontal"
+				className="z-50 [&_[data-slot=scroll-area-thumb]]:transition-colors hover:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/30 active:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/45 dark:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/40 dark:active:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/70 dark:hover:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/55"
+			/>
 			<ScrollAreaPrimitive.Corner />
 		</ScrollAreaPrimitive.Root>
 	);
