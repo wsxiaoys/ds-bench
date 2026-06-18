@@ -42,6 +42,11 @@ EOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Godot Engine 4.3 headless environment with an empty project skeleton at /home/user/myproject for the save_load_resource_serialization task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

@@ -80,4 +80,9 @@ RUN cd /home/user/project && npm install
 #   - /home/user/project with package.json, tsconfig.json, and src/server/router.ts
 #   - tRPC v11 and zod installed
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

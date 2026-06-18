@@ -110,6 +110,11 @@ RUN cd /home/user/myapp && npm install --no-audit --no-fund
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Capacitor v8 task environment: pre-scaffolded Vite + TypeScript project at /home/user/myapp, ready to integrate @capacitor/camera (v8.1.0+ takePhoto), @capacitor/filesystem, and @capacitor/preferences into a small photo-gallery module."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

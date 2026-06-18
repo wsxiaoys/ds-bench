@@ -7,4 +7,9 @@ RUN mkdir -p /home/user && chmod 0755 /home/user
 LABEL Author="any-task-builder"
 LABEL Description="Wasp development environment with Node.js 24.x and Wasp CLI for building full-stack web applications."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash"]

@@ -16,4 +16,9 @@ LABEL Description="Wasp development environment with Node.js 24.x and Wasp CLI f
 #   - Python 3, pip, and pytest
 #   - curl for network checks
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash"]

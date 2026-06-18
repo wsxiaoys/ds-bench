@@ -13,6 +13,11 @@ RUN mkdir -p /home/user/myproject
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Alchemyst AI Python SDK (alchemystai v0.10.0) task environment for metadata_filter_search_py with an empty /home/user/myproject project directory."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

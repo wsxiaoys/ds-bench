@@ -107,6 +107,11 @@ RUN cd /home/user/myapp && npm install --no-audit --no-fund
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Capacitor v8 task environment: pre-scaffolded Vite + TypeScript project at /home/user/myapp ready for a Device.getInfo() integration."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

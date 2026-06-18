@@ -22,6 +22,11 @@ RUN mkdir -p /workspace && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB 0.25.3 native (non-Tantivy) FTS task environment on Ubuntu 24.04."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

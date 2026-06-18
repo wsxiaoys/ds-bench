@@ -39,4 +39,9 @@ EOF
 #   - /home/user/project - Prefect project with flow.py
 #   - flow.py with an initial un-tagged task
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "prefect server start > /dev/null 2>&1 & sleep 5 && prefect config set PREFECT_API_URL=\"http://127.0.0.1:4200/api\" && trap : TERM INT; sleep infinity & wait"]

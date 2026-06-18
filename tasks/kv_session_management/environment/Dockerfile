@@ -31,6 +31,11 @@ RUN git config --global user.email "task@example.com" && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="RedwoodSDK kv_session_management task environment: Ubuntu 24.04, Node.js v24, pre-scaffolded rwsdk project at /home/user/myproject with npm deps preinstalled. Sessions backed by miniflare KV; no Cloudflare account required."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

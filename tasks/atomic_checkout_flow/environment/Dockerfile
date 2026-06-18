@@ -40,4 +40,9 @@ const p = new PrismaClient(); \
 p.product.create({ data: { name: 'Widget', stock: 10 } }).then(() => p.\$disconnect()); \
 "
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

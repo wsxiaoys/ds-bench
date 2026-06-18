@@ -42,6 +42,11 @@ RUN mkdir -p /tmp/gdx-warmup && cd /tmp/gdx-warmup && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="libGDX headless backend + Ashley ECS task environment (JDK 17, Gradle 8.10) with /home/user/gdx-ecs prepared."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

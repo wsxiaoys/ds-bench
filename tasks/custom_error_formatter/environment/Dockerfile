@@ -58,4 +58,9 @@ EOF
 #   - /home/user/app: Express.js project with tRPC v11.
 #   - server.ts: Initial tRPC server without custom error formatter.
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

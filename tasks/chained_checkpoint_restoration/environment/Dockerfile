@@ -60,4 +60,9 @@ EOF
 #   - aws-cli for S3-compatible object verification against Tigris
 #   - /home/user/chained-ckpt: project scaffold with package.json, tsconfig.json
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

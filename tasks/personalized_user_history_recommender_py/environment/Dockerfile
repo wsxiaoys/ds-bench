@@ -155,6 +155,11 @@ RUN python3 /opt/zealt/seed.py
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB personalized recommender task: items + user_history tables, precomputed query vector and ground-truth top-K rankings for alpha=0.0 and alpha=1.0."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

@@ -71,6 +71,11 @@ RUN cd /home/user/myproject && npm install --no-audit --no-fund --loglevel=error
 LABEL Author="generate-harbor-tasks"
 LABEL Description="ArkType type.declare<Product>() interface conformance project skeleton at /home/user/myproject."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

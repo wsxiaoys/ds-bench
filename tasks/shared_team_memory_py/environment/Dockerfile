@@ -13,6 +13,11 @@ RUN mkdir -p /home/user/myproject
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Alchemyst AI Python SDK environment for the shared team memory CLI task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

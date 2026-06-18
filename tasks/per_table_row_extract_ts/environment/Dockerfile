@@ -127,6 +127,11 @@ RUN python3 /tmp/make_pdf.py && rm /tmp/make_pdf.py
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud TS SDK per_table_row extraction task: Node 22 + @llamaindex/llama-cloud + a 12-row product PDF."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

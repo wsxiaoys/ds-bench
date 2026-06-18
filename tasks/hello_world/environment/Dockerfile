@@ -16,4 +16,9 @@ LABEL Description="Wasp development environment for Hello World task."
 # 2. Node.js 24.x
 # 3. Python 3 and pytest for verification
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash"]

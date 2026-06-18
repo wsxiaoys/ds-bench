@@ -64,4 +64,9 @@ EOF
 #   - Node.js 20, Prisma, 3 seeded users
 #   - rawcount.js: broken script with BigInt serialization bug
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

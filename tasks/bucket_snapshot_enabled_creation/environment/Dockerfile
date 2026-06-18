@@ -26,4 +26,9 @@ RUN mkdir -p /home/user/tigris-task && chmod 0755 /home/user/tigris-task
 # to create a snapshot-enabled bucket named harbor-snap-${trial_id} via:
 #   tigris buckets create harbor-snap-${trial_id} --enable-snapshots
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

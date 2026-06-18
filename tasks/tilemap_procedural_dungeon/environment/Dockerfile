@@ -32,6 +32,11 @@ RUN mkdir -p /home/user/myproject
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Godot Engine 4.3 headless environment for a deterministic procedural dungeon generator task built with TileMapLayer + FastNoiseLite."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

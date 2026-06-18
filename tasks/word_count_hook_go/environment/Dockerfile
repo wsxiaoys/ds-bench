@@ -104,6 +104,11 @@ RUN cd /home/user/myproject && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="PocketBase v0.31.0 Go starter project with an articles collection migration; the agent must implement word_count / reading_time_minutes hooks."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

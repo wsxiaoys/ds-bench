@@ -15,6 +15,11 @@ RUN mkdir -p /home/user/sequelize-m2m
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Node.js v24 task environment for Sequelize Many-to-Many association task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

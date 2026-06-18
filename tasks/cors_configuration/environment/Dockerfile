@@ -19,4 +19,9 @@ RUN mkdir -p /home/user/project
 #   - Node.js v24 for running the tRPC server
 #   - /home/user/project: initial empty directory for the task
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

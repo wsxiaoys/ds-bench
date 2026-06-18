@@ -23,4 +23,9 @@ RUN pip3 install e2b --break-system-packages --ignore-installed packaging
 LABEL Author="e2b-task-builder"
 LABEL Description="E2B task environment for testing sandbox command execution and stdout/stderr capture."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

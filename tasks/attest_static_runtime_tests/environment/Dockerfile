@@ -65,6 +65,11 @@ RUN cd /home/user/myproject && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="ArkType 2.2.0 + @arktype/attest 0.56.0 + vitest environment for the static+runtime attest tests task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

@@ -40,4 +40,9 @@ RUN npx prisma generate
 #   - Migration applied, dev.db exists with User table (empty)
 #   - No seed script present
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

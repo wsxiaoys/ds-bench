@@ -178,4 +178,9 @@ EOF
 #   - Pochi CLI and agent-browser installed
 #   - /home/user/project: Next.js + tRPC v11 project with missing query invalidation
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

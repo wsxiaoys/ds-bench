@@ -51,6 +51,11 @@ RUN cd /home/user/myproject && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Godot 4.3 headless + scons/g++ toolchain + official godot-cpp 4.3 source for a GDExtension C++ task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

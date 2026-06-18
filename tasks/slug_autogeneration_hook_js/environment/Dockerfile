@@ -20,6 +20,11 @@ RUN mkdir -p /home/user/pocketbase_app && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="PocketBase v0.31.0 standalone environment with default directories created."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

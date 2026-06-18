@@ -26,4 +26,9 @@ LABEL Description="E2B task environment for setting up a Python environment with
 
 # No initial files to create for this task, the agent will write the setup script.
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

@@ -14,6 +14,11 @@ RUN mkdir -p /home/user/myproject
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Bytewax stateful recovery task environment with Bytewax 0.21.1 installed."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

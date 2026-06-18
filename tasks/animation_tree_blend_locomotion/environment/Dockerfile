@@ -48,6 +48,11 @@ RUN cd /home/user/godot_project && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Godot Engine 4.3 headless environment for the animation_tree_blend_locomotion task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

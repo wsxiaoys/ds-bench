@@ -48,6 +48,11 @@ RUN cd /home/user/myproject/inputs && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud async folder parse (TypeScript) task environment with Node.js v24 and three sample PDFs."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

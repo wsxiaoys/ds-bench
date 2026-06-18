@@ -23,4 +23,9 @@ RUN mkdir -p /home/user/prefect-project && \
 #   - /home/user/prefect-project/counter.txt - initialized to 0
 #   - /home/user/prefect-project/locks - directory for file locks
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

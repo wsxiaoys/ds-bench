@@ -17,6 +17,11 @@ RUN mkdir -p /home/user && chmod 0755 /home/user
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Encore.go task environment for building and deploying a cron job cleanup application."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

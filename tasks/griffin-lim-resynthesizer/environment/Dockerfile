@@ -31,6 +31,11 @@ RUN mkdir -p /workspace && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="librosa 0.11.0 Griffin-Lim resynthesis task environment with a pre-baked ~5s mono 22050 Hz WAV at /workspace/input.wav."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

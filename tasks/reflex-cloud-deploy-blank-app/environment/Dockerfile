@@ -19,6 +19,11 @@ RUN mkdir -p /home/user && chmod 0755 /home/user
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Reflex Cloud blank-app deploy task environment: ubuntu:24.04 with python3, uv, node.js v24, pytest, and the Reflex Cloud CLI available via `uv run reflex`."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

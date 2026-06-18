@@ -18,6 +18,11 @@ RUN mkdir -p /home/user/project && chmod 0755 /home/user/project
 LABEL Author="generate-harbor-tasks"
 LABEL Description="React and TanStack Table basic task environment with Node.js v24 and browser verification."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

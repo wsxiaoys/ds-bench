@@ -19,6 +19,11 @@ RUN mkdir -p /home/user/ecommerce-cart
 LABEL Author="generate-harbor-tasks"
 LABEL Description="TanStack Query and Router e-commerce cart task environment with Node.js v24 and browser verification."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

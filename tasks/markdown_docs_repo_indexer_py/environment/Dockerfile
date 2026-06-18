@@ -323,6 +323,11 @@ PYEOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB Markdown-docs-repo indexer task. /app/docs/ contains 6 baked markdown files with one '# title' and several '## sections' each; verifier issues 3 rigged semantic queries."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

@@ -45,6 +45,11 @@ RUN mkdir -p /home/user/pb_data && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Express SSR Authentication Sync task with PocketBase and Node.js v24."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

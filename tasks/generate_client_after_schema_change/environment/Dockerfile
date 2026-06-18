@@ -41,4 +41,9 @@ RUN npx prisma migrate dev --name init
 #   - prisma/migrations: initial migration applied
 #   - prisma/dev.db: SQLite database
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

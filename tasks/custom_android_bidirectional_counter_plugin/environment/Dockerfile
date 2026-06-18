@@ -132,6 +132,11 @@ RUN cd /home/user/myapp/android && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Capacitor v8 hybrid app with Android platform scaffolded under /home/user/myapp, ready for adding a custom local Java Capacitor Counter plugin with bi-directional events."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

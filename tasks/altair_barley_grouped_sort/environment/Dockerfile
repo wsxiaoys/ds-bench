@@ -47,6 +47,11 @@ EOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Vega-Altair task environment for the faceted, sorted, grouped barley bar chart with mean overlay; includes browser verification dependencies."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

@@ -249,6 +249,11 @@ RUN python3 /tmp/make_inputs.py && rm -f /tmp/make_inputs.py
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud classify-then-route-then-extract (TypeScript) task environment with four synthetic PDFs (two invoices and two contracts) and Node.js v24."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

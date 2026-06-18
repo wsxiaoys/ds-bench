@@ -95,6 +95,11 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="librosa 0.11 environment pre-baked with a small speech/music WAV dataset under /workspace/train and /workspace/test for the spectral-contrast-classifier task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

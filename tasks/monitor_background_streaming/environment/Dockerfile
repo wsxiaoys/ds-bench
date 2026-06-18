@@ -23,4 +23,9 @@ RUN pip3 install --break-system-packages --ignore-installed e2b
 LABEL Author="e2b-task-builder"
 LABEL Description="E2B background command streaming task environment"
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

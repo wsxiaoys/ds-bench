@@ -17,4 +17,9 @@ LABEL Description="Prefect 3.0 environment with Docker integration for deploymen
 #   - prefect and prefect-docker installed.
 #   - /home/user - base directory for the user.
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

@@ -16,6 +16,11 @@ RUN mkdir -p /home/user/myproject && chmod 0755 /home/user/myproject
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Apideck TypeScript SDK task: create a nested folder hierarchy in OneDrive via @apideck/unify."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:
