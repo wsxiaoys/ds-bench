@@ -25,4 +25,9 @@ RUN pip install e2b
 LABEL Author="e2b-task-builder"
 LABEL Description="E2B task environment to spin up a web server and verify public URL."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

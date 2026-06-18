@@ -50,6 +50,11 @@ PYEOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud LlamaSheets (beta) task environment: Python 3 + llama-cloud SDK v2 + a seeded sample XLSX for region extraction."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

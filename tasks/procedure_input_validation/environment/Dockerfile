@@ -74,4 +74,9 @@ RUN cd /home/user/project && npm install
 #   - router.ts with an initial appRouter.
 #   - tsconfig.json for TypeScript support.
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

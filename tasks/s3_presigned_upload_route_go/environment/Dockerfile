@@ -95,6 +95,11 @@ RUN bash -lc '\
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Ubuntu 24.04 with Go 1.23, MinIO server, PocketBase v0.31.0 module cache pre-warmed, and a pb_data seeded with one superuser plus two regular users for the S3 presigned-upload task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

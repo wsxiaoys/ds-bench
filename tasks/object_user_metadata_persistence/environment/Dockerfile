@@ -36,4 +36,9 @@ RUN mkdir -p /home/user/tigris-task && \
 #     literal bytes "quarterly report" (no trailing newline) to be uploaded
 #     by the agent with custom user metadata and a specific content type.
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

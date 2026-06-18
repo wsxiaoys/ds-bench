@@ -160,4 +160,9 @@ RUN cd /home/user/project && npm install
 #   - browser verification dependencies: Pochi CLI, agent-browser, ffmpeg, ripgrep, and more
 #   - /home/user/project: base directory for the Next.js project with tRPC v10 setup
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

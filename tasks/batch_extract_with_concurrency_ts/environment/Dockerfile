@@ -131,6 +131,11 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud batch extraction (TypeScript SDK) task environment with Node.js v24 and three seeded invoice PDFs in /home/user/myproject/invoices."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

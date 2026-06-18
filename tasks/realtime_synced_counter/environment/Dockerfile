@@ -32,6 +32,11 @@ RUN cd /home/user && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="RedwoodSDK (rwsdk) realtime task environment: Ubuntu 24.04 + Node.js v24 + browser verification deps + pre-scaffolded rwsdk project at /home/user/myproject with node_modules pre-installed."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

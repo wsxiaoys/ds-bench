@@ -50,6 +50,11 @@ EOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud Extract v2 (Python SDK) task environment with a pre-staged invoice fixture for citation-enabled extraction."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

@@ -223,6 +223,11 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB cross-lingual search task using Cohere embed-multilingual-v3.0 on a baked 30x3 multilingual corpus."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

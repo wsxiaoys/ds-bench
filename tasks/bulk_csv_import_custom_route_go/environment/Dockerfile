@@ -49,6 +49,11 @@ RUN mkdir -p /home/user/myproject && chmod 0755 /home/user/myproject
 LABEL Author="generate-harbor-tasks"
 LABEL Description="PocketBase v0.31.0 Go-embedded task environment with Go 1.22 toolchain, pre-warmed module cache, and a seeded pb_data directory containing a superuser."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

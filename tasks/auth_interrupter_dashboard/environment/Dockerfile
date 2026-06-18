@@ -39,6 +39,11 @@ RUN cd /home/user/myproject && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="RedwoodSDK (rwsdk) v1.2.11 starter pre-installed at /home/user/myproject with Node.js v24 and browser-verification deps for the auth_interrupter_dashboard task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

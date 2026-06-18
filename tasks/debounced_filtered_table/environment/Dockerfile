@@ -17,6 +17,11 @@ RUN mkdir -p /home/user && chmod 0755 /home/user
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Reflex task environment for a debounced multi-filter SQLite-backed product table (uv + Node.js v24 + Python 3 verifier toolchain)."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

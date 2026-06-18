@@ -214,6 +214,11 @@ PYEOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB PDF ingestion + OpenAI semantic search task. Corpus baked into /app/corpus by reportlab at build time."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

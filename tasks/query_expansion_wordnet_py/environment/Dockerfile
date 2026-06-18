@@ -233,6 +233,11 @@ RUN python3 /app/seed.py
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB native FTS + NLTK WordNet query-expansion task with a 100-row hand-rigged English corpus."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

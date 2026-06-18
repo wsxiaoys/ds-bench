@@ -66,4 +66,9 @@ RUN cd /home/user/tigris-task && npm install --no-audit --no-fund
 #   - tsconfig.json for ES2022 module compilation
 #   - package.json declares @tigrisdata/storage and tsx dependencies
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

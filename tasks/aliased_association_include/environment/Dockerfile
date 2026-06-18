@@ -19,6 +19,11 @@ RUN mkdir -p /home/user/myproject && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Sequelize task environment with Node.js v24 and SQLite3 installed."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

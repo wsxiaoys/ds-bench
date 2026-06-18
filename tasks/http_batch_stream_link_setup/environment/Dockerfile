@@ -126,4 +126,9 @@ INNER_EOF
 #   - src/trpc/client.ts - Initial tRPC client
 #   - src/app/page.tsx - Initial Next.js page
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

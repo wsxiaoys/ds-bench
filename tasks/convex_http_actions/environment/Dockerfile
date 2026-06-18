@@ -15,6 +15,11 @@ RUN mkdir -p /home/user/project
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Convex HTTP actions task environment with Node.js v24 installed."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

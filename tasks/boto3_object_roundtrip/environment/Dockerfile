@@ -25,4 +25,9 @@ RUN mkdir -p /home/user/tigris-task && chmod 0755 /home/user/tigris-task
 #   - AWS_REGION          = auto
 #   - /logs/artifacts/trial_id (mounted by Harbor) supplies the per-trial bucket suffix
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

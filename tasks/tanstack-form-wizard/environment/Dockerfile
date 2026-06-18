@@ -24,6 +24,11 @@ RUN cd /home/user && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Next.js task environment with Node.js v24 installed, including the browser verification environment and Vite React project."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

@@ -37,6 +37,11 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="librosa 0.11 environment with a pre-baked 'choice' music WAV at /workspace/input.wav for the hpss-multi-stem-mixer task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

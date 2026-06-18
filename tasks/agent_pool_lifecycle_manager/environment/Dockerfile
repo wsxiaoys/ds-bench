@@ -68,4 +68,9 @@ RUN cd /home/user/pool && \
 #   - /home/user/pool/node_modules with all dependencies pre-installed locally
 #   - No manager.ts, cli.ts, pool-state.json, or scenario.log yet — those are produced by the user task
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

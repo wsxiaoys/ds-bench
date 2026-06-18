@@ -128,6 +128,11 @@ RUN python3 /tmp/generate_articles_csv.py && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB CSV bulk loader CLI task: a pre-baked 5000-row articles.csv lives at /app/data, the executor implements /home/user/loader_project/loader.py with ingest/search subcommands backed by real OpenAI text-embedding-3-small."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

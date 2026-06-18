@@ -29,4 +29,9 @@ RUN mkdir -p /home/user && \
 #   - /home/user: base directory for the project
 #   - /home/user/test-image.png: test image for file upload verification
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

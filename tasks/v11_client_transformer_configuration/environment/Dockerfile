@@ -123,4 +123,9 @@ RUN npm install
 #   - /home/user/project - tRPC v11 project with server and client
 #   - Initial client/trpc.ts has transformer in root config (v10 style)
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

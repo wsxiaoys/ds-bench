@@ -284,6 +284,11 @@ EOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Godot 4 headless environment for the NavigationAgent2D + dynamic NavigationObstacle2D task, with a pre-installed test harness."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

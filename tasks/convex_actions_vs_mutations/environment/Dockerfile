@@ -60,6 +60,11 @@ EOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Convex project with a buggy mutation that attempts to call an external API."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

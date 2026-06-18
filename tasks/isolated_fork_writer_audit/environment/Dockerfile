@@ -66,4 +66,9 @@ RUN cd /home/user/isolation && npm install --no-audit --no-fund && \
 #     typescript. index.ts is intentionally absent — the user must create it.
 #   - tigris CLI symlinked to /usr/local/bin/tigris.
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

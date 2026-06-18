@@ -81,6 +81,11 @@ RUN test -s /home/user/project/invoice.pdf && head -c 5 /home/user/project/invoi
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud Extract v2 TypeScript task environment with Node.js v24 and a pre-generated sample invoice PDF."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

@@ -61,4 +61,9 @@ RUN cd /home/user/inv && npm install --no-audit --no-fund
 #   - /home/user/inv/index.js and /home/user/inv/inventory.json are
 #     intentionally absent — the user creates them as part of the task.
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

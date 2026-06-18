@@ -47,6 +47,11 @@ dependencies {\n\
 LABEL Author="generate-harbor-tasks"
 LABEL Description="libGDX 1.14.2 headless task environment: OpenJDK 21, Gradle 8.10, pre-warmed libGDX dependency cache."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

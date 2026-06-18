@@ -26,4 +26,9 @@ RUN cd /home/user && \
 #   - browser verification dependencies: Pochi CLI, agent-browser, ffmpeg, ripgrep, and more
 #   - /home/user/app: Next.js App Router project
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

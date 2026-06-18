@@ -117,6 +117,11 @@ PYEOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB PCA projection task. Source 'articles' table of 600 rows × 128-d float32 vectors baked into /home/user/myproject/lancedb at build time."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

@@ -20,4 +20,9 @@ RUN mkdir -p /home/user/project && \
 #   - Prefect installed globally via pip.
 #   - /home/user/project — empty directory for the task
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

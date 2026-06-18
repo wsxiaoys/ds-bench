@@ -22,6 +22,11 @@ RUN mkdir -p /home/user/pb-task && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="PocketBase task environment with Node.js v24 and PocketBase v0.31.0 installed."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

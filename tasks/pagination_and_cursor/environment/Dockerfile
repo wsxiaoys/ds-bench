@@ -41,4 +41,9 @@ const data = Array.from({length: 20}, (_, i) => ({ email: \`user\${i+1}@example.
 p.user.createMany({ data }).then(() => p.\$disconnect()); \
 "
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

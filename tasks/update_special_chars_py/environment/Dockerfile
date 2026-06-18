@@ -18,6 +18,11 @@ RUN mkdir -p /workspace /workspace/db /workspace/output && chmod -R 0755 /worksp
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB Python task environment for update_special_chars_py: lancedb 0.25.3 with a writable /workspace and empty /workspace/db storage root."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

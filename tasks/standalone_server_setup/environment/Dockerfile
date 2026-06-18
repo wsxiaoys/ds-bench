@@ -18,4 +18,9 @@ LABEL Description="Node.js environment for tRPC standalone server setup."
 #   - Node.js v24 for the tRPC task environment
 #   - /home/user: base directory for the project
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

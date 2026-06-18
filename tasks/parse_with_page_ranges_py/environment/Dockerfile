@@ -54,6 +54,11 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud Parse v2 (Python SDK) environment with a 3-page sample PDF for page-range tasks."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

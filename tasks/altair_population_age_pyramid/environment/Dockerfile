@@ -43,6 +43,11 @@ EOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Vega-Altair task environment with altair, vega_datasets, pochi-verifier, and a stub build_pyramid.py for the back-to-back population age pyramid task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

@@ -30,6 +30,11 @@ RUN cd /home/user && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="RedwoodSDK (rwsdk) task environment with Node.js v24 and a pre-scaffolded project at /home/user/myproject for building a Cloudflare R2-backed file upload API."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

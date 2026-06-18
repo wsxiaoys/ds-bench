@@ -15,6 +15,11 @@ RUN mkdir -p /home/user/bytewax_recovery && chmod 0755 /home/user/bytewax_recove
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Bytewax stateful pipeline recovery task environment."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

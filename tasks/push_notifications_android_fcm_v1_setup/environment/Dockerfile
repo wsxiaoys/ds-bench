@@ -43,6 +43,11 @@ EOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Capacitor v8 project scaffolded with Android platform; push-notifications, FCM Gradle wiring, and src/push.ts are NOT yet present."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

@@ -47,4 +47,9 @@ p.order.createMany({ data: [ \
 ]}).then(() => p.\$disconnect()); \
 "
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

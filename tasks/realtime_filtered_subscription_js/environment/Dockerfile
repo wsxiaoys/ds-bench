@@ -27,6 +27,11 @@ RUN mkdir -p /home/user && chmod 0755 /home/user && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="PocketBase v0.31.0 server + Node.js 22 LTS environment for the realtime_filtered_subscription_js task."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

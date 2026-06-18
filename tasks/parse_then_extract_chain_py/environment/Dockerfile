@@ -68,6 +68,11 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud parse-then-extract chain task environment with a pre-generated sample invoice PDF and llama-cloud v2 Python SDK installed."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

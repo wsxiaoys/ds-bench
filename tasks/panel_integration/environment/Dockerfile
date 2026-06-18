@@ -17,4 +17,9 @@ LABEL Description="Node.js v24 environment for tRPC v11 and trpc-panel integrati
 #   - Node.js v24 installed
 #   - /home/user: base directory for the project
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

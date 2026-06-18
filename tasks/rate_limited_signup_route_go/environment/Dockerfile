@@ -57,6 +57,11 @@ RUN mkdir -p /tmp/pbwarm && cd /tmp/pbwarm && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="PocketBase v0.31.0 environment with Go 1.23 toolchain for building a per-IP signup rate-limit middleware."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

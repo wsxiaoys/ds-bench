@@ -82,6 +82,11 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud LlamaExtract task: auto-generate a JSON Schema from a prompt and run extraction on a sample invoice PDF using the Python SDK."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

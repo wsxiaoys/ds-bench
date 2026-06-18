@@ -46,4 +46,9 @@ p.\$executeRaw\`ALTER TABLE User ADD COLUMN bio TEXT\`.then(() => p.\$disconnect
 #   - schema.prisma: User with id/email/name (no bio)
 #   - DB: User table has extra bio TEXT column (drift)
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

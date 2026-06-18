@@ -19,4 +19,9 @@ RUN mkdir -p /home/user/app && chmod 0755 /home/user/app
 #   - prefect 3.0 installed.
 #   - /home/user/app  — project directory.
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

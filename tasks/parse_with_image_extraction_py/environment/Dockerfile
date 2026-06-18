@@ -80,6 +80,11 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud (LlamaParse) Python SDK task environment for parsing a PDF and extracting per-page screenshot images."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

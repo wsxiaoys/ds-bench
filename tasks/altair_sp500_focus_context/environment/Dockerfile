@@ -25,6 +25,11 @@ RUN mkdir -p /home/user/altair_project
 LABEL Author="generate-harbor-tasks"
 LABEL Description="vega-altair Focus + Context S&P 500 dashboard task environment with browser verification."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

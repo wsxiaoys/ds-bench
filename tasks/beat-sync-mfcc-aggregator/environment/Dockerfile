@@ -30,6 +30,11 @@ RUN mkdir -p /workspace && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="librosa 0.11.0 beat-synchronous MFCC task environment with a pre-baked rhythmic ~15s WAV at /workspace/input.wav."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:

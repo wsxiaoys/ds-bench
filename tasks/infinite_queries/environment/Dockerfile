@@ -246,4 +246,9 @@ RUN cd /home/user/project && \
 #   - browser verification dependencies
 #   - /home/user/project: Next.js project with tRPC configured
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
