@@ -8,7 +8,7 @@ RUN apt-get update -y && \
     ln -s /usr/bin/python3 /usr/bin/python && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    npm i -g agent-browser && \
+    curl -fsSL https://github.com/TabbyML/agent-browser/releases/download/v0.27.3-pochi/install.sh | bash && ln -s /root/.agent-browser/bin/agent-browser /usr/local/bin/agent-browser && \
     agent-browser install && \
     curl -LsSf https://astral.sh/uv/install.sh | sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv && \
