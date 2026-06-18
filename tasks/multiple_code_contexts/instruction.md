@@ -1,0 +1,20 @@
+# Task Description
+
+As a developer building an AI coding assistant, you need to execute code for multiple independent tasks concurrently without variable clashes.
+
+Write a Python script `/workspace/solve.py` that:
+1. Connects to a single E2B `Sandbox` using the `e2b_code_interpreter` SDK. (e.g. `Sandbox.create()`)
+2. Creates two separate code execution contexts within this sandbox using `sandbox.create_code_context()`. Let's call them `ctx1` and `ctx2`.
+3. In `ctx1`, execute Python code that sets a variable `magic_number = 42`.
+4. In `ctx2`, execute Python code that sets a variable `magic_number = 99`.
+5. In `ctx1`, execute Python code to read `magic_number` and write it to a file `/home/user/out1.txt` inside the sandbox. (e.g. `with open('/home/user/out1.txt', 'w') as f: f.write(str(magic_number))`).
+6. In `ctx2`, execute Python code to read `magic_number` and write it to a file `/home/user/out2.txt` inside the sandbox.
+7. Finally, download both files from the sandbox to the local workspace as `/workspace/host_out1.txt` and `/workspace/host_out2.txt`.
+8. Ensure the sandbox is closed at the end.
+
+The script must handle creating the contexts and routing the code execution to the correct context using the `context` parameter in `sandbox.run_code()`.
+
+**Requirements:**
+- Use the latest `e2b_code_interpreter` Python SDK.
+- The output files `/workspace/host_out1.txt` and `/workspace/host_out2.txt` must be created in the local working directory.
+- Do not leave the sandbox running indefinitely. Use a context manager (`with Sandbox.create() as sandbox:`) or explicitly call `.close()` / `.kill()`.

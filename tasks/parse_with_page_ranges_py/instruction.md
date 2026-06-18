@@ -1,0 +1,34 @@
+# Parse a PDF with Page Ranges and Cost-Effective Tier (Python SDK)
+
+## Background
+Your team is integrating **LlamaCloud Parse (v2)** into a document-ingestion pipeline. The full document is several pages long, but for fast prototyping you only need the first two pages converted to clean Markdown. You will use the **`llama-cloud`** Python SDK (>= 2.x) to upload a PDF, parse only pages 1–2 with the `cost_effective` tier, and persist per-page Markdown plus a small run summary.
+
+## Requirements
+- Use the official `llama-cloud` Python SDK (the new v2 SDK — do **not** install `llama-cloud-services`).
+- Read the LlamaCloud API key from the `LLAMA_CLOUD_API_KEY` environment variable.
+- Upload the PDF located at `/home/user/myproject/input/sample.pdf` to LlamaCloud with `purpose="parse"`.
+- Submit one parse job that:
+  - Uses `tier="cost_effective"` and `version="latest"`.
+  - Limits parsing to pages **1–2 only** using LlamaCloud's `page_ranges.target_pages` configuration.
+  - Requests inline per-page `markdown` content via the `expand` parameter.
+- Save the resulting per-page Markdown to `/home/user/myproject/output/page_<N>.md`, where `<N>` is the **1-based page number** returned by the API (so the files should be `page_1.md` and `page_2.md`).
+- Write a run summary log file with the parse job ID and the number of pages returned.
+
+## Implementation Hints
+- Install the `llama-cloud` package (already preinstalled in this environment) and instantiate `LlamaCloud()` — it picks up `LLAMA_CLOUD_API_KEY` automatically.
+- Use `client.files.create(file=..., purpose="parse")` to upload the PDF, then pass the returned `file.id` to `client.parsing.parse(...)`.
+- In Parse v2, `page_ranges` is a **top-level** request field (not nested under `input_options`); pass it as `page_ranges={"target_pages": "1-2"}`.
+- The `expand=["markdown"]` parameter on `parsing.parse(...)` makes the SDK return per-page Markdown inline; iterate `result.markdown.pages` and use each page's `page_number` and `markdown` fields.
+- The job ID lives on `result.job.id` and always starts with the prefix `pjb-`.
+
+## Acceptance Criteria
+- Project path: /home/user/myproject
+- Ensure the script is executed against the real LlamaCloud API and the artifacts exist on disk afterwards.
+- Log file: /home/user/myproject/output.log
+- The output directory `/home/user/myproject/output/` must contain exactly the files `page_1.md` and `page_2.md`, each non-empty.
+- Each `page_<N>.md` file must contain the Markdown text returned by LlamaCloud for that page (i.e. the content of `result.markdown.pages[i].markdown` for the page whose `page_number == N`).
+- The log file must contain:
+  - A line in the format `Job ID: pjb-<job_id>` where `<job_id>` is the LlamaCloud parse job identifier returned by the API.
+  - A line in the format `Pages parsed: <count>` where `<count>` is the number of pages returned by the parse job (expected to be `2`).
+- The parse job must have been created with `tier="cost_effective"` (this will be verified by retrieving the job from the LlamaCloud API and inspecting its configuration).
+

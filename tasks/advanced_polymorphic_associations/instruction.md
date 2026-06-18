@@ -1,0 +1,32 @@
+# Sequelize Polymorphic Associations API
+
+## Background
+Sequelize does not have a built-in `belongsToPolymorphic` method, but polymorphic associations can be implemented using standard associations with `scope` and `constraints: false`. You need to build an Express REST API that manages `User`, `Product`, and `Image` models, where an `Image` can polymorphically belong to either a `User` or a `Product`.
+
+## Requirements
+- Create a Node.js Express application using Sequelize and SQLite.
+- Define three models: `User` (fields: `name`), `Product` (fields: `title`), and `Image` (fields: `url`, `imageableId`, `imageableType`).
+- Implement polymorphic associations:
+  - A `User` has many `Image`s (aliased as `profilePictures`).
+  - A `Product` has many `Image`s (aliased as `productPhotos`).
+  - An `Image` belongs to a `User` or a `Product` (depending on `imageableType` being 'user' or 'product').
+- Expose REST API endpoints to create and retrieve these entities with their nested associations.
+- The database schema must be automatically synchronized on startup.
+
+## Implementation Hints
+- Set `constraints: false` on the associations since a single foreign key (`imageableId`) references multiple tables.
+- Use `scope` in `hasMany` to automatically apply the `imageableType` filter when querying or creating associated images.
+- For `GET /images/:id`, you'll need to conditionally include the `User` or `Product` based on the `imageableType` (or include both and let the API response format it). The API should return the associated entity under the key `imageable`.
+
+## Acceptance Criteria
+- Project path: /home/user/myproject
+- Start command: node index.js
+- Port: 3000
+- API Endpoints:
+  - POST `/users`: Accepts `{ "name": string }`. Returns 201 Created and the user object.
+  - POST `/products`: Accepts `{ "title": string }`. Returns 201 Created and the product object.
+  - POST `/images`: Accepts `{ "url": string, "imageableId": number, "imageableType": "user" | "product" }`. Returns 201 Created and the image object.
+  - GET `/users/:id`: Returns 200 OK and the user object, which MUST include a `profilePictures` array containing associated images.
+  - GET `/products/:id`: Returns 200 OK and the product object, which MUST include a `productPhotos` array containing associated images.
+  - GET `/images/:id`: Returns 200 OK and the image object. It MUST include an `imageable` object containing the associated User or Product data (depending on the `imageableType`).
+

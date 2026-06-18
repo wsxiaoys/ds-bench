@@ -1,0 +1,52 @@
+# Deterministic Tick-Based Simulation with libGDX Headless Backend
+
+## Background
+libGDX ships a `gdx-backend-headless` module (`com.badlogicgames.gdx:gdx-backend-headless`) that boots a real `HeadlessApplication` without an OpenGL context, making it suitable for servers, simulations, and CI testing. Your task is to build a small, fully-deterministic 2D point-mass simulation that runs inside an `ApplicationListener` driven by `HeadlessApplication` and writes its final state to a file.
+
+## Requirements
+- Create a Gradle (single-module) Java project at `/home/user/gdx-sim`.
+- Use libGDX `1.14.2` with the headless backend (`com.badlogicgames.gdx:gdx-backend-headless:1.14.2`) on top of `com.badlogicgames.gdx:gdx:1.14.2` and the `com.badlogicgames.gdx:gdx-platform:1.14.2:natives-desktop` natives classifier.
+- Implement an `ApplicationListener` (or `ApplicationAdapter`) whose `create()` reads a properties config file via `Gdx.files.absolute(...)`, whose `render()` advances exactly one simulation tick, and whose `dispose()` writes the final state to an output file.
+- Bootstrap the application from a `main` method that constructs a `HeadlessApplication` with a `HeadlessApplicationConfiguration`. After the simulation finishes, call `Gdx.app.exit()` and join the main loop thread so the JVM exits cleanly.
+- The simulation must be fully deterministic and independent of wall-clock time: use the `dt` value read from the config file, not `Gdx.graphics.getDeltaTime()`.
+- Make the program runnable through Gradle's `application` plugin so it can be launched with `./gradlew run --args="<config-path> <output-path>"`.
+
+## Implementation Hints
+- Look at `HeadlessApplication` and `HeadlessApplicationConfiguration` — set `updatesPerSecond = 0` so the main loop runs as fast as possible and ticks are not throttled by wall-clock pacing.
+- The headless backend's `MockGraphics` cannot run OpenGL code, so do NOT call anything under `Gdx.gl*`; keep the listener pure simulation logic.
+- `Gdx.app.exit()` is asynchronous (it posts a runnable that flips a `running` flag and triggers `pause()`+`dispose()`). To guarantee the output file is flushed before the JVM exits, write the file from `dispose()` and `join()` the main loop thread from `main`.
+- Use `java.util.Properties` (or your preferred parser) to read the config; use `libgdx`'s `FileHandle` to read it (e.g. `Gdx.files.absolute(path).read()`).
+- The integration step (Symplectic Euler — velocity is updated before position is updated using the new velocity) must be applied each tick:
+  - `vx += ax * dt`
+  - `vy += ay * dt`
+  - `x  += vx * dt`
+  - `y  += vy * dt`
+  where `ax = 0` and `ay = gravity_y` are constants taken from the config.
+- Count the number of times `render()` has been invoked; after exactly `ticks` ticks call `Gdx.app.exit()`. Do not perform any additional integration steps after `ticks` ticks.
+
+## Acceptance Criteria
+- Project path: /home/user/gdx-sim
+- Command: `./gradlew --no-daemon run --args="<config-path> <output-path>"` from `/home/user/gdx-sim`
+- The command must terminate on its own (no manual kill) with exit code 0.
+- Input format (`<config-path>` is a Java properties file with these keys, all numeric except `ticks`):
+  - `ticks` (integer, >= 0): number of simulation ticks to run
+  - `dt` (double): fixed simulation time step in seconds
+  - `position_x` (double): initial X position
+  - `position_y` (double): initial Y position
+  - `velocity_x` (double): initial X velocity
+  - `velocity_y` (double): initial Y velocity
+  - `gravity_y` (double): constant Y acceleration applied every tick
+- Output format (`<output-path>` is created/overwritten by the program; UTF-8, LF line endings, one `key=value` per line, in this exact order):
+
+  ```
+  final_x=<double formatted with %.6f>
+  final_y=<double formatted with %.6f>
+  final_vx=<double formatted with %.6f>
+  final_vy=<double formatted with %.6f>
+  ticks=<integer>
+  ```
+  Use `Locale.ROOT` (or equivalent) when formatting numbers so the decimal separator is `.`.
+- Simulation semantics: Symplectic Euler integration where every tick updates velocity first, then position. After `ticks=N` ticks, the integration step must have been applied exactly `N` times.
+- `ticks=0` is a valid input and must produce the initial state unchanged in the output file.
+- Output file must be flushed and the JVM must terminate within 60 seconds for any input with `ticks <= 100000`.
+

@@ -1,0 +1,312 @@
+Skipping image OS validation for hb__scene2d_stage_action_replay_headless: docker inspect returned 1
+Skipping image OS validation for hb__scripted_input_replay_headless: docker inspect returned 1
+Skipping image OS validation for hb__deterministic_tick_simulation_headless: docker inspect returned 1
+Running command: apt-get update && apt-get install -y curl ripgrep
+Running command: apt-get update && apt-get install -y curl ripgrep
+Running command: apt-get update && apt-get install -y curl ripgrep
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.14 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-k8cgbvc > /logs/artifacts/run-id && echo scene2d_stage_action_replay_head__k8CGBVc > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.14 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://getpochi.com/install.sh | bash -x -s -- pochi-v0.6.14 && mkdir -p /logs/agent/pochi && ~/.pochi/bin/pochi --version
+Command outputs captured
+Running command: pochi --model google/gemini-3.5-flash --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Scene2D Action Replay under libGDX Headless Backend
+
+## Background
+libGDX exposes a non-rendering `gdx-backend-headless` module (`com.badlogicgames.gdx:gdx-backend-headless`) that boots a real `HeadlessApplication` thread without an OpenGL context, making it suitable for servers, CI runners, and deterministic simulations. Scene2D's `Actor`, `Group`, and `Action` classes are pure scene-graph logic — they do not invoke OpenGL until you call `draw(...)` — so they can be exercised under the headless backend if the implementation is careful not to touch `Gdx.gl*` or `SpriteBatch`.
+
+Your task is to build a small libGDX project that loads a Scene2D scene description from a text file, queues `Action`s on the actors, advances the scene tick-by-tick on the headless main loop, and writes each actor's final 2D position to an output file.
+
+## Requirements
+- Create a Gradle (single-module) Java project at `/home/user/gdx-stage-sim`.
+- Use libGDX `1.14.2` with the headless backend (`com.badlogicgames.gdx:gdx-backend-headless:1.14.2`) on top of `com.badlogicgames.gdx:gdx:1.14.2` and the `com.badlogicgames.gdx:gdx-platform:1.14.2:natives-desktop` natives classifier.
+- Bootstrap the application from a `main` method that constructs a `com.badlogic.gdx.backends.headless.HeadlessApplication` driving an `ApplicationListener` (or `ApplicationAdapter`).
+- Use Scene2D `com.badlogic.gdx.scenes.scene2d.Actor` instances and Scene2D `Action`s (`com.badlogic.gdx.scenes.scene2d.actions.MoveByAction`, the `Actions` helper, or equivalent) to model and update each actor's position.
+- Read the script file via `Gdx.files.absolute(...)` in `create()`, register the requested actors and queue their `Action`s, run the requested number of ticks by advancing each actor's action queue by `dt` seconds per `render()` call, and write the output file from `dispose()` before the JVM exits.
+- Make the program runnable through Gradle's `application` plugin so it can be launched with `./gradlew run --args="<script-path> <output-path>"`.
+
+## Implementation Hints
+- The headless backend swaps `Gdx.graphics`/`Gdx.audio`/`Gdx.input` for mocks, so **do not** call anything under `Gdx.gl*` and do **not** call `SpriteBatch`/`Stage.draw(...)` — those require a real GL context. Scene2D's `Actor.act(float)`, `Group.act(float)`, and `Action.act(float)` are pure CPU logic and are safe to call under headless.
+- Use `HeadlessApplicationConfiguration.updatesPerSecond = 0` so the main loop ticks as fast as possible and the simulation is not throttled by wall-clock pacing.
+- `Gdx.app.exit()` is asynchronous (it posts a runnable that flips `running` and then triggers `pause()` + `dispose()`). To guarantee that the output file is flushed before the JVM exits, write the file from `dispose()` and `join()` the `HeadlessApplication` main loop thread from `main`.
+- The simulation step must be deterministic and independent of wall-clock time: use the `dt` value parsed from the script file, **not** `Gdx.graphics.getDeltaTime()`.
+- Use `Locale.ROOT` (or equivalent) when formatting floating-point output so the decimal separator is always `.`.
+- Look at `HeadlessApplication`, `HeadlessApplicationConfiguration`, Scene2D `Actor`/`Action`, and `MoveByAction` in the libGDX javadoc / source for the contracts you need to satisfy.
+
+## Acceptance Criteria
+- Project path: /home/user/gdx-stage-sim
+- Command: `./gradlew --no-daemon -q run --args="<script-path> <output-path>"` from `/home/user/gdx-stage-sim`
+- The command must terminate on its own (no manual kill) with exit code 0.
+
+### Script file format (`<script-path>`)
+- UTF-8 text file, one directive per line, LF line endings.
+- Lines starting with `#` are comments and are skipped.
+- Blank or whitespace-only lines are skipped.
+- Tokens on a line are separated by one or more spaces or tabs; leading/trailing whitespace is trimmed.
+- Numeric values use a `.` decimal separator and no thousands separators.
+- The following directives MUST be supported. The first token is the directive name and is case-insensitive (e.g., `DT`, `Dt`, and `dt` are equivalent):
+  - `dt <float>` — fixed simulation time step in seconds (`> 0`). Must appear exactly once before any actor-related directive.
+  - `ticks <int>` — total number of `render()` ticks to run (`>= 0`). Must appear exactly once before any actor-related directive.
+  - `actor <id> <x> <y>` — create an `Actor` with identifier `<id>` (alphanumeric/underscore, case-sensitive, unique within the file) at initial position `(<x>, <y>)`. The order of `actor` directives in the file defines the output order.
+  - `moveby <id> <dx> <dy> <duration>` — queue a Scene2D `MoveByAction` (default linear interpolation) on the previously declared actor `<id>` that moves it by `(<dx>, <dy>)` over `<duration>` seconds (`>= 0`). At most one `moveby` directive may target any given actor in a given script.
+
+### Output file format (`<output-path>`)
+- The program creates or overwrites the file.
+- UTF-8 encoding, LF line endings, one `<id>=<x>,<y>` line per declared actor, in the order the actors were declared in the script.
+- Each `<x>` and `<y>` is the actor's final position formatted with `%.6f` using `Locale.ROOT`.
+
+### Simulation semantics
+- After `create()` completes, the listener performs exactly `ticks` ticks. On each tick it advances every actor's action queue by `dt` seconds (e.g., via `Actor.act(dt)` or `Group.act(dt)`). After the final tick the listener triggers application exit so the headless main loop terminates.
+- `ticks=0` is a valid input and must produce the initial positions unchanged in the output file.
+- An `actor` declared with no `moveby` directive must remain at its initial position throughout the simulation.
+- A `MoveByAction` of duration `D` reaches the full `(dx, dy)` displacement once the simulated time elapsed (`accumulated_dt`) reaches `D`; any remaining ticks must not move that actor further (Scene2D actions auto-remove on completion).
+- The output file must be flushed and the JVM must terminate within 60 seconds for any input with `ticks <= 50000`.
+
+### Implementation constraints (observable)
+- The build must declare a dependency on `com.badlogicgames.gdx:gdx-backend-headless:1.14.2`.
+- At least one source file in the project must reference `HeadlessApplication` (the headless backend bootstrap class).
+- At least one source file must reference the Scene2D package (`com.badlogic.gdx.scenes.scene2d`).
+
+
+EOF
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-gmivhvf > /logs/artifacts/run-id && echo deterministic_tick_simulation_he__GmiVHVF > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model google/gemini-3.5-flash --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Deterministic Tick-Based Simulation with libGDX Headless Backend
+
+## Background
+libGDX ships a `gdx-backend-headless` module (`com.badlogicgames.gdx:gdx-backend-headless`) that boots a real `HeadlessApplication` without an OpenGL context, making it suitable for servers, simulations, and CI testing. Your task is to build a small, fully-deterministic 2D point-mass simulation that runs inside an `ApplicationListener` driven by `HeadlessApplication` and writes its final state to a file.
+
+## Requirements
+- Create a Gradle (single-module) Java project at `/home/user/gdx-sim`.
+- Use libGDX `1.14.2` with the headless backend (`com.badlogicgames.gdx:gdx-backend-headless:1.14.2`) on top of `com.badlogicgames.gdx:gdx:1.14.2` and the `com.badlogicgames.gdx:gdx-platform:1.14.2:natives-desktop` natives classifier.
+- Implement an `ApplicationListener` (or `ApplicationAdapter`) whose `create()` reads a properties config file via `Gdx.files.absolute(...)`, whose `render()` advances exactly one simulation tick, and whose `dispose()` writes the final state to an output file.
+- Bootstrap the application from a `main` method that constructs a `HeadlessApplication` with a `HeadlessApplicationConfiguration`. After the simulation finishes, call `Gdx.app.exit()` and join the main loop thread so the JVM exits cleanly.
+- The simulation must be fully deterministic and independent of wall-clock time: use the `dt` value read from the config file, not `Gdx.graphics.getDeltaTime()`.
+- Make the program runnable through Gradle's `application` plugin so it can be launched with `./gradlew run --args="<config-path> <output-path>"`.
+
+## Implementation Hints
+- Look at `HeadlessApplication` and `HeadlessApplicationConfiguration` — set `updatesPerSecond = 0` so the main loop runs as fast as possible and ticks are not throttled by wall-clock pacing.
+- The headless backend's `MockGraphics` cannot run OpenGL code, so do NOT call anything under `Gdx.gl*`; keep the listener pure simulation logic.
+- `Gdx.app.exit()` is asynchronous (it posts a runnable that flips a `running` flag and triggers `pause()`+`dispose()`). To guarantee the output file is flushed before the JVM exits, write the file from `dispose()` and `join()` the main loop thread from `main`.
+- Use `java.util.Properties` (or your preferred parser) to read the config; use `libgdx`'s `FileHandle` to read it (e.g. `Gdx.files.absolute(path).read()`).
+- The integration step (Symplectic Euler — velocity is updated before position is updated using the new velocity) must be applied each tick:
+  - `vx += ax * dt`
+  - `vy += ay * dt`
+  - `x  += vx * dt`
+  - `y  += vy * dt`
+  where `ax = 0` and `ay = gravity_y` are constants taken from the config.
+- Count the number of times `render()` has been invoked; after exactly `ticks` ticks call `Gdx.app.exit()`. Do not perform any additional integration steps after `ticks` ticks.
+
+## Acceptance Criteria
+- Project path: /home/user/gdx-sim
+- Command: `./gradlew --no-daemon run --args="<config-path> <output-path>"` from `/home/user/gdx-sim`
+- The command must terminate on its own (no manual kill) with exit code 0.
+- Input format (`<config-path>` is a Java properties file with these keys, all numeric except `ticks`):
+  - `ticks` (integer, >= 0): number of simulation ticks to run
+  - `dt` (double): fixed simulation time step in seconds
+  - `position_x` (double): initial X position
+  - `position_y` (double): initial Y position
+  - `velocity_x` (double): initial X velocity
+  - `velocity_y` (double): initial Y velocity
+  - `gravity_y` (double): constant Y acceleration applied every tick
+- Output format (`<output-path>` is created/overwritten by the program; UTF-8, LF line endings, one `key=value` per line, in this exact order):
+
+  ```
+  final_x=<double formatted with %.6f>
+  final_y=<double formatted with %.6f>
+  final_vx=<double formatted with %.6f>
+  final_vy=<double formatted with %.6f>
+  ticks=<integer>
+  ```
+  Use `Locale.ROOT` (or equivalent) when formatting numbers so the decimal separator is `.`.
+- Simulation semantics: Symplectic Euler integration where every tick updates velocity first, then position. After `ticks=N` ticks, the integration step must have been applied exactly `N` times.
+- `ticks=0` is a valid input and must produce the initial state unchanged in the output file.
+- Output file must be flushed and the JVM must terminate within 60 seconds for any input with `ticks <= 100000`.
+
+
+EOF
+Command outputs captured
+Running command: ln -sf ~/.pochi/bin/pochi /usr/local/bin/pochi
+Command outputs captured
+Running command: echo zr-kxziu7n > /logs/artifacts/run-id && echo scripted_input_replay_headless__kxZiu7N > /logs/artifacts/trial_id
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: pochi --model google/gemini-3.5-flash --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# libGDX Headless: Scripted Keystroke Replay Walker
+
+## Background
+libGDX ships a non-rendering backend (`com.badlogicgames.gdx:gdx-backend-headless`) that swaps the live `Graphics`/`Input`/`Audio` implementations for mocks so that a libGDX `ApplicationListener` can be driven from a server, CI runner, or test harness. The bundled `MockInput` simply returns zero/`false` for every method, which makes it useless on its own for any input-driven game. A common pattern is to subclass `MockInput`, read a sequence of keystrokes from a text file, and re-dispatch them to the live `InputProcessor` each tick so that a deterministic replay of player input can drive the game from a script.
+
+In this task you will build a small libGDX 1.14.2 project around the **headless** backend that simulates a 2D grid walker. The walker reads a keystroke replay file, advances one keystroke per render tick by feeding it through a custom `MockInput` subclass, and prints its final position once every scripted input has been consumed.
+
+## Requirements
+- Create a Gradle (Java 17) project at `/home/user/gdx-game` that depends on libGDX `1.14.2` (`gdx`, `gdx-backend-headless`, `gdx-platform:natives-desktop`).
+- Implement a libGDX `ApplicationListener` (or `ApplicationAdapter`) that maintains a 2D integer walker position, starting at `(0, 0)`.
+- Implement a custom `MockInput` subclass that reads a keystroke sequence from a text file and dispatches exactly one `InputProcessor.keyDown(keycode)` event per render tick. After the file is exhausted, the application must call `Gdx.app.exit()` so the headless main loop terminates cleanly.
+- Drive position updates through libGDX's `InputProcessor` contract (i.e., the game must register an `InputProcessor` via `Gdx.input.setInputProcessor(...)`, and position updates happen inside that processor's callbacks).
+- Produce a runnable launcher (using the Gradle `application` plugin) at `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game` that accepts a `--input=<file>` argument and runs the simulation on a `HeadlessApplication`.
+- Print the final walker position to stdout in the format `Final position: (<x>, <y>)`.
+
+### Input file format
+- UTF-8 text file.
+- One keystroke per line. Lines are case-insensitive and trimmed of surrounding whitespace.
+- Blank lines are skipped (no tick is consumed).
+- Lines starting with `#` are treated as comments and skipped.
+- Allowed keystroke names: `UP`, `DOWN`, `LEFT`, `RIGHT`. Any other non-blank/non-comment token must cause the program to print `Error: unknown key <token>` to stderr and exit with a non-zero status code (do **not** print a `Final position:` line in that case).
+
+### Movement semantics
+- `UP` increments y by 1.
+- `DOWN` decrements y by 1.
+- `RIGHT` increments x by 1.
+- `LEFT` decrements x by 1.
+- Each line consumes exactly one render tick. The position update **must** happen inside the registered `InputProcessor.keyDown(int keycode)` callback (use `com.badlogic.gdx.Input.Keys.UP|DOWN|LEFT|RIGHT`).
+
+## Implementation Hints
+- Pin `gdxVersion=1.14.2`. The required Maven coordinates and the headless backend recipe are summarised in the libGDX docs ([Dependency management with Gradle](https://libgdx.com/wiki/articles/dependency-management-with-gradle), [Headless backend source](https://github.com/libgdx/libgdx/blob/master/backends/gdx-backend-headless/src/com/badlogic/gdx/backends/headless/HeadlessApplication.java)).
+- The Gradle `application` plugin gives you a turnkey launcher: configure `mainClass` and run `./gradlew installDist` to produce `build/install/<projectName>/bin/<projectName>`.
+- `HeadlessApplication` runs the listener on its own thread, so block the launcher's `main` thread (e.g., by joining the headless main-loop thread) until the application has exited; otherwise the JVM may quit before the simulation finishes.
+- `HeadlessApplication` constructs and assigns a no-op `MockInput` to `Gdx.input` in its constructor. After constructing the application, overwrite `Gdx.input` with your scripted subclass so that the rest of the framework sees it. Your subclass should remember the `InputProcessor` passed to `setInputProcessor(...)` and dispatch `keyDown` events from `render()` (via a `Gdx.app.postRunnable(...)` or directly from the simulation tick).
+- Consider using `HeadlessApplicationConfiguration.updatesPerSecond` to throttle the loop so the test does not spin the CPU.
+- The headless backend is sensitive to OpenGL calls — do **not** touch `Gdx.gl*` anywhere in your code.
+- Bootstrap the Gradle wrapper with `gradle wrapper --gradle-version 8.10 --distribution-type bin` so reproducible builds are possible from the project root.
+
+## Acceptance Criteria
+- Project path: `/home/user/gdx-game`.
+- After running `./gradlew --no-daemon --quiet installDist` from the project root, the launcher script `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game` must exist and be executable.
+- Command: `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game --input=<path>`
+- The command must accept the `--input=<path>` argument (equals form) where `<path>` is the absolute path to a keystroke replay file conforming to the format above.
+- Successful runs (every line parses as a valid key) must:
+  - Print exactly one line `Final position: (<x>, <y>)` to stdout (e.g., `Final position: (1, -2)`), where `<x>` and `<y>` are the final walker coordinates after processing every scripted keystroke.
+  - Exit with status code `0`.
+- Runs where any non-comment, non-blank line contains a token outside `{UP, DOWN, LEFT, RIGHT}` (case-insensitive) must:
+  - Print `Error: unknown key <token>` to stderr (substituting the offending raw token verbatim).
+  - Not print a `Final position:` line.
+  - Exit with a non-zero status code.
+- Empty replay files (no non-blank, non-comment lines) must print `Final position: (0, 0)` and exit `0`.
+- The application must use `com.badlogic.gdx.backends.headless.HeadlessApplication` to boot the listener, and the position must be updated from within an `InputProcessor.keyDown(int)` callback registered via `Gdx.input.setInputProcessor(...)`. (This is verified indirectly through the behavioural tests above and through a build that links against `gdx-backend-headless:1.14.2`.)
+
+
+EOF
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured
+Command outputs captured
+Running command: rm -f ~/.pochi/config.jsonc
+Command outputs captured

@@ -1,0 +1,18 @@
+# animation_tree_blend_locomotion
+
+Build a Godot 4 locomotion AnimationTree in `/home/user/godot_project`.
+
+## Criteria
+- `res://scenes/Player.tscn` (instantiable, root contains children named `AnimationPlayer`, `AnimationTree`, `PlayerAnimController`).
+- `res://scripts/PlayerAnimController.gd` exists and is attached to the `PlayerAnimController` node.
+- `AnimationPlayer` exposes animations: `idle`, `walk_north`, `walk_south`, `walk_east`, `walk_west`, `attack` (each with >=1 track).
+- `AnimationTree.tree_root` is an `AnimationNodeStateMachine` with state nodes:
+  - `Locomotion`: `AnimationNodeBlendSpace2D` with `get_blend_point_count() >= 5` (idle at `(0,0)` plus 4 cardinal walks).
+  - `Attack`: `AnimationNodeAnimation` whose `animation == &"attack"`.
+- Transitions: `Locomotion -> Attack` advances on the state-machine condition `condition_attack`; `Attack -> Locomotion` uses switch mode `AtEnd`.
+- `AnimationTree.anim_player` points to the `AnimationPlayer`. `AnimationTree.active` becomes `true` after the harness sets it.
+- `PlayerAnimController` API:
+  - `set_move_input(input_vec: Vector2)` -> sets `parameters/Locomotion/blend_position` to `input_vec` (`Vector2(1,0)` must read back within `0.01`).
+  - `trigger_attack()` -> within 2 process frames `current_state()` returns `&"Attack"`.
+  - `current_state() -> StringName` returns the state-machine playback's `get_current_node()`.
+- Project must run under `godot --headless`.
