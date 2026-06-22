@@ -8,7 +8,7 @@ def test_deploy_log_exists():
 
 def test_convex_transactions():
     run_id = os.environ.get("ZEALT_RUN_ID", "default-run-id")
-    
+
     script_content = f"""
 const {{ ConvexHttpClient }} = require("convex/browser");
 const client = new ConvexHttpClient(process.env.CONVEX_URL);
@@ -61,13 +61,14 @@ main().catch(e => {{
     process.exit(1);
 }});
 """
-    
-    script_path = "/tmp/verify.js"
+
+    script_path = "/home/user/myproject/verify.js"
     with open(script_path, "w") as f:
         f.write(script_content)
-        
+
     env = os.environ.copy()
-    
+    subprocess.run(["npm", "install", "convex"], cwd="/home/user/myproject", capture_output=True)
+
     result = subprocess.run(
         ["node", script_path],
         cwd="/home/user/myproject",
@@ -75,5 +76,5 @@ main().catch(e => {{
         capture_output=True,
         text=True
     )
-    
-    assert result.returncode == 0, f"Verification script failed: {result.stderr}\\n{result.stdout}"
+
+    assert result.returncode == 0, f"Verification script failed: {result.stderr}\n{result.stdout}"
