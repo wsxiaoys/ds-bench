@@ -9,6 +9,9 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
+
 LABEL Author="any-task-builder"
 LABEL Description="Python 3 + boto3 environment for performing an S3-compatible object roundtrip against Tigris."
 

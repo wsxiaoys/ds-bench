@@ -12,6 +12,9 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
+
 # --- Java 17 (Temurin) and Gradle 8.10 --------------------------------------
 ENV JAVA_HOME=/opt/jdk-17
 ENV GRADLE_HOME=/opt/gradle-8.10

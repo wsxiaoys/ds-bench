@@ -11,6 +11,9 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
+
 RUN curl -L https://encore.dev/install.sh | bash && \
     ln -s /root/.encore/bin/encore /usr/local/bin/encore && \
     ln -s /root/.encore/bin/git-remote-encore /usr/local/bin/git-remote-encore && \

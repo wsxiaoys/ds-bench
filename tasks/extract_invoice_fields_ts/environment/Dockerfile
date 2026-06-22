@@ -12,6 +12,9 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
+
 # Make tsx available globally so the agent can run `npx tsx ...` quickly without resolving from npm each time.
 RUN npm install -g tsx@^4 typescript@^5
 

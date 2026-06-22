@@ -3,7 +3,6 @@ FROM ubuntu:22.04
 ARG POCHI_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH="/root/.pochi/bin:$PATH"
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -13,8 +12,9 @@ RUN apt-get update && apt-get install -y \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Pochi CLI
-RUN curl -fsSL https://getpochi.com/install.sh | bash
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
+
 
 # Install e2b SDK and pytest
 RUN pip3 install e2b pytest

@@ -3,7 +3,6 @@ FROM ubuntu:24.04
 ARG POCHI_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH="/root/.pochi/bin:$PATH"
 
 RUN apt-get update && apt-get install -y \
     curl \
@@ -15,9 +14,11 @@ RUN apt-get update && apt-get install -y \
     npm \
     && rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
+
 RUN npm install -g @e2b/cli
 
-RUN curl -fsSL https://getpochi.com/install.sh | bash
 
 RUN useradd -m -s /bin/bash user
 WORKDIR /home/user

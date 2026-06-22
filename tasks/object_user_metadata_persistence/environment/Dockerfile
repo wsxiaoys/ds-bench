@@ -9,6 +9,9 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
+
 RUN ARCH="$(uname -m)" && \
     if [ "$ARCH" = "x86_64" ]; then \
         AWS_ZIP_URL="https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"; \

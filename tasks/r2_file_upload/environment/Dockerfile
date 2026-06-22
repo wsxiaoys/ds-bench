@@ -13,6 +13,9 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
+
 # Pre-warm Cloudflare workerd binaries used by the local rwsdk dev server so the
 # first `npm run dev` does not need to download anything at test time.
 RUN mkdir -p /home/user && chmod 0755 /home/user

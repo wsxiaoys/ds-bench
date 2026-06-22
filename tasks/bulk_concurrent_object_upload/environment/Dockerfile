@@ -9,6 +9,9 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
+
 LABEL Author="any-task-builder"
 LABEL Description="Tigris (boto3) environment for the bulk_concurrent_object_upload task. Provides python3 + boto3 and the AWS_ENDPOINT_URL_S3 env var pointing at the Tigris global endpoint."
 

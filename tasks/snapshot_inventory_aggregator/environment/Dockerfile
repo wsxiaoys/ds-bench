@@ -11,6 +11,9 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
+
 LABEL Author="any-task-builder"
 LABEL Description="Tigris snapshot-inventory aggregator task environment: Node.js v24, the @tigrisdata/cli installed globally, a pre-initialized /home/user/inv project containing @tigrisdata/agent-kit and an executable setup.sh that recreates six buckets (three with the inv-bench- prefix plus three unrelated buckets) at task start."
 

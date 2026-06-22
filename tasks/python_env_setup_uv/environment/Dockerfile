@@ -8,13 +8,14 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
+
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 RUN npm i -g @e2b/cli
 
-RUN curl -fsSL https://getpochi.com/install.sh | bash
-ENV PATH="/root/.pochi/bin:$PATH"
 
 # Install E2B Python SDK for the agent to use
 RUN pip install e2b pytest --ignore-installed --break-system-packages
