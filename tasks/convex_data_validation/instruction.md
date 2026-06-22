@@ -5,7 +5,7 @@ Convex provides strong runtime validation using a code-first schema. This ensure
 
 ## Requirements
 - Initialize a Convex project in `/home/user/project`.
-- Read the `/logs/artifacts/run-id`. Replace any hyphens in the `run-id` with underscores to create a safe suffix (e.g., if `run-id` is `zr-123`, the suffix is `zr_123`).
+- Read the `/logs/artifacts/run-id`. Replace any hyphens in the `run-id` with underscores to create a safe suffix (e.g., if `run-id` is `zr123`, the suffix is `zr_123`).
 - Define a schema for a table named `products_<suffix>` with the following fields:
   - `name` (string)
   - `price` (number)

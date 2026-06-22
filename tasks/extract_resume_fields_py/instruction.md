@@ -22,7 +22,7 @@ A single-page resume PDF has been prepared for you at `/home/user/myproject/resu
 - `client.files.create(...)` accepts a path string, a `Path`, a `BytesIO`, or a `(filename, bytes, mime_type)` tuple.
 - Poll with `client.extract.get(job.id)` or call `client.extract.wait_for_completion(job.id)` until status is terminal.
 - The `extract_result` is already a JSON-serializable dict — `json.dump(job.extract_result, fp, indent=2)` is sufficient.
-- Read `/logs/artifacts/run-id` with `os.environ["`/logs/artifacts/run-id`"]` so that the `external_file_id` is `harbor-resume-<run-id>` (e.g., `harbor-resume-zr-abc123`).
+- Read `/logs/artifacts/run-id` with `os.environ["`/logs/artifacts/run-id`"]` so that the `external_file_id` is `harbor-resume-<run-id>` (e.g., `harbor-resume-zrabc123`).
 
 ## Acceptance Criteria
 - Project path: `/home/user/myproject`
