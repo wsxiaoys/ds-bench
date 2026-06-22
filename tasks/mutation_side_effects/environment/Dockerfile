@@ -1,7 +1,7 @@
 FROM --platform=linux/amd64 ubuntu:24.04
 
 ARG POCHI_VERSION
-ARG AGENT_BROWSER_VERSION
+ARG AGENT_BROWSER_VERSION=0.27.3-pochi
 
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
