@@ -50,7 +50,7 @@ async function main() {
     console.log("Calling action...");
     await client.action("ai:generate", { prompt: "Say hello world" });
     console.log("Action completed.");
-    
+
     console.log("Querying list...");
     const results = await client.query("ai:list");
     console.log(JSON.stringify(results));
@@ -66,7 +66,7 @@ main().catch(err => {
         f.write(script_content)
 
     # Need to make sure dotenv is installed in the project for the script to work
-    subprocess.run(["npm", "install", "dotenv"], cwd=PROJECT_DIR, capture_output=True)
+    subprocess.run(["npm", "install", "dotenv", "convex"], cwd=PROJECT_DIR, capture_output=True)
 
     result = subprocess.run(
         ["node", "test_action.mjs"],
@@ -75,25 +75,25 @@ main().catch(err => {
         text=True
     )
     assert result.returncode == 0, f"Node script failed: {result.stderr}"
-    
+
     # Check the query results
-    lines = result.stdout.strip().split("\\n")
+    lines = result.stdout.strip().split("\n")
     # The last line should be the JSON array
     json_output = lines[-1]
-    
+
     try:
         data = json.loads(json_output)
     except json.JSONDecodeError:
         pytest.fail(f"Failed to parse JSON from output: {json_output}")
-        
+
     assert isinstance(data, list), "Expected a list of generations"
-    
+
     found = False
     for item in data:
         if item.get("prompt") == "Say hello world" and item.get("result"):
             found = True
             break
-            
+
     assert found, f"Expected to find a generation with prompt 'Say hello world' and a non-empty result. Got: {data}"
 
 def test_ui(start_app, browser_verifier):
