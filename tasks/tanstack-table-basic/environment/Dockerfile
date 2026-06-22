@@ -1,5 +1,8 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+ARG AGENT_BROWSER_VERSION
+
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         curl wget ca-certificates git python3 python3-pip python3-pytest bash ripgrep \
@@ -7,7 +10,7 @@ RUN apt-get update -y && \
     ln -s /usr/bin/python3 /usr/bin/python && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    curl -fsSL https://github.com/TabbyML/agent-browser/releases/download/v0.27.3-pochi/install.sh | bash && ln -s /root/.agent-browser/bin/agent-browser /usr/local/bin/agent-browser && \
+    curl -fsSL https://github.com/TabbyML/agent-browser/releases/download/${AGENT_BROWSER_VERSION}/install.sh | bash && ln -s /root/.pochi/bin/agent-browser /usr/local/bin/agent-browser && \
     agent-browser install && \
     pip3 install --break-system-packages pytest-json-ctrf pytest-xprocess pochi-verifier && \
     apt-get clean && \

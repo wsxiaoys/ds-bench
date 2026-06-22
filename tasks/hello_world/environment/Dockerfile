@@ -1,5 +1,7 @@
 FROM pochi-browser-verification-base
 
+ARG POCHI_VERSION
+
 RUN npm i -g @wasp.sh/wasp-cli@latest
 
 RUN mkdir -p /home/user && chmod 0755 /home/user

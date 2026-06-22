@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ARG GODOT_VERSION=4.3-stable
 ARG GODOT_ZIP=Godot_v4.3-stable_linux.x86_64.zip
 ARG GODOT_BIN=Godot_v4.3-stable_linux.x86_64

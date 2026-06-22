@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ENV GO_VERSION=1.22.7
 ENV GOROOT=/usr/local/go
 ENV GOPATH=/root/go

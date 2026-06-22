@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ENV GODOT_VERSION=4.3-stable
 
 RUN apt-get update -y && \

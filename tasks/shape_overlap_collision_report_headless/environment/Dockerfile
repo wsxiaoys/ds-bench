@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ENV GRADLE_VERSION=8.10 \
     GRADLE_HOME=/opt/gradle \
     JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \

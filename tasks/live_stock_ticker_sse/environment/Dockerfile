@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 # Install OS deps, system python, pytest, ripgrep, and uv (for the executor's
 # Reflex-managed Python env). Also install the pip packages used by the
 # verification tests (requests, pytest-xprocess) under the system python3.

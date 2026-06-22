@@ -1,5 +1,7 @@
 FROM --platform=linux/amd64 ubuntu:24.04
 
+ARG POCHI_VERSION
+
 # ---------------------------------------------------------------------------
 # System packages, Python tooling, and graphics stack for headless rendering.
 # ---------------------------------------------------------------------------

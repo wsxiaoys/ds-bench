@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ENV PB_ADMIN_EMAIL=harbor-admin@example.com \
     PB_ADMIN_PASSWORD=harbor-admin-pass-1234
 

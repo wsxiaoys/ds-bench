@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ENV DEBIAN_FRONTEND=noninteractive \
     GO_VERSION=1.23.4 \
     GOPATH=/root/go \

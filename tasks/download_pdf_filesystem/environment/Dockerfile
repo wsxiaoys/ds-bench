@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 # ---------------------------------------------------------------------------
 # Base system packages + Node.js 24 (satisfies Capacitor v8's Node 22+ minimum)
 # Browser system libraries are installed so that Playwright's bundled
