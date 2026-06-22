@@ -29,7 +29,7 @@ The filenames hint at the category, but your script **must not hard-code the rou
     - `effective_date`  (string, ISO `YYYY-MM-DD` if possible)
     - `term`            (string, e.g., `"12 months"`)
   All Extract jobs must use `extraction_target: 'per_doc'` and `tier: 'agentic'`. Run the four Extract jobs **concurrently** (e.g., `Promise.all`) with a concurrency cap of **at most 2 in flight** (use `p-limit`, a semaphore, or an equivalent).
-- **Parallel-run safety.** Read the run id from `/logs/artifacts/run-id`. Tag every uploaded source file with an `external_file_id` equal to `<run-id>-<basename_without_ext>` (for example, `zr-abc123-acme_invoice` for `acme_invoice.pdf`).
+- **Parallel-run safety.** Read the run id from `/logs/artifacts/run-id`. Tag every uploaded source file with an `external_file_id` equal to `<run-id>-<basename_without_ext>` (for example, `zrabc123-acme_invoice` for `acme_invoice.pdf`).
 - **Aggregate artifacts.** Write two artifacts:
   - `./outputs/results.json` — a JSON object keyed by the input file basename (e.g. `"acme_invoice.pdf"`) where each value is an object with exactly these keys:
     - `category`   (string — `"invoice"` or `"contract"`, as returned by Classify)

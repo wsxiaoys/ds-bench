@@ -9,7 +9,7 @@ A starter project already exists at `/home/user/myproject` with three sample PDF
 - Implement a TypeScript script that processes **every** `.pdf` file under `./inputs/` using the LlamaCloud Parse SDK (`@llamaindex/llama-cloud`).
 - Concurrency is capped: **no more than 2** parse jobs may be in flight at the same time. Use a semaphore, `p-limit`, or an equivalent technique — never call all jobs in parallel without a cap.
 - Use Parse tier `cost_effective` with version `latest`, and request `expand: ["markdown"]`.
-- When uploading each file, tag the upload with an `external_file_id` so concurrent test runs do not collide. Build the tag as `<run-id>-<pdf_basename>` (e.g., `zr-abc123-attention`).
+- When uploading each file, tag the upload with an `external_file_id` so concurrent test runs do not collide. Build the tag as `<run-id>-<pdf_basename>` (e.g., `zrabc123-attention`).
 - For each parsed PDF, write the concatenated markdown of every page (joined by `\n\n---\n\n`) to `./outputs/<pdf_basename>.md`.
 - Write a human-readable log to `./output.log`. The log must contain exactly one summary line per processed PDF in this format (one per line, in any order):
   - `Parsed: <pdf_basename>.pdf | pages: <N>` where `<N>` is the integer page count returned by the SDK.

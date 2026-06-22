@@ -8,7 +8,7 @@
 - Upload the file into the drive whose `name` (returned by the unified `List Drives` endpoint) equals the value of `APIDECK_FILE_STORAGE_DRIVE_NAME`.
 - Place the new file at the **root** of that drive (i.e. `parent_folder_id` = `"root"`).
 - The uploaded file must have:
-  - file name: `apideck-curl-<run-id>.txt` (the literal prefix `zr-` is already part of `/logs/artifacts/run-id`; do not prepend it again).
+  - file name: `apideck-curl-<run-id>.txt` (the literal prefix `zr` is already part of `/logs/artifacts/run-id`; do not prepend it again).
   - file body: the exact ASCII string `Uploaded via Apideck File Storage direct upload curl test\n` (a single line terminated by one `\n`, no trailing whitespace, 58 bytes total).
   - content type / MIME: `text/plain`.
 - After a successful upload, write the unified Apideck file ID returned in `data.id` to `/home/user/myproject/output.log` as the only non-empty line in the file.
