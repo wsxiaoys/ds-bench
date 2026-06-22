@@ -10,7 +10,7 @@ RUN apt-get update -y && \
     ln -s /usr/bin/python3 /usr/bin/python && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    curl -fsSL https://github.com/TabbyML/agent-browser/releases/download/${AGENT_BROWSER_VERSION}/install.sh | bash && ln -s /root/.pochi/bin/agent-browser /usr/local/bin/agent-browser && \
+    curl -fsSL https://github.com/TabbyML/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}/install.sh | bash && ln -s /root/.pochi/bin/agent-browser /usr/local/bin/agent-browser && \
     agent-browser install && \
     pip3 install --break-system-packages \
         pytest-json-ctrf \
