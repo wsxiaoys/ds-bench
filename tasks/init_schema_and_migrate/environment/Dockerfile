@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
@@ -12,6 +14,9 @@ RUN apt-get update && apt-get install -y \
     python3-pytest \
     bash \
     && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 # Install Node.js v20 via NodeSource
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \

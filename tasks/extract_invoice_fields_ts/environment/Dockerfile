@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 # Install OS packages, Node.js v24 (for the TypeScript task SDK), and Python tooling.
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -9,6 +11,9 @@ RUN apt-get update -y && \
     pip3 install --break-system-packages pytest-json-ctrf reportlab && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 # Make tsx available globally so the agent can run `npx tsx ...` quickly without resolving from npm each time.
 RUN npm install -g tsx@^4 typescript@^5

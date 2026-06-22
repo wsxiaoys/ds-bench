@@ -1,10 +1,15 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         curl ca-certificates git python3 python3-pip bash && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 RUN pip3 install --break-system-packages pytest prefect
 

@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 # Base system: apt packages + Node.js v24 + Python helpers.
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -10,6 +12,9 @@ RUN apt-get update -y && \
     pip3 install --break-system-packages pytest-json-ctrf requests pytest-xprocess && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 # User home directory for the task.
 RUN mkdir -p /home/user && chmod 0755 /home/user

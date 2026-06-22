@@ -1,11 +1,16 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         curl wget ca-certificates git python3 python3-pip python3-pytest bash && \
     pip3 install --break-system-packages boto3 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 LABEL Author="any-task-builder"
 LABEL Description="Python 3 + boto3 environment for performing an S3-compatible object roundtrip against Tigris."

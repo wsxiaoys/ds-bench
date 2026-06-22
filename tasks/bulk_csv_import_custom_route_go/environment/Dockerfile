@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ENV GO_VERSION=1.22.7
 ENV GOROOT=/usr/local/go
 ENV GOPATH=/root/go
@@ -42,6 +44,9 @@ RUN apt-get update -y && \
         --dir /opt/pb_seed/pb_data && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /opt/pb_warm
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 RUN mkdir -p /home/user/myproject && chmod 0755 /home/user/myproject

@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         curl wget ca-certificates git python3 python3-pip python3-pytest bash gnupg jq && \
@@ -8,6 +10,9 @@ RUN apt-get update -y && \
     npm install -g @tigrisdata/cli && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 LABEL Author="any-task-builder"
 LABEL Description="Tigris snapshot-inventory aggregator task environment: Node.js v24, the @tigrisdata/cli installed globally, a pre-initialized /home/user/inv project containing @tigrisdata/agent-kit and an executable setup.sh that recreates six buckets (three with the inv-bench- prefix plus three unrelated buckets) at task start."

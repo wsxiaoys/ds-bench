@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 # --- System dependencies + Go toolchain + Python verification deps ---
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -13,6 +15,9 @@ RUN apt-get update -y && \
     ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH="/root/go"

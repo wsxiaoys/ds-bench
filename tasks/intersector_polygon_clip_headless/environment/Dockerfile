@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV GRADLE_USER_HOME=/root/.gradle
 ENV PATH=$JAVA_HOME/bin:$PATH
@@ -12,6 +14,9 @@ RUN apt-get update -y && \
     pip3 install --break-system-packages pytest-json-ctrf && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 # Install Gradle 8.10 (matches the version referenced by the libGDX research plan).
 RUN cd /opt && \

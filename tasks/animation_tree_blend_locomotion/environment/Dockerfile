@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ARG GODOT_VERSION=4.3-stable
 ARG GODOT_ZIP=Godot_v4.3-stable_linux.x86_64.zip
 ARG GODOT_BIN=Godot_v4.3-stable_linux.x86_64
@@ -19,6 +21,9 @@ RUN apt-get update -y && \
     ln -s "/opt/godot/${GODOT_BIN}" /usr/local/bin/godot && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 

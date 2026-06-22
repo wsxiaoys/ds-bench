@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ENV PB_ADMIN_EMAIL=harbor-admin@example.com \
     PB_ADMIN_PASSWORD=harbor-admin-pass-1234
 
@@ -18,6 +20,9 @@ RUN apt-get update -y && \
     rm -f /tmp/pocketbase.zip /usr/local/bin/CHANGELOG.md /usr/local/bin/LICENSE.md && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 # Set up the per-task home directory and the empty project directory the agent will fill in.
 RUN mkdir -p /home/user && chmod 0755 /home/user && \

@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ENV GRADLE_VERSION=8.10 \
     GRADLE_HOME=/opt/gradle \
     JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
@@ -18,6 +20,9 @@ RUN apt-get update -y && \
     ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 RUN mkdir -p /home/user/gdx-game && chmod 0755 /home/user/gdx-game

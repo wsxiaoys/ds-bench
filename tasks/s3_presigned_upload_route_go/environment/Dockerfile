@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 ENV DEBIAN_FRONTEND=noninteractive \
     GO_VERSION=1.23.4 \
     GOPATH=/root/go \
@@ -20,6 +22,9 @@ RUN apt-get update -y && \
         pytest-json-ctrf pytest-xprocess requests boto3 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 # --- install Go toolchain (PocketBase v0.31 requires Go 1.23+) ---
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz && \

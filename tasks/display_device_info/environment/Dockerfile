@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG POCHI_VERSION
+
 # ---------------------------------------------------------------------------
 # Base system packages + Node.js 24 (satisfies Capacitor v8's Node 22+ minimum)
 # Browser system libraries are installed so that Playwright's bundled
@@ -25,6 +27,9 @@ RUN apt-get update -y && \
     python3 -m playwright install chromium && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 

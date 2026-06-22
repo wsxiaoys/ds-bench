@@ -1,5 +1,7 @@
 FROM --platform=linux/amd64 ubuntu:24.04
 
+ARG POCHI_VERSION
+
 # ---------------------------------------------------------------------------
 # System packages, Python tooling, and graphics stack for headless rendering.
 # ---------------------------------------------------------------------------
@@ -16,6 +18,9 @@ RUN apt-get update -y && \
     pip3 install --break-system-packages pytest-json-ctrf && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
+ENV PATH="/root/.pochi/bin:$PATH"
 
 # ---------------------------------------------------------------------------
 # Install Godot 4.3 stable (Linux x86_64) from the official GitHub release.
