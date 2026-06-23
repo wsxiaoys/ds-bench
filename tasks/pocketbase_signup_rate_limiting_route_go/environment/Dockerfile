@@ -14,15 +14,15 @@ RUN apt-get update -y && \
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
 ENV PATH="/root/.pochi/bin:$PATH"
 
-RUN mkdir -p /workspace/pb && \
-    cd /workspace/pb && \
+RUN mkdir -p /home/user/pb && \
+    cd /home/user/pb && \
     cat >go.mod <<'EOF'
 module pb
 
 go 1.22
 EOF
 
-RUN cd /workspace/pb && \
+RUN cd /home/user/pb && \
     cat >main.go <<'EOF'
 package main
 
@@ -50,7 +50,7 @@ func main() {
 }
 EOF
 
-RUN cd /workspace/pb && go mod tidy
+RUN cd /home/user/pb && go mod tidy
 
 LABEL Author="generate-harbor-tasks"
 LABEL Description="PocketBase Go custom route rate limiting task environment."
@@ -66,4 +66,4 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - always required apt packages: curl wget ca-certificates git python3 python3-pip python3-pytest bash ripgrep
 #   - golang: required for building PocketBase Go app
 #   - python dependencies: pytest-json-ctrf, pytest-xprocess, requests
-#   - /workspace/pb: PocketBase project directory with main.go and go.mod
+#   - /home/user/pb: PocketBase project directory with main.go and go.mod

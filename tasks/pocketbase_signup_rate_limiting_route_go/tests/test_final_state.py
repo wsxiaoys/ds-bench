@@ -4,7 +4,7 @@ import socket
 import requests
 from xprocess import ProcessStarter
 
-PROJECT_DIR = "/workspace/pb"
+PROJECT_DIR = "/home/user/pb"
 
 @pytest.fixture(scope="session")
 def start_app(xprocess):
@@ -30,7 +30,7 @@ def start_app(xprocess):
 
 def test_rate_limited_signup(start_app):
     url = "http://localhost:8090/api/custom_signup"
-    
+
     # 1. First 5 Requests (Success)
     for i in range(1, 6):
         payload = {
@@ -40,7 +40,7 @@ def test_rate_limited_signup(start_app):
         }
         response = requests.post(url, json=payload)
         assert response.status_code in (200, 201), f"Request {i} failed with status {response.status_code}: {response.text}"
-    
+
     # 2. 6th Request (Rate Limited)
     payload = {
         "email": "test6@example.com",
@@ -53,7 +53,7 @@ def test_rate_limited_signup(start_app):
 def test_users_created(start_app):
     # Verify that the first 5 users were actually created by authenticating as them
     auth_url = "http://localhost:8090/api/collections/users/auth-with-password"
-    
+
     for i in range(1, 6):
         payload = {
             "identity": f"test{i}@example.com",

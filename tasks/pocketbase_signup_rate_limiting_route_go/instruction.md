@@ -4,7 +4,7 @@
 Implement a custom user signup route in a PocketBase Go application and protect it against abuse by adding a rate limit.
 
 ## Requirements
-- You have a basic PocketBase Go project at `/workspace/pb`.
+- You have a basic PocketBase Go project at `/home/user/pb`.
 - Add a custom route `POST /api/custom_signup`.
 - The route should accept a JSON payload with `email`, `password`, and `passwordConfirm`, and create a new record in the `users` collection.
 - The route must be rate-limited to allow a maximum of 5 requests per 1 minute per IP address.
@@ -16,7 +16,7 @@ Implement a custom user signup route in a PocketBase Go application and protect 
 - Ensure the application is started using `go run main.go serve --http=0.0.0.0:8090`.
 
 ## Acceptance Criteria
-- Project path: /workspace/pb
+- Project path: /home/user/pb
 - Start command: go run main.go serve --http=0.0.0.0:8090
 - Port: 8090
 - API Endpoints:
