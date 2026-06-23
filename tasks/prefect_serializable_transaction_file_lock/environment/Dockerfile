@@ -4,7 +4,7 @@ ARG POCHI_VERSION
 
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        curl ca-certificates git python3 python3-pip python3-pytest bash && \
+        curl ca-certificates ripgrep git python3 python3-pip python3-pytest bash && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

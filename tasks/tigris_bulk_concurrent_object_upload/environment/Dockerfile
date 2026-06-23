@@ -4,7 +4,7 @@ ARG POCHI_VERSION
 
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        curl wget ca-certificates git python3 python3-pip python3-pytest bash && \
+        curl wget ca-certificates ripgrep git python3 python3-pip python3-pytest bash && \
     pip3 install --break-system-packages boto3==1.35.36 botocore==1.35.36 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -27,7 +27,7 @@ ENV AWS_ENDPOINT_URL_S3="https://t3.storage.dev" \
     AWS_REGION="auto"
 
 # Container contents:
-#   - always required libs: curl wget ca-certificates git python3 python3-pip python3-pytest bash
+#   - always required libs: curl wget ca-certificates ripgrep git python3 python3-pip python3-pytest bash
 #   - boto3 + botocore (installed via pip with --break-system-packages for Ubuntu 24.04 PEP 668)
 #   - /home/user/tigris-task -- empty project directory where the agent must
 #     create bulk.py and timing.txt.
