@@ -13,7 +13,6 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
-ENV PATH="/root/.pochi/bin:$PATH"
 
 # Install Gradle 8.10 (the libGDX 1.14.x docs target Gradle 8.x).
 ENV GRADLE_VERSION=8.10

@@ -16,7 +16,6 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
-ENV PATH="/root/.pochi/bin:$PATH"
 
 # Pre-download the WordNet + OMW-1.4 corpora at build time so the task runs
 # entirely offline. WordNet is a static lexical database (not a model).

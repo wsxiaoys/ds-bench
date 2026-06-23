@@ -22,7 +22,6 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
-ENV PATH="/root/.pochi/bin:$PATH"
 
 # Set up the per-task home directory and the empty project directory the agent will fill in.
 RUN mkdir -p /home/user && chmod 0755 /home/user && \
