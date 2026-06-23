@@ -4,7 +4,7 @@ ARG POCHI_VERSION
 
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        curl wget ca-certificates git python3 python3-pip python3-pytest bash gnupg && \
+        curl wget ca-certificates ripgrep git python3 python3-pip python3-pytest bash gnupg && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g @tigrisdata/cli tsx@4.19.2 typescript@5.6.3 && \
@@ -80,7 +80,7 @@ RUN cd /home/user/tigris-task && npm install --no-audit --no-fund
 
 # Container contents:
 #   - Ubuntu 24.04 base
-#   - System packages: curl wget ca-certificates git python3 python3-pip python3-pytest bash gnupg
+#   - System packages: curl wget ca-certificates ripgrep git python3 python3-pip python3-pytest bash gnupg
 #   - Node.js v24 and npm
 #   - @tigrisdata/cli installed globally, providing the `tigris` command
 #   - tsx and typescript installed globally and as local dev deps

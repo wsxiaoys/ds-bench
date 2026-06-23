@@ -4,7 +4,7 @@ ARG POCHI_VERSION
 
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        curl wget ca-certificates git python3 python3-pip python3-pytest bash gnupg jq && \
+        curl wget ca-certificates ripgrep git python3 python3-pip python3-pytest bash gnupg jq && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g @tigrisdata/cli && \

@@ -4,7 +4,7 @@ ARG POCHI_VERSION
 
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        curl wget ca-certificates git python3 python3-pip python3-pytest bash && \
+        curl wget ca-certificates ripgrep git python3 python3-pip python3-pytest bash && \
     pip3 install --break-system-packages boto3 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -19,7 +19,7 @@ RUN mkdir -p /home/user && chmod 0755 /home/user
 RUN mkdir -p /home/user/tigris-task && chmod 0755 /home/user/tigris-task
 
 # Container contents:
-#   - always required libs: curl wget ca-certificates git python3 python3-pip python3-pytest bash
+#   - always required libs: curl wget ca-certificates ripgrep git python3 python3-pip python3-pytest bash
 #   - boto3 (installed via pip3 --break-system-packages) for S3-compatible access to Tigris,
 #     in particular `s3_client.generate_presigned_url(...)`
 #   - curl for fetching the presigned URL with no auth headers/env

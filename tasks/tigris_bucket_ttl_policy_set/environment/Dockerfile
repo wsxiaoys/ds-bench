@@ -4,7 +4,7 @@ ARG POCHI_VERSION
 
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        curl wget ca-certificates git python3 python3-pip python3-pytest bash gnupg && \
+        curl wget ca-certificates ripgrep git python3 python3-pip python3-pytest bash gnupg && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     npm i -g @tigrisdata/cli && \
@@ -37,7 +37,7 @@ RUN printf '%s\n' \
     >> /root/.bashrc
 
 # Container contents:
-#   - always required libs: curl wget ca-certificates git python3 python3-pip python3-pytest bash gnupg
+#   - always required libs: curl wget ca-certificates ripgrep git python3 python3-pip python3-pytest bash gnupg
 #   - Node.js v24 runtime for the Tigris CLI npm package
 #   - @tigrisdata/cli installed globally, providing the `tigris` (and `t3`) command
 #   - /home/user/ttl-task - empty project directory for the task
