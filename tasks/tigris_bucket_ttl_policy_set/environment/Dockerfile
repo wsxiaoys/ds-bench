@@ -12,7 +12,6 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
-ENV PATH="/root/.pochi/bin:$PATH"
 
 LABEL Author="any-task-builder"
 LABEL Description="Tigris CLI environment for setting a 7-day object expiration TTL on a bucket via @tigrisdata/cli."

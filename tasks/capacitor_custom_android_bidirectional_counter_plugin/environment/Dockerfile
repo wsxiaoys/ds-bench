@@ -23,7 +23,6 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
-ENV PATH="/root/.pochi/bin:$PATH"
 
 # ---------------------------------------------------------------------------
 # Node.js v22 (Capacitor v8 requires Node 22+).
