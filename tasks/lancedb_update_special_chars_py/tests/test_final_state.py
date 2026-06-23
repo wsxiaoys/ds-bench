@@ -4,8 +4,8 @@ import os
 import pytest
 
 
-OUTPUT_FILE = "/workspace/output/notes_after.json"
-LANCEDB_URI = os.environ.get("LANCEDB_URI", "/workspace/db")
+OUTPUT_FILE = "/home/user/output/notes_after.json"
+LANCEDB_URI = "/home/user/db"
 TABLE_NAME = "notes"
 
 EXPECTED_IDS = [1, 2, 3, 4, 5, 6, 7, 8]

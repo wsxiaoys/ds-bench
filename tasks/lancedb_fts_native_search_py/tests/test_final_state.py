@@ -4,8 +4,8 @@ import os
 import pytest
 
 
-LANCEDB_URI = os.environ.get("LANCEDB_URI", "/workspace/db")
-RESULTS_PATH = "/workspace/output/fts_results.json"
+LANCEDB_URI = "/home/user/db"
+RESULTS_PATH = "/home/user/output/fts_results.json"
 
 EXPECTED_QUERIES = {
     "query_1": {"text": "vector database", "top_id": 1},

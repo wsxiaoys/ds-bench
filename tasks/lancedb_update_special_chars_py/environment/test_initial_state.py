@@ -4,8 +4,8 @@ import os
 import pytest
 
 
-WORKSPACE = "/workspace"
-LANCEDB_URI = os.environ.get("LANCEDB_URI", "/workspace/db")
+WORKSPACE = "/home/user"
+LANCEDB_URI = "/home/user/db"
 
 
 def test_lancedb_importable():
