@@ -1,0 +1,13 @@
+import { type } from "arktype"
+const passwordType = type("string >= 12 <= 128")
+    .matching(/[a-z]/)
+    .matching(/[A-Z]/)
+    .matching(/\d/)
+    .matching(/[^a-zA-Z0-9]/)
+    .configure({
+        actual: () => "<redacted>",
+        problem: (ctx) => `${ctx.expected} (actual: <redacted>)`
+    })
+
+const res = passwordType("abc")
+console.log(res.byPath[""].actual)
