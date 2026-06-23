@@ -1,0 +1,742 @@
+- Initializing MCP connections...
+You
+# Godot 4 — NavigationAgent2D With Dynamic NavigationObstacle2D Carving ## Background Build a Godot 4 navigation demo where a `CharacterBody2D` agent uses `NavigationAgent2D` to reach a goal across a `NavigationRegion2D`-baked walkable area. The walkable mesh must be carved by `NavigationObstacle2D` nodes whose positions can change at runtime, requiring the navigation polygon to be re-baked so a new path can be found and the agent eventually fires `target_reached` at the goal. ## Requirements - Build a runnable Godot 4 project that combines `NavigationRegion2D` baking, `NavigationAgent2D` path following, dynamic `NavigationObstacle2D` carving, and the `target_reached` signal. - Define a packed scene `res://scenes/nav_world.tscn` that wires together the region, agent, obstacles, and goal marker described in the Acceptance Criteria. - Provide a `NavWorld` controller node that can re-bake the navigation polygon (after obstacle moves) and start the navigation toward the goal. - Provide a `NavAgent` `CharacterBody2D` script that drives the agent toward `NavigationAgent2D.get_next_path_position()` each physics tick and exposes a `reached` flag that flips to `true` exactly when `target_reached` fires. - Movement must use the real `NavigationServer2D` map (not teleporting): each physics tick the agent reads the next path position from the navigation agent and integrates velocity with `move_and_slide()`. - The agent must reach the goal both when obstacles block the straight line (forcing the path around) and after `NavWorld.move_obstacle(...)` clears the corridor and re-bakes. ## Implementation Hints - Use `NavigationMeshSourceGeometryData2D` together with `NavigationServer2D.bake_from_source_geometry_data` to (re)build the `NavigationPolygon` so that obstacle outlines are carved out of the walkable rectangle. - The walkable area is the rectangle from `(0, 0)` to `(800, 600)`. Add the walkable outline as a traversable outline and each obstacle's world-space outline as an obstruction outline. - Wait for `NavigationServer2D.map_get_iteration_id(...)` to become non-zero (and skip queries before that) before driving the agent, otherwise `get_next_path_position()` returns stale data. - `NavigationAgent2D` exposes the `target_reached` signal; connect it once and store a boolean flag so the verifier can observe completion. - For obstacle outlines, store each obstacle's local `vertices` (a `PackedVector2Array`) and translate them by the obstacle's `global_position` before feeding them into the source geometry data. - Run the project with `godot --headless` for verification; do not rely on rendering. ## Acceptance Criteria - Project path: `/home/user/godot_project`. - Command: `godot --headless --path /home/user/godot_project --script res://tests/run_tests.gd` (verifier-provided harness; do not modify it). - Scene `res://scenes/nav_world.tscn` exists with the following node tree (exact names and types): - `NavWorld` (`Node2D`, script `res://scripts/nav_world.gd`, `class_name NavWorld`). - `Region` (`NavigationRegion2D`, with an initial `NavigationPolygon`). - `Obstacles` (`Node2D`) containing at least two children that are `NavigationObstacle2D` named `Obstacle1` and `Obstacle2`. Each obstacle's `vertices` property must define a non-empty closed polygon in local coordinates. - `Agent` (`CharacterBody2D`, script `res://scripts/nav_agent.gd`, `class_name NavAgent`) at world position `(80, 300)`. - `NavigationAgent2D` (`NavigationAgent2D`) as a child of `Agent`. - `Goal` (`Marker2D`) at world position `(720, 300)`. - `res://scripts/nav_agent.gd` defines `class_name NavAgent` (extends `CharacterBody2D`) and: - Exposes `movement_speed: float` (default `> 0`). - Exposes a public boolean `reached` that starts `false` and becomes `true` after the agent's `NavigationAgent2D.target_reached` signal fires. - Provides a method `set_destination(world_position: Vector2) -> void` that sets `NavigationAgent2D.target_position` to that world-space position. - In `_physics_process`, while the navigation map is ready and the navigation is not finished, integrates velocity toward `get_next_path_position()` and calls `move_and_slide()` to physically advance the body. - `res://scripts/nav_world.gd` defines `class_name NavWorld` (extends `Node2D`) and: - Provides `rebake_navigation() -> void` that rebuilds the `Region`'s `NavigationPolygon` from the walkable rectangle `(0, 0)`–`(800, 600)` carved by each `Obstacles/*` `NavigationObstacle2D` (translated to world space) using `NavigationServer2D.bake_from_source_geometry_data` and assigns the result back to `Region.navigation_polygon`. - Provides `move_obstacle(obstacle_name: String, new_position: Vector2) -> void` that updates the named obstacle's `global_position` and then calls `rebake_navigation()`. - Provides `start_navigation() -> void` that calls `Agent.set_destination(Goal.global_position)`. - On `_ready`, performs an initial `rebake_navigation()` so the region is usable before any navigation queries. - Headless behavior: - After instancing the scene and calling `start_navigation()`, the agent must converge on the goal under the initial obstacle layout (path must route around the obstacles) within the harness's time budget and set `reached = true`. - After calling `move_obstacle("Obstacle1", far_offscreen)` and `move_obstacle("Obstacle2", far_offscreen)` and then `start_navigation()` again from a reset agent position, the agent must again reach the goal and set `reached = true`.   
+
+Pochi
+💭 Thinking for 3086 characters   
+📋 Updating todo list (6 items) ✔ 
+💫 Executing mkdir -p /home/user/godot_project/scripts /home/user/godot_project/scenes /home/user/godot_project/tests ✔ 
+📋 Updating todo list (6 items) ✔ 
+✏️  Writing /home/user/godot_project/project.godot ✖ "File has not been read yet. Please read the file before writing it."
+🔧 Applying diff to /home/user/godot_project/project.godot ✖ "File has not been read yet. Please read the file before editing it."
+💫 Executing cat > /home/user/godot_project/project.godot << 'GODOT_EOF'
+; Engine configuration file.
+config_version=5
+
+[application]
+
+config/name="NavDemo"
+config/features=PackedStringArray("4.2", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=800
+window/size/viewport_height=600
+
+[physics]
+
+common/physics_ticks_per_second=60
+GODOT_EOF ✔ 
+📋 Updating todo list (5 items) ✔ 
+Now let me write the NavAgent script:   
+💫 Executing cat > /home/user/godot_project/scripts/nav_agent.gd << 'GD_EOF'
+class_name NavAgent
+extends CharacterBody2D
+
+## Movement speed in pixels per second.
+@export var movement_speed: float = 200.0
+
+## Becomes true once the NavigationAgent2D fires target_reached.
+var reached: bool = false
+
+@onready var _nav_agent: NavigationAgent2D = $NavigationAgent2D
+
+
+func _ready() -> void:
+	_nav_agent.target_reached.connect(_on_target_reached)
+	# Ensure path-desired-distance and target-desired-distance are reasonable.
+	_nav_agent.path_desired_distance = 8.0
+	_nav_agent.target_desired_distance = 16.0
+
+
+## Sets the NavigationAgent2D target position so path-finding begins.
+func set_destination(world_position: Vector2) -> void:
+	reached = false
+	_nav_agent.target_position = world_position
+
+
+func _physics_process(_delta: float) -> void:
+	# Wait until the navigation map has been processed at least once.
+	var map_rid: RID = _nav_agent.get_navigation_map()
+	if not map_rid.is_valid():
+		return
+	if NavigationServer2D.map_get_iteration_id(map_rid) == 0:
+		return
+
+	if _nav_agent.is_navigation_finished():
+		velocity = Vector2.ZERO
+		return
+
+	var next_pos: Vector2 = _nav_agent.get_next_path_position()
+	var direction: Vector2 = (next_pos - global_position).normalized()
+	velocity = direction * movement_speed
+	move_and_slide()
+
+
+func _on_target_reached() -> void:
+	reached = true
+	velocity = Vector2.ZERO
+GD_EOF ✔ 
+📋 Updating todo list (4 items) ✔ 
+Now the NavWorld controller script — this is the most complex part with the baking logic:   
+💫 Executing cat > /home/user/godot_project/scripts/nav_world.gd << 'GD_EOF'
+class_name NavWorld
+extends Node2D
+
+# Walkable rectangle bounds.
+const WALK_RECT_MIN := Vector2(0.0, 0.0)
+const WALK_RECT_MAX := Vector2(800.0, 600.0)
+
+@onready var _region: NavigationRegion2D    = $Region
+@onready var _obstacles_node: Node2D        = $Obstacles
+@onready var _agent: NavAgent               = $Agent
+@onready var _goal: Marker2D               = $Goal
+
+
+func _ready() -> void:
+	rebake_navigation()
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+## Rebuild the NavigationPolygon from the walkable rectangle minus each
+## NavigationObstacle2D child of the Obstacles node, then assign it back to
+## the Region so NavigationServer2D picks up the updated mesh.
+func rebake_navigation() -> void:
+	var nav_poly := NavigationPolygon.new()
+
+	# Outer walkable outline (traversable).
+	var walkable_outline := PackedVector2Array([
+		WALK_RECT_MIN,
+		Vector2(WALK_RECT_MAX.x, WALK_RECT_MIN.y),
+		WALK_RECT_MAX,
+		Vector2(WALK_RECT_MIN.x, WALK_RECT_MAX.y),
+	])
+	nav_poly.add_outline(walkable_outline)
+
+	# Obstruction outlines: translate each obstacle's local vertices to world
+	# space and add as holes.
+	for child in _obstacles_node.get_children():
+		if child is NavigationObstacle2D:
+			var obstacle := child as NavigationObstacle2D
+			var local_verts: PackedVector2Array = obstacle.vertices
+			if local_verts.size() < 3:
+				continue
+			var world_verts := PackedVector2Array()
+			world_verts.resize(local_verts.size())
+			for i in local_verts.size():
+				world_verts[i] = obstacle.global_position + local_verts[i]
+			nav_poly.add_outline(world_verts)
+
+	# Bake using the source-geometry path so outlines are properly triangulated.
+	var source_geom := NavigationMeshSourceGeometryData2D.new()
+	NavigationServer2D.parse_source_geometry_data(
+		nav_poly, source_geom, _region
+	)
+	NavigationServer2D.bake_from_source_geometry_data(nav_poly, source_geom)
+
+	_region.navigation_polygon = nav_poly
+
+
+## Move the named obstacle to a new world-space position, then re-bake.
+func move_obstacle(obstacle_name: String, new_position: Vector2) -> void:
+	var obstacle: Node = _obstacles_node.get_node(obstacle_name)
+	if obstacle == null:
+		push_error("NavWorld.move_obstacle: obstacle '%s' not found." % obstacle_name)
+		return
+	obstacle.global_position = new_position
+	rebake_navigation()
+
+
+## Tell the agent to navigate to the Goal marker.
+func start_navigation() -> void:
+	_agent.set_destination(_goal.global_position)
+GD_EOF ✔ 
+📋 Updating todo list (3 items) ✔ 
+Now I need to write the scene file. This is the most intricate part — the `.tscn` format must be exact. Let me carefully construct the node tree with all required properties: **Obstacle layout design:** - Walkable area: (0,0)–(800,600), centre-line at y=300 - `Obstacle1` at `(400, 150)`: local vertices form a 100×250 box → world x∈[350,450], y∈[25,275] - `Obstacle2` at `(400, 450)`: local vertices form a 100×250 box → world x∈[350,450], y∈[325,575] - This leaves a narrow corridor of ~50 px at y∈[275,325] — the agent at y=300 must squeeze through — and open strips at top/bottom of map. To truly force a re-route, I'll close the y=300 corridor too and keep only the top/bottom open strips: - `Obstacle1` at `(400, 156)`: box 100×312 → world y∈[0,312] - `Obstacle2` at `(400, 468)`: box 100×312 → world y∈[312,624]→ clamped by boundary This creates a solid wall in the mid-x with only the top-edge and bottom-edge margins navigable — clearer forced deviation. Actually, the cleanest approach is a wall that extends almost full height but with a gap at the bottom the agent must route through:   
+💫 Executing cat > /home/user/godot_project/scenes/nav_world.tscn << 'TSCN_EOF'
+[gd_scene load_steps=4 format=3 uid="uid://nav_world"]
+
+[ext_resource type="Script" path="res://scripts/nav_world.gd" id="1_navworld"]
+[ext_resource type="Script" path="res://scripts/nav_agent.gd" id="2_navagent"]
+
+[sub_resource type="NavigationPolygon" id="NavigationPolygon_1"]
+
+[node name="NavWorld" type="Node2D"]
+script = ExtResource("1_navworld")
+
+[node name="Region" type="NavigationRegion2D" parent="."]
+navigation_polygon = SubResource("NavigationPolygon_1")
+
+[node name="Obstacles" type="Node2D" parent="."]
+
+[node name="Obstacle1" type="NavigationObstacle2D" parent="Obstacles"]
+position = Vector2(400, 150)
+vertices = PackedVector2Array(-50, -150, 50, -150, 50, 150, -50, 150)
+
+[node name="Obstacle2" type="NavigationObstacle2D" parent="Obstacles"]
+position = Vector2(400, 470)
+vertices = PackedVector2Array(-50, -130, 50, -130, 50, 130, -50, 130)
+
+[node name="Agent" type="CharacterBody2D" parent="."]
+position = Vector2(80, 300)
+script = ExtResource("2_navagent")
+
+[node name="NavigationAgent2D" type="NavigationAgent2D" parent="Agent"]
+
+[node name="Goal" type="Marker2D" parent="."]
+position = Vector2(720, 300)
+TSCN_EOF ✔ 
+Now let me verify the obstacle geometry to make sure it actually blocks the straight-line path at y=300. Let me compute world bounds: - Obstacle1 at (400,150), vertices ±50 in x, ±150 in y → world x∈[350,450], y∈[0,300] - Obstacle2 at (400,470), vertices ±50 in x, ±130 in y → world x∈[350,450], y∈[340,600] The gap is y∈[300,340] at x∈[350,450]. The agent path crosses x=400 at y=300, which is right at the top edge of the gap. This is very tight. Let me adjust to close the gap completely, forcing the agent around, while ensuring a passage exists at the very top margin (y<0 is out of walkable area) — I'll shift the obstacles to create a gap only at y>560 (bottom margin):   
+💫 Executing # Let's compute proper obstacle positions for a clear wall with passage only at top/bottom edges:
+# Walkable: (0,0)-(800,600)
+# We want a wall at x~350-450 spanning y~50 to y~550, leaving:
+#   - top passage: y in 0..50
+#   - bottom passage: y in 550..600
+#
+# Obstacle1: covers x 350-450, y 0-310  =>  center=(400,155), half-h=155
+#   position=(400,155), vertices: [(-50,-155),(50,-155),(50,155),(-50,155)]
+#
+# Obstacle2: covers x 350-450, y 290-600 => center=(400,445), half-h=155
+#   position=(400,445), vertices: [(-50,-155),(50,-155),(50,155),(-50,155)]
+#
+# Combined coverage: y 0-610, fully blocking center x-band.
+# But we need PASSAGE. Let's leave a gap:
+#
+# Obstacle1: center=(400, 175), half-h=175  => y 0..350
+# Obstacle2: center=(400, 500), half-h=100  => y 400..600
+# Gap: y 350..400 at x 350-450
+# Agent y=300 is ABOVE gap (blocked). Must route via gap at y350-400 or around.
+#
+# Actually tightest: leave gap only outside agent y=300:
+# Obstacle1: y 0..320 (center 160, half 160)
+# Obstacle2: y 320..600 => CENTER=460, HALF=140
+# No gap at y=300 area! But gap is zero...
+# 
+# Better: abut with tiny overlap so no gap:
+# Obstacle1: center=(400,150), half=155  => y -5..305  (covers below 0 intentionally; clipped by boundary)
+# Obstacle2: center=(400,453), half=150  => y 303..603
+# 1-pixel overlap at y~303-305 ensures no gap.
+# Now passages only at TOP (none, since obstacle1 starts below 0) and BOTTOM (none).
+# That blocks ALL navigation - bad!
+#
+# CORRECT DESIGN: partial wall leaving deliberate passages.
+# Agent at (80,300) -> Goal at (720,300).
+# Wall at x=350-450, from y=80 to y=520. Leaves top passage (y 0-80) and bottom (y 520-600).
+# 
+# Obstacle1: center=(400,200), half=120 => y 80..320
+# Obstacle2: center=(400,420), half=100 => y 320..520
+# Gap: NONE at y=300 (Obstacle1 covers it). Passages at top y<80 and bottom y>520.
+echo "Obstacle layout computed"
+python3 -c "
+# Obstacle1: pos=(400,200), vertices covers +/-120 in y, +/-50 in x
+# World: x 350-450, y 80-320
+o1_y_min = 200 - 120
+o1_y_max = 200 + 120
+# Obstacle2: pos=(400,420), vertices covers +/-100 in y, +/-50 in x  
+# World: x 350-450, y 320-520
+o2_y_min = 420 - 100
+o2_y_max = 420 + 100
+
+print(f'Obstacle1 world y: {o1_y_min} to {o1_y_max}')
+print(f'Obstacle2 world y: {o2_y_min} to {o2_y_max}')
+print(f'Gap between obstacles: {o1_y_max} to {o2_y_min}')
+print(f'Top passage: 0 to {o1_y_min}')
+print(f'Bottom passage: {o2_y_max} to 600')
+print(f'Agent y=300 blocked: {o1_y_min <= 300 <= o1_y_max}')
+" ✔ 
+The agent at y=300 is blocked. There's a top passage (y 0–80, 80px wide) and a bottom passage (y 520–600, 80px wide). The agent must navigate around. Now let me update the scene with these precise values:   
+💫 Executing cat > /home/user/godot_project/scenes/nav_world.tscn << 'TSCN_EOF'
+[gd_scene load_steps=4 format=3 uid="uid://nav_world"]
+
+[ext_resource type="Script" path="res://scripts/nav_world.gd" id="1_navworld"]
+[ext_resource type="Script" path="res://scripts/nav_agent.gd" id="2_navagent"]
+
+[sub_resource type="NavigationPolygon" id="NavigationPolygon_1"]
+
+[node name="NavWorld" type="Node2D"]
+script = ExtResource("1_navworld")
+
+[node name="Region" type="NavigationRegion2D" parent="."]
+navigation_polygon = SubResource("NavigationPolygon_1")
+
+[node name="Obstacles" type="Node2D" parent="."]
+
+[node name="Obstacle1" type="NavigationObstacle2D" parent="Obstacles"]
+position = Vector2(400, 200)
+vertices = PackedVector2Array(-50, -120, 50, -120, 50, 120, -50, 120)
+
+[node name="Obstacle2" type="NavigationObstacle2D" parent="Obstacles"]
+position = Vector2(400, 420)
+vertices = PackedVector2Array(-50, -100, 50, -100, 50, 100, -50, 100)
+
+[node name="Agent" type="CharacterBody2D" parent="."]
+position = Vector2(80, 300)
+script = ExtResource("2_navagent")
+
+[node name="NavigationAgent2D" type="NavigationAgent2D" parent="Agent"]
+
+[node name="Goal" type="Marker2D" parent="."]
+position = Vector2(720, 300)
+TSCN_EOF ✔ 
+📋 Updating todo list (2 items) ✔ 
+Now let me verify all files are present and review them:   
+💫 Executing find /home/user/godot_project -type f | sort ✔ 
+📖 Reading /home/user/godot_project/scripts/nav_agent.gd ✔ 
+The harness file already exists. Let me check what it expects:   
+📖 Reading /home/user/godot_project/tests/run_tests.gd ✔ 
+📖 Reading /home/user/godot_project/scripts/nav_world.gd ✔ 
+The harness is thorough. I can see it uses `await physics_frame` and checks `agent.get("reached")`. Let me examine a few critical issues: 1. The `parse_source_geometry_data` call — in Godot 4, the signature is `NavigationServer2D.parse_source_geometry_data(nav_poly, source_geom, root_node)`. But I should verify this approach actually works for carving outlines. The simpler, more reliable approach is to use `make_polygons_from_outlines()` directly on the NavigationPolygon. 2. The baking path needs to correctly carve the obstacles. Let me review the Godot 4 API for `NavigationPolygon` baking.   
+💫 Executing which godot 2>/dev/null || which godot4 2>/dev/null || find /usr -name "godot*" -type f 2>/dev/null | head -5 ✔ 
+💫 Executing godot --version 2>/dev/null || godot --headless --version 2>/dev/null ✔ 
+Godot 4.3. Let me verify the correct API for `NavigationServer2D` baking in 4.3. The `parse_source_geometry_data` approach with source geometry may not correctly handle manually-added outlines since they're not in the scene tree. The more reliable approach for manual polygon construction is to directly use `NavigationPolygon.make_polygons_from_outlines()`:   
+💫 Executing cat > /tmp/test_nav_api.gd << 'GD_EOF'
+extends SceneTree
+
+func _initialize() -> void:
+    # Test what NavigationPolygon methods exist in Godot 4.3
+    var poly := NavigationPolygon.new()
+    print("has make_polygons_from_outlines: ", poly.has_method("make_polygons_from_outlines"))
+    print("NavigationPolygon methods containing 'outline': ")
+    for m in poly.get_method_list():
+        if "outline" in m.name.to_lower() or "bake" in m.name.to_lower():
+            print("  ", m.name)
+    print("NavigationServer2D methods containing 'bake': ")
+    for m in NavigationServer2D.get_method_list():
+        if "bake" in m.name.to_lower() or "parse" in m.name.to_lower():
+            print("  ", m.name)
+    quit()
+GD_EOF
+godot --headless --script /tmp/test_nav_api.gd 2>&1 | head -40 ✔ 
+`make_polygons_from_outlines()` exists in 4.3. This is the simpler, synchronous approach that directly triangulates from the outlines I add — no need for source geometry parsing. Let me update the `rebake_navigation()` method to use this instead:   
+💫 Executing cat > /home/user/godot_project/scripts/nav_world.gd << 'GD_EOF'
+class_name NavWorld
+extends Node2D
+
+# Walkable rectangle bounds (world space).
+const WALK_RECT_MIN := Vector2(0.0, 0.0)
+const WALK_RECT_MAX := Vector2(800.0, 600.0)
+
+@onready var _region: NavigationRegion2D = $Region
+@onready var _obstacles_node: Node2D     = $Obstacles
+@onready var _agent: NavAgent            = $Agent
+@onready var _goal: Marker2D             = $Goal
+
+
+func _ready() -> void:
+	rebake_navigation()
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+## Rebuild the NavigationPolygon from the walkable rectangle carved by each
+## NavigationObstacle2D child, then assign back to the Region.
+func rebake_navigation() -> void:
+	var nav_poly := NavigationPolygon.new()
+
+	# 1. Outer walkable outline (counter-clockwise = traversable area).
+	var walkable := PackedVector2Array([
+		WALK_RECT_MIN,
+		Vector2(WALK_RECT_MAX.x, WALK_RECT_MIN.y),
+		WALK_RECT_MAX,
+		Vector2(WALK_RECT_MIN.x, WALK_RECT_MAX.y),
+	])
+	nav_poly.add_outline(walkable)
+
+	# 2. Obstacle outlines (clockwise = holes carved out of the walkable area).
+	for child in _obstacles_node.get_children():
+		if not (child is NavigationObstacle2D):
+			continue
+		var obstacle := child as NavigationObstacle2D
+		var local_verts: PackedVector2Array = obstacle.vertices
+		if local_verts.size() < 3:
+			continue
+
+		# Clamp to the walkable bounds to avoid degenerate polygons when an
+		# obstacle is moved far off-screen.
+		var pos: Vector2 = obstacle.global_position
+		var world_verts := PackedVector2Array()
+		world_verts.resize(local_verts.size())
+		for i in local_verts.size():
+			world_verts[i] = pos + local_verts[i]
+
+		# Only add the obstruction if it actually intersects the walkable rect.
+		if _outline_intersects_rect(world_verts, WALK_RECT_MIN, WALK_RECT_MAX):
+			nav_poly.add_outline(world_verts)
+
+	# 3. Triangulate all outlines into the navigation mesh.
+	nav_poly.make_polygons_from_outlines()
+
+	# 4. Push the updated polygon to the Region / NavigationServer2D.
+	_region.navigation_polygon = nav_poly
+
+
+## Move the named obstacle and re-bake so the navigation mesh reflects the change.
+func move_obstacle(obstacle_name: String, new_position: Vector2) -> void:
+	var obstacle: Node = _obstacles_node.get_node_or_null(obstacle_name)
+	if obstacle == null:
+		push_error("NavWorld.move_obstacle: '%s' not found." % obstacle_name)
+		return
+	obstacle.global_position = new_position
+	rebake_navigation()
+
+
+## Tell the agent to navigate toward the Goal marker.
+func start_navigation() -> void:
+	_agent.set_destination(_goal.global_position)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+## Returns true if any vertex of the outline is inside the rect, or if the
+## rect centre is inside the outline (rough but sufficient for our use-case).
+func _outline_intersects_rect(verts: PackedVector2Array, r_min: Vector2, r_max: Vector2) -> bool:
+	for v in verts:
+		if v.x > r_min.x and v.x < r_max.x and v.y > r_min.y and v.y < r_max.y:
+			return true
+	return false
+GD_EOF ✔ 
+Now let me do a quick headless test to verify the scripts load without errors and the scene can be instantiated:   
+💫 Executing cat > /tmp/quick_check.gd << 'GD_EOF'
+extends SceneTree
+
+func _initialize() -> void:
+    await process_frame
+    await physics_frame
+    var packed = load("res://scenes/nav_world.tscn")
+    if packed == null:
+        print("FAIL: could not load scene")
+        quit(1)
+        return
+    var world = packed.instantiate()
+    if world == null:
+        print("FAIL: could not instantiate")
+        quit(1)
+        return
+    root.add_child(world)
+    for i in range(20):
+        await physics_frame
+    print("NavWorld class: ", world.get_class(), " / script: ", world.get_script())
+    print("Agent class: ", world.get_node("Agent").get_class())
+    print("Obstacle1 vertices: ", world.get_node("Obstacles/Obstacle1").vertices)
+    print("Obstacle2 vertices: ", world.get_node("Obstacles/Obstacle2").vertices)
+    print("Goal position: ", world.get_node("Goal").global_position)
+    print("Agent start: ", world.get_node("Agent").global_position)
+    print("Agent reached: ", world.get_node("Agent").reached)
+    print("Region nav_polygon: ", world.get_node("Region").navigation_polygon)
+    var nav_poly = world.get_node("Region").navigation_polygon
+    if nav_poly:
+        print("  outline count: ", nav_poly.get_outline_count())
+        print("  polygon count: ", nav_poly.get_polygon_count())
+    print("OK: scene loads and initialises")
+    quit()
+GD_EOF
+godot --headless --path /home/user/godot_project --script /tmp/quick_check.gd 2>&1 ✔ 
+Two issues to fix: 1. **`NavAgent` type annotation in `nav_world.gd` line 10** — GDScript can't find `NavAgent` at parse time because scripts are loaded independently. I need to remove the typed annotation and use a plain `Node` or `CharacterBody2D` type, or use `@onready` with a weaker type. 2. **Navigation polygon has 0 outlines / 0 polygons** — the `_ready()` bake ran before `@onready` vars were populated (they all arrive on `_ready` but may need the node to be in tree). Let me check: actually the onready vars should be fine once `_ready` runs. The issue is likely that `rebake_navigation()` ran before `_obstacles_node` was ready… no, `@onready` sets these before `_ready` body runs. But the **script failed to load** due to the `NavAgent` type, so `_ready` likely didn't execute at all. Let me fix the type annotation issue in nav_world.gd:   
+💫 Executing cat > /home/user/godot_project/scripts/nav_world.gd << 'GD_EOF'
+class_name NavWorld
+extends Node2D
+
+# Walkable rectangle bounds (world space).
+const WALK_RECT_MIN := Vector2(0.0, 0.0)
+const WALK_RECT_MAX := Vector2(800.0, 600.0)
+
+@onready var _region: NavigationRegion2D = $Region
+@onready var _obstacles_node: Node2D     = $Obstacles
+# Typed as CharacterBody2D to avoid cross-script class dependency at parse time.
+@onready var _agent: CharacterBody2D     = $Agent
+@onready var _goal: Marker2D             = $Goal
+
+
+func _ready() -> void:
+	rebake_navigation()
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+## Rebuild the NavigationPolygon from the walkable rectangle carved by each
+## NavigationObstacle2D child, then assign back to the Region.
+func rebake_navigation() -> void:
+	var nav_poly := NavigationPolygon.new()
+
+	# 1. Outer walkable outline (counter-clockwise = traversable area).
+	var walkable := PackedVector2Array([
+		WALK_RECT_MIN,
+		Vector2(WALK_RECT_MAX.x, WALK_RECT_MIN.y),
+		WALK_RECT_MAX,
+		Vector2(WALK_RECT_MIN.x, WALK_RECT_MAX.y),
+	])
+	nav_poly.add_outline(walkable)
+
+	# 2. Obstacle outlines (clockwise winding = holes carved out of the area).
+	for child in _obstacles_node.get_children():
+		if not (child is NavigationObstacle2D):
+			continue
+		var obstacle := child as NavigationObstacle2D
+		var local_verts: PackedVector2Array = obstacle.vertices
+		if local_verts.size() < 3:
+			continue
+
+		var pos: Vector2 = obstacle.global_position
+		var world_verts := PackedVector2Array()
+		world_verts.resize(local_verts.size())
+		for i in local_verts.size():
+			world_verts[i] = pos + local_verts[i]
+
+		# Only add an obstruction that actually overlaps the walkable area.
+		if _outline_intersects_rect(world_verts, WALK_RECT_MIN, WALK_RECT_MAX):
+			nav_poly.add_outline(world_verts)
+
+	# 3. Triangulate all outlines into the navigation mesh.
+	nav_poly.make_polygons_from_outlines()
+
+	# 4. Push the updated polygon to the Region / NavigationServer2D.
+	_region.navigation_polygon = nav_poly
+
+
+## Move the named obstacle and re-bake so the navigation mesh reflects the change.
+func move_obstacle(obstacle_name: String, new_position: Vector2) -> void:
+	var obstacle: Node = _obstacles_node.get_node_or_null(obstacle_name)
+	if obstacle == null:
+		push_error("NavWorld.move_obstacle: '%s' not found." % obstacle_name)
+		return
+	obstacle.global_position = new_position
+	rebake_navigation()
+
+
+## Tell the agent to navigate toward the Goal marker.
+func start_navigation() -> void:
+	_agent.call("set_destination", _goal.global_position)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+## Returns true if any vertex of the outline is inside the rect.
+func _outline_intersects_rect(verts: PackedVector2Array, r_min: Vector2, r_max: Vector2) -> bool:
+	for v in verts:
+		if v.x > r_min.x and v.x < r_max.x and v.y > r_min.y and v.y < r_max.y:
+			return true
+	return false
+GD_EOF ✔ 
+💫 Executing godot --headless --path /home/user/godot_project --script /tmp/quick_check.gd 2>&1 ✔ 
+Two issues: 1. `make_polygons_from_outlines()` is deprecated and also **failing** because the winding orders don't match — outlines must be same winding for holes. Need to use `NavigationServer2D.parse_source_geometry_data` + `bake_from_source_geometry_data` instead. 2. The error message says: "Add the outmost and largest outline first. To add holes inside this outline add the smaller outlines **with same winding order**." — so holes need to match the outer winding. But we're better off switching to the server-based bake. Let me investigate the correct API call with source geometry:   
+💫 Executing cat > /tmp/test_bake.gd << 'GD_EOF'
+extends SceneTree
+
+func _initialize() -> void:
+    await process_frame
+    # Check NavigationMeshSourceGeometryData2D API
+    var sgd = NavigationMeshSourceGeometryData2D.new()
+    print("SGD methods:")
+    for m in sgd.get_method_list():
+        if m.name[0] != "_":
+            print("  ", m.name)
+    quit()
+GD_EOF
+godot --headless --script /tmp/test_bake.gd 2>&1 ✔ 
+`NavigationMeshSourceGeometryData2D` has `add_traversable_outline` and `add_obstruction_outline` — exactly what I need. Let me update the bake method to use this API properly:   
+💫 Executing cat > /tmp/test_bake2.gd << 'GD_EOF'
+extends SceneTree
+
+func _initialize() -> void:
+    await process_frame
+    await physics_frame
+
+    # Build a nav poly manually using source geometry bake approach
+    var nav_poly := NavigationPolygon.new()
+
+    var source_geom := NavigationMeshSourceGeometryData2D.new()
+
+    # Outer walkable outline
+    var walkable := PackedVector2Array([
+        Vector2(0, 0),
+        Vector2(800, 0),
+        Vector2(800, 600),
+        Vector2(0, 600),
+    ])
+    source_geom.add_traversable_outline(walkable)
+
+    # Obstacle 1: x 350-450, y 80-320
+    var obs1 := PackedVector2Array([
+        Vector2(350, 80),
+        Vector2(450, 80),
+        Vector2(450, 320),
+        Vector2(350, 320),
+    ])
+    source_geom.add_obstruction_outline(obs1)
+
+    # Obstacle 2: x 350-450, y 320-520
+    var obs2 := PackedVector2Array([
+        Vector2(350, 320),
+        Vector2(450, 320),
+        Vector2(450, 520),
+        Vector2(350, 520),
+    ])
+    source_geom.add_obstruction_outline(obs2)
+
+    NavigationServer2D.bake_from_source_geometry_data(nav_poly, source_geom)
+
+    print("Polygon count after bake: ", nav_poly.get_polygon_count())
+    print("Outline count: ", nav_poly.get_outline_count())
+    if nav_poly.get_polygon_count() > 0:
+        print("SUCCESS: navigation mesh baked with polys")
+    else:
+        print("FAIL: no polygons generated")
+    quit()
+GD_EOF
+godot --headless --script /tmp/test_bake2.gd 2>&1 ✔ 
+The source geometry approach works correctly — 4 polygons generated. Now let me update `nav_world.gd` to use `NavigationMeshSourceGeometryData2D` with `add_traversable_outline` / `add_obstruction_outline`:   
+💫 Executing cat > /home/user/godot_project/scripts/nav_world.gd << 'GD_EOF'
+class_name NavWorld
+extends Node2D
+
+# Walkable rectangle bounds (world space).
+const WALK_RECT_MIN := Vector2(0.0, 0.0)
+const WALK_RECT_MAX := Vector2(800.0, 600.0)
+
+@onready var _region: NavigationRegion2D = $Region
+@onready var _obstacles_node: Node2D     = $Obstacles
+# Typed as CharacterBody2D to avoid cross-script class dependency at parse time.
+@onready var _agent: CharacterBody2D     = $Agent
+@onready var _goal: Marker2D             = $Goal
+
+
+func _ready() -> void:
+	rebake_navigation()
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+## Rebuild the NavigationPolygon from the walkable rectangle carved by each
+## NavigationObstacle2D child, then assign back to the Region.
+func rebake_navigation() -> void:
+	var nav_poly := NavigationPolygon.new()
+	var source_geom := NavigationMeshSourceGeometryData2D.new()
+
+	# 1. Outer traversable area.
+	source_geom.add_traversable_outline(PackedVector2Array([
+		WALK_RECT_MIN,
+		Vector2(WALK_RECT_MAX.x, WALK_RECT_MIN.y),
+		WALK_RECT_MAX,
+		Vector2(WALK_RECT_MIN.x, WALK_RECT_MAX.y),
+	]))
+
+	# 2. Obstruction outlines: translate each obstacle to world space.
+	for child in _obstacles_node.get_children():
+		if not (child is NavigationObstacle2D):
+			continue
+		var obstacle := child as NavigationObstacle2D
+		var local_verts: PackedVector2Array = obstacle.vertices
+		if local_verts.size() < 3:
+			continue
+
+		var pos: Vector2 = obstacle.global_position
+		var world_verts := PackedVector2Array()
+		world_verts.resize(local_verts.size())
+		for i in local_verts.size():
+			world_verts[i] = pos + local_verts[i]
+
+		# Only carve obstacles that actually overlap the walkable rect.
+		if _outline_intersects_rect(world_verts, WALK_RECT_MIN, WALK_RECT_MAX):
+			source_geom.add_obstruction_outline(world_verts)
+
+	# 3. Bake: triangulates traversable area minus obstructions.
+	NavigationServer2D.bake_from_source_geometry_data(nav_poly, source_geom)
+
+	# 4. Push the updated polygon to the Region / NavigationServer2D.
+	_region.navigation_polygon = nav_poly
+
+
+## Move the named obstacle and re-bake so the navigation mesh reflects the change.
+func move_obstacle(obstacle_name: String, new_position: Vector2) -> void:
+	var obstacle: Node = _obstacles_node.get_node_or_null(obstacle_name)
+	if obstacle == null:
+		push_error("NavWorld.move_obstacle: '%s' not found." % obstacle_name)
+		return
+	obstacle.global_position = new_position
+	rebake_navigation()
+
+
+## Tell the agent to navigate toward the Goal marker.
+func start_navigation() -> void:
+	_agent.call("set_destination", _goal.global_position)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+## Returns true if any vertex of the outline is inside the rect.
+func _outline_intersects_rect(verts: PackedVector2Array, r_min: Vector2, r_max: Vector2) -> bool:
+	for v in verts:
+		if v.x > r_min.x and v.x < r_max.x and v.y > r_min.y and v.y < r_max.y:
+			return true
+	return false
+GD_EOF ✔ 
+💫 Executing godot --headless --path /home/user/godot_project --script /tmp/quick_check.gd 2>&1 ✔ 
+The navigation polygon now has 4 polygons and no errors. No script errors. Now let me run the actual test harness to see how it performs:   
+💫 Executing godot --headless --path /home/user/godot_project --script res://tests/run_tests.gd 2>&1 ✔ 
+All 5 tests pass. Let me verify the results file was written:   
+💫 Executing cat /home/user/godot_project/test_results.json ✔ 
+All 5 assertions pass with zero errors. Let me mark all todos complete:   
+📋 Updating todo list (1 items) ✔ 
+🎉 Task Completed
+All 5 test assertions pass cleanly:
+
+```
+[PASS] scene_structure_valid
+[PASS] nav_agent_api_present
+[PASS] nav_world_api_present
+[PASS] agent_reaches_goal_with_obstacles   — reached=true, dist=14.4 px
+[PASS] agent_reaches_goal_after_obstacles_moved — reached=true, dist=13.3 px
+```
+
+---
+
+## What was built
+
+### `/home/user/godot_project/` layout
+
+```
+project.godot
+scenes/nav_world.tscn
+scripts/nav_agent.gd
+scripts/nav_world.gd
+tests/run_tests.gd          ← untouched verifier harness
+```
+
+### Scene tree (`nav_world.tscn`)
+
+```
+NavWorld  (Node2D, nav_world.gd)
+├── Region          (NavigationRegion2D)
+├── Obstacles       (Node2D)
+│   ├── Obstacle1   (NavigationObstacle2D) pos=(400,200) — covers x 350-450, y  80-320
+│   └── Obstacle2   (NavigationObstacle2D) pos=(400,420) — covers x 350-450, y 320-520
+├── Agent           (CharacterBody2D, nav_agent.gd) pos=(80,300)
+│   └── NavigationAgent2D
+└── Goal            (Marker2D) pos=(720,300)
+```
+
+The two obstacles together form a vertical wall across the centre of the map, leaving only a thin passage at the very top (y < 80) and bottom (y > 520). The agent at y = 300 must route around.
+
+### Key implementation decisions
+
+**`nav_world.gd` — `rebake_navigation()`**  
+Uses `NavigationMeshSourceGeometryData2D` directly (`add_traversable_outline` + `add_obstruction_outline`) fed into `NavigationServer2D.bake_from_source_geometry_data()`. This is the idiomatic Godot 4.3 API (`make_polygons_from_outlines` is deprecated and was failing winding-order checks). Obstacles moved off-screen (≤ 0 or ≥ 800/600) are skipped via `_outline_intersects_rect` so the bake doesn't produce degenerate geometry.
+
+**`nav_agent.gd` — `_physics_process()`**  
+Guards against querying a not-yet-synchronised map by checking `NavigationServer2D.map_get_iteration_id(map_rid) == 0` before calling `get_next_path_position()`, preventing stale-path teleporting on the first few ticks. Movement integrates direction × speed each tick and calls `move_and_slide()`.   
+  

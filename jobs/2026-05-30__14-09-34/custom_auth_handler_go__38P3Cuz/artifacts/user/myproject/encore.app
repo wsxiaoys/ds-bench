@@ -1,3 +1,0 @@
-{
-	"id": "myproject-rwq2"
-}
