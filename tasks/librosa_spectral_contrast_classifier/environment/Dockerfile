@@ -22,7 +22,7 @@ RUN apt-get update -y && \
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
-RUN mkdir -p /workspace/train/speech /workspace/train/music /workspace/test && \
+RUN mkdir -p /home/user/train/speech /home/user/train/music /home/user/test && \
     chmod -R 0755 /workspace
 
 # Pre-bake the labeled training set and the unlabeled test set into the image.
@@ -66,8 +66,8 @@ SOURCES = {
 
 # For each class we collect 6 snippets (2 from each of 3 sources), then assign
 # the first 4 to the training split and the last 2 to the test split.
-TRAIN_DIR = "/workspace/train"
-TEST_DIR = "/workspace/test"
+TRAIN_DIR = "/home/user/train"
+TEST_DIR = "/home/user/test"
 
 for cls, keys in SOURCES.items():
     snippets = []
@@ -97,7 +97,7 @@ print("dataset generation complete")
 PY
 
 LABEL Author="generate-harbor-tasks"
-LABEL Description="librosa 0.11 environment pre-baked with a small speech/music WAV dataset under /workspace/train and /workspace/test for the spectral-contrast-classifier task."
+LABEL Description="librosa 0.11 environment pre-baked with a small speech/music WAV dataset under /home/user/train and /home/user/test for the spectral-contrast-classifier task."
 
 # Setup entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -111,6 +111,6 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - audio runtime libs: libsndfile1, ffmpeg
 #   - always required pip3 packages: pytest-json-ctrf
 #   - librosa 0.11.0 + soundfile, numpy, scipy, scikit-learn, soxr, pooch (feature extraction + classifier deps)
-#   - /workspace/train/speech/*.wav : 4 deterministic speech training clips drawn from libri1 / libri2
-#   - /workspace/train/music/*.wav  : 4 deterministic music training clips drawn from trumpet / nutcracker
-#   - /workspace/test/*.wav         : 4 unlabeled test clips (2 speech from libri3, 2 music from vibeace)
+#   - /home/user/train/speech/*.wav : 4 deterministic speech training clips drawn from libri1 / libri2
+#   - /home/user/train/music/*.wav  : 4 deterministic music training clips drawn from trumpet / nutcracker
+#   - /home/user/test/*.wav         : 4 unlabeled test clips (2 speech from libri3, 2 music from vibeace)

@@ -4,11 +4,11 @@
 Build a simple major/minor chord recognition pipeline using `librosa`. The pipeline must consume a single audio file, derive chroma observations, score them against 24 chord templates (12 major + 12 minor), and use Hidden Markov Model (HMM)-style Viterbi decoding to produce a temporally smooth chord sequence. The decoded state sequence must then be summarized as time-aligned chord segments.
 
 ## Requirements
-- Read the input WAV file from `/workspace/input.wav`.
+- Read the input WAV file from `/home/user/input.wav`.
 - Detect chords from the set of 24 labels:
   `C:maj, C#:maj, D:maj, D#:maj, E:maj, F:maj, F#:maj, G:maj, G#:maj, A:maj, A#:maj, B:maj, C:min, C#:min, D:min, D#:min, E:min, F:min, F#:min, G:min, G#:min, A:min, A#:min, B:min`.
 - Use chroma observations together with `librosa.sequence.viterbi` to decode the most likely chord state per frame.
-- Merge consecutive frames that share the same decoded chord into segments and write them to `/workspace/chords.json`.
+- Merge consecutive frames that share the same decoded chord into segments and write them to `/home/user/chords.json`.
 
 ## Implementation Hints
 - Use a librosa chroma feature appropriate for tonal content to obtain a `(12, n_frames)` observation matrix.
@@ -20,7 +20,7 @@ Build a simple major/minor chord recognition pipeline using `librosa`. The pipel
 ## Acceptance Criteria
 - Project path: /workspace
 - Ensure the recognition pipeline is executed and the output artifact exists.
-- Output file: `/workspace/chords.json`
+- Output file: `/home/user/chords.json`
 - The output file must be a JSON array. Each element must be an object with the following schema:
 
   ```json

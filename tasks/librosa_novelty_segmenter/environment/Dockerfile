@@ -24,7 +24,7 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 RUN mkdir -p /workspace && chmod 0755 /workspace
 
-# Pre-build the deterministic 3-section input audio at /workspace/input.wav.
+# Pre-build the deterministic 3-section input audio at /home/user/input.wav.
 # Layout: 5 s trumpet + 5 s nutcracker + 5 s choice (all 22050 Hz mono),
 # concatenated with smooth equal-power crossfades shorter than 100 ms.
 # Ground-truth structural change-points fall at 5.0 s and 10.0 s.
@@ -104,14 +104,14 @@ peak = float(np.max(np.abs(full)))
 if peak > 1.0:
     full = (full / peak) * 0.99
 
-sf.write("/workspace/input.wav", full, SR, subtype="PCM_16")
+sf.write("/home/user/input.wav", full, SR, subtype="PCM_16")
 
 duration = full.shape[0] / SR
-print(f"Wrote /workspace/input.wav: {full.shape[0]} samples, {duration:.4f} s, sr={SR}")
+print(f"Wrote /home/user/input.wav: {full.shape[0]} samples, {duration:.4f} s, sr={SR}")
 PY
 
 LABEL Author="generate-harbor-tasks"
-LABEL Description="librosa 0.11.0 environment with a deterministic 3-section /workspace/input.wav for Foote-style novelty segmentation."
+LABEL Description="librosa 0.11.0 environment with a deterministic 3-section /home/user/input.wav for Foote-style novelty segmentation."
 
 # Setup entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -126,5 +126,5 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - always required pip3 packages: pytest-json-ctrf
 #   - librosa==0.11.0 plus numpy, scipy, scikit-learn, soxr, soundfile, pooch
 #   - /workspace: working directory for the task
-#   - /workspace/input.wav: deterministic 3-section input audio (trumpet/nutcracker/choice, 5 s each)
+#   - /home/user/input.wav: deterministic 3-section input audio (trumpet/nutcracker/choice, 5 s each)
 #     with equal-power crossfades < 100 ms; ground-truth change-points at 5.0 s and 10.0 s

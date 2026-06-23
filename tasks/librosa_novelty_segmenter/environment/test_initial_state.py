@@ -3,7 +3,7 @@ import os
 
 
 WORKSPACE_DIR = "/workspace"
-INPUT_AUDIO_PATH = "/workspace/input.wav"
+INPUT_AUDIO_PATH = "/home/user/input.wav"
 
 
 def test_workspace_directory_exists():
@@ -47,12 +47,12 @@ def test_input_audio_is_a_valid_waveform():
 
     info = sf.info(INPUT_AUDIO_PATH)
     assert info.samplerate == 22050, (
-        f"Expected /workspace/input.wav to have sample rate 22050 Hz, got {info.samplerate}."
+        f"Expected /home/user/input.wav to have sample rate 22050 Hz, got {info.samplerate}."
     )
     assert info.channels == 1, (
-        f"Expected /workspace/input.wav to be mono, got {info.channels} channels."
+        f"Expected /home/user/input.wav to be mono, got {info.channels} channels."
     )
     # The test fixture builds a ~15 s waveform (3 sections of 5 s each).
     assert info.frames >= 14 * info.samplerate, (
-        f"Expected /workspace/input.wav to be at least ~14 s long, got {info.frames / info.samplerate:.2f} s."
+        f"Expected /home/user/input.wav to be at least ~14 s long, got {info.frames / info.samplerate:.2f} s."
     )

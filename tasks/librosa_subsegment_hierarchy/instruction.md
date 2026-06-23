@@ -4,11 +4,11 @@
 Produce a 2-level hierarchical segmentation of a short tonal audio clip using `librosa` 0.11. The coarse layer captures large-scale structural sections; the fine layer refines each coarse section into 3 sub-sections. The output must record both layers and the parent linkage between them.
 
 ## Requirements
-- Read the input WAV file from `/workspace/input.wav`.
+- Read the input WAV file from `/home/user/input.wav`.
 - Build a beat-synchronous `chroma_cqt` feature matrix as the segmentation feature.
 - Use `librosa.segment.agglomerative` to obtain coarse boundaries (k between 4 and 8 inclusive).
 - For each coarse segment, use `librosa.segment.subsegment` with `n_segments=3` to refine it into exactly 3 fine sub-segments.
-- Write both layers, with parent linkage, to `/workspace/hierarchy.json`.
+- Write both layers, with parent linkage, to `/home/user/hierarchy.json`.
 
 ## Implementation Hints
 - Use `librosa.beat.beat_track` to obtain beat frames at a consistent `hop_length` and use those beats both for the beat-synchronous feature aggregation (`librosa.util.sync`) and as the unit of segmentation.
@@ -20,7 +20,7 @@ Produce a 2-level hierarchical segmentation of a short tonal audio clip using `l
 ## Acceptance Criteria
 - Project path: /workspace
 - Ensure the segmentation pipeline is executed and the output artifact exists.
-- Output file: `/workspace/hierarchy.json`
+- Output file: `/home/user/hierarchy.json`
 - The output file must be a JSON object matching the schema:
 
   ```json

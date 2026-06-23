@@ -4,8 +4,8 @@ import os
 import pytest
 
 
-OUTPUT_PATH = "/workspace/boundaries.json"
-INPUT_AUDIO_PATH = "/workspace/input.wav"
+OUTPUT_PATH = "/home/user/boundaries.json"
+INPUT_AUDIO_PATH = "/home/user/input.wav"
 
 # Ground-truth structural change-points baked into the Dockerfile-built input:
 # 5 s of trumpet, 5 s of nutcracker, 5 s of choice (all 22050 Hz mono),

@@ -6,9 +6,9 @@ import pytest
 
 
 WORKSPACE = "/workspace"
-INPUT_WAV = "/workspace/input.wav"
-BEAT_MFCC_NPZ = "/workspace/beat_mfcc.npz"
-BEATS_JSON = "/workspace/beats.json"
+INPUT_WAV = "/home/user/input.wav"
+BEAT_MFCC_NPZ = "/home/user/beat_mfcc.npz"
+BEATS_JSON = "/home/user/beats.json"
 
 
 @pytest.fixture(scope="module")

@@ -3,9 +3,9 @@ import os
 
 
 WORKSPACE = "/workspace"
-INPUT_WAV = "/workspace/input.wav"
-SPEC_STACK = "/workspace/spec_stack.npz"
-SPEC_META = "/workspace/spec_meta.json"
+INPUT_WAV = "/home/user/input.wav"
+SPEC_STACK = "/home/user/spec_stack.npz"
+SPEC_META = "/home/user/spec_meta.json"
 
 
 def test_librosa_importable():

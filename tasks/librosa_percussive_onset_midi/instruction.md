@@ -4,13 +4,13 @@
 Build a drum-hit grid quantizer with `librosa`. The pipeline must isolate the percussive content from a mixed audio file, detect drum onsets on the percussive component, recover a global tempo with beat tracking on the same percussive signal, snap each onset to the nearest 16th-note position derived from that tempo, and assign a normalized velocity per hit from the local onset envelope amplitude.
 
 ## Requirements
-- Read the input WAV file from `/workspace/input.wav`.
+- Read the input WAV file from `/home/user/input.wav`.
 - Separate the percussive waveform from the harmonic content with HPSS.
 - Detect onsets on the percussive component using an onset strength envelope and peak picking.
 - Recover a global tempo (BPM) from beat tracking on the percussive component and derive a 16th-note grid with spacing `60 / tempo / 4` seconds, starting at time 0.
 - Snap each detected onset to the nearest 16th-note grid position.
 - Estimate a per-hit velocity from the local onset envelope amplitude, normalized into `(0.0, 1.0]`.
-- Write the result to `/workspace/hits.json`.
+- Write the result to `/home/user/hits.json`.
 
 ## Implementation Hints
 - Use HPSS on the loaded waveform to isolate a percussive-only signal before any onset or beat analysis; both detection and tempo estimation must run on that signal, not on the original mix.
@@ -23,7 +23,7 @@ Build a drum-hit grid quantizer with `librosa`. The pipeline must isolate the pe
 ## Acceptance Criteria
 - Project path: /workspace
 - Ensure the quantization pipeline is executed and the output artifact exists.
-- Output file: `/workspace/hits.json`
+- Output file: `/home/user/hits.json`
 - The output file must be a JSON array. Each element must be an object with the following schema:
 
   ```json
@@ -41,5 +41,5 @@ Build a drum-hit grid quantizer with `librosa`. The pipeline must isolate the pe
   - `velocity` is a float in `(0.0, 1.0]`.
 - Hits must be ordered so that `time_seconds` is non-decreasing across the array and `grid_index` is non-decreasing across the array.
 - For every hit, `|time_seconds - raw_time_seconds| <= (60.0 / estimated_tempo / 4) / 2 + 1e-3`, where `estimated_tempo` is the global tempo (BPM) returned by beat tracking on the percussive component.
-- `estimated_tempo` must fall within `[40, 240]` BPM. The estimated tempo may be embedded as a numeric `_metadata.estimated_tempo` field inside `/workspace/hits.json`; otherwise the verifier will recompute the tempo by replaying the documented librosa pipeline (HPSS on the loaded waveform, onset strength on the percussive component, `librosa.beat.beat_track` on that envelope) against `/workspace/input.wav`.
+- `estimated_tempo` must fall within `[40, 240]` BPM. The estimated tempo may be embedded as a numeric `_metadata.estimated_tempo` field inside `/home/user/hits.json`; otherwise the verifier will recompute the tempo by replaying the documented librosa pipeline (HPSS on the loaded waveform, onset strength on the percussive component, `librosa.beat.beat_track` on that envelope) against `/home/user/input.wav`.
 

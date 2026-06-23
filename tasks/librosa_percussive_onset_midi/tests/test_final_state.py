@@ -4,8 +4,8 @@ import os
 import pytest
 
 
-HITS_JSON = "/workspace/hits.json"
-INPUT_WAV = "/workspace/input.wav"
+HITS_JSON = "/home/user/hits.json"
+INPUT_WAV = "/home/user/input.wav"
 
 REQUIRED_KEYS = {"time_seconds", "grid_index", "velocity", "raw_time_seconds"}
 
@@ -90,7 +90,7 @@ def estimated_tempo(raw_payload):
 
 def test_hits_list_minimum_length(hits):
     assert len(hits) >= 5, (
-        f"Expected at least 5 hits in /workspace/hits.json, got {len(hits)}."
+        f"Expected at least 5 hits in /home/user/hits.json, got {len(hits)}."
     )
 
 

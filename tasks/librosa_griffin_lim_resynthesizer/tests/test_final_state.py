@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 
 
-INPUT_WAV = "/workspace/input.wav"
-RECONSTRUCTED_WAV = "/workspace/reconstructed.wav"
-METRICS_JSON = "/workspace/metrics.json"
+INPUT_WAV = "/home/user/input.wav"
+RECONSTRUCTED_WAV = "/home/user/reconstructed.wav"
+METRICS_JSON = "/home/user/metrics.json"
 
 REQUIRED_METRIC_KEYS = {
     "spectral_convergence",

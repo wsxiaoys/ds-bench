@@ -1,17 +1,17 @@
 # HPSS Multi-Stem Mixer
 
 ## Background
-The file `/workspace/input.wav` is a short music recording. Build a small creative remixer that splits it into harmonic and percussive stems, processes each stem independently, and writes the mixed result back to disk.
+The file `/home/user/input.wav` is a short music recording. Build a small creative remixer that splits it into harmonic and percussive stems, processes each stem independently, and writes the mixed result back to disk.
 
 ## Requirements
-Read `/workspace/input.wav` (preserving its native sample rate) and produce `/workspace/output.wav` by performing **exactly** the following steps, in order:
+Read `/home/user/input.wav` (preserving its native sample rate) and produce `/home/user/output.wav` by performing **exactly** the following steps, in order:
 
 1. Decompose the input into harmonic and percussive time-domain components using `librosa.effects.hpss` with `margin=(1.0, 5.0)` (strong percussive mask).
 2. Pitch-shift the harmonic component up by **7 semitones** using `librosa.effects.pitch_shift`.
 3. Time-stretch the percussive component by a rate of **0.85** (i.e. slow it down) using `librosa.effects.time_stretch`.
 4. Re-align the lengths of the pitch-shifted harmonic and the time-stretched percussive signals so they both have the same length as the original input waveform (pad with zeros or truncate as needed), and mix them with weights: `mix = 0.7 * harmonic_shifted + 0.5 * percussive_stretched`.
 5. Trim leading and trailing silence from the mix with `librosa.effects.trim(top_db=30)`.
-6. Write the result to `/workspace/output.wav` at the **same sample rate as the input**.
+6. Write the result to `/home/user/output.wav` at the **same sample rate as the input**.
 
 ## Implementation Hints
 - `librosa.effects.hpss` returns time-domain waveforms of the same length as the input.
@@ -20,8 +20,8 @@ Read `/workspace/input.wav` (preserving its native sample rate) and produce `/wo
 
 ## Acceptance Criteria
 - Project path: /workspace
-- Input file (already present): /workspace/input.wav
-- Output file (must be created by you): /workspace/output.wav
+- Input file (already present): /home/user/input.wav
+- Output file (must be created by you): /home/user/output.wav
 - The output must be a readable WAV file (via `soundfile`).
 - The output sample rate must equal the input sample rate.
 - The output length (in samples) must be less than or equal to the input length (because of trimming).

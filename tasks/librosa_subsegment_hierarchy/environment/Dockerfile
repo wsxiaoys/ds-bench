@@ -26,14 +26,14 @@ RUN mkdir -p /home/user && chmod 0755 /home/user
 # Prepare /workspace with a ~25 s tonal example audio file that contains 4 audible
 # coarse sections. We take the first ~25 seconds of "Dance of the Sugar Plum Fairy"
 # from the Nutcracker Suite (distributed via the librosa example pack), resampled
-# to mono 22050 Hz, and write it as /workspace/input.wav at image build time so the
+# to mono 22050 Hz, and write it as /home/user/input.wav at image build time so the
 # task environment has no runtime network dependency.
 RUN mkdir -p /workspace && \
-    python3 -c "import librosa, soundfile as sf; y, sr = librosa.load(librosa.ex('nutcracker'), sr=22050, mono=True, duration=25.0); sf.write('/workspace/input.wav', y, sr, subtype='PCM_16')" && \
-    test -s /workspace/input.wav
+    python3 -c "import librosa, soundfile as sf; y, sr = librosa.load(librosa.ex('nutcracker'), sr=22050, mono=True, duration=25.0); sf.write('/home/user/input.wav', y, sr, subtype='PCM_16')" && \
+    test -s /home/user/input.wav
 
 LABEL Author="generate-harbor-tasks"
-LABEL Description="librosa 0.11.0 hierarchical segmentation task environment with a pre-baked ~25 s tonal WAV at /workspace/input.wav."
+LABEL Description="librosa 0.11.0 hierarchical segmentation task environment with a pre-baked ~25 s tonal WAV at /home/user/input.wav."
 
 # Setup entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -47,5 +47,5 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - audio system libraries: ffmpeg, libsndfile1
 #   - always required pip3 packages: pytest-json-ctrf
 #   - target library: librosa==0.11.0 (+ numpy, scipy, scikit-learn, soxr, soundfile, pooch)
-#   - /workspace/input.wav: tonal example baked from librosa.ex('nutcracker') (mono, 22050 Hz, ~25 s)
+#   - /home/user/input.wav: tonal example baked from librosa.ex('nutcracker') (mono, 22050 Hz, ~25 s)
 #   - /home/user: standard user home directory

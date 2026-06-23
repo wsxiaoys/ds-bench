@@ -5,8 +5,8 @@ import os
 import pytest
 
 
-PEAKS_JSON = "/workspace/peaks.json"
-INPUT_WAV = "/workspace/input.wav"
+PEAKS_JSON = "/home/user/peaks.json"
+INPUT_WAV = "/home/user/input.wav"
 
 TARGET_TONES_HZ = (220.0, 440.0, 880.0)
 TONE_TOLERANCE_HZ = 10.0
