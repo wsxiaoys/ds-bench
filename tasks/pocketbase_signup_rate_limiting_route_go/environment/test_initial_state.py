@@ -2,7 +2,7 @@ import os
 import shutil
 import pytest
 
-PROJECT_DIR = "/workspace/pb"
+PROJECT_DIR = "/home/user/pb"
 
 def test_go_binary_available():
     assert shutil.which("go") is not None, "go binary not found in PATH."
