@@ -68,8 +68,8 @@ def _list_files_paginated(limit: int = 3) -> list[dict]:
 
 @pytest.fixture(scope="module")
 def run_id() -> str:
-    value = os.environ.get("ZEALT_RUN_ID")
-    assert value, "ZEALT_RUN_ID environment variable must be set."
+    value = open("/logs/artifacts/run-id").read().strip()
+    assert value, "RUN_ID must be set."
     return value
 
 

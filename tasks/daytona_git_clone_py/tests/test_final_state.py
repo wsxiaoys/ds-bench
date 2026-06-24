@@ -59,9 +59,9 @@ def test_sandbox_was_deleted():
         "sandbox deletion."
     )
 
-    run_id = os.environ.get("ZEALT_RUN_ID")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id, (
-        "ZEALT_RUN_ID must be set in the verifier environment to determine the "
+        "RUN_ID must be set in the verifier to determine the "
         "sandbox name to look up."
     )
 

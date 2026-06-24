@@ -61,8 +61,8 @@ def _file_names_from_output(items):
 
 @pytest.fixture(scope="session")
 def run_id():
-    rid = os.environ.get("ZEALT_RUN_ID")
-    assert rid, "ZEALT_RUN_ID environment variable must be set for verification."
+    rid = open("/logs/artifacts/run-id").read().strip()
+    assert rid, "RUN_ID must be set for verification."
     return rid
 
 

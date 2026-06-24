@@ -11,8 +11,8 @@ PROJECT_DIR = "/home/user/vercel-ai-memory"
 
 
 def _run_id():
-    rid = os.environ.get("ZEALT_RUN_ID")
-    assert rid, "ZEALT_RUN_ID must be set in the verifier environment."
+    rid = open("/logs/artifacts/run-id").read().strip()
+    assert rid, "RUN_ID must be set in the verifier."
     return rid
 
 
@@ -174,11 +174,12 @@ def test_establish_then_recall_uses_alchemyst_memory(ids):
 
     env = os.environ.copy()
     # Sanity: required envs for the CLI must be present in the verifier env.
-    for k in ("ALCHEMYST_AI_API_KEY", "OPENAI_API_KEY", "ZEALT_RUN_ID"):
+    for k in ("ALCHEMYST_AI_API_KEY", "OPENAI_API_KEY"):
         assert env.get(k), (
             f"Verifier environment is missing required env var {k}; "
             "the CLI under test requires it."
         )
+    env["RUN_ID"] = _run_id()
 
     # --- Phase 1: establish ---
     cmd_e, proc_e = _run_cli("establish", env)
@@ -219,7 +220,7 @@ def test_establish_then_recall_uses_alchemyst_memory(ids):
 
 
 def test_cli_rejects_missing_run_id():
-    """The CLI must fail fast (non-zero exit) if ZEALT_RUN_ID is missing.
+    """The CLI must fail fast (non-zero exit) if RUN_ID is missing.
 
     This protects against silently namespacing memories under an empty run id,
     which would cause cross-run contamination.
@@ -228,7 +229,7 @@ def test_cli_rejects_missing_run_id():
     _ensure_built_entrypoint()
 
     env = os.environ.copy()
-    env.pop("ZEALT_RUN_ID", None)
+    env.pop("RUN_ID", None)
 
     proc = subprocess.run(
         ["node", "dist/main.js", "--phase", "establish"],
@@ -239,6 +240,6 @@ def test_cli_rejects_missing_run_id():
         timeout=60,
     )
     assert proc.returncode != 0, (
-        "Expected the CLI to exit non-zero when ZEALT_RUN_ID is unset, but it "
+        "Expected the CLI to exit non-zero when RUN_ID is unset, but it "
         f"exited with rc=0.\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
     )

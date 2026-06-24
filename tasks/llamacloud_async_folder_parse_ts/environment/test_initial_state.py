@@ -44,6 +44,6 @@ def test_llama_cloud_api_key_set():
     assert key, "LLAMA_CLOUD_API_KEY environment variable is not set."
 
 
-def test_zealt_run_id_set():
-    run_id = os.environ.get("ZEALT_RUN_ID", "")
-    assert run_id, "ZEALT_RUN_ID environment variable is not set."
+def test_run_id_set():
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID is not set."

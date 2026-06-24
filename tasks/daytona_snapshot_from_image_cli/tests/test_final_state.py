@@ -11,8 +11,8 @@ LOG_PATH = os.path.join(PROJECT_DIR, "output.log")
 
 
 def _run_id():
-    run_id = os.environ.get("ZEALT_RUN_ID")
-    assert run_id, "ZEALT_RUN_ID environment variable is not set in the verifier environment."
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID is not set in the verifier environment."
     return run_id
 
 

@@ -10,7 +10,7 @@ def setup_verify_script():
     """Set up the verify script and deploy it to Convex."""
     # Ensure npm install
     subprocess.run(["npm", "install"], cwd=PROJECT_DIR, check=True)
-    
+
     # Write verify.ts
     convex_dir = os.path.join(PROJECT_DIR, "convex")
     os.makedirs(convex_dir, exist_ok=True)
@@ -25,7 +25,7 @@ export const getByRunId = query({
   }
 });
 """)
-    
+
     # Deploy verify script
     result = subprocess.run(
         ["npx", "convex", "deploy"],
@@ -37,49 +37,56 @@ export const getByRunId = query({
 
 def test_rust_cli_execution():
     """Run the Rust CLI to insert a task."""
-    run_id = os.environ.get("ZEALT_RUN_ID", "test-run-id")
-    
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    env = os.environ.copy()
+    env["RUN_ID"] = run_id
+
     # Run the rust client
     result = subprocess.run(
         ["cargo", "run", "--manifest-path", "rust-client/Cargo.toml", "--", "Hello Convex"],
         cwd=PROJECT_DIR,
         capture_output=True,
-        text=True
+        text=True,
+        env=env,
     )
     assert result.returncode == 0, f"Rust CLI execution failed: {result.stderr}"
 
 def test_convex_mutation_result():
     """Verify the mutation result using ConvexHttpClient in Node.js."""
-    run_id = os.environ.get("ZEALT_RUN_ID", "test-run-id")
-    
+    run_id = open("/logs/artifacts/run-id").read().strip()
+
     # Write verify.js
     verify_js_path = os.path.join(PROJECT_DIR, "verify.js")
     with open(verify_js_path, "w") as f:
         f.write("""const { ConvexHttpClient } = require("convex/browser");
 const client = new ConvexHttpClient(process.env.CONVEX_URL);
-client.query("verify:getByRunId", { runId: process.env.ZEALT_RUN_ID }).then(res => console.log(JSON.stringify(res))).catch(err => { console.error(err); process.exit(1); });
+client.query("verify:getByRunId", { runId: process.env.RUN_ID }).then(res => console.log(JSON.stringify(res))).catch(err => { console.error(err); process.exit(1); });
 """)
-    
+
+    env = os.environ.copy()
+    env["RUN_ID"] = run_id
+
     # Run verify.js
     result = subprocess.run(
         ["node", "verify.js"],
         cwd=PROJECT_DIR,
         capture_output=True,
-        text=True
+        text=True,
+        env=env
     )
     assert result.returncode == 0, f"Failed to run verify.js: {result.stderr}"
-    
+
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
         pytest.fail(f"Failed to parse verify.js output as JSON: {result.stdout}")
-        
+
     assert isinstance(data, list), "Expected output to be a JSON array"
-    
+
     found = False
     for item in data:
         if item.get("text") == "Hello Convex" and item.get("runId") == run_id:
             found = True
             break
-            
+
     assert found, f"Could not find task with text 'Hello Convex' and runId '{run_id}' in the database. Got: {data}"

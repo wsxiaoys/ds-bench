@@ -10,9 +10,9 @@ SANDBOX_ID_REGEX = re.compile(r"^Sandbox ID:\s*(?P<id>[A-Za-z0-9-]+)\s*$", re.MU
 
 
 def _run_id() -> str:
-    run_id = os.environ.get("ZEALT_RUN_ID")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id is not None and run_id.strip() != "", (
-        "ZEALT_RUN_ID must be set in the verifier environment to validate the run-scoped sandbox name."
+        "RUN_ID must be set in the verifier to validate the run-scoped sandbox name."
     )
     return run_id
 

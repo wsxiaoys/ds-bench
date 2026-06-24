@@ -15,7 +15,7 @@ PCA_MODEL_PATH = "/app/pca_model.npz"
 
 @pytest.fixture(scope="session")
 def run_id():
-    rid = os.environ.get("ZEALT_RUN_ID")
+    rid = open("/logs/artifacts/run-id").read().strip()
     assert rid, "ZEALT_RUN_ID env var must be set for verification."
     return rid
 

@@ -57,7 +57,7 @@ def test_second_invocation_does_not_409():
     assert proc.returncode == 0, (
         "Second invocation of the CLI failed. The CLI must remain idempotent "
         "across reruns (e.g., by using a unique file_name suffix from "
-        "ZEALT_RUN_ID, by handling 409 Conflict, or by delete-then-add).\n"
+        "RUN_ID, by handling 409 Conflict, or by delete-then-add).\n"
         f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
     combined = (proc.stdout or "") + "\n" + (proc.stderr or "")

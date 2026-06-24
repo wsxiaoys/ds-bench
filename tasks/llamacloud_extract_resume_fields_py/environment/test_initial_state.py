@@ -46,7 +46,7 @@ def test_llama_cloud_api_key_env_present():
 
 
 def test_run_id_env_present():
-    run_id = os.environ.get("ZEALT_RUN_ID", "")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id.startswith("zr") and len(run_id) > 3, (
-        "ZEALT_RUN_ID environment variable must be set to a `zr<suffix>` value before the task starts."
+        "RUN_ID must be set to a `zr<suffix>` value before the task starts."
     )

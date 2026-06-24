@@ -129,8 +129,8 @@ def test_extract_job_is_completed_via_sdk():
 def test_uploaded_file_uses_run_id_external_id():
     from llama_cloud import LlamaCloud
 
-    run_id = os.environ.get("ZEALT_RUN_ID", "")
-    assert run_id, "ZEALT_RUN_ID must be set in the verifier environment."
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID must be set in the verifier."
     expected_suffix = f"-{run_id}.pdf"
 
     client = LlamaCloud()

@@ -7,7 +7,7 @@ import re
 
 PROJECT_DIR = "/home/user/bytewax-sink"
 OUT_DIR = os.path.join(PROJECT_DIR, "out")
-RUN_ID = os.environ.get("ZEALT_RUN_ID", "test-run-123")
+RUN_ID = open("/logs/artifacts/run-id").read().strip()
 
 @pytest.fixture(scope="session", autouse=True)
 def run_dataflow():
@@ -16,11 +16,11 @@ def run_dataflow():
     # Clean up existing files
     for f in glob.glob(os.path.join(OUT_DIR, "*")):
         os.remove(f)
-    
+
     # Run the dataflow
     env = os.environ.copy()
-    env["ZEALT_RUN_ID"] = RUN_ID
-    
+    env["RUN_ID"] = RUN_ID
+
     result = subprocess.run(
         ["python3", "-m", "bytewax.run", "run:flow", "-w", "4"],
         cwd=PROJECT_DIR,
@@ -62,14 +62,14 @@ def test_json_content_and_values():
     """Verify JSON content, min/max values, and worker distribution."""
     values = []
     workers = set()
-    
+
     for filepath in glob.glob(os.path.join(OUT_DIR, "*.jsonl")):
         with open(filepath, "r") as f:
             for line in f:
                 record = json.loads(line.strip())
                 values.append(record["value"])
                 workers.add(record["worker"])
-                
+
     values.sort()
     assert len(values) > 0, "No records found to check values."
     assert values[0] == 0, f"Expected minimum value 0, found {values[0]}."

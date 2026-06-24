@@ -56,7 +56,7 @@ def test_sandbox_deleted_after_task():
         "DAYTONA_API_KEY is not set; cannot verify sandbox cleanup against "
         "the real Daytona service."
     )
-    run_id = os.environ.get("ZEALT_RUN_ID")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id, (
         "ZEALT_RUN_ID is not set; cannot determine the expected sandbox name."
     )

@@ -26,8 +26,8 @@ def test_daytona_api_key_env_var_present():
     )
 
 
-def test_zealt_run_id_env_var_present():
-    value = os.environ.get("ZEALT_RUN_ID")
+def test_run_id_present():
+    value = open("/logs/artifacts/run-id").read().strip()
     assert value is not None and value.strip() != "", (
-        "The ZEALT_RUN_ID environment variable must be set for parallel-run-safe resource naming."
+        "The RUN_ID must be set for parallel-run-safe resource naming."
     )

@@ -129,7 +129,7 @@ def test_log_file_exists_and_has_valid_shape():
 
 
 def test_four_expected_files_exist_on_drive():
-    run_id = os.environ["ZEALT_RUN_ID"]
+    run_id = open("/logs/artifacts/run-id").read().strip()
     drive_name = os.environ["APIDECK_FILE_STORAGE_DRIVE_NAME"]
     drive_id = _resolve_drive_id(drive_name)
     files_by_name = _list_run_files(drive_id, run_id)
@@ -147,7 +147,7 @@ def test_four_expected_files_exist_on_drive():
 
 
 def test_search_result_ids_match_keep_files():
-    run_id = os.environ["ZEALT_RUN_ID"]
+    run_id = open("/logs/artifacts/run-id").read().strip()
     drive_name = os.environ["APIDECK_FILE_STORAGE_DRIVE_NAME"]
     drive_id = _resolve_drive_id(drive_name)
     files_by_name = _list_run_files(drive_id, run_id)

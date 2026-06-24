@@ -7,7 +7,7 @@ import pytest
 PROJECT_DIR = "/home/user/myproject"
 LANCEDB_PATH = "/home/user/myproject/lancedb"
 
-RUN_ID = os.environ.get("ZEALT_RUN_ID", "")
+RUN_ID = open("/logs/artifacts/run-id").read().strip()
 TABLE_NAME = f"pdf_chunks_{RUN_ID}"
 
 # Ensure the candidate's solution.py is importable.
@@ -69,7 +69,7 @@ def _validate_result_shape(results, k):
 
 
 def test_run_id_present():
-    assert RUN_ID, "ZEALT_RUN_ID must be set in the verifier environment."
+    assert RUN_ID, "RUN_ID must be set in the verifier."
 
 
 def test_table_exists(db):

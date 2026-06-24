@@ -26,7 +26,7 @@ def _apideck_headers() -> dict:
 
 
 def _expected_names() -> tuple[str, str]:
-    run_id = _required_env("ZEALT_RUN_ID")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     return (
         f"report-{run_id}-alpha.txt",
         f"report-{run_id}-beta.txt",

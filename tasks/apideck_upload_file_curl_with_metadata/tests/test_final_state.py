@@ -26,7 +26,7 @@ def env_config() -> dict:
         "api_key": _required_env("APIDECK_API_KEY"),
         "consumer_id": _required_env("APIDECK_CONSUMER_ID"),
         "drive_name": _required_env("APIDECK_FILE_STORAGE_DRIVE_NAME"),
-        "run_id": _required_env("ZEALT_RUN_ID"),
+        "run_id": open("/logs/artifacts/run-id").read().strip(),
     }
 
 

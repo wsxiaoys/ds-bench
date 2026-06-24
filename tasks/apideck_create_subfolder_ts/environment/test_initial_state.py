@@ -46,7 +46,7 @@ def test_apideck_file_storage_drive_name_env():
     )
 
 
-def test_zealt_run_id_env():
-    assert os.environ.get("ZEALT_RUN_ID"), (
-        "ZEALT_RUN_ID environment variable is not set."
+def test_run_id():
+    assert open("/logs/artifacts/run-id").read().strip(), (
+        "RUN_ID is not set."
     )

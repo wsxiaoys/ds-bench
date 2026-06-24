@@ -17,8 +17,8 @@ USER_PASSWORD = "Test123Password!"
 
 
 def _run_id() -> str:
-    run_id = os.environ.get("ZEALT_RUN_ID")
-    assert run_id, "ZEALT_RUN_ID environment variable is required."
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID is required."
     return run_id
 
 

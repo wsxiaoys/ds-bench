@@ -15,8 +15,8 @@ EXTRACT_JOB_LINE_RE = re.compile(r"Extract Job ID:\s*([A-Za-z0-9_\-]+)")
 
 @pytest.fixture(scope="session")
 def run_id():
-    value = os.environ.get("ZEALT_RUN_ID")
-    assert value, "ZEALT_RUN_ID environment variable is required for verification."
+    value = open("/logs/artifacts/run-id").read().strip()
+    assert value, "RUN_ID is required for verification."
     return value
 
 

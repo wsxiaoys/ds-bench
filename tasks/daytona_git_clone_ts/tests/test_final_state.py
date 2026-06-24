@@ -14,8 +14,8 @@ def _read_log():
 
 
 def _run_id():
-    run_id = os.environ.get("ZEALT_RUN_ID")
-    assert run_id, "ZEALT_RUN_ID environment variable must be set for verification."
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID must be set for verification."
     return run_id
 
 

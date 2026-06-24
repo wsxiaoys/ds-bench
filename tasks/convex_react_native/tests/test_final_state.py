@@ -20,8 +20,8 @@ def start_app(xprocess):
         args = ["npx", "expo", "start", "--web", "--port", "8081"]
         env = os.environ.copy()
         env["EXPO_PUBLIC_CONVEX_URL"] = env.get("CONVEX_URL", "")
-        env["EXPO_PUBLIC_RUN_ID"] = env.get("ZEALT_RUN_ID", "test-run-id")
-        
+        env["EXPO_PUBLIC_RUN_ID"] = open("/logs/artifacts/run-id").read().strip()
+
         popen_kwargs = {
             "cwd": PROJECT_DIR,
             "text": True,
@@ -39,7 +39,7 @@ def start_app(xprocess):
     info.terminate()
 
 def test_reactive_list(start_app, browser_verifier):
-    run_id = os.environ.get("ZEALT_RUN_ID", "test-run-id")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     task_text = f"Test Task {run_id}"
     reason = "The web application should load, allow adding a task, and reactively display the newly added task."
     truth = f"""
