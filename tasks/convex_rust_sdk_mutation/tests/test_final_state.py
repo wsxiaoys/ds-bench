@@ -37,17 +37,12 @@ export const getByRunId = query({
 
 def test_rust_cli_execution():
     """Run the Rust CLI to insert a task."""
-    run_id = open("/logs/artifacts/run-id").read().strip()
-    env = os.environ.copy()
-    env["RUN_ID"] = run_id
-
     # Run the rust client
     result = subprocess.run(
         ["cargo", "run", "--manifest-path", "rust-client/Cargo.toml", "--", "Hello Convex"],
         cwd=PROJECT_DIR,
         capture_output=True,
-        text=True,
-        env=env,
+        text=True
     )
     assert result.returncode == 0, f"Rust CLI execution failed: {result.stderr}"
 
