@@ -27,7 +27,7 @@ RUN mkdir -p /home/user/tigris-task && chmod 0755 /home/user/tigris-task
 #   - AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (mapped from TIGRIS_STORAGE_*)
 #   - AWS_ENDPOINT_URL_S3 = https://t3.storage.dev
 #   - AWS_REGION          = auto
-#   - /logs/artifacts/trial_id (mounted by Harbor) supplies the per-trial bucket suffix
+#   - /logs/artifacts/run-id (mounted by Harbor) supplies the per-run bucket suffix
 
 # Setup entrypoint script
 COPY entrypoint.sh /entrypoint.sh

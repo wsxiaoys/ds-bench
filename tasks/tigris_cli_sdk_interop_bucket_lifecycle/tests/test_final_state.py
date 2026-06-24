@@ -8,7 +8,7 @@ import pytest
 PROJECT_DIR = "/home/user/tigris-task"
 INDEX_TS = os.path.join(PROJECT_DIR, "index.ts")
 LISTING_TXT = os.path.join(PROJECT_DIR, "bucket-listing.txt")
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 
 
 def _tigris_env():
@@ -23,26 +23,26 @@ def _tigris_env():
     return env
 
 
-def _read_trial_id():
-    assert os.path.isfile(TRIAL_ID_PATH), (
-        f"trial_id file {TRIAL_ID_PATH} is missing; cannot derive bucket name."
+def _read_run_id():
+    assert os.path.isfile(RUN_ID_PATH), (
+        f"run_id file {RUN_ID_PATH} is missing; cannot derive bucket name."
     )
-    with open(TRIAL_ID_PATH, "r", encoding="utf-8") as handle:
+    with open(RUN_ID_PATH, "r", encoding="utf-8") as handle:
         value = handle.read().strip()
-    assert value, f"trial_id file {TRIAL_ID_PATH} is empty."
+    assert value, f"run_id file {RUN_ID_PATH} is empty."
     return value
 
 
 def _bucket_name():
     import re
-    name = f"harbor-interop-{_read_trial_id()}"
+    name = f"harbor-interop-{_read_run_id()}"
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     return name
 
 
-def _expected_manifest_body(trial_id: str) -> str:
+def _expected_manifest_body(run_id: str) -> str:
     return (
-        '{"created_by":"cli","modified_by":"sdk","trial":"' + trial_id + '"}'
+        '{"created_by":"cli","modified_by":"sdk","run":"' + run_id + '"}'
     )
 
 
@@ -335,8 +335,8 @@ def test_manifest_object_body_matches_expected(manifest_payload):
         "Verifier could not fetch manifest.json via the @tigrisdata/storage SDK. "
         f"Errors: {errors}"
     )
-    trial_id = _read_trial_id()
-    expected = _expected_manifest_body(trial_id)
+    run_id = _read_run_id()
+    expected = _expected_manifest_body(run_id)
     # Some SDK responses may not preserve exact bytes if Content-Type differs;
     # accept both raw match and JSON-equivalence match.
     if body != expected:

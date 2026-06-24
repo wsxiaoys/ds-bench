@@ -26,7 +26,7 @@ The CLI must demonstrate this with two phases:
 - No mocks, stubs, fake clients, or hard-coded model replies: the program must perform real network calls to Alchemyst and OpenAI.
 
 ## Parallel-Run Safety (REQUIRED)
-This task may run multiple times concurrently against the same Alchemyst account. To avoid cross-trial memory contamination you MUST namespace the user and session identifiers with the value of the `/logs/artifacts/run-id`:
+This task may run multiple times concurrently against the same Alchemyst account. To avoid cross-run memory contamination you MUST namespace the user and session identifiers with the value of the `/logs/artifacts/run-id`:
 
 - `userId` = `vercel-memory-user-<run-id>`
 - `sessionId` for `--phase establish` = `establish-<run-id>`

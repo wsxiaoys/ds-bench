@@ -3,16 +3,16 @@
 ## Background
 A core promise of Tigris Agent Kit (`@tigrisdata/agent-kit`) is *isolation*: when you fork a source bucket for multiple agents, each fork is a copy-on-write clone — writes into one fork are NEVER visible from another fork or from the source bucket. This task exercises that guarantee end-to-end.
 
-A setup script `/home/user/isolation/setup.sh` runs automatically at task start. It (re-)creates a source bucket named `harbor-isolation-${trial_id}` (where `${trial_id}` is read from `/logs/artifacts/trial_id`) with snapshots enabled and pre-seeds it with two objects: `seed1.txt` and `seed2.txt`.
+A setup script `/home/user/isolation/setup.sh` runs automatically at task start. It (re-)creates a source bucket named `harbor-isolation-${run_id}` (where `${run_id}` is read from `/logs/artifacts/run-id`) with snapshots enabled and pre-seeds it with two objects: `seed1.txt` and `seed2.txt`.
 
 Your job is to fork that source bucket for three parallel writer agents, have each writer simultaneously upload its own uniquely-named output file into its own fork using the *fork's* scoped credentials, and then audit the resulting bucket state into a JSON report.
 
 ## Requirements
 Write a TypeScript program at `/home/user/isolation/index.ts` that:
 
-1. Read the trial id from `/logs/artifacts/trial_id`. Construct the source bucket name as `harbor-isolation-${trial_id}` (substitute the actual id; do NOT keep the `${trial_id}` placeholder literal). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
+1. Read the run id from `/logs/artifacts/run-id`. Construct the source bucket name as `harbor-isolation-${run_id}` (substitute the actual id; do NOT keep the `${run_id}` placeholder literal). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
 2. Creates **3 forks** of the source bucket using `createForks` from `@tigrisdata/agent-kit`. All three forks must be requested in a single `createForks` invocation:
-   - `prefix: "audit-fork-${trial_id}"` (substitute the actual trial id, normalized as described above)
+   - `prefix: "audit-fork-${run_id}"` (substitute the actual run id, normalized as described above)
    - `credentials: { role: "Editor" }` — the scoped credentials must be `Editor` because each fork is going to be written to. Do NOT request `ReadOnly`.
 3. In parallel, each fork uploads exactly one uniquely-named object using the AWS SDK for JavaScript v3 (`@aws-sdk/client-s3`), where:
    - The 1st fork (index 0 in `forkSet.forks`) uploads key `agent-1.out`.
@@ -32,9 +32,9 @@ Write a TypeScript program at `/home/user/isolation/index.ts` that:
    {
      "source_keys": ["seed1.txt", "seed2.txt"],
      "fork_results": [
-       { "bucket": "audit-fork-${trial_id}-0", "keys": ["agent-1.out", "seed1.txt", "seed2.txt"] },
-       { "bucket": "audit-fork-${trial_id}-1", "keys": ["agent-2.out", "seed1.txt", "seed2.txt"] },
-       { "bucket": "audit-fork-${trial_id}-2", "keys": ["agent-3.out", "seed1.txt", "seed2.txt"] }
+       { "bucket": "audit-fork-${run_id}-0", "keys": ["agent-1.out", "seed1.txt", "seed2.txt"] },
+       { "bucket": "audit-fork-${run_id}-1", "keys": ["agent-2.out", "seed1.txt", "seed2.txt"] },
+       { "bucket": "audit-fork-${run_id}-2", "keys": ["agent-3.out", "seed1.txt", "seed2.txt"] }
      ]
    }
    ```
@@ -46,7 +46,7 @@ Write a TypeScript program at `/home/user/isolation/index.ts` that:
 ## Implementation Guide
 1. Change into the project directory `/home/user/isolation`. The project is pre-initialized with `package.json`, `tsconfig.json`, and a populated local `node_modules` containing `@tigrisdata/agent-kit`, `@tigrisdata/cli`, `@aws-sdk/client-s3`, `tsx`, and `typescript`. You only need to author `index.ts`.
 2. Import `createForks` and `teardownForks` from `@tigrisdata/agent-kit`. Import `S3Client`, `PutObjectCommand`, and `ListObjectsV2Command` from `@aws-sdk/client-s3`. Use `fs/promises` for writing the audit report.
-3. Read the trial id and construct the source bucket name. Call `createForks(sourceBucketName, 3, { prefix: "audit-fork-${trial_id}", credentials: { role: "Editor" } })`. Check `error` first; if non-null, throw.
+3. Read the run id and construct the source bucket name. Call `createForks(sourceBucketName, 3, { prefix: "audit-fork-${run_id}", credentials: { role: "Editor" } })`. Check `error` first; if non-null, throw.
 4. For each `fork` in `forkSet.forks`, build a per-fork `S3Client` from its scoped credentials and issue a `PutObjectCommand` for the appropriate `agent-N.out` key. Run the three uploads concurrently via `Promise.all`.
 5. Build the audit report:
    - Use a separate admin `S3Client` (built from `TIGRIS_STORAGE_ACCESS_KEY_ID` / `TIGRIS_STORAGE_SECRET_ACCESS_KEY`) to `ListObjectsV2` against the source bucket.
@@ -60,8 +60,8 @@ Write a TypeScript program at `/home/user/isolation/index.ts` that:
 - Project path: `/home/user/isolation`
 - Log file: `/home/user/isolation/output.log` (used by the verifier when re-running the script).
 - Setup script (auto-runs at task start, idempotent): `/home/user/isolation/setup.sh` — creates the source bucket with snapshots enabled and uploads `seed1.txt`, `seed2.txt`. Do not modify it.
-- Source bucket: dynamically constructed as `harbor-isolation-${trial_id}` (must remain unmodified at the end of the run).
-- Fork prefix: `audit-fork-${trial_id}` (so the three fork buckets are named `audit-fork-${trial_id}-0`, `audit-fork-${trial_id}-1`, `audit-fork-${trial_id}-2`).
+- Source bucket: dynamically constructed as `harbor-isolation-${run_id}` (must remain unmodified at the end of the run).
+- Fork prefix: `audit-fork-${run_id}` (so the three fork buckets are named `audit-fork-${run_id}-0`, `audit-fork-${run_id}-1`, `audit-fork-${run_id}-2`).
 - Fork count: exactly 3, requested in a single `createForks` call.
 - Fork credentials role: `Editor` (each fork must have its own scoped key — the uploads MUST use the per-fork scoped credentials, not the admin keys).
 - Concurrency: the three per-fork uploads MUST run in parallel (e.g. `Promise.all`).

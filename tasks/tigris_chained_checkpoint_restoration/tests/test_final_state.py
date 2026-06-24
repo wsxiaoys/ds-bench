@@ -10,23 +10,23 @@ import pytest
 PROJECT_DIR = "/home/user/chained-ckpt"
 INDEX_TS = os.path.join(PROJECT_DIR, "index.ts")
 RECOVERY_JSON = os.path.join(PROJECT_DIR, "recovery.json")
-TRIAL_ID_FILE = "/logs/artifacts/trial_id"
+RUN_ID_FILE = "/logs/artifacts/run-id"
 TIGRIS_ENDPOINT = "https://t3.storage.dev"
 
 
-def _read_trial_id():
-    assert os.path.isfile(TRIAL_ID_FILE), (
-        f"Trial id file {TRIAL_ID_FILE} does not exist; cannot derive bucket name."
+def _read_run_id():
+    assert os.path.isfile(RUN_ID_FILE), (
+        f"Run id file {RUN_ID_FILE} does not exist; cannot derive bucket name."
     )
-    with open(TRIAL_ID_FILE, "r") as f:
-        trial_id = f.read().strip()
-    assert trial_id, f"Trial id file {TRIAL_ID_FILE} is empty."
-    return trial_id
+    with open(RUN_ID_FILE, "r") as f:
+        run_id = f.read().strip()
+    assert run_id, f"Run id file {RUN_ID_FILE} is empty."
+    return run_id
 
 
 def bucket_name():
-    trial_id = _read_trial_id()
-    name = f"harbor-awscli-{trial_id}"
+    run_id = _read_run_id()
+    name = f"harbor-awscli-{run_id}"
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     return name
 

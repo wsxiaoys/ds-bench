@@ -4,27 +4,27 @@ import subprocess
 
 import pytest
 
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 
 
-def _read_trial_id():
-    assert os.path.isfile(TRIAL_ID_PATH), (
-        f"trial_id file {TRIAL_ID_PATH} is missing; cannot derive bucket name."
+def _read_run_id():
+    assert os.path.isfile(RUN_ID_PATH), (
+        f"run_id file {RUN_ID_PATH} is missing; cannot derive bucket name."
     )
-    with open(TRIAL_ID_PATH) as f:
-        trial_id = f.read().strip()
-    assert trial_id, f"trial_id file {TRIAL_ID_PATH} is empty."
-    return trial_id
+    with open(RUN_ID_PATH) as f:
+        run_id = f.read().strip()
+    assert run_id, f"run_id file {RUN_ID_PATH} is empty."
+    return run_id
 
 
 @pytest.fixture(scope="module")
 def bucket_name():
-    trial_id = _read_trial_id()
-    name = f"harbor-snap-{trial_id}"
+    run_id = _read_run_id()
+    name = f"harbor-snap-{run_id}"
     import re
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     yield name
-    # Finalizer: delete the bucket so re-runs (same trial id) don't collide.
+    # Finalizer: delete the bucket so re-runs (same run id) don't collide.
     # `tigris buckets delete` requires the bucket to be empty; the task does
     # not upload anything, so a plain delete is sufficient.
     subprocess.run(

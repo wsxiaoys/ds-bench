@@ -9,20 +9,20 @@ import pytest
 PROJECT_DIR = "/home/user/inv"
 INDEX_JS = os.path.join(PROJECT_DIR, "index.js")
 INVENTORY_FILE = os.path.join(PROJECT_DIR, "inventory.json")
-TRIAL_ID_FILE = "/logs/artifacts/trial_id"
+RUN_ID_FILE = "/logs/artifacts/run-id"
 
-def _read_trial_id():
-    assert os.path.isfile(TRIAL_ID_FILE), (
-        f"Trial id file {TRIAL_ID_FILE} does not exist; cannot derive bucket names."
+def _read_run_id():
+    assert os.path.isfile(RUN_ID_FILE), (
+        f"Run id file {RUN_ID_FILE} does not exist; cannot derive bucket names."
     )
-    with open(TRIAL_ID_FILE, "r") as f:
-        trial_id = f.read().strip()
-    assert trial_id, f"Trial id file {TRIAL_ID_FILE} is empty."
-    return trial_id
+    with open(RUN_ID_FILE, "r") as f:
+        run_id = f.read().strip()
+    assert run_id, f"Run id file {RUN_ID_FILE} is empty."
+    return run_id
 
 def _prefix():
-    trial_id = _read_trial_id()
-    name = f"harbor-inv-{trial_id}-"
+    run_id = _read_run_id()
+    name = f"harbor-inv-{run_id}-"
     return re.sub(r"[^a-z0-9.-]", "-", name.lower())
 
 def _bench_buckets():
@@ -30,11 +30,11 @@ def _bench_buckets():
     return [f"{prefix}a", f"{prefix}b", f"{prefix}c"]
 
 def _other_buckets():
-    trial_id = _read_trial_id()
+    run_id = _read_run_id()
     return [
-        f"harbor-other-{trial_id}-x",
-        f"harbor-other-{trial_id}-y",
-        f"harbor-other-{trial_id}-z",
+        f"harbor-other-{run_id}-x",
+        f"harbor-other-{run_id}-y",
+        f"harbor-other-{run_id}-z",
     ]
 
 def _expected_counts():

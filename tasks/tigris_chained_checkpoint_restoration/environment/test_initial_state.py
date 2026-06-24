@@ -9,22 +9,22 @@ import pytest
 
 PROJECT_DIR = "/home/user/chained-ckpt"
 PACKAGE_JSON = os.path.join(PROJECT_DIR, "package.json")
-TRIAL_ID_FILE = "/logs/artifacts/trial_id"
+RUN_ID_FILE = "/logs/artifacts/run-id"
 
 
-def _read_trial_id():
-    assert os.path.isfile(TRIAL_ID_FILE), (
-        f"Trial id file {TRIAL_ID_FILE} does not exist; cannot derive bucket name."
+def _read_run_id():
+    assert os.path.isfile(RUN_ID_FILE), (
+        f"Run id file {RUN_ID_FILE} does not exist; cannot derive bucket name."
     )
-    with open(TRIAL_ID_FILE, "r") as f:
-        trial_id = f.read().strip()
-    assert trial_id, f"Trial id file {TRIAL_ID_FILE} is empty."
-    return trial_id
+    with open(RUN_ID_FILE, "r") as f:
+        run_id = f.read().strip()
+    assert run_id, f"Run id file {RUN_ID_FILE} is empty."
+    return run_id
 
 
 def bucket_name():
-    trial_id = _read_trial_id()
-    name = f"harbor-awscli-{trial_id}"
+    run_id = _read_run_id()
+    name = f"harbor-awscli-{run_id}"
     return re.sub(r"[^a-z0-9.-]", "-", name.lower())
 
 
@@ -43,13 +43,13 @@ def test_pre_create_bucket():
     """Pre-create the bucket using the dynamically constructed name with snapshots enabled."""
     name = bucket_name()
     env = _tigris_env()
-    
+
     # Configure tigris CLI first
     subprocess.run(
         [
-            "tigris", "configure", 
-            "--access-key", env.get("TIGRIS_STORAGE_ACCESS_KEY_ID", ""), 
-            "--access-secret", env.get("TIGRIS_STORAGE_SECRET_ACCESS_KEY", ""), 
+            "tigris", "configure",
+            "--access-key", env.get("TIGRIS_STORAGE_ACCESS_KEY_ID", ""),
+            "--access-secret", env.get("TIGRIS_STORAGE_SECRET_ACCESS_KEY", ""),
             "--endpoint", "https://t3.storage.dev"
         ],
         capture_output=True,

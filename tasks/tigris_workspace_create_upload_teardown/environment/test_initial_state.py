@@ -88,14 +88,14 @@ def test_tigris_credentials_present_in_env():
         )
 
 
-def test_trial_id_artifact_present():
-    path = "/logs/artifacts/trial_id"
+def test_run_id_artifact_present():
+    path = "/logs/artifacts/run-id"
     assert os.path.isfile(path), (
-        f"Expected trial id artifact at {path} (Harbor must mount it before the agent runs)."
+        f"Expected run id artifact at {path} (Harbor must mount it before the agent runs)."
     )
     with open(path, "r", encoding="utf-8") as handle:
         content = handle.read().strip()
-    assert content, f"{path} must contain a non-empty trial id."
+    assert content, f"{path} must contain a non-empty run id."
 
 
 def test_agent_outputs_not_created_yet():

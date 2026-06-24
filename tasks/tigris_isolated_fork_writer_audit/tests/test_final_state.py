@@ -12,28 +12,28 @@ AUDIT_JSON = os.path.join(PROJECT_DIR, "audit.json")
 OUTPUT_LOG = os.path.join(PROJECT_DIR, "output.log")
 SEED_KEYS = ["seed1.txt", "seed2.txt"]
 AGENT_KEYS = {"agent-1.out", "agent-2.out", "agent-3.out"}
-TRIAL_ID_FILE = "/logs/artifacts/trial_id"
+RUN_ID_FILE = "/logs/artifacts/run-id"
 
 
-def _read_trial_id():
-    assert os.path.isfile(TRIAL_ID_FILE), (
-        f"Trial id file {TRIAL_ID_FILE} does not exist; cannot derive bucket name."
+def _read_run_id():
+    assert os.path.isfile(RUN_ID_FILE), (
+        f"Run id file {RUN_ID_FILE} does not exist; cannot derive bucket name."
     )
-    with open(TRIAL_ID_FILE, "r") as f:
-        trial_id = f.read().strip()
-    assert trial_id, f"Trial id file {TRIAL_ID_FILE} is empty."
-    return trial_id
+    with open(RUN_ID_FILE, "r") as f:
+        run_id = f.read().strip()
+    assert run_id, f"Run id file {RUN_ID_FILE} is empty."
+    return run_id
 
 
 def bucket_name():
-    trial_id = _read_trial_id()
-    name = f"harbor-isolation-{trial_id}"
+    run_id = _read_run_id()
+    name = f"harbor-isolation-{run_id}"
     return re.sub(r"[^a-z0-9.-]", "-", name.lower())
 
 
 def fork_prefix():
-    trial_id = _read_trial_id()
-    name = f"audit-fork-{trial_id}"
+    run_id = _read_run_id()
+    name = f"audit-fork-{run_id}"
     return re.sub(r"[^a-z0-9.-]", "-", name.lower())
 
 

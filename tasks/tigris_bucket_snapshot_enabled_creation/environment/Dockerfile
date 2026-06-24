@@ -26,9 +26,9 @@ RUN mkdir -p /home/user/tigris-task && chmod 0755 /home/user/tigris-task
 #   - Tigris CLI installed globally via `npm i -g @tigrisdata/cli` (binary: `tigris`)
 #   - /home/user/tigris-task: working project directory for the task
 #
-# The agent at runtime reads /logs/artifacts/trial_id and the TIGRIS_STORAGE_* env vars
-# to create a snapshot-enabled bucket named harbor-snap-${trial_id} via:
-#   tigris buckets create harbor-snap-${trial_id} --enable-snapshots
+# The agent at runtime reads /logs/artifacts/run-id and the TIGRIS_STORAGE_* env vars
+# to create a snapshot-enabled bucket named harbor-snap-${run_id} via:
+#   tigris buckets create harbor-snap-${run_id} --enable-snapshots
 
 # Setup entrypoint script
 COPY entrypoint.sh /entrypoint.sh

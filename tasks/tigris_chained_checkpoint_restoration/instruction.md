@@ -8,7 +8,7 @@ A Tigris bucket already exists with snapshots enabled (created automatically bef
 ## Requirements
 Write a TypeScript script at `/home/user/chained-ckpt/index.ts` that performs the following actions in order:
 
-1. **Upload v1**: Read the trial id from `/logs/artifacts/trial_id`. Construct the bucket name as `harbor-awscli-${trial_id}` (substitute the actual id; do NOT keep the `${trial_id}` placeholder literal). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens. Upload an object with key `v1.txt` and body `version=1` (UTF-8, no trailing newline) into this existing bucket. Use any S3-compatible client (e.g. `@aws-sdk/client-s3`) pointed at the Tigris endpoint `https://t3.storage.dev`.
+1. **Upload v1**: Read the run id from `/logs/artifacts/run-id`. Construct the bucket name as `harbor-awscli-${run_id}` (substitute the actual id; do NOT keep the `${run_id}` placeholder literal). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens. Upload an object with key `v1.txt` and body `version=1` (UTF-8, no trailing newline) into this existing bucket. Use any S3-compatible client (e.g. `@aws-sdk/client-s3`) pointed at the Tigris endpoint `https://t3.storage.dev`.
 2. **Checkpoint**: Take a named checkpoint of the bucket using
    ```ts
    import { checkpoint } from "@tigrisdata/agent-kit";
@@ -34,7 +34,7 @@ The script must exit with status 0 on success. Read credentials from the environ
 
 ## Constraints
 - Project path: `/home/user/chained-ckpt`
-- Source bucket name: dynamically constructed as `harbor-awscli-${trial_id}` (already exists with snapshots enabled)
+- Source bucket name: dynamically constructed as `harbor-awscli-${run_id}` (already exists with snapshots enabled)
 - Checkpoint name: `before-mutation`
 - Fork name passed to `restore`: `rollback-recovery` (the actual bucket name may include extra suffixes appended by the service — always read the real name from `restored.bucket`)
 - Output file: `/home/user/chained-ckpt/recovery.json` with shape `{"recoveryBucket": "<bucket>"}`

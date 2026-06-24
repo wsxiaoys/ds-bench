@@ -5,12 +5,12 @@ Tigris Agent Kit (`@tigrisdata/agent-kit`) provides a `createWorkspace` primitiv
 
 ## Requirements
 - Write a TypeScript program at `/home/user/tigris-task/run.ts` that:
-  1. Reads the current `trial_id` from `/logs/artifacts/trial_id` and `.trim()`s it.
-  2. Builds the workspace name as `harbor-ws-${trial_id}` (Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.).
+  1. Reads the current `run_id` from `/logs/artifacts/run-id` and `.trim()`s it.
+  2. Builds the workspace name as `harbor-ws-${run_id}` (Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.).
   3. Calls `createWorkspace(name, { ttl: { days: 1 }, credentials: { role: "Editor" } })` from `@tigrisdata/agent-kit`. If the call returns an error or returns a workspace without `credentials`, exit with a non-zero exit code.
   4. Using ONLY the scoped credentials returned in `workspace.credentials` (NOT the root `TIGRIS_STORAGE_ACCESS_KEY_ID` / `TIGRIS_STORAGE_SECRET_ACCESS_KEY` env vars), upload a single object with `@tigrisdata/storage`'s `put`:
      - Key: `state.json`
-     - Body: the exact string `{"status":"ok","run":"${trial_id}"}` (no extra whitespace, with `${trial_id}` substituted).
+     - Body: the exact string `{"status":"ok","run":"${run_id}"}` (no extra whitespace, with `${run_id}` substituted).
      - Content-Type: `application/json`.
      - Target bucket: `workspace.bucket`.
      - Pass the scoped credentials explicitly via `config: { bucket, accessKeyId, secretAccessKey }`.
@@ -35,9 +35,9 @@ Tigris Agent Kit (`@tigrisdata/agent-kit`) provides a `createWorkspace` primitiv
 - Project path: /home/user/tigris-task
 - Source file: /home/user/tigris-task/run.ts
 - Log file: /home/user/tigris-task/output.log (must contain the scoped access key id printed by the script)
-- Workspace name: `harbor-ws-${trial_id}` where `${trial_id}` is read from `/logs/artifacts/trial_id`.
+- Workspace name: `harbor-ws-${run_id}` where `${run_id}` is read from `/logs/artifacts/run-id`.
 - Object key: `state.json`
-- Object body: exact string `{"status":"ok","run":"${trial_id}"}` (UTF-8, no trailing newline).
+- Object body: exact string `{"status":"ok","run":"${run_id}"}` (UTF-8, no trailing newline).
 - The upload MUST be performed using the scoped credentials returned by `createWorkspace`. Do not fall back to the root env-var credentials for the upload step.
 - Do not hardcode credentials anywhere; the root credentials are exposed via environment variables and consumed automatically by `@tigrisdata/agent-kit`.
 

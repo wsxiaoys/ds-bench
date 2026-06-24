@@ -6,7 +6,7 @@ import subprocess
 import pytest
 
 PROJECT_DIR = "/home/user/ttl-task"
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 
 
 def _tigris_env():
@@ -23,19 +23,19 @@ def _tigris_env():
     return env
 
 
-def _trial_id():
-    assert os.path.isfile(TRIAL_ID_PATH), (
-        f"Expected trial id file at {TRIAL_ID_PATH} to exist for the verifier."
+def _run_id():
+    assert os.path.isfile(RUN_ID_PATH), (
+        f"Expected run id file at {RUN_ID_PATH} to exist for the verifier."
     )
-    with open(TRIAL_ID_PATH) as f:
+    with open(RUN_ID_PATH) as f:
         value = f.read().strip()
-    assert value, f"Trial id file {TRIAL_ID_PATH} is empty."
+    assert value, f"Run id file {RUN_ID_PATH} is empty."
     return value
 
 
 def _bucket_name():
     import re
-    name = f"harbor-ttl-{_trial_id()}"
+    name = f"harbor-ttl-{_run_id()}"
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     return name
 

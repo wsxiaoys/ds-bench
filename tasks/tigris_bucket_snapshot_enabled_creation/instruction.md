@@ -5,15 +5,15 @@ Tigris is a globally distributed, S3-compatible object storage service. Snapshot
 
 ## Requirements
 - Use the Tigris CLI (`tigris`) to create exactly one new bucket on the real Tigris service (`https://t3.storage.dev`).
-- The bucket name MUST be `harbor-snap-${trial_id}`, where `${trial_id}` is the contents of `/logs/artifacts/trial_id`. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
+- The bucket name MUST be `harbor-snap-${run_id}`, where `${run_id}` is the contents of `/logs/artifacts/run-id`. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
 - Snapshots MUST be enabled on the bucket at creation time (in the same command — snapshots cannot be enabled later).
 - Do NOT upload any objects to the bucket. Just create it.
 
 ## Implementation Guide
-1. Read the trial id:
+1. Read the run id:
    ```bash
-   TRIAL_ID="$(cat /logs/artifacts/trial_id)"
-   BUCKET="harbor-snap-${TRIAL_ID}"
+   RUN_ID="$(cat /logs/artifacts/run-id)"
+   BUCKET="harbor-snap-${RUN_ID}"
    ```
 2. The Tigris CLI is already installed and the following environment variables are pre-populated for machine authentication (do NOT run `tigris login`, which would try to open a browser):
    - `TIGRIS_STORAGE_ACCESS_KEY_ID`
@@ -29,7 +29,7 @@ Tigris is a globally distributed, S3-compatible object storage service. Snapshot
 - Project path: `/home/user/tigris-task`
 - Do NOT hardcode credentials. Use only the env vars listed above.
 - Do NOT call `tigris login` — credentials are picked up from the environment automatically.
-- The bucket name MUST include the `trial_id` suffix derived from `/logs/artifacts/trial_id` so it is unique per run.
+- The bucket name MUST include the `run_id` suffix derived from `/logs/artifacts/run-id` so it is unique per run.
 - Snapshots MUST be enabled in the same `tigris buckets create` command (they cannot be enabled on an existing bucket).
 
 ## Integrations

@@ -6,9 +6,9 @@ Tigris is an S3-compatible, globally distributed object storage service exposed 
 ## Requirements
 Write a single Python script at `/home/user/tigris-task/roundtrip.py` that uses **boto3** (no shelling out to other CLIs) to perform a full object roundtrip against Tigris:
 
-1. Read the trial identifier from `/logs/artifacts/trial_id` (strip surrounding whitespace) and derive the bucket name `harbor-boto3-${trial_id}`. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
+1. Read the run identifier from `/logs/artifacts/run-id` (strip surrounding whitespace) and derive the bucket name `harbor-boto3-${run_id}`. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
 2. Create a boto3 S3 client pointed at the Tigris endpoint. Use the value of the `AWS_ENDPOINT_URL_S3` environment variable as the endpoint URL (this is set to `https://t3.storage.dev` by the runtime). Configure `Config(s3={"addressing_style": "virtual"})`.
-3. Create the bucket `harbor-boto3-${trial_id}` (idempotently — if it already exists and is owned by the caller, treat that as success).
+3. Create the bucket `harbor-boto3-${run_id}` (idempotently — if it already exists and is owned by the caller, treat that as success).
 4. Upload the bytes of the JSON payload `{"hello":"tigris"}` (exactly that string, no extra whitespace, no trailing newline) under the object key `data/payload.json`.
 5. Download the object back **into memory** (e.g. with `get_object` and reading the `Body` stream) and write the downloaded bytes verbatim to `/home/user/tigris-task/downloaded.json`.
 6. Exit with status 0 on success.
@@ -22,8 +22,8 @@ Then execute the script once from `/home/user/tigris-task` so that the bucket, t
    import json, os, pathlib, boto3
    from botocore.client import Config
 
-   trial_id = pathlib.Path("/logs/artifacts/trial_id").read_text().strip()
-   bucket = f"harbor-boto3-{trial_id}"
+   run_id = pathlib.Path("/logs/artifacts/run-id").read_text().strip()
+   bucket = f"harbor-boto3-{run_id}"
    import re
    bucket = re.sub(r"[^a-z0-9.-]", "-", bucket.lower())
    key = "data/payload.json"
@@ -52,7 +52,7 @@ Then execute the script once from `/home/user/tigris-task` so that the bucket, t
 - Downloaded artifact: `/home/user/tigris-task/downloaded.json`
 - Object key MUST be exactly `data/payload.json`.
 - Object body MUST be exactly the 18 bytes `{"hello":"tigris"}` (no extra whitespace, no newline).
-- Bucket name MUST be derived from `/logs/artifacts/trial_id` as `harbor-boto3-${trial_id}` — do NOT hardcode the trial id. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
+- Bucket name MUST be derived from `/logs/artifacts/run-id` as `harbor-boto3-${run_id}` — do NOT hardcode the run id. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
 - Use boto3 for ALL S3 operations. Do not shell out to AWS CLI, `tigris`, `curl`, etc.
 - Do NOT hardcode credentials or the endpoint URL inside the script — read them from the standard `AWS_*` environment variables that Harbor injects.
 
