@@ -16,10 +16,10 @@ The CLI must demonstrate this with two phases:
     - `@ai-sdk/openai` (Vercel AI SDK OpenAI provider)
     - `@alchemystai/aisdk` (Alchemyst middleware)
 - TypeScript build that emits the runnable entrypoint to `dist/main.js`.
-- The CLI accepts a single argument `--phase <establish|recall>` and reads:
+- The CLI accepts a single argument `--phase <establish|recall>` and reads the following environment variables:
     - `ALCHEMYST_AI_API_KEY` (Alchemyst API key)
     - `OPENAI_API_KEY` (OpenAI API key)
-    - `/logs/artifacts/run-id` (run id used to namespace the user and session ids; see Parallel-Run Safety below)
+    - `RUN_ID` (read from `/logs/artifacts/run-id` and passed to the CLI as an environment variable; used to namespace the user and session ids; see Parallel-Run Safety below)
 - Use the wrapped function `withAlchemyst(generateText, { apiKey: process.env.ALCHEMYST_AI_API_KEY })` and call it with an OpenAI model from `@ai-sdk/openai` (for example `openai('gpt-4o-mini')` or another small OpenAI chat model). **Do not** call OpenAI directly without the Alchemyst wrapper.
 - Every call to the wrapped `generateText` MUST pass both `userId` and `sessionId`. The middleware will return `MISSING_PARAMETERS` if either is omitted.
 - Print the model's response text to **stdout** (nothing else on stdout other than the model output is required, but it must include the response text).

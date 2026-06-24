@@ -42,9 +42,9 @@ def _parse_file_names(stdout: str) -> list:
 
 @pytest.fixture(scope="module")
 def run_id() -> str:
-    value = os.environ.get("ZEALT_RUN_ID")
+    value = open("/logs/artifacts/run-id").read().strip()
     assert value, (
-        "ZEALT_RUN_ID must be set so we can verify file_name namespacing."
+        "RUN_ID must be set so we can verify file_name namespacing."
     )
     return value
 
@@ -75,7 +75,7 @@ def test_support_group_returns_only_support_documents(run_id, group_results):
     for name in support:
         assert run_id in name, (
             f"Returned support file_name {name!r} does not include the "
-            f"ZEALT_RUN_ID namespace {run_id!r}."
+            f"RUN_ID namespace {run_id!r}."
         )
 
     overlap_billing = support & billing
@@ -102,7 +102,7 @@ def test_billing_group_returns_only_billing_documents(run_id, group_results):
     for name in billing:
         assert run_id in name, (
             f"Returned billing file_name {name!r} does not include the "
-            f"ZEALT_RUN_ID namespace {run_id!r}."
+            f"RUN_ID namespace {run_id!r}."
         )
 
     overlap_support = billing & support
@@ -129,7 +129,7 @@ def test_engineering_group_returns_only_engineering_documents(run_id, group_resu
     for name in engineering:
         assert run_id in name, (
             f"Returned engineering file_name {name!r} does not include the "
-            f"ZEALT_RUN_ID namespace {run_id!r}."
+            f"RUN_ID namespace {run_id!r}."
         )
 
     overlap_support = engineering & support
@@ -157,7 +157,7 @@ def test_cli_is_rerunnable_without_conflict(run_id, group_results):
     for name in rerun_names:
         assert run_id in name, (
             f"On rerun, returned file_name {name!r} does not include "
-            f"ZEALT_RUN_ID namespace {run_id!r}."
+            f"RUN_ID namespace {run_id!r}."
         )
     assert not (rerun_names & group_results["billing"]), (
         "Rerun of support filter leaked billing-group file_names."

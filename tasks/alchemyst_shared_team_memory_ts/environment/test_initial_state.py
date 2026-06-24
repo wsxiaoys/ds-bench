@@ -24,7 +24,7 @@ def test_alchemyst_api_key_env_present():
     )
 
 
-def test_zealt_run_id_env_present():
-    assert os.environ.get("ZEALT_RUN_ID"), (
-        "ZEALT_RUN_ID environment variable must be set so the CLI can namespace the shared sessionId per evaluation run."
+def test_run_id_present():
+    assert open("/logs/artifacts/run-id").read().strip(), (
+        "RUN_ID must be set so the CLI can namespace the shared sessionId per evaluation run."
     )

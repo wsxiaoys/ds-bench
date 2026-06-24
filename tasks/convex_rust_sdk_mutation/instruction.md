@@ -20,7 +20,7 @@ Convex provides a Rust SDK for interacting with its reactive database. In this t
 - Add `convex`, `tokio`, and `dotenvy` as dependencies in your Rust project.
 - Use `ConvexClient` from the `convex` crate to connect to `CONVEX_URL`.
 - Call `client.mutation("tasks:create", map).await` in your Rust code. You can use `std::collections::BTreeMap` for the arguments.
-- Pass the command-line argument and `/logs/artifacts/run-id` to the mutation arguments.
+- Pass the command-line argument and read `/logs/artifacts/run-id` to the mutation arguments.
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject

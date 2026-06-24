@@ -29,8 +29,8 @@ def test_alchemyst_api_key_env_present():
     )
 
 
-def test_zealt_run_id_env_present():
-    value = os.environ.get("ZEALT_RUN_ID")
+def test_run_id_present():
+    value = open("/logs/artifacts/run-id").read().strip()
     assert value, (
-        "Expected the ZEALT_RUN_ID environment variable to be set so the task can scope shared resources."
+        "Expected the RUN_ID to be set so the task can scope shared resources."
     )

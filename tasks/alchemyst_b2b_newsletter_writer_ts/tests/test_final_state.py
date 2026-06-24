@@ -100,14 +100,14 @@ def test_newsletter_contains_topic_seeded_keywords(first_run):
 
 def test_second_run_is_idempotent_and_safe():
     # Re-running the CLI must not trigger a 409 Conflict from Alchemyst, because the agent
-    # must namespace `file_name` metadata with ZEALT_RUN_ID. The output file must still be
+    # must namespace `file_name` metadata with RUN_ID. The output file must still be
     # produced and still satisfy the heading and keyword checks.
     if os.path.exists(NEWSLETTER_PATH):
         os.remove(NEWSLETTER_PATH)
     result = _run_cli()
     assert result.returncode == 0, (
         "Second invocation of the CLI failed; the agent must avoid 409 Conflict by "
-        f"namespacing Alchemyst `file_name` with ZEALT_RUN_ID.\n"
+        f"namespacing Alchemyst `file_name` with RUN_ID.\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     assert os.path.isfile(NEWSLETTER_PATH), (

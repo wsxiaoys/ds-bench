@@ -21,6 +21,6 @@ def test_daytona_api_key_env_present():
     assert api_key, "DAYTONA_API_KEY environment variable must be set."
 
 
-def test_zealt_run_id_env_present():
-    run_id = os.environ.get("ZEALT_RUN_ID")
-    assert run_id, "ZEALT_RUN_ID environment variable must be set."
+def test_run_id_present():
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID must be set."

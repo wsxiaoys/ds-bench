@@ -63,6 +63,6 @@ def test_openai_api_key_set():
     assert os.environ.get("OPENAI_API_KEY"), "OPENAI_API_KEY must be set in the task environment."
 
 
-def test_zealt_run_id_set():
-    run_id = os.environ.get("ZEALT_RUN_ID", "")
-    assert run_id, "ZEALT_RUN_ID must be set in the task environment."
+def test_run_id_set():
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID must be set in the task environment."

@@ -11,7 +11,7 @@ BASE_URL = "http://127.0.0.1:8090"
 
 
 def _run_id() -> str:
-    return os.environ.get("ZEALT_RUN_ID", "local")
+    return open("/logs/artifacts/run-id").read().strip()
 
 
 def _port_open(host: str, port: int) -> bool:

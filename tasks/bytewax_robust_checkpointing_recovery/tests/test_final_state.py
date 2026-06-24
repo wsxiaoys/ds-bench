@@ -7,7 +7,7 @@ RUN_SCRIPT = os.path.join(PROJECT_DIR, "run.sh")
 
 @pytest.fixture(scope="session")
 def run_id():
-    return os.environ.get("ZEALT_RUN_ID", "test-run-id")
+    return open("/logs/artifacts/run-id").read().strip()
 
 def test_run_script_exists():
     assert os.path.isfile(RUN_SCRIPT), f"Entrypoint script not found at {RUN_SCRIPT}"

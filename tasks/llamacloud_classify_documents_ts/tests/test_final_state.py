@@ -40,8 +40,8 @@ def test_output_log_exists():
 
 
 def test_log_first_line_is_run_id():
-    run_id = os.environ.get("ZEALT_RUN_ID")
-    assert run_id, "ZEALT_RUN_ID environment variable is not set in the verifier."
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID is not set in the verifier."
     lines = _read_log_lines()
     assert len(lines) >= 1, f"Log file {LOG_PATH} is empty."
     first = lines[0].strip()

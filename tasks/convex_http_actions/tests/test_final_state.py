@@ -6,8 +6,8 @@ import pytest
 PROJECT_DIR = "/home/user/project"
 
 def test_webhook_and_query():
-    run_id = os.environ.get("ZEALT_RUN_ID")
-    assert run_id, "ZEALT_RUN_ID environment variable not set"
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID not set"
 
     convex_url = os.environ.get("CONVEX_URL")
     assert convex_url, "CONVEX_URL environment variable not set"
@@ -30,7 +30,7 @@ const { ConvexHttpClient } = require("convex/browser");
 const client = new ConvexHttpClient(process.env.CONVEX_URL);
 
 async function main() {
-  const result = await client.query("webhooks:get_webhook", { runId: process.env.ZEALT_RUN_ID });
+  const result = await client.query("webhooks:get_webhook", { runId: process.env.RUN_ID });
   if (!Array.isArray(result)) {
     console.error("Result is not an array:", result);
     process.exit(1);
@@ -51,9 +51,11 @@ main().catch(err => {
     with open(script_path, "w") as f:
         f.write(script_content)
 
+    env = os.environ.copy()
+    env["RUN_ID"] = run_id
     # Install convex in /tmp
-    subprocess.run(["npm", "install", "convex"], cwd="/tmp", capture_output=True)
+    subprocess.run(["npm", "install", "convex"], cwd="/tmp", capture_output=True, env=env)
 
     # Run the verification script in /tmp
-    result = subprocess.run(["node", script_path], capture_output=True, text=True, cwd="/tmp")
+    result = subprocess.run(["node", script_path], capture_output=True, text=True, cwd="/tmp", env=env)
     assert result.returncode == 0, f"Verification script failed:\\nSTDOUT: {result.stdout}\\nSTDERR: {result.stderr}"

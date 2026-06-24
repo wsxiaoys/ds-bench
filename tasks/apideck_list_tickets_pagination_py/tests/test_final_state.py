@@ -28,7 +28,7 @@ def env_config() -> dict:
         "api_key": _required_env("APIDECK_API_KEY"),
         "consumer_id": _required_env("APIDECK_CONSUMER_ID"),
         "collection_id": _required_env("APIDECK_ISSUE_TRACKING_COLLECTION_ID"),
-        "run_id": _required_env("ZEALT_RUN_ID"),
+        "run_id": open("/logs/artifacts/run-id").read().strip(),
     }
 
 
@@ -70,7 +70,7 @@ def expected_subjects(env_config: dict) -> dict:
 def test_top_level_run_and_collection_ids_match(tickets_payload: dict, env_config: dict):
     assert tickets_payload.get("run_id") == env_config["run_id"], (
         f"tickets.json run_id={tickets_payload.get('run_id')!r}; "
-        f"expected {env_config['run_id']!r} (value of ZEALT_RUN_ID)."
+        f"expected {env_config['run_id']!r} (value of RUN_ID)."
     )
     assert tickets_payload.get("collection_id") == env_config["collection_id"], (
         f"tickets.json collection_id={tickets_payload.get('collection_id')!r}; "

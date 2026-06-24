@@ -63,9 +63,9 @@ def test_source_articles_schema_is_128d():
     )
 
 
-def test_zealt_run_id_env_var_present():
-    run_id = os.environ.get("ZEALT_RUN_ID")
-    assert run_id, "ZEALT_RUN_ID environment variable must be set in the task environment."
+def test_run_id_present():
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID must be set in the task environment."
 
 
 def test_pca_model_artifact_not_pre_created():

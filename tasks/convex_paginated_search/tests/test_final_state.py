@@ -6,8 +6,8 @@ import pytest
 PROJECT_DIR = "/home/user/convex-search"
 
 def test_deploy_and_run_script():
-    run_id = os.environ.get("ZEALT_RUN_ID")
-    assert run_id, "ZEALT_RUN_ID environment variable is not set."
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID is not set."
 
     # Install dependencies
     install_result = subprocess.run(

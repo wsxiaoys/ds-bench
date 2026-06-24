@@ -15,7 +15,7 @@ SIGNUP_URL = f"{BASE_URL}/api/collections/users/records"
 
 
 def _run_id() -> str:
-    rid = os.environ.get("ZEALT_RUN_ID", "").strip()
+    rid = open("/logs/artifacts/run-id").read().strip().strip()
     if rid:
         return rid
     return "zr" + uuid.uuid4().hex[:10]

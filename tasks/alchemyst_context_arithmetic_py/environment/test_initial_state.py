@@ -35,6 +35,6 @@ def test_alchemyst_api_key_env_present():
         "ALCHEMYST_AI_API_KEY environment variable is not set."
 
 
-def test_zealt_run_id_env_present():
-    run_id = os.environ.get("ZEALT_RUN_ID")
-    assert run_id, "ZEALT_RUN_ID environment variable is not set."
+def test_run_id_present():
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID environment variable is not set."

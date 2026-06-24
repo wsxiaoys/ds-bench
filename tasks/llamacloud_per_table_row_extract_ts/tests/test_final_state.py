@@ -25,8 +25,8 @@ REQUIRED_CODES = {"P001", "P012"}
 
 @pytest.fixture(scope="module")
 def run_id() -> str:
-    rid = os.environ.get("ZEALT_RUN_ID")
-    assert rid, "ZEALT_RUN_ID environment variable is required for verification."
+    rid = open("/logs/artifacts/run-id").read().strip()
+    assert rid, "RUN_ID is required for verification."
     return rid
 
 

@@ -10,9 +10,9 @@ DIST_ENTRY = os.path.join(PROJECT_DIR, "dist", "main.js")
 
 
 def _run_id() -> str:
-    run_id = os.environ.get("ZEALT_RUN_ID")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id, (
-        "ZEALT_RUN_ID environment variable must be set during verification so the "
+        "RUN_ID must be set during verification so the "
         "shared sessionId is namespaced per evaluation run."
     )
     return run_id
@@ -153,8 +153,8 @@ def test_dist_entry_uses_real_sdk(built_project):
     assert re.search(r"memory\s*\.\s*search", blob), (
         "Project must call the Alchemyst memory search API (memory.search)."
     )
-    assert "ZEALT_RUN_ID" in blob, (
-        "Project must read the ZEALT_RUN_ID environment variable to namespace the shared sessionId."
+    assert "RUN_ID" in blob, (
+        "Project must read the RUN_ID to namespace the shared sessionId."
     )
 
 

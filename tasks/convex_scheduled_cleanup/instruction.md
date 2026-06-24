@@ -16,8 +16,6 @@ Convex allows scheduling recurring functions using cron jobs. In this task, you 
 
 ## Implementation Hints
 - Use `npx convex deploy` to deploy your functions. It will automatically use the `CONVEX_DEPLOY_KEY` provided in the environment.
-- Use `npx convex env set `/logs/artifacts/run-id` <value>` to set the environment variable in your Convex deployment.
-- In your Convex functions and crons, access the environment variable using `process.env.`/logs/artifacts/run-id``.
 - You can use `ctx.db.query(tableName).filter(q => q.lt(q.field("expiresAt"), Date.now())).collect()` to find expired sessions, and then `ctx.db.delete(doc._id)` to delete them.
 - Do not create a strict `schema.ts` to avoid table name validation issues with dynamic table names.
 

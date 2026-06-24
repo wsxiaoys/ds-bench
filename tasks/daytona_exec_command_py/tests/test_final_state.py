@@ -54,10 +54,10 @@ def test_pwd_line_present_and_nonempty_path():
     )
 
 
-def test_echo_line_matches_zealt_run_id():
-    run_id = os.environ.get("ZEALT_RUN_ID")
+def test_echo_line_matches_run_id():
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id is not None and run_id.strip() != "", (
-        "ZEALT_RUN_ID must be set in the verifier environment to validate the ECHO line."
+        "RUN_ID must be set in the verifier to validate the ECHO line."
     )
     content = _read_log()
     line = _find_prefixed_line(content, "ECHO: ")
@@ -66,7 +66,7 @@ def test_echo_line_matches_zealt_run_id():
     )
     remainder = line[len("ECHO: "):].strip()
     assert remainder == run_id, (
-        f"Expected the ECHO line to match ZEALT_RUN_ID={run_id!r}, got: {remainder!r}"
+        f"Expected the ECHO line to match RUN_ID={run_id!r}, got: {remainder!r}"
     )
 
 

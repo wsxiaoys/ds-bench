@@ -50,8 +50,8 @@ def test_openai_api_key_env_var_set():
     )
 
 
-def test_zealt_run_id_env_var_set():
-    value = os.environ.get("ZEALT_RUN_ID")
+def test_run_id_set():
+    value = open("/logs/artifacts/run-id").read().strip()
     assert value, (
-        "ZEALT_RUN_ID environment variable must be set so the agent can namespace Alchemyst file_name metadata."
+        "RUN_ID must be set so the agent can namespace Alchemyst file_name metadata."
     )

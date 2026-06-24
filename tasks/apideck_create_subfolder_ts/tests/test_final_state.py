@@ -61,7 +61,7 @@ def test_log_file_contains_required_fields(log_payload: dict):
 
 
 def test_log_folder_names_use_run_id(log_payload: dict):
-    run_id = _env("ZEALT_RUN_ID")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     expected_parent = f"apideck-parent-{run_id}"
     expected_child = f"apideck-child-{run_id}"
     assert log_payload["parent_folder_name"] == expected_parent, (

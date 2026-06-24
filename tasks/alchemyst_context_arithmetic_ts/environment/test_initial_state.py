@@ -17,9 +17,9 @@ def test_alchemyst_api_key_present():
     assert api_key, "ALCHEMYST_AI_API_KEY is not set in the environment."
 
 
-def test_zealt_run_id_present():
-    run_id = os.environ.get("ZEALT_RUN_ID")
-    assert run_id, "ZEALT_RUN_ID is not set in the environment."
+def test_run_id_present():
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID is not set in file."
 
 
 def test_project_dir_exists():

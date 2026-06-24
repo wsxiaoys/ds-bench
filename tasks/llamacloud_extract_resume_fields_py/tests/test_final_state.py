@@ -15,9 +15,9 @@ EXPECTED_SKILL_KEYWORDS = ["python", "machine learning", "sql", "docker", "kuber
 
 
 def _run_id() -> str:
-    run_id = os.environ.get("ZEALT_RUN_ID", "")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id.startswith("zr") and len(run_id) > 3, (
-        "ZEALT_RUN_ID environment variable must be set to a `zr<suffix>` value during verification."
+        "RUN_ID must be set to a `zr<suffix>` value during verification."
     )
     return run_id
 

@@ -27,9 +27,9 @@ def start_app(setup_npm_install, xprocess):
         env = os.environ.copy()
 
         # Pass required environment variables
-        zealt_run_id = os.environ.get("ZEALT_RUN_ID", "test-run-id")
+        run_id = open("/logs/artifacts/run-id").read().strip()
         convex_url = os.environ.get("CONVEX_URL", "")
-        env["VITE_ZEALT_RUN_ID"] = zealt_run_id
+        env["VITE_RUN_ID"] = run_id
         env["VITE_CONVEX_URL"] = convex_url
 
         popen_kwargs = {
@@ -50,8 +50,8 @@ def start_app(setup_npm_install, xprocess):
 
 
 def test_browser_add_task(start_app, browser_verifier):
-    zealt_run_id = os.environ.get("ZEALT_RUN_ID", "test-run-id")
-    task_text = f"Test Task for {zealt_run_id}"
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    task_text = f"Test Task for {run_id}"
 
     reason = "The user should be able to add a new task."
     truth = f"Navigate to http://localhost:5173. Locate the text input field, type '{task_text}', and click the submit button. Verify that the new task '{task_text}' appears in the task list."
@@ -65,8 +65,8 @@ def test_browser_add_task(start_app, browser_verifier):
     assert result.status == "pass", f"Browser verification failed for Add Task: {result.reason}"
 
 def test_browser_update_task(start_app, browser_verifier):
-    zealt_run_id = os.environ.get("ZEALT_RUN_ID", "test-run-id")
-    task_text = f"Test Task for {zealt_run_id}"
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    task_text = f"Test Task for {run_id}"
 
     reason = "The user should be able to update a task's status."
     truth = f"Navigate to http://localhost:5173. Locate the task '{task_text}' in the list. Click its status toggle/button to change it from 'todo' to 'done'. Verify that the UI reflects the updated status (e.g., text strikethrough or status label change)."
@@ -80,8 +80,8 @@ def test_browser_update_task(start_app, browser_verifier):
     assert result.status == "pass", f"Browser verification failed for Update Task: {result.reason}"
 
 def test_browser_delete_task(start_app, browser_verifier):
-    zealt_run_id = os.environ.get("ZEALT_RUN_ID", "test-run-id")
-    task_text = f"Test Task for {zealt_run_id}"
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    task_text = f"Test Task for {run_id}"
 
     reason = "The user should be able to delete a task."
     truth = f"Navigate to http://localhost:5173. Locate the delete button for the task '{task_text}'. Click the delete button. Verify that the task '{task_text}' is removed from the list."

@@ -45,9 +45,9 @@ def test_llama_cloud_api_key_set():
     )
 
 
-def test_zealt_run_id_set():
-    assert os.environ.get("ZEALT_RUN_ID"), (
-        "ZEALT_RUN_ID environment variable is not set in the task environment."
+def test_run_id_set():
+    assert open("/logs/artifacts/run-id").read().strip(), (
+        "RUN_ID is not set in the task environment."
     )
 
 

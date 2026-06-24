@@ -40,8 +40,8 @@ def test_alchemyst_api_key_env_set():
     )
 
 
-def test_zealt_run_id_env_set():
-    run_id = os.environ.get("ZEALT_RUN_ID")
+def test_run_id_set():
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id, (
-        "ZEALT_RUN_ID environment variable is not set; the task requires it."
+        "RUN_ID is not set; the task requires it."
     )

@@ -134,8 +134,8 @@ def test_extract_job_status_via_sdk():
 
 def test_uploaded_file_uses_run_id_external_id():
     """Confirm the uploaded source file's external_file_id includes run-id."""
-    run_id = os.environ.get("ZEALT_RUN_ID", "")
-    assert run_id, "ZEALT_RUN_ID must be set in the verifier environment."
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID must be set in the verifier."
     expected_external_id = f"invoice-{run_id}.txt"
 
     api_key = os.environ.get("LLAMA_CLOUD_API_KEY")

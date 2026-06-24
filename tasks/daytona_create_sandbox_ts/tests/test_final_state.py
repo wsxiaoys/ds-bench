@@ -10,9 +10,9 @@ SANDBOX_ID_REGEX = re.compile(r"^Sandbox ID:\s*(?P<id>[A-Za-z0-9-]+)\s*$", re.MU
 
 
 def _run_id() -> str:
-    run_id = os.environ.get("ZEALT_RUN_ID")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id is not None and run_id.strip() != "", (
-        "ZEALT_RUN_ID must be set in the verifier environment to validate the run-scoped sandbox name."
+        "RUN_ID must be set in the verifier to validate the run-scoped sandbox name."
     )
     return run_id
 
@@ -79,7 +79,7 @@ def test_sandbox_was_created_via_daytona_sdk(daytona_client):
     actual_name = getattr(sandbox, "name", None)
     assert actual_name == expected_name, (
         f"Sandbox {sandbox_id} was retrieved from Daytona but its name is {actual_name!r}; "
-        f"expected {expected_name!r} (suffixed by ZEALT_RUN_ID)."
+        f"expected {expected_name!r} (suffixed by RUN_ID)."
     )
 
 

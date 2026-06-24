@@ -6,8 +6,8 @@ import json
 PROJECT_DIR = "/home/user/project"
 
 def get_suffix():
-    run_id = os.environ.get("ZEALT_RUN_ID", "")
-    assert run_id, "ZEALT_RUN_ID environment variable is not set."
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID is not set."
     return run_id.replace("-", "_")
 
 def test_deploy_log_exists():
@@ -18,7 +18,7 @@ def test_valid_data_insertion():
     suffix = get_suffix()
     function_name = f"products_{suffix}:create"
     args = json.dumps({"name": "Valid Product", "price": 100, "inStock": True})
-    
+
     result = subprocess.run(
         ["npx", "convex", "run", "--prod", function_name, args],
         capture_output=True, text=True, cwd=PROJECT_DIR
@@ -30,7 +30,7 @@ def test_invalid_data_insertion_fails():
     suffix = get_suffix()
     function_name = f"products_{suffix}:create"
     args = json.dumps({"name": "Invalid Product", "price": "100", "inStock": True})
-    
+
     result = subprocess.run(
         ["npx", "convex", "run", "--prod", function_name, args],
         capture_output=True, text=True, cwd=PROJECT_DIR
