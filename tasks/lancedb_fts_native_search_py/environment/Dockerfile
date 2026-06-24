@@ -17,11 +17,11 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 
-# Pre-create the workspace layout. /workspace/db must NOT be pre-populated;
+# Pre-create the workspace layout. /home/user/db must NOT be pre-populated;
 # the candidate solution is responsible for creating the LanceDB dataset.
 RUN mkdir -p /workspace && \
-    mkdir -p /workspace/output && \
-    chmod 0755 /workspace /workspace/output
+    mkdir -p /home/user/output && \
+    chmod 0755 /workspace /home/user/output
 
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB 0.25.3 native (non-Tantivy) FTS task environment on Ubuntu 24.04."
@@ -38,4 +38,4 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - always required pip3 packages: pytest-json-ctrf
 #   - lancedb==0.25.3, pyarrow==17.0.0, numpy==1.26.4 for the LanceDB native FTS task
 #   - /workspace: project root (LANCEDB_URI default base)
-#   - /workspace/output: directory for fts_results.json output artifact
+#   - /home/user/output: directory for fts_results.json output artifact

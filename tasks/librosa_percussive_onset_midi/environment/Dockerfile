@@ -23,7 +23,7 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 
-# Bake a deterministic ~12s percussive drum loop at 120 BPM into /workspace/input.wav
+# Bake a deterministic ~12s percussive drum loop at 120 BPM into /home/user/input.wav
 # so the task environment has no runtime network dependency. The loop is rendered
 # with kick, snare, and hi-hat impulses on a 16th-note grid (steady tempo) using
 # numpy + soundfile only. The synth script is materialized via printf so the
@@ -80,14 +80,14 @@ RUN mkdir -p /workspace && \
         'peak = float(np.max(np.abs(mix)))' \
         'if peak > 0:' \
         '    mix = mix / peak * 0.85' \
-        'sf.write("/workspace/input.wav", mix.astype(np.float32), sr, subtype="PCM_16")' \
+        'sf.write("/home/user/input.wav", mix.astype(np.float32), sr, subtype="PCM_16")' \
         > /tmp/gen_drum_loop.py && \
     python3 /tmp/gen_drum_loop.py && \
     rm /tmp/gen_drum_loop.py && \
-    test -s /workspace/input.wav
+    test -s /home/user/input.wav
 
 LABEL Author="generate-harbor-tasks"
-LABEL Description="librosa 0.11.0 percussive onset / grid quantizer task environment with a pre-baked 12s ~120 BPM drum loop at /workspace/input.wav."
+LABEL Description="librosa 0.11.0 percussive onset / grid quantizer task environment with a pre-baked 12s ~120 BPM drum loop at /home/user/input.wav."
 
 # Setup entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -101,5 +101,5 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - audio system libraries: ffmpeg, libsndfile1
 #   - always required pip3 packages: pytest-json-ctrf
 #   - target library: librosa==0.11.0 (+ numpy, scipy, scikit-learn, soxr, soundfile, pooch)
-#   - /workspace/input.wav: synthesized 12s drum loop at 120 BPM, 22050 Hz mono
+#   - /home/user/input.wav: synthesized 12s drum loop at 120 BPM, 22050 Hz mono
 #   - /home/user: standard user home directory

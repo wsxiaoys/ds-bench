@@ -29,7 +29,7 @@ RUN mkdir -p /home/user && chmod 0755 /home/user
 # non-trivial energy across their respective frequency grids.
 RUN mkdir -p /workspace && \
     python3 - <<'PY' && \
-    test -s /workspace/input.wav
+    test -s /home/user/input.wav
 import numpy as np
 import soundfile as sf
 
@@ -59,11 +59,11 @@ peak = float(np.max(np.abs(y)))
 if peak > 0:
     y = (0.9 * y / peak).astype(np.float32)
 
-sf.write('/workspace/input.wav', y, sr, subtype='PCM_16')
+sf.write('/home/user/input.wav', y, sr, subtype='PCM_16')
 PY
 
 LABEL Author="generate-harbor-tasks"
-LABEL Description="librosa 0.11.0 multi-resolution spectrogram task environment with a synthetic broadband WAV at /workspace/input.wav."
+LABEL Description="librosa 0.11.0 multi-resolution spectrogram task environment with a synthetic broadband WAV at /home/user/input.wav."
 
 # Setup entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -77,5 +77,5 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - audio system libraries: ffmpeg, libsndfile1
 #   - always required pip3 packages: pytest-json-ctrf
 #   - target library: librosa==0.11.0 (+ numpy, scipy, scikit-learn, soxr, soundfile, pooch)
-#   - /workspace/input.wav: synthetic mono 22050 Hz ~10s broadband signal (log sweep + partials + noise)
+#   - /home/user/input.wav: synthetic mono 22050 Hz ~10s broadband signal (log sweep + partials + noise)
 #   - /home/user: standard user home directory

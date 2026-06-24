@@ -5,9 +5,9 @@ import numpy as np
 import pytest
 
 
-SPEC_STACK = "/workspace/spec_stack.npz"
-SPEC_META = "/workspace/spec_meta.json"
-INPUT_WAV = "/workspace/input.wav"
+SPEC_STACK = "/home/user/spec_stack.npz"
+SPEC_META = "/home/user/spec_meta.json"
+INPUT_WAV = "/home/user/input.wav"
 
 REQUIRED_META_KEYS = (
     "n_frames",

@@ -4,11 +4,11 @@
 Produce a stacked time-frequency representation of a single audio file by computing three complementary spectrograms on the SAME time grid: a linear STFT, a Constant-Q transform (CQT), and a Variable-Q transform (VQT). Persist the dB-scaled magnitudes in one `.npz` archive together with a sidecar metadata JSON that fully describes the analysis parameters and the per-representation frequency vectors.
 
 ## Requirements
-- Read the input WAV file from `/workspace/input.wav`.
+- Read the input WAV file from `/home/user/input.wav`.
 - Compute all three transforms (STFT, CQT, VQT) using a SINGLE shared `hop_length` so the columns of every output share a common time grid.
 - Convert each magnitude spectrogram to dB.
-- Save the three dB arrays into `/workspace/spec_stack.npz` under the keys `stft_db`, `cqt_db`, `vqt_db`.
-- Save the analysis metadata as JSON into `/workspace/spec_meta.json`.
+- Save the three dB arrays into `/home/user/spec_stack.npz` under the keys `stft_db`, `cqt_db`, `vqt_db`.
+- Save the analysis metadata as JSON into `/home/user/spec_meta.json`.
 
 ## Implementation Hints
 - Use `librosa.stft`, `librosa.cqt`, and `librosa.vqt` from librosa 0.11.0; nearly every kwarg is keyword-only.
@@ -21,8 +21,8 @@ Produce a stacked time-frequency representation of a single audio file by comput
 - Project path: /workspace
 - Ensure the spectrogram pipeline is executed and BOTH output artifacts exist.
 - Output files:
-  - `/workspace/spec_stack.npz` containing exactly the arrays `stft_db`, `cqt_db`, `vqt_db` (real-valued, finite).
-  - `/workspace/spec_meta.json` containing the keys `n_frames`, `hop_length`, `sample_rate`, `stft_freqs`, `cqt_freqs`, `vqt_freqs`, `n_fft`, `cqt_n_bins`, `cqt_bins_per_octave`, `vqt_n_bins`, `vqt_bins_per_octave`.
+  - `/home/user/spec_stack.npz` containing exactly the arrays `stft_db`, `cqt_db`, `vqt_db` (real-valued, finite).
+  - `/home/user/spec_meta.json` containing the keys `n_frames`, `hop_length`, `sample_rate`, `stft_freqs`, `cqt_freqs`, `vqt_freqs`, `n_fft`, `cqt_n_bins`, `cqt_bins_per_octave`, `vqt_n_bins`, `vqt_bins_per_octave`.
 - Shape constraints:
   - `stft_db.shape == (1 + n_fft // 2, n_frames)`.
   - `cqt_db.shape == (cqt_n_bins, n_frames)`.

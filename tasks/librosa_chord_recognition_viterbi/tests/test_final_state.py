@@ -5,8 +5,8 @@ import re
 import pytest
 
 
-CHORDS_JSON = "/workspace/chords.json"
-INPUT_WAV = "/workspace/input.wav"
+CHORDS_JSON = "/home/user/chords.json"
+INPUT_WAV = "/home/user/input.wav"
 
 CHORD_REGEX = re.compile(r"^[A-G]#?:(maj|min)$")
 

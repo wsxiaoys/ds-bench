@@ -5,8 +5,8 @@ from collections import defaultdict
 import pytest
 
 
-HIERARCHY_JSON = "/workspace/hierarchy.json"
-INPUT_WAV = "/workspace/input.wav"
+HIERARCHY_JSON = "/home/user/hierarchy.json"
+INPUT_WAV = "/home/user/input.wav"
 
 
 @pytest.fixture(scope="module")

@@ -59,14 +59,14 @@ RUN mkdir -p /workspace /tmp/gen && \
         'peak = float(np.max(np.abs(audio)))' \
         'if peak > 0.0:' \
         '    audio = (audio / peak * 0.85).astype(np.float32)' \
-        'sf.write("/workspace/input.wav", audio, sr, subtype="PCM_16")' \
+        'sf.write("/home/user/input.wav", audio, sr, subtype="PCM_16")' \
         > /tmp/gen/build_input.py && \
     python3 /tmp/gen/build_input.py && \
-    test -s /workspace/input.wav && \
+    test -s /home/user/input.wav && \
     rm -rf /tmp/gen
 
 LABEL Author="generate-harbor-tasks"
-LABEL Description="librosa 0.11.0 Laplacian structural segmentation task environment with a deterministic A/B/A synthetic WAV at /workspace/input.wav."
+LABEL Description="librosa 0.11.0 Laplacian structural segmentation task environment with a deterministic A/B/A synthetic WAV at /home/user/input.wav."
 
 # Setup entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -80,5 +80,5 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - audio system libraries: ffmpeg, libsndfile1
 #   - always required pip3 packages: pytest-json-ctrf
 #   - target library: librosa==0.11.0 (+ numpy, scipy, scikit-learn, soxr, soundfile, pooch)
-#   - /workspace/input.wav: deterministic ~33s mono 22050 Hz A/B/A synthetic music
+#   - /home/user/input.wav: deterministic ~33s mono 22050 Hz A/B/A synthetic music
 #   - /home/user: standard user home directory

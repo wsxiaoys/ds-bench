@@ -4,9 +4,9 @@
 You are given a small labeled training corpus and an unlabeled test corpus of short WAV recordings. Your job is to extract a fixed-dimensional feature vector from each clip, train a binary classifier that distinguishes spoken-voice clips from instrumental-music clips, predict labels on the test clips, and emit the predictions as a CSV file.
 
 ## Inputs
-- `/workspace/train/speech/` — training WAV files whose ground-truth label is `speech`.
-- `/workspace/train/music/` — training WAV files whose ground-truth label is `music`.
-- `/workspace/test/` — unlabeled WAV files; you must produce a label for each one.
+- `/home/user/train/speech/` — training WAV files whose ground-truth label is `speech`.
+- `/home/user/train/music/` — training WAV files whose ground-truth label is `music`.
+- `/home/user/test/` — unlabeled WAV files; you must produce a label for each one.
 
 ## Required Feature Families
 For every audio file, build a single 1-D feature vector that concatenates the temporal **mean** and **standard deviation** (over time frames) of each of the following librosa feature families:
@@ -18,13 +18,13 @@ For every audio file, build a single 1-D feature vector that concatenates the te
 The order of concatenation is up to you, but it must be identical for every file (training and test).
 
 ## Output
-Write the predictions to `/workspace/predictions.csv` with exactly the header line:
+Write the predictions to `/home/user/predictions.csv` with exactly the header line:
 
 ```
 filename,label
 ```
 
-Followed by one row per file found in `/workspace/test/`. Each `label` value must be either `speech` or `music`. The `filename` column must contain the basename of the test WAV file (e.g. `clip_00.wav`), not a full path. Do not include rows for files that are not in `/workspace/test/`, and do not produce duplicate `filename` rows.
+Followed by one row per file found in `/home/user/test/`. Each `label` value must be either `speech` or `music`. The `filename` column must contain the basename of the test WAV file (e.g. `clip_00.wav`), not a full path. Do not include rows for files that are not in `/home/user/test/`, and do not produce duplicate `filename` rows.
 
 ## Implementation Hints
 - Use `librosa.load` to read each WAV. You may choose your own sample rate, but be consistent across train and test.
@@ -34,9 +34,9 @@ Followed by one row per file found in `/workspace/test/`. Each `label` value mus
 
 ## Acceptance Criteria
 - Project path: /workspace
-- Output file (must be created by you): /workspace/predictions.csv
+- Output file (must be created by you): /home/user/predictions.csv
 - The output is a CSV file whose first line is exactly `filename,label`.
-- There is exactly one row for every WAV file under /workspace/test/, identified by basename. No file under /workspace/test/ may be missing, and no extra files may appear.
+- There is exactly one row for every WAV file under /home/user/test/, identified by basename. No file under /home/user/test/ may be missing, and no extra files may appear.
 - Every `label` value is either `speech` or `music` (case-sensitive, no extra whitespace).
 - No `filename` value appears more than once.
 - Classification accuracy against the held-out ground truth is at least 80%.

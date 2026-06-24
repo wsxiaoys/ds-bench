@@ -66,11 +66,11 @@ for i, m in enumerate(note_midi):
 
 signal = np.concatenate(segments).astype(np.float32)
 
-sf.write("/workspace/input.wav", signal, sr, subtype="PCM_16")
+sf.write("/home/user/input.wav", signal, sr, subtype="PCM_16")
 PY
 
 LABEL Author="generate-harbor-tasks"
-LABEL Description="librosa 0.11.0 environment with a deterministic 5-note synthesized melody at /workspace/input.wav for onset-based MIDI note transcription."
+LABEL Description="librosa 0.11.0 environment with a deterministic 5-note synthesized melody at /home/user/input.wav for onset-based MIDI note transcription."
 
 # Setup entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -84,5 +84,5 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - audio backend apt packages: libsndfile1 ffmpeg
 #   - always required pip3 packages: pytest-json-ctrf
 #   - librosa==0.11.0 plus numpy<2, scipy, scikit-learn, soundfile, soxr, pooch
-#   - /workspace/input.wav: deterministic 5-note melody (MIDI 60,64,67,72,67) at 22050 Hz,
+#   - /home/user/input.wav: deterministic 5-note melody (MIDI 60,64,67,72,67) at 22050 Hz,
 #     each note 1.0 s with 0.05 s fade-in/out separated by 0.2 s silence.

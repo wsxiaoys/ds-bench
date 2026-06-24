@@ -6,8 +6,8 @@ from collections import Counter
 import pytest
 
 
-SEGMENTS_JSON = "/workspace/segments.json"
-INPUT_WAV = "/workspace/input.wav"
+SEGMENTS_JSON = "/home/user/segments.json"
+INPUT_WAV = "/home/user/input.wav"
 
 LABEL_REGEX = re.compile(r"^[A-Z]$")
 

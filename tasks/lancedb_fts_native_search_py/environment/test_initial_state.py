@@ -4,7 +4,7 @@ import os
 import pytest
 
 
-WORKSPACE = "/workspace"
+WORKSPACE = "/home/user"
 
 
 def test_lancedb_importable():
@@ -43,7 +43,7 @@ def test_workspace_directory_exists():
 
 
 def test_lancedb_dir_is_clean_or_absent():
-    # The candidate solution is expected to (re)create /workspace/db. We do not
+    # The candidate solution is expected to (re)create /home/user/db. We do not
     # pre-seed it, so the directory must either be absent or empty before the run.
     db_path = os.path.join(WORKSPACE, "db")
     if os.path.exists(db_path):

@@ -4,13 +4,13 @@
 Build a peak-tracking analysis on top of the time-frequency *reassigned* spectrogram in `librosa`. Unlike a plain STFT, the reassigned spectrogram yields refined per-bin instantaneous frequency estimates (and may produce `NaN` for low-power bins). Your job is to extract, for every analysis frame, the most prominent spectral peaks and report their reassigned frequencies plus magnitudes in dB.
 
 ## Requirements
-- Read the input audio file from `/workspace/input.wav`.
+- Read the input audio file from `/home/user/input.wav`.
 - Compute the time-frequency reassigned spectrogram of the signal using `librosa`.
 - For each STFT frame, select the **top-5** spectral bins ranked by reassigned magnitude (after converting magnitudes to dB). Handle `NaN` values produced by reassignment so they never appear in the output and never break sort order.
 - For each selected peak, report:
   - The **reassigned instantaneous frequency** in Hz (from the frequency output of the reassigned spectrogram).
   - The magnitude in **decibels (dB)**.
-- Write the result to `/workspace/peaks.json`.
+- Write the result to `/home/user/peaks.json`.
 
 ## Implementation Hints
 - Sanity-check the API signature and return tuple order against the librosa 0.11.0 documentation. The reassigned spectrogram returns three parallel arrays of shape `(1 + n_fft/2, n_frames)`.
@@ -22,7 +22,7 @@ Build a peak-tracking analysis on top of the time-frequency *reassigned* spectro
 ## Acceptance Criteria
 - Project path: /workspace
 - Ensure the analysis pipeline is executed and the output artifact exists.
-- Output file: `/workspace/peaks.json`
+- Output file: `/home/user/peaks.json`
 - The file must be valid JSON. The top-level value must be a JSON **object** with the following schema:
 
   ```json

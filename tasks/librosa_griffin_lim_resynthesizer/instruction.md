@@ -4,11 +4,11 @@
 Build a small analysis-resynthesis pipeline with `librosa`. The pipeline must analyze a single audio file into a 128-band log-power mel spectrogram and then reconstruct a time-domain waveform from that mel representation using Griffin-Lim phase recovery. The reconstruction must be reported alongside two objective fidelity metrics computed against the original waveform.
 
 ## Requirements
-- Read the input WAV file from `/workspace/input.wav` as a mono signal at its native sample rate.
+- Read the input WAV file from `/home/user/input.wav` as a mono signal at its native sample rate.
 - Compute a 128-band power mel spectrogram and represent it in a log-power form suitable for storage / downstream use.
 - Resynthesize a waveform from the mel representation using Griffin-Lim phase estimation (either through the mel-to-audio convenience wrapper, or by inverting mel to STFT magnitude first and then running Griffin-Lim explicitly).
-- Write the reconstructed mono waveform to `/workspace/reconstructed.wav` at the same sample rate as the input.
-- Compute two reconstruction quality metrics relative to the original waveform and write them, along with run metadata, to `/workspace/metrics.json`.
+- Write the reconstructed mono waveform to `/home/user/reconstructed.wav` at the same sample rate as the input.
+- Compute two reconstruction quality metrics relative to the original waveform and write them, along with run metadata, to `/home/user/metrics.json`.
 
 ## Implementation Hints
 - Verify all relevant signatures against the librosa 0.11.0 documentation; most spectral / inverse-spectral functions are keyword-only.
@@ -21,10 +21,10 @@ Build a small analysis-resynthesis pipeline with `librosa`. The pipeline must an
 ## Acceptance Criteria
 - Project path: /workspace
 - Ensure the resynthesis pipeline is executed and both output artifacts exist.
-- Output audio file: `/workspace/reconstructed.wav`
+- Output audio file: `/home/user/reconstructed.wav`
   - Mono, sample rate equal to the input sample rate.
   - Total number of samples must be within 2% of the input waveform length.
-- Output metrics file: `/workspace/metrics.json`
+- Output metrics file: `/home/user/metrics.json`
   - Must be a JSON object with the following schema:
 
     ```json
@@ -38,8 +38,8 @@ Build a small analysis-resynthesis pipeline with `librosa`. The pipeline must an
     }
     ```
 
-  - `length_samples` must equal the actual sample count of `/workspace/reconstructed.wav`.
-  - `sample_rate` must equal the sample rate of `/workspace/reconstructed.wav`.
+  - `length_samples` must equal the actual sample count of `/home/user/reconstructed.wav`.
+  - `sample_rate` must equal the sample rate of `/home/user/reconstructed.wav`.
   - `n_mels` must be >= 128.
   - `n_iter` must be >= 32.
   - `spectral_convergence` is defined as `||abs(STFT_ref) - abs(STFT_recon)||_F / ||abs(STFT_ref)||_F` and must be a finite float strictly less than 0.5.

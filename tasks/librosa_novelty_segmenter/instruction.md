@@ -4,13 +4,13 @@
 Structural segmentation of an audio recording can be performed by analyzing how a frame-level feature representation repeats over time. Foote's classic approach builds a self-similarity matrix (SSM) over short-time spectral features and convolves the diagonal of the SSM with a checkerboard kernel; large responses correspond to instants where the feature statistics change abruptly. Your job is to implement this novelty-curve pipeline with `librosa` (v0.11.0) and report the detected change-point timestamps.
 
 ## Requirements
-- Read the input audio from `/workspace/input.wav`.
+- Read the input audio from `/home/user/input.wav`.
 - Compute a frame-level spectral feature representation (MFCCs over time).
 - Build a self-similarity matrix from the feature sequence using a cosine metric.
 - Construct a Foote-style checkerboard kernel and convolve it along the diagonal of the SSM to obtain a one-dimensional novelty curve.
 - Pick peaks from the novelty curve to identify structural change-points.
 - Convert each peak from a frame index to a timestamp in seconds.
-- Write the timestamps to `/workspace/boundaries.json` using the schema:
+- Write the timestamps to `/home/user/boundaries.json` using the schema:
   ```json
   {
     "boundaries_sec": [<float>, <float>, ...]
@@ -28,7 +28,7 @@ Structural segmentation of an audio recording can be performed by analyzing how 
 ## Acceptance Criteria
 - Project path: /workspace
 - Ensure the script is executed and the output artifact exists.
-- Output file: /workspace/boundaries.json
+- Output file: /home/user/boundaries.json
 - The file must be valid JSON containing an object with a `boundaries_sec` key.
 - `boundaries_sec` must be a list of numbers (in seconds), strictly increasing, with every value in the interval `[0, audio_duration]`.
 - At least two structural boundaries must be reported.

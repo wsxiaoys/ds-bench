@@ -3,9 +3,9 @@ import os
 
 
 WORKSPACE = "/workspace"
-INPUT_WAV = "/workspace/input.wav"
-RECONSTRUCTED_WAV = "/workspace/reconstructed.wav"
-METRICS_JSON = "/workspace/metrics.json"
+INPUT_WAV = "/home/user/input.wav"
+RECONSTRUCTED_WAV = "/home/user/reconstructed.wav"
+METRICS_JSON = "/home/user/metrics.json"
 
 
 def test_librosa_importable():

@@ -3,7 +3,7 @@ import importlib
 
 
 WORKSPACE = "/workspace"
-INPUT_WAV = "/workspace/input.wav"
+INPUT_WAV = "/home/user/input.wav"
 
 
 def test_librosa_importable():
