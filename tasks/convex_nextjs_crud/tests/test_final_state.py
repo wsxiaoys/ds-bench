@@ -43,7 +43,7 @@ def start_app(xprocess):
     info.terminate()
 
 def test_browser_task_manager(start_app, browser_verifier):
-    run_id = os.environ.get("ZEALT_RUN_ID", "test-run-id")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     task_text = f"Test Task {run_id}"
 
     reason = "The application should allow users to create, toggle, and delete tasks. It should filter tasks by the current runId."

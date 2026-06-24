@@ -7,7 +7,7 @@ def test_deploy_log_exists():
     assert os.path.isfile(log_path), f"Deploy log not found at {log_path}"
 
 def test_convex_transactions():
-    run_id = os.environ.get("ZEALT_RUN_ID", "default-run-id")
+    run_id = open("/logs/artifacts/run-id").read().strip()
 
     script_content = f"""
 const {{ ConvexHttpClient }} = require("convex/browser");

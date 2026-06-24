@@ -31,7 +31,7 @@ def table(db):
     names = db.table_names()
     assert TABLE_NAME in names, (
         f"Expected LanceDB table '{TABLE_NAME}' under {LANCEDB_PATH}, "
-        f"but only found {names}. Make sure ingestion used the ZEALT_RUN_ID suffix."
+        f"but only found {names}. Make sure ingestion used the RUN_ID suffix."
     )
     return db.open_table(TABLE_NAME)
 

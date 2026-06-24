@@ -23,7 +23,6 @@ def test_required_environment_variables_present():
         "APIDECK_API_KEY",
         "APIDECK_CONSUMER_ID",
         "APIDECK_ISSUE_TRACKING_COLLECTION_ID",
-        "ZEALT_RUN_ID",
     ]
     missing = [name for name in required_vars if not os.environ.get(name)]
     assert not missing, (

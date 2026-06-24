@@ -23,7 +23,6 @@ def test_required_env_vars_present():
         "APIDECK_API_KEY",
         "APIDECK_CONSUMER_ID",
         "APIDECK_FILE_STORAGE_DRIVE_NAME",
-        "ZEALT_RUN_ID",
     ]
     missing = [name for name in required if not os.environ.get(name)]
     assert not missing, (

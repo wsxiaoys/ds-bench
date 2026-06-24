@@ -142,5 +142,5 @@ def test_uploaded_file_uses_run_id_external_id():
             break
     assert found, (
         f"No uploaded file has an external_file_id ending with {expected_suffix!r}; "
-        "the agent did not include ZEALT_RUN_ID in the uploaded file's external_file_id."
+        "the agent did not include RUN_ID in the uploaded file's external_file_id."
     )

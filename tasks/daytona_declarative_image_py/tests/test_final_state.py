@@ -58,7 +58,7 @@ def test_sandbox_deleted_after_task():
     )
     run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id, (
-        "ZEALT_RUN_ID is not set; cannot determine the expected sandbox name."
+        "RUN_ID is not set; cannot determine the expected sandbox name."
     )
     expected_name = f"decl-py-{run_id}"
 

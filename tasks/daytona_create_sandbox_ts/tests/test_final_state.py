@@ -79,7 +79,7 @@ def test_sandbox_was_created_via_daytona_sdk(daytona_client):
     actual_name = getattr(sandbox, "name", None)
     assert actual_name == expected_name, (
         f"Sandbox {sandbox_id} was retrieved from Daytona but its name is {actual_name!r}; "
-        f"expected {expected_name!r} (suffixed by ZEALT_RUN_ID)."
+        f"expected {expected_name!r} (suffixed by RUN_ID)."
     )
 
 

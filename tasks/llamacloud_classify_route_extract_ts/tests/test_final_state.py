@@ -41,7 +41,7 @@ LOG_LINE_RE = re.compile(
 @pytest.fixture(scope="session")
 def run_id():
     rid = open("/logs/artifacts/run-id").read().strip()
-    assert rid, "ZEALT_RUN_ID is not set in the verifier environment."
+    assert rid, "RUN_ID is not set in the verifier environment."
     return rid
 
 

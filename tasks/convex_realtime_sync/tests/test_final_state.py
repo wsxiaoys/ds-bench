@@ -16,7 +16,7 @@ def start_app(xprocess):
     """
     Starts the npm service using xprocess. Confirms readiness via port check.
     """
-    
+
     # Run npm install first to ensure dependencies are present
     if os.path.exists(PROJECT_DIR):
         subprocess.run(["npm", "install"], cwd=PROJECT_DIR, check=True)
@@ -44,8 +44,9 @@ def start_app(xprocess):
     info.terminate()
 
 def test_collaborative_counter(start_app, browser_verifier):
-    run_id = os.environ.get("ZEALT_RUN_ID", "default-run-id")
-    
+    run_id =     env = os.environ.copy()
+    env["RUN_ID"] = run_id
+
     reason = "The application should feature a collaborative counter that updates in real-time across multiple clients."
     truth = f"""
     1. Open a new browser tab (Tab 1) and navigate to http://localhost:5173.
