@@ -44,7 +44,8 @@ def start_app(xprocess):
     info.terminate()
 
 def test_collaborative_counter(start_app, browser_verifier):
-    run_id =     env = os.environ.copy()
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    env = os.environ.copy()
     env["RUN_ID"] = run_id
 
     reason = "The application should feature a collaborative counter that updates in real-time across multiple clients."
