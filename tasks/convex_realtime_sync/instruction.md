@@ -8,7 +8,7 @@ Create a collaborative counter where multiple clients see updates instantly usin
 - Implement a shared counter that users can increment.
 - The counter state must be stored in Convex.
 - The UI must update reactively when the counter is incremented.
-- To prevent cross-trial conflicts, you **MUST** isolate the counter data using the `run-id` from `/logs/artifacts/run-id`. Store the `run-id` in the counter document and filter by it in your queries and mutations.
+- To prevent cross-run conflicts, you **MUST** isolate the counter data using the `run-id` from `/logs/artifacts/run-id`. Store the `run-id` in the counter document and filter by it in your queries and mutations.
 
 ## Implementation Hints
 - Use `npm create vite@latest` to scaffold the React app.

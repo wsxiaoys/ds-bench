@@ -11,7 +11,7 @@ SEED_FILES = {
     "b.txt": "beta",
     "c.txt": "gamma",
 }
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 
 
 def _tigris_env():
@@ -29,13 +29,13 @@ def _tigris_env():
 
 
 def _expected_bucket_name():
-    assert os.path.isfile(TRIAL_ID_PATH), (
-        f"Expected trial id file at {TRIAL_ID_PATH} to exist before the task starts."
+    assert os.path.isfile(RUN_ID_PATH), (
+        f"Expected run id file at {RUN_ID_PATH} to exist before the task starts."
     )
-    with open(TRIAL_ID_PATH) as f:
-        trial_id = f.read().strip()
-    assert trial_id, f"{TRIAL_ID_PATH} must contain a non-empty trial id."
-    name = f"harbor-prefix-{trial_id}"
+    with open(RUN_ID_PATH) as f:
+        run_id = f.read().strip()
+    assert run_id, f"{RUN_ID_PATH} must contain a non-empty run id."
+    name = f"harbor-prefix-{run_id}"
     import re
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     return name
@@ -61,13 +61,13 @@ def test_project_directory_exists():
     )
 
 
-def test_trial_id_file_exists():
-    assert os.path.isfile(TRIAL_ID_PATH), (
-        f"Expected trial id file at {TRIAL_ID_PATH} to exist before the task starts."
+def test_run_id_file_exists():
+    assert os.path.isfile(RUN_ID_PATH), (
+        f"Expected run id file at {RUN_ID_PATH} to exist before the task starts."
     )
-    with open(TRIAL_ID_PATH) as f:
-        trial_id = f.read().strip()
-    assert trial_id, f"{TRIAL_ID_PATH} must contain a non-empty trial id."
+    with open(RUN_ID_PATH) as f:
+        run_id = f.read().strip()
+    assert run_id, f"{RUN_ID_PATH} must contain a non-empty run id."
 
 
 def test_seed_files_present_with_expected_contents():

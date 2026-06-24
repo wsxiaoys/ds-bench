@@ -7,24 +7,24 @@ import pytest
 PROJECT_DIR = "/home/user/tigris-task"
 BULK_SCRIPT = os.path.join(PROJECT_DIR, "bulk.py")
 TIMING_FILE = os.path.join(PROJECT_DIR, "timing.txt")
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 
 EXPECTED_KEYS = [f"events/event-{n:03d}.json" for n in range(1, 21)]
 
 
-def _read_trial_id():
-    assert os.path.isfile(TRIAL_ID_PATH), (
-        f"Expected trial id file at {TRIAL_ID_PATH} to exist."
+def _read_run_id():
+    assert os.path.isfile(RUN_ID_PATH), (
+        f"Expected run id file at {RUN_ID_PATH} to exist."
     )
-    with open(TRIAL_ID_PATH) as f:
-        trial_id = f.read().strip()
-    assert trial_id, f"{TRIAL_ID_PATH} must contain a non-empty trial id."
-    return trial_id
+    with open(RUN_ID_PATH) as f:
+        run_id = f.read().strip()
+    assert run_id, f"{RUN_ID_PATH} must contain a non-empty run id."
+    return run_id
 
 
 def _bucket_name():
     import re
-    name = f"harbor-bulk-{_read_trial_id()}"
+    name = f"harbor-bulk-{_read_run_id()}"
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     return name
 
@@ -61,7 +61,7 @@ def s3_client():
 @pytest.fixture(scope="module", autouse=True)
 def cleanup_bucket_after_tests(s3_client):
     """Yield to the tests, then delete every object in the bucket and the bucket
-    itself so the trial leaves no residue on Tigris. Best-effort: ignore
+    itself so the run leaves no residue on Tigris. Best-effort: ignore
     failures if the bucket is already gone."""
     yield
     try:

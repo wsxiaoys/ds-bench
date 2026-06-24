@@ -6,7 +6,7 @@ import pytest
 
 PROJECT_DIR = "/home/user/tigris-task"
 LISTING_FILE = os.path.join(PROJECT_DIR, "logs-listing.txt")
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 
 
 def _tigris_env():
@@ -35,14 +35,14 @@ def _run_tigris(args, timeout=120):
 
 
 def _bucket_name():
-    assert os.path.isfile(TRIAL_ID_PATH), (
-        f"Expected trial id file at {TRIAL_ID_PATH} to exist."
+    assert os.path.isfile(RUN_ID_PATH), (
+        f"Expected run id file at {RUN_ID_PATH} to exist."
     )
-    with open(TRIAL_ID_PATH) as f:
-        trial_id = f.read().strip()
-    assert trial_id, f"{TRIAL_ID_PATH} must contain a non-empty trial id."
+    with open(RUN_ID_PATH) as f:
+        run_id = f.read().strip()
+    assert run_id, f"{RUN_ID_PATH} must contain a non-empty run id."
     import re
-    name = f"harbor-prefix-{trial_id}"
+    name = f"harbor-prefix-{run_id}"
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     return name
 

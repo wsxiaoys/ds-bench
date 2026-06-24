@@ -3,18 +3,18 @@
 ## Background
 The Tigris Agent Kit provisions and manages many short-lived buckets on the Tigris control plane. Operators frequently need a quick "what do I currently own?" report — specifically, which evaluation buckets exist and how many point-in-time snapshots each one has. The Tigris CLI (`@tigrisdata/cli`) exposes both pieces via `tigris buckets list --format json` and `tigris snapshots list <bucket> --format json`. Each snapshot has a unique `version` string (a UNIX nanosecond-precision timestamp) that doubles as an ascending creation-time ordering key.
 
-For this task an operator has primed the Tigris account with six buckets. Three of them are evaluation buckets whose names begin with the prefix `harbor-inv-${trial_id}-` (and have snapshots enabled); the others have unrelated names and are owned by a separate workflow that must NOT be touched. You must write a Node.js program that walks the account, filters by the `harbor-inv-${trial_id}-` prefix, gathers every snapshot version per bucket, persists the result as JSON, and prints a one-line summary.
+For this task an operator has primed the Tigris account with six buckets. Three of them are evaluation buckets whose names begin with the prefix `harbor-inv-${run_id}-` (and have snapshots enabled); the others have unrelated names and are owned by a separate workflow that must NOT be touched. You must write a Node.js program that walks the account, filters by the `harbor-inv-${run_id}-` prefix, gathers every snapshot version per bucket, persists the result as JSON, and prints a one-line summary.
 
 ## Requirements
 1. Implement a Node.js program at `/home/user/inv/index.js` that, **when invoked with `node index.js` from `/home/user/inv`**, performs the following steps:
-   1. Read the trial id from `/logs/artifacts/trial_id`. Construct the prefix as `harbor-inv-${trial_id}-` (substitute the actual id; do NOT keep the `${trial_id}` placeholder literal). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the prefix by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
+   1. Read the run id from `/logs/artifacts/run-id`. Construct the prefix as `harbor-inv-${run_id}-` (substitute the actual id; do NOT keep the `${run_id}` placeholder literal). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the prefix by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
    2. Shells out to the Tigris CLI to obtain the list of buckets visible to the current credentials using `tigris buckets list --format json`.
    3. Filters the bucket list down to exactly the buckets whose name **starts with** the normalized prefix. Buckets with any other name MUST be ignored.
    4. For each filtered bucket, shells out to `tigris snapshots list <bucket> --format json` and collects every snapshot's `version` field.
    5. Sorts the snapshot version IDs for each bucket in **ascending creation-time order** (i.e. oldest first). Because each `version` is a UNIX nanosecond timestamp, ascending lexicographic / numeric sort matches ascending creation time.
    6. Aggregates the result into a JSON object whose keys are bucket names and whose values are the sorted array of snapshot version IDs (strings).
    7. Writes the aggregated object to `/home/user/inv/inventory.json` as pretty-printed JSON (a trailing newline is allowed).
-   8. Writes exactly one summary line to stdout of the form `<bucketCount> buckets, <snapshotTotal> snapshots` where `<bucketCount>` is the number of `harbor-inv-${trial_id}-*` buckets included and `<snapshotTotal>` is the sum of every snapshot count.
+   8. Writes exactly one summary line to stdout of the form `<bucketCount> buckets, <snapshotTotal> snapshots` where `<bucketCount>` is the number of `harbor-inv-${run_id}-*` buckets included and `<snapshotTotal>` is the sum of every snapshot count.
 2. The program MUST exit with status 0 on success.
 
 ## Implementation Guide
@@ -29,8 +29,8 @@ For this task an operator has primed the Tigris account with six buckets. Three 
      return JSON.parse(stdout);
    }
 
-   const trialId = readFileSync("/logs/artifacts/trial_id", "utf8").trim();
-   const PREFIX = `harbor-inv-${trialId}-`.toLowerCase().replace(/[^a-z0-9.-]/g, "-");
+   const runId = readFileSync("/logs/artifacts/run-id", "utf8").trim();
+   const PREFIX = `harbor-inv-${runId}-`.toLowerCase().replace(/[^a-z0-9.-]/g, "-");
 
    const bucketsPayload = tigrisJSON(["buckets", "list", "--format", "json"]);
    const allBuckets = Array.isArray(bucketsPayload)
@@ -64,7 +64,7 @@ For this task an operator has primed the Tigris account with six buckets. Three 
 - Project path: `/home/user/inv`
 - Entrypoint script (the one you write): `/home/user/inv/index.js`
 - Output JSON (the one you write): `/home/user/inv/inventory.json`
-- Bucket prefix to include: dynamically constructed as `harbor-inv-${trial_id}-` (must be matched literally with `String.startsWith`).
+- Bucket prefix to include: dynamically constructed as `harbor-inv-${run_id}-` (must be matched literally with `String.startsWith`).
 - Use the real Tigris CLI (`@tigrisdata/cli`) against the live Tigris control plane via Node's `child_process` APIs. Do not invent fake data and do not use the AWS S3 API directly.
 - The admin credentials are available as `TIGRIS_STORAGE_ACCESS_KEY_ID` and `TIGRIS_STORAGE_SECRET_ACCESS_KEY` in the environment, but the environment already persists them into `~/.tigris/config.json` via `tigris configure`, so subsequent `tigris` invocations from inside Node work without any extra wiring.
 

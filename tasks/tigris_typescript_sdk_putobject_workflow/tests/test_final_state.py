@@ -8,7 +8,7 @@ import pytest
 PROJECT_DIR = "/home/user/tigris-task"
 INDEX_TS = os.path.join(PROJECT_DIR, "index.ts")
 LISTING_TXT = os.path.join(PROJECT_DIR, "listing.txt")
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 
 EXPECTED_KEYS = [
     "inbox/msg-1.json",
@@ -22,14 +22,14 @@ EXPECTED_BODIES = {
 }
 
 
-def _read_trial_id():
-    with open(TRIAL_ID_PATH, "r", encoding="utf-8") as handle:
+def _read_run_id():
+    with open(RUN_ID_PATH, "r", encoding="utf-8") as handle:
         return handle.read().strip()
 
 
 def _bucket_name():
     import re
-    name = f"harbor-tssdk-{_read_trial_id()}"
+    name = f"harbor-tssdk-{_read_run_id()}"
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     return name
 

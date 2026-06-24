@@ -8,18 +8,18 @@ import pytest
 PROJECT_DIR = "/home/user/tigris-task"
 PRESIGNED_URL_PATH = os.path.join(PROJECT_DIR, "presigned.url")
 DOWNLOAD_PATH = os.path.join(PROJECT_DIR, "downloaded.txt")
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 OBJECT_KEY = "share/secret.txt"
 EXPECTED_BODY = b"shareable content"
 
 
-def _trial_id():
-    return pathlib.Path(TRIAL_ID_PATH).read_text().strip()
+def _run_id():
+    return pathlib.Path(RUN_ID_PATH).read_text().strip()
 
 
 def _bucket_name():
     import re
-    name = f"harbor-presign-{_trial_id()}"
+    name = f"harbor-presign-{_run_id()}"
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     return name
 

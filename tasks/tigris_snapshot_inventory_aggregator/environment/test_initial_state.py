@@ -11,22 +11,22 @@ PACKAGE_JSON = os.path.join(PROJECT_DIR, "package.json")
 NODE_MODULES = os.path.join(PROJECT_DIR, "node_modules")
 INDEX_JS = os.path.join(PROJECT_DIR, "index.js")
 INVENTORY_FILE = os.path.join(PROJECT_DIR, "inventory.json")
-TRIAL_ID_FILE = "/logs/artifacts/trial_id"
+RUN_ID_FILE = "/logs/artifacts/run-id"
 
 
-def _read_trial_id():
-    assert os.path.isfile(TRIAL_ID_FILE), (
-        f"Trial id file {TRIAL_ID_FILE} does not exist; cannot derive bucket names."
+def _read_run_id():
+    assert os.path.isfile(RUN_ID_FILE), (
+        f"Run id file {RUN_ID_FILE} does not exist; cannot derive bucket names."
     )
-    with open(TRIAL_ID_FILE, "r") as f:
-        trial_id = f.read().strip()
-    assert trial_id, f"Trial id file {TRIAL_ID_FILE} is empty."
-    return trial_id
+    with open(RUN_ID_FILE, "r") as f:
+        run_id = f.read().strip()
+    assert run_id, f"Run id file {RUN_ID_FILE} is empty."
+    return run_id
 
 
 def _prefix():
-    trial_id = _read_trial_id()
-    name = f"harbor-inv-{trial_id}-"
+    run_id = _read_run_id()
+    name = f"harbor-inv-{run_id}-"
     return re.sub(r"[^a-z0-9.-]", "-", name.lower())
 
 
@@ -121,13 +121,13 @@ def _tigris_env():
 def test_pre_create_buckets():
     prefix = _prefix()
     env = _tigris_env()
-    
+
     # Configure tigris CLI first
     subprocess.run(
         [
-            "tigris", "configure", 
-            "--access-key", env.get("TIGRIS_STORAGE_ACCESS_KEY_ID", ""), 
-            "--access-secret", env.get("TIGRIS_STORAGE_SECRET_ACCESS_KEY", ""), 
+            "tigris", "configure",
+            "--access-key", env.get("TIGRIS_STORAGE_ACCESS_KEY_ID", ""),
+            "--access-secret", env.get("TIGRIS_STORAGE_SECRET_ACCESS_KEY", ""),
             "--endpoint", "https://t3.storage.dev"
         ],
         capture_output=True,
@@ -138,9 +138,9 @@ def test_pre_create_buckets():
         f"{prefix}a",
         f"{prefix}b",
         f"{prefix}c",
-        f"harbor-other-{_read_trial_id()}-x",
-        f"harbor-other-{_read_trial_id()}-y",
-        f"harbor-other-{_read_trial_id()}-z",
+        f"harbor-other-{_read_run_id()}-x",
+        f"harbor-other-{_read_run_id()}-y",
+        f"harbor-other-{_read_run_id()}-z",
     ]
 
     for bucket in all_buckets:
@@ -171,7 +171,7 @@ def test_pre_create_buckets():
     time.sleep(1)
 
     # inv-other-x (2 snapshots)
-    x = f"harbor-other-{_read_trial_id()}-x"
+    x = f"harbor-other-{_read_run_id()}-x"
     subprocess.run(["tigris", "buckets", "create", x, "--enable-snapshots"], capture_output=True, text=True, env=env)
     subprocess.run(["tigris", "snapshots", "take", x, f"{x}-s1"], capture_output=True, text=True, env=env)
     time.sleep(1)
@@ -179,11 +179,11 @@ def test_pre_create_buckets():
     time.sleep(1)
 
     # inv-other-y (0 snapshots)
-    y = f"harbor-other-{_read_trial_id()}-y"
+    y = f"harbor-other-{_read_run_id()}-y"
     subprocess.run(["tigris", "buckets", "create", y], capture_output=True, text=True, env=env)
 
     # inv-other-z (0 snapshots)
-    z = f"harbor-other-{_read_trial_id()}-z"
+    z = f"harbor-other-{_read_run_id()}-z"
     subprocess.run(["tigris", "buckets", "create", z], capture_output=True, text=True, env=env)
 
 

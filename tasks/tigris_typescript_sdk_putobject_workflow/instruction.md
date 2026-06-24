@@ -5,8 +5,8 @@ The Tigris Storage SDK (`@tigrisdata/storage`) is the native TypeScript SDK for 
 
 ## Requirements
 - Write a TypeScript program at `/home/user/tigris-task/index.ts` that uses `@tigrisdata/storage` to:
-  1. Read the current `trial_id` from `/logs/artifacts/trial_id`.
-  2. Build the bucket name as `harbor-tssdk-${trial_id}` (lowercase trial id). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
+  1. Read the current `run_id` from `/logs/artifacts/run-id`.
+  2. Build the bucket name as `harbor-tssdk-${run_id}` (lowercase run id). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
   3. Call `createBucket` to create that bucket. If the bucket already exists, treat that as success.
   4. Call `put` three times to upload the following objects to the bucket, each with `Content-Type: application/json`:
      - `inbox/msg-1.json` with body `{"id": 1}`
@@ -24,7 +24,7 @@ The Tigris Storage SDK (`@tigrisdata/storage`) is the native TypeScript SDK for 
    import { readFile, writeFile } from "node:fs/promises";
    import { createBucket, put, list } from "@tigrisdata/storage";
    ```
-4. Read the trial id with `readFile("/logs/artifacts/trial_id", "utf-8")` and `.trim()` it.
+4. Read the run id with `readFile("/logs/artifacts/run-id", "utf-8")` and `.trim()` it.
 5. For every SDK call, check the returned `{ data, error }` envelope. If `error` is set, ignore it only for `createBucket` when the bucket already exists; otherwise exit non-zero.
 6. Pass `config: { bucket: bucketName }` to each `put` and `list` call so the operations target the new bucket.
 7. After the listing call, join the `name` values of `data.items` with `\n` and write them to `/home/user/tigris-task/listing.txt`.
@@ -34,7 +34,7 @@ The Tigris Storage SDK (`@tigrisdata/storage`) is the native TypeScript SDK for 
 - Project path: /home/user/tigris-task
 - Source file: /home/user/tigris-task/index.ts
 - Listing output file: /home/user/tigris-task/listing.txt
-- Bucket name: `harbor-tssdk-${trial_id}` where `${trial_id}` comes from `/logs/artifacts/trial_id`. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
+- Bucket name: `harbor-tssdk-${run_id}` where `${run_id}` comes from `/logs/artifacts/run-id`. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
 - Use only `@tigrisdata/storage` for the bucket creation, upload, and listing steps. Do not shell out to other tools (no `tigris` CLI, no AWS CLI).
 - Do not hardcode credentials; read them from environment variables, which the SDK does automatically.
 

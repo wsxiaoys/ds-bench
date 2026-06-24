@@ -5,7 +5,7 @@ Tigris is an S3-compatible object storage service exposing a single global endpo
 
 ## Requirements
 - Use the standard `aws` CLI (already installed) configured to talk to Tigris.
-- Create a Tigris bucket whose name is derived from the trial id.
+- Create a Tigris bucket whose name is derived from the run id.
 - Upload the existing local file `/home/user/tigris-task/report.txt` (contents: literal text `quarterly report`) to that bucket under the key `reports/q1.txt`.
 - The uploaded object MUST carry the following two custom user-metadata fields:
   - `owner=alice`
@@ -13,29 +13,29 @@ Tigris is an S3-compatible object storage service exposing a single global endpo
 - The uploaded object MUST have its `Content-Type` set to `text/markdown`.
 
 ## Implementation Guide
-1. Read the trial id from `/logs/artifacts/trial_id`.
-2. Construct the bucket name as `harbor-meta-${trial_id}` (substitute the actual id; do NOT keep the `${trial_id}` placeholder literal). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
+1. Read the run id from `/logs/artifacts/run-id`.
+2. Construct the bucket name as `harbor-meta-${run_id}` (substitute the actual id; do NOT keep the `${run_id}` placeholder literal). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
 3. Use the AWS CLI against the Tigris endpoint to create the bucket, for example:
    ```bash
-   aws s3 mb s3://harbor-meta-${trial_id}
+   aws s3 mb s3://harbor-meta-${run_id}
    ```
 4. Upload the pre-existing report file with the required metadata and content type:
    ```bash
    aws s3 cp /home/user/tigris-task/report.txt \
-     s3://harbor-meta-${trial_id}/reports/q1.txt \
+     s3://harbor-meta-${run_id}/reports/q1.txt \
      --metadata owner=alice,team=research \
      --content-type text/markdown
    ```
 5. Confirm the metadata persisted by running:
    ```bash
-   aws s3api head-object --bucket harbor-meta-${trial_id} --key reports/q1.txt
+   aws s3api head-object --bucket harbor-meta-${run_id} --key reports/q1.txt
    ```
    The returned JSON should include `"ContentType": "text/markdown"` and a `"Metadata"` object containing both `"owner": "alice"` and `"team": "research"`.
 
 ## Constraints
 - Project path: /home/user/tigris-task
 - Pre-existing file: /home/user/tigris-task/report.txt (contains exactly the bytes `quarterly report`, no trailing newline). Do NOT modify its contents.
-- Bucket name format: `harbor-meta-${trial_id}` where `${trial_id}` is read from `/logs/artifacts/trial_id`. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
+- Bucket name format: `harbor-meta-${run_id}` where `${run_id}` is read from `/logs/artifacts/run-id`. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
 - Object key: `reports/q1.txt` (note the `reports/` prefix).
 - Required user metadata keys: `owner`, `team`. Required values: `alice`, `research`. Use lowercase keys exactly as written.
 - Required object Content-Type: `text/markdown`.

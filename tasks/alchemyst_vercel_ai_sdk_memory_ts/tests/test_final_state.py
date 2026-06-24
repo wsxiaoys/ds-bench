@@ -222,7 +222,7 @@ def test_cli_rejects_missing_run_id():
     """The CLI must fail fast (non-zero exit) if ZEALT_RUN_ID is missing.
 
     This protects against silently namespacing memories under an empty run id,
-    which would cause cross-trial contamination.
+    which would cause cross-run contamination.
     """
     _ensure_node_modules()
     _ensure_built_entrypoint()

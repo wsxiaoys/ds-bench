@@ -9,7 +9,7 @@ PROJECT_DIR = "/home/user/tigris-task"
 RUN_TS = os.path.join(PROJECT_DIR, "run.ts")
 WRITE_DENIAL_LOG = os.path.join(PROJECT_DIR, "write-denial.log")
 READBACK_TXT = os.path.join(PROJECT_DIR, "readback.txt")
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 
 EXPECTED_BODY = "hello readonly"
 DENIAL_REGEX = re.compile(
@@ -18,20 +18,20 @@ DENIAL_REGEX = re.compile(
 )
 
 
-def _read_trial_id():
-    with open(TRIAL_ID_PATH, "r", encoding="utf-8") as handle:
+def _read_run_id():
+    with open(RUN_ID_PATH, "r", encoding="utf-8") as handle:
         return handle.read().strip()
 
 
 def _workspace_bucket():
-    name = f"harbor-ro-{_read_trial_id()}"
+    name = f"harbor-ro-{_read_run_id()}"
     import re
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     return name
 
 
 def _fork_bucket():
-    name = f"harbor-ro-{_read_trial_id()}-readonly-0"
+    name = f"harbor-ro-{_read_run_id()}-readonly-0"
     import re
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     return name

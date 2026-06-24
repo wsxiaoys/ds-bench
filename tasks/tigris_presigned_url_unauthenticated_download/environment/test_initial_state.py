@@ -5,7 +5,7 @@ import subprocess
 import pytest
 
 PROJECT_DIR = "/home/user/tigris-task"
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 
 
 def test_python3_available():
@@ -70,15 +70,15 @@ def test_downloaded_artifact_does_not_yet_exist():
     )
 
 
-def test_trial_id_file_present():
-    """Harbor places the per-trial id at /logs/artifacts/trial_id."""
-    assert os.path.isfile(TRIAL_ID_PATH), (
-        f"Expected trial id file at {TRIAL_ID_PATH}; the bucket name depends on it."
+def test_run_id_file_present():
+    """Harbor places the per-run id at /logs/artifacts/run-id."""
+    assert os.path.isfile(RUN_ID_PATH), (
+        f"Expected run id file at {RUN_ID_PATH}; the bucket name depends on it."
     )
-    with open(TRIAL_ID_PATH, "r") as fh:
-        trial_id = fh.read().strip()
-    assert trial_id, (
-        f"Trial id file {TRIAL_ID_PATH} is empty; cannot derive a bucket name."
+    with open(RUN_ID_PATH, "r") as fh:
+        run_id = fh.read().strip()
+    assert run_id, (
+        f"Run id file {RUN_ID_PATH} is empty; cannot derive a bucket name."
     )
 
 

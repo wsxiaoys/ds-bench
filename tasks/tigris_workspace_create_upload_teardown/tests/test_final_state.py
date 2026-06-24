@@ -7,23 +7,23 @@ import pytest
 PROJECT_DIR = "/home/user/tigris-task"
 RUN_TS = os.path.join(PROJECT_DIR, "run.ts")
 OUTPUT_LOG = os.path.join(PROJECT_DIR, "output.log")
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 
 
-def _read_trial_id():
-    with open(TRIAL_ID_PATH, "r", encoding="utf-8") as handle:
+def _read_run_id():
+    with open(RUN_ID_PATH, "r", encoding="utf-8") as handle:
         return handle.read().strip()
 
 
 def _workspace_name():
-    name = f"harbor-ws-{_read_trial_id()}"
+    name = f"harbor-ws-{_read_run_id()}"
     import re
     name = re.sub(r"[^a-z0-9.-]", "-", name.lower())
     return name
 
 
 def _expected_body():
-    return '{"status":"ok","run":"' + _read_trial_id() + '"}'
+    return '{"status":"ok","run":"' + _read_run_id() + '"}'
 
 
 VERIFY_SCRIPT = r"""
@@ -193,6 +193,6 @@ def test_state_json_body_matches_expected(verify_payload):
         parsed = json.loads(body)
     except ValueError as exc:
         pytest.fail(f"state.json did not contain valid JSON: {body!r} ({exc})")
-    assert parsed == {"status": "ok", "run": _read_trial_id()}, (
+    assert parsed == {"status": "ok", "run": _read_run_id()}, (
         f"state.json JSON content mismatch: got {parsed}"
     )

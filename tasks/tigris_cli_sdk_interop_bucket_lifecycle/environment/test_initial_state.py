@@ -10,7 +10,7 @@ PACKAGE_JSON = os.path.join(PROJECT_DIR, "package.json")
 NODE_MODULES = os.path.join(PROJECT_DIR, "node_modules")
 TIGRIS_SDK_DIR = os.path.join(NODE_MODULES, "@tigrisdata", "storage")
 TSX_BIN = os.path.join(NODE_MODULES, ".bin", "tsx")
-TRIAL_ID_PATH = "/logs/artifacts/trial_id"
+RUN_ID_PATH = "/logs/artifacts/run-id"
 
 
 def _tigris_env():
@@ -27,13 +27,13 @@ def _tigris_env():
     return env
 
 
-def _trial_id():
-    assert os.path.isfile(TRIAL_ID_PATH), (
-        f"Expected trial id file at {TRIAL_ID_PATH} to exist before the task starts."
+def _run_id():
+    assert os.path.isfile(RUN_ID_PATH), (
+        f"Expected run id file at {RUN_ID_PATH} to exist before the task starts."
     )
-    with open(TRIAL_ID_PATH, "r", encoding="utf-8") as handle:
+    with open(RUN_ID_PATH, "r", encoding="utf-8") as handle:
         value = handle.read().strip()
-    assert value, f"Trial id file {TRIAL_ID_PATH} is empty."
+    assert value, f"Run id file {RUN_ID_PATH} is empty."
     return value
 
 
@@ -111,9 +111,9 @@ def test_tigris_credentials_env_vars_present():
         )
 
 
-def test_trial_id_artifact_present():
-    trial_id = _trial_id()
-    assert trial_id, "Trial id artifact must contain a non-empty value."
+def test_run_id_artifact_present():
+    run_id = _run_id()
+    assert run_id, "Run id artifact must contain a non-empty value."
 
 
 def test_tigris_cli_can_list_buckets():
@@ -141,7 +141,7 @@ def test_tigris_cli_can_list_buckets():
 
 def test_target_bucket_does_not_yet_exist():
     """The bucket the agent must create must NOT already exist in the org."""
-    bucket_name = f"harbor-interop-{_trial_id()}"
+    bucket_name = f"harbor-interop-{_run_id()}"
     import re
     bucket_name = re.sub(r"[^a-z0-9.-]", "-", bucket_name.lower())
     result = subprocess.run(
