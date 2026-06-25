@@ -4,7 +4,7 @@ import os
 import pytest
 
 
-WORKSPACE = "/workspace"
+WORKSPACE = "/home/user"
 TEST_DIR = os.path.join(WORKSPACE, "test")
 PREDICTIONS_PATH = os.path.join(WORKSPACE, "predictions.csv")
 

@@ -23,12 +23,12 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 
-# Prepare /workspace with a ~5s mono 22050 Hz example audio file that contains
+# Prepare /home/user with a ~5s mono 22050 Hz example audio file that contains
 # both harmonic (orchestra) and percussive content. We bake the first 5 seconds
 # of Tchaikovsky's "Dance of the Sugar Plum Fairy" (librosa.ex('nutcracker'))
 # at 22050 Hz mono PCM_16 so the task environment has no runtime network
 # dependency.
-RUN mkdir -p /workspace && \
+RUN mkdir -p /home/user && \
     python3 -c "import librosa, soundfile as sf; y, sr = librosa.load(librosa.ex('nutcracker'), sr=22050, mono=True); n = min(len(y), int(5.0 * sr)); sf.write('/home/user/input.wav', y[:n], sr, subtype='PCM_16')" && \
     test -s /home/user/input.wav
 

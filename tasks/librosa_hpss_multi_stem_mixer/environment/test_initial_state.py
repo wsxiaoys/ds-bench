@@ -3,7 +3,7 @@ import os
 import pytest
 
 
-WORKSPACE = "/workspace"
+WORKSPACE = "/home/user"
 INPUT_PATH = os.path.join(WORKSPACE, "input.wav")
 
 

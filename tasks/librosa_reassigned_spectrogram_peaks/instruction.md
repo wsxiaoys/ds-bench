@@ -20,7 +20,7 @@ Build a peak-tracking analysis on top of the time-frequency *reassigned* spectro
 - The number of frames in your JSON output must match what librosa actually produces for the parameters you chose — do not pad, truncate, or invent frames.
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Ensure the analysis pipeline is executed and the output artifact exists.
 - Output file: `/home/user/peaks.json`
 - The file must be valid JSON. The top-level value must be a JSON **object** with the following schema:

@@ -18,7 +18,7 @@ Use `librosa` 0.11.0 to build a structural music segmentation pipeline that reco
 - The audio at `/home/user/input.wav` is mono at 22050 Hz and has a clear A/B/A-style structure, so the output must demonstrate that at least one section label is re-used (proving repetition recovery, not just temporal partitioning).
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Ensure the segmentation pipeline is executed and the output artifact exists.
 - Output file: `/home/user/segments.json`
 - The output file must be a JSON array. Each element must be an object with the following schema:

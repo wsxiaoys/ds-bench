@@ -19,7 +19,7 @@ Read `/home/user/input.wav` (preserving its native sample rate) and produce `/ho
 - You may use `soundfile.write` to save the WAV.
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Input file (already present): /home/user/input.wav
 - Output file (must be created by you): /home/user/output.wav
 - The output must be a readable WAV file (via `soundfile`).

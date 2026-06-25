@@ -19,7 +19,7 @@ Build a beat-synchronous MFCC summarizer with `librosa` (0.11). The pipeline mus
 - Sanity-check every API signature against the librosa 0.11.0 documentation; feature, beat, and util functions are keyword-only.
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Ensure the pipeline is executed and both output artifacts exist.
 - Output files:
   - `/home/user/beat_mfcc.npz` containing the key `mfcc_sync` with shape `(20, n_beat_intervals)`.

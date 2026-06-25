@@ -12,4 +12,4 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 RUN pip install e2b-code-interpreter pytest
 
 # Set working directory
-WORKDIR /workspace
+WORKDIR /home/user

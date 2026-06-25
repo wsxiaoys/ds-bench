@@ -18,7 +18,7 @@ Build a simple major/minor chord recognition pipeline using `librosa`. The pipel
 - Sanity-check the API signatures against the librosa 0.11.0 documentation; most feature and sequence functions are keyword-only.
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Ensure the recognition pipeline is executed and the output artifact exists.
 - Output file: `/home/user/chords.json`
 - The output file must be a JSON array. Each element must be an object with the following schema:

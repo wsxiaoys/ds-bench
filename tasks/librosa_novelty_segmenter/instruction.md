@@ -26,7 +26,7 @@ Structural segmentation of an audio recording can be performed by analyzing how 
 - Use any peak-picking strategy you like (e.g., `librosa.util.peak_pick` or `scipy.signal.find_peaks`); tune it to ignore trivial peaks near the very start and very end of the signal.
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Ensure the script is executed and the output artifact exists.
 - Output file: /home/user/boundaries.json
 - The file must be valid JSON containing an object with a `boundaries_sec` key.

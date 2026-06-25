@@ -22,7 +22,6 @@ RUN apt-get update -y && \
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
-RUN mkdir -p /workspace && chmod 0755 /workspace
 
 # Pre-build the deterministic 3-section input audio at /home/user/input.wav.
 # Layout: 5 s trumpet + 5 s nutcracker + 5 s choice (all 22050 Hz mono),
@@ -125,6 +124,6 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - additional apt packages: libsndfile1, ffmpeg (audio I/O backends)
 #   - always required pip3 packages: pytest-json-ctrf
 #   - librosa==0.11.0 plus numpy, scipy, scikit-learn, soxr, soundfile, pooch
-#   - /workspace: working directory for the task
+#   - /home/user: working directory for the task
 #   - /home/user/input.wav: deterministic 3-section input audio (trumpet/nutcracker/choice, 5 s each)
 #     with equal-power crossfades < 100 ms; ground-truth change-points at 5.0 s and 10.0 s

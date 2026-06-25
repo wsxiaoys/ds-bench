@@ -17,10 +17,10 @@ RUN apt-get update -y && \
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
-RUN mkdir -p /workspace /home/user/db /home/user/output && chmod -R 0755 /workspace
+RUN mkdir -p /home/user /home/user/db /home/user/output && chmod -R 0755 /home/user
 
 LABEL Author="generate-harbor-tasks"
-LABEL Description="LanceDB Python task environment for update_special_chars_py: lancedb 0.25.3 with a writable /workspace and empty /home/user/db storage root."
+LABEL Description="LanceDB Python task environment for update_special_chars_py: lancedb 0.25.3 with a writable /home/user and empty /home/user/db storage root."
 
 # Setup entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -33,4 +33,4 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - always required apt packages: curl wget ca-certificates git python3 python3-pip python3-pytest bash ripgrep
 #   - always required pip3 packages: pytest-json-ctrf
 #   - lancedb==0.25.3, pyarrow==17.0.0, numpy==1.26.4, pandas==2.2.3 for the LanceDB Python task
-#   - /workspace, /home/user/db, /home/user/output: task work area and default LANCEDB_URI root
+#   - /home/user, /home/user/db, /home/user/output: task work area and default LANCEDB_URI root

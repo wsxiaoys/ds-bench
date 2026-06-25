@@ -23,11 +23,11 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 
-# Prepare /workspace with a tonal example audio file (Tchaikovsky's "Dance of the
+# Prepare /home/user with a tonal example audio file (Tchaikovsky's "Dance of the
 # Sugar Plum Fairy" from the Nutcracker Suite, distributed by the librosa example
 # pack via pooch). The example is downloaded once at build time and copied to
 # /home/user/input.wav so the task environment has no runtime network dependency.
-RUN mkdir -p /workspace && \
+RUN mkdir -p /home/user && \
     python3 -c "import shutil, librosa; shutil.copyfile(librosa.ex('nutcracker'), '/home/user/input.wav')" && \
     test -s /home/user/input.wav
 

@@ -2,7 +2,7 @@ import importlib
 import os
 
 
-WORKSPACE_DIR = "/workspace"
+WORKSPACE_DIR = "/home/user"
 INPUT_AUDIO_PATH = "/home/user/input.wav"
 
 

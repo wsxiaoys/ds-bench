@@ -28,7 +28,7 @@ RUN mkdir -p /home/user && chmod 0755 /home/user
 # with kick, snare, and hi-hat impulses on a 16th-note grid (steady tempo) using
 # numpy + soundfile only. The synth script is materialized via printf so the
 # Dockerfile stays compatible with the standard Docker parser (no heredocs).
-RUN mkdir -p /workspace && \
+RUN mkdir -p /home/user && \
     printf '%s\n' \
         'import numpy as np' \
         'import soundfile as sf' \

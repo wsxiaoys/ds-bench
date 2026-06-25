@@ -12,7 +12,7 @@ Build a small offline monophonic note transcriber on top of librosa. The transcr
 - Write the resulting list of notes to `/home/user/notes.json`.
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Ensure the script is executed and the artifact `/home/user/notes.json` exists.
 - Output file: /home/user/notes.json
 - The file must be valid JSON containing a single JSON array. Each element of the array must be an object with exactly these four keys and types:

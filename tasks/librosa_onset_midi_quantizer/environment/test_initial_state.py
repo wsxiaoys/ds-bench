@@ -2,7 +2,7 @@ import os
 import wave
 
 
-WORKSPACE = "/workspace"
+WORKSPACE = "/home/user"
 INPUT_WAV = os.path.join(WORKSPACE, "input.wav")
 
 

@@ -21,9 +21,9 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 RUN mkdir -p /home/user/loader_project && chmod 0755 /home/user/loader_project
-RUN mkdir -p /app/data
+RUN mkdir -p /home/user
 
-# Build-time fixture: generate /app/data/articles.csv with 5000 rows.
+# Build-time fixture: generate /home/user/articles.csv with 5000 rows.
 # Two marker rows (id=4242 photosynthesis, id=1337 Apollo 11) are surrounded
 # by 4998 filler rows using a strictly neutral office vocabulary, so the
 # semantic distance from the two test queries to the marker rows is huge.
@@ -32,7 +32,7 @@ import csv
 import os
 import random
 
-OUT_PATH = "/app/data/articles.csv"
+OUT_PATH = "/home/user/articles.csv"
 SEED = 2026
 N_ROWS = 5000
 
@@ -127,10 +127,10 @@ if __name__ == "__main__":
 PY
 RUN python3 /tmp/generate_articles_csv.py && \
     rm -f /tmp/generate_articles_csv.py && \
-    chmod 0644 /app/data/articles.csv
+    chmod 0644 /home/user/articles.csv
 
 LABEL Author="generate-harbor-tasks"
-LABEL Description="LanceDB CSV bulk loader CLI task: a pre-baked 5000-row articles.csv lives at /app/data, the executor implements /home/user/loader_project/loader.py with ingest/search subcommands backed by real OpenAI text-embedding-3-small."
+LABEL Description="LanceDB CSV bulk loader CLI task: a pre-baked 5000-row articles.csv lives at /home/user, the executor implements /home/user/loader_project/loader.py with ingest/search subcommands backed by real OpenAI text-embedding-3-small."
 
 # Setup entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -145,4 +145,4 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - LanceDB stack: lancedb==0.25.3, pyarrow==17.0.0, numpy==1.26.4, pandas==2.2.3
 #   - OpenAI client: openai==1.54.5, tiktoken, click
 #   - /home/user/loader_project: empty project directory where the executor writes loader.py
-#   - /app/data/articles.csv: deterministic 5000-row CSV (seed=2026) with two marker rows (id=4242 photosynthesis, id=1337 Apollo 11)
+#   - /home/user/articles.csv: deterministic 5000-row CSV (seed=2026) with two marker rows (id=4242 photosynthesis, id=1337 Apollo 11)

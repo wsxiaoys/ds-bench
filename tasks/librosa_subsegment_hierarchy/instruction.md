@@ -18,7 +18,7 @@ Produce a 2-level hierarchical segmentation of a short tonal audio clip using `l
 - All `librosa` feature and segmentation routines on 0.11 are keyword-only past the leading positional arguments; confirm signatures against the official 0.11 docs.
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Ensure the segmentation pipeline is executed and the output artifact exists.
 - Output file: `/home/user/hierarchy.json`
 - The output file must be a JSON object matching the schema:
