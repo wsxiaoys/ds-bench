@@ -41,6 +41,8 @@ RUN cd /tmp && \
 RUN cd /home/user/myproject && \
     npm install --no-audit --no-fund --loglevel=error
 
+RUN python3 -c "import secrets; print(secrets.token_hex(32))" > /home/user/session_secret.txt && chmod 644 /home/user/session_secret.txt
+
 LABEL Author="generate-harbor-tasks"
 LABEL Description="RedwoodSDK (rwsdk) v1.2.11 starter pre-installed at /home/user/myproject with Node.js v24 and browser-verification deps for the auth_interrupter_dashboard task."
 
@@ -57,4 +59,4 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - pip3 packages: pytest-json-ctrf pochi-verifier pytest-xprocess requests
 #   - Node.js v24 (NodeSource) + agent-browser (browsers installed)
 #   - /home/user/myproject: RedwoodSDK starter (v1.2.11) with `node_modules/` pre-installed
-#   - SESSION_SECRET is supplied at runtime via envs.json (not baked into the image)
+#   - /home/user/session_secret.txt contains a randomly generated session secret
