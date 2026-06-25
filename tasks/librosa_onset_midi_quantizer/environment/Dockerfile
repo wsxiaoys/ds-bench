@@ -28,7 +28,7 @@ RUN mkdir -p /home/user && chmod 0755 /home/user
 # Each note: 1.0 second sine wave with a 0.05 s linear fade-in and 0.05 s linear fade-out.
 # Notes are separated by 0.2 s of silence. Total duration ~ 5.8 s.
 # A fixed numpy seed is used so the generated waveform is fully reproducible.
-RUN mkdir -p /workspace && \
+RUN mkdir -p /home/user && \
     python3 - <<'PY'
 import numpy as np
 import soundfile as sf

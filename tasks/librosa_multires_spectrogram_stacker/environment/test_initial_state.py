@@ -2,7 +2,7 @@ import importlib
 import os
 
 
-WORKSPACE = "/workspace"
+WORKSPACE = "/home/user"
 INPUT_WAV = "/home/user/input.wav"
 SPEC_STACK = "/home/user/spec_stack.npz"
 SPEC_META = "/home/user/spec_meta.json"

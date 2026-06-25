@@ -3,7 +3,7 @@
 ## Background
 A data team needs a small, reusable command-line tool that ingests CSV files into a [LanceDB](https://docs.lancedb.com/) table, embedding a designated text column via the OpenAI `text-embedding-3-small` endpoint, and then exposes a semantic search subcommand for retrieving top-k matches.
 
-The environment already contains a deterministic, pre-generated dataset at `/app/data/articles.csv` with around 5000 rows and the columns `id,title,body,category,published`. Your job is to build the CLI that loads that data into LanceDB and searches it.
+The environment already contains a deterministic, pre-generated dataset at `/home/user/articles.csv` with around 5000 rows and the columns `id,title,body,category,published`. Your job is to build the CLI that loads that data into LanceDB and searches it.
 
 ## Requirements
 - Implement a single Python script at `/home/user/loader_project/loader.py` exposing two subcommands:

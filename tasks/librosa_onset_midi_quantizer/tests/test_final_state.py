@@ -5,7 +5,7 @@ import wave
 import pytest
 
 
-WORKSPACE = "/workspace"
+WORKSPACE = "/home/user"
 NOTES_JSON = os.path.join(WORKSPACE, "notes.json")
 INPUT_WAV = os.path.join(WORKSPACE, "input.wav")
 

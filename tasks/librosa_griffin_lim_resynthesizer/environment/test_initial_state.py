@@ -2,7 +2,7 @@ import importlib
 import os
 
 
-WORKSPACE = "/workspace"
+WORKSPACE = "/home/user"
 INPUT_WAV = "/home/user/input.wav"
 RECONSTRUCTED_WAV = "/home/user/reconstructed.wav"
 METRICS_JSON = "/home/user/metrics.json"

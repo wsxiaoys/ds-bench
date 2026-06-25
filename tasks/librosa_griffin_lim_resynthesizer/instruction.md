@@ -19,7 +19,7 @@ Build a small analysis-resynthesis pipeline with `librosa`. The pipeline must an
 - For spectral convergence, compare magnitude STFTs of the original and the reconstruction computed with the same analysis parameters.
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Ensure the resynthesis pipeline is executed and both output artifacts exist.
 - Output audio file: `/home/user/reconstructed.wav`
   - Mono, sample rate equal to the input sample rate.

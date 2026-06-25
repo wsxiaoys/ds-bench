@@ -22,7 +22,7 @@ RUN apt-get update -y && \
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
-RUN mkdir -p /workspace && chmod 0755 /workspace
+
 
 # Pre-bake a deterministic librosa example as the reproducible /home/user/input.wav.
 # The 'choice' clip (from the librosa example collection) is a short music

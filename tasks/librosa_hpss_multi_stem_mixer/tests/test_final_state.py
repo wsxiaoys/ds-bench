@@ -5,7 +5,7 @@ import pytest
 import soundfile as sf
 
 
-WORKSPACE = "/workspace"
+WORKSPACE = "/home/user"
 INPUT_PATH = os.path.join(WORKSPACE, "input.wav")
 OUTPUT_PATH = os.path.join(WORKSPACE, "output.wav")
 

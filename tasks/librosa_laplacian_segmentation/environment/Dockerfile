@@ -23,12 +23,12 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 
-# Prepare /workspace with a deterministic synthetic mono 22050 Hz audio file
+# Prepare /home/user with a deterministic synthetic mono 22050 Hz audio file
 # that contains an explicit A/B/A multi-section structure. Each section is a
 # distinct triad rendered as a sum of sinusoids with a soft amplitude envelope,
 # so the resulting waveform exposes both repetition (A reused) and contrast
 # (B differs). The synthesis is fully deterministic across builds.
-RUN mkdir -p /workspace /tmp/gen && \
+RUN mkdir -p /home/user /tmp/gen && \
     printf '%s\n' \
         'import numpy as np' \
         'import soundfile as sf' \

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 
-WORKSPACE = "/workspace"
+WORKSPACE = "/home/user"
 INPUT_WAV = "/home/user/input.wav"
 BEAT_MFCC_NPZ = "/home/user/beat_mfcc.npz"
 BEATS_JSON = "/home/user/beats.json"

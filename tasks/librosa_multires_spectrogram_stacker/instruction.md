@@ -18,7 +18,7 @@ Produce a stacked time-frequency representation of a single audio file by comput
 - All metadata numeric values must be plain JSON-serializable scalars; the frequency arrays must be plain JSON lists of numbers.
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Ensure the spectrogram pipeline is executed and BOTH output artifacts exist.
 - Output files:
   - `/home/user/spec_stack.npz` containing exactly the arrays `stft_db`, `cqt_db`, `vqt_db` (real-valued, finite).

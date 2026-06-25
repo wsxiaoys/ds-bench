@@ -33,7 +33,7 @@ Followed by one row per file found in `/home/user/test/`. Each `label` value mus
 - The training set is small (a few files per class) but the snippets were chosen to be clearly separable by the requested features. You do not need cross-validation or hyper-parameter tuning to pass.
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Output file (must be created by you): /home/user/predictions.csv
 - The output is a CSV file whose first line is exactly `filename,label`.
 - There is exactly one row for every WAV file under /home/user/test/, identified by basename. No file under /home/user/test/ may be missing, and no extra files may appear.

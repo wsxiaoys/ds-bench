@@ -21,7 +21,7 @@ Build a drum-hit grid quantizer with `librosa`. The pipeline must isolate the pe
 - Verify all signatures against the librosa 0.11.0 documentation; the onset, beat, and frame conversion APIs are keyword-only.
 
 ## Acceptance Criteria
-- Project path: /workspace
+- Project path: /home/user
 - Ensure the quantization pipeline is executed and the output artifact exists.
 - Output file: `/home/user/hits.json`
 - The output file must be a JSON array. Each element must be an object with the following schema:

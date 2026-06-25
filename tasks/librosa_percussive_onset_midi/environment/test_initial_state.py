@@ -2,7 +2,7 @@ import os
 import importlib
 
 
-WORKSPACE = "/workspace"
+WORKSPACE = "/home/user"
 INPUT_WAV = "/home/user/input.wav"
 
 

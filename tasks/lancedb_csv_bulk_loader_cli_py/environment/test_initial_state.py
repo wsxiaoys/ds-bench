@@ -5,7 +5,7 @@ import shutil
 import pytest
 
 PROJECT_DIR = "/home/user/loader_project"
-CSV_PATH = "/app/data/articles.csv"
+CSV_PATH = "/home/user/articles.csv"
 
 
 def test_python3_available():

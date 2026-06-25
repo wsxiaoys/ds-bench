@@ -3,7 +3,7 @@ import os
 import pytest
 
 
-WORKSPACE = "/workspace"
+WORKSPACE = "/home/user"
 TRAIN_DIR = os.path.join(WORKSPACE, "train")
 TRAIN_SPEECH_DIR = os.path.join(TRAIN_DIR, "speech")
 TRAIN_MUSIC_DIR = os.path.join(TRAIN_DIR, "music")
