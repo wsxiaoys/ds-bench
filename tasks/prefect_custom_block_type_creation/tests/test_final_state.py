@@ -26,7 +26,7 @@ def test_block_saved_in_prefect():
     assert "my-db-config" in result.stdout, f"Block 'my-db-config' not found in prefect database. Output: {result.stdout}"
 
 def test_load_block_script_output():
-    """Priority 1: Run the user script and check output using amika/pochi-verifier."""
+    """Priority 1: Run the user script and check output using pochi-verifier."""
     script_path = os.path.join(PROJECT_DIR, "load_block.py")
     assert os.path.isfile(script_path), f"{script_path} does not exist."
 
@@ -41,7 +41,7 @@ def test_load_block_script_output():
     verify_result = verifier.verify(
         reason="The script should load the 'my-db-config' block and print its host to standard output.",
         truth="The output must contain 'localhost'.",
-        evidence=result.stdout,
+        use_browser_agent=True,
         trajectory_dir="/logs/verifier/pochi/test_load_block_script_output"
     )
-    assert verify_result.status == "pass", f"Amika API verification failed: {verify_result.reason}"
+    assert verify_result.status == "pass", f"Pochi Verifier verification failed: {verify_result.reason}"
