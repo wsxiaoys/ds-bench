@@ -40,14 +40,13 @@ Build a Reflex dashboard that simulates a real-time stock ticker for 5 well-know
 
 ## Acceptance Criteria
 - Project path: `/home/user/ticker_app`
-- Start command: `uv run reflex run --backend-only --backend-port 8000 --loglevel warning`
-- Backend port: `8000`
-- Verification interacts ONLY with the backend port `8000` over HTTP using the REST endpoints listed below. The Reflex frontend (Next.js) does NOT need to be running during verification.
+- Start command: `uv run reflex run --backend-only --backend-port <port> --loglevel warning`
+- Verification interacts ONLY with the backend port over HTTP using the REST endpoints listed below. The Reflex frontend (Next.js) does NOT need to be running during verification.
 - The Reflex State class MUST define:
   - At least one method decorated with `@rx.event(background=True)` that runs the 500 ms update loop.
   - At least one method decorated with `@rx.var(cache=True)` that exposes per-symbol percent change.
   - At least one backend-only var (name starts with `_`) used as the idempotency guard.
-- REST endpoints under `http://localhost:8000`:
+- REST endpoints under `http://localhost:<port>`:
   - `POST /api/ticker/start` → `200` with JSON `{"running": true, "started": <bool>}`.
   - `POST /api/ticker/stop` → `200` with JSON `{"running": false}`.
   - `GET /api/ticker/snapshot` → `200` with JSON `{"running": <bool>, "update_count": <int>, "seeds": <object>, "prices": <object>, "percent_changes": <object>}`.
@@ -60,4 +59,3 @@ Build a Reflex dashboard that simulates a real-time stock ticker for 5 well-know
   4. For every snapshot, for every symbol `s`, the relation `percent_changes[s] == round((prices[s] - seeds[s]) / seeds[s] * 100.0, 4)` MUST hold within a small floating-point tolerance.
   5. All prices MUST stay strictly positive across the entire test run.
 - The Reflex backend dev server MUST be terminated by the executor after verification (do not leave dangling processes).
-

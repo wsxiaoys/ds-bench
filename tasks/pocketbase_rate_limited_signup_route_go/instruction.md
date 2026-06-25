@@ -5,9 +5,8 @@ Configure PocketBase v0.31.0 so that the user-signup endpoint `POST /api/collect
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: bash /home/user/myproject/start.sh
-- Port: 8090
-- PocketBase v0.31.0 must be reachable at http://127.0.0.1:8090 and expose the built-in `users` auth collection.
+- Start command: bash /home/user/myproject/start.sh --port <port>
+- PocketBase v0.31.0 must be reachable at http://127.0.0.1:<port> and expose the built-in `users` auth collection.
 - The first 3 calls to `POST /api/collections/users/records` from the same client IP within any rolling 60-second window must be processed normally (the server may answer with status 200/201 for valid payloads or 400 for validation failures, but MUST NOT answer with 429).
 - The 4th call from the same IP within that 60-second window must return HTTP status `429` with:
   - A response header `Retry-After` whose value is a positive integer (seconds, `>= 1`).

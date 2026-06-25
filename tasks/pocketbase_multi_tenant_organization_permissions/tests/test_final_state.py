@@ -7,10 +7,21 @@ import pytest
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
-BASE_URL = "http://localhost:8090"
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+@pytest.fixture(scope="session")
+def base_url(app_port):
+    return f"http://localhost:{app_port}"
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     # Create a superuser first
     subprocess.run(
         ["./pocketbase", "superuser", "create", "admin@example.com", "AdminPass123!"],
@@ -20,7 +31,7 @@ def start_app(xprocess):
 
     class Starter(ProcessStarter):
         name = "pocketbase_server"
-        args = ["./pocketbase", "serve", "--http=0.0.0.0:8090"]
+        args = ["./pocketbase", "serve", f"--http=0.0.0.0:{app_port}"]
         env = os.environ.copy()
         popen_kwargs = {"cwd": PROJECT_DIR, "text": True}
         timeout = 30
@@ -28,18 +39,34 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8090)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 @pytest.fixture(scope="session")
-def setup_data(start_app):
+def setup_data(start_app, base_url):
     # Authenticate as superuser
     resp = requests.post(
-        f"{BASE_URL}/api/collections/_superusers/auth-with-password",
+        f"{base_url}/api/collections/_superusers/auth-with-password",
         json={"identity": "admin@example.com", "password": "AdminPass123!"}
     )
     assert resp.status_code == 200, f"Superuser login failed: {resp.text}"
@@ -51,7 +78,7 @@ def setup_data(start_app):
     user_ids = {}
     for email in users:
         r = requests.post(
-            f"{BASE_URL}/api/collections/users/records",
+            f"{base_url}/api/collections/users/records",
             json={"email": email, "password": "password123", "passwordConfirm": "password123"},
             headers=headers
         )
@@ -60,7 +87,7 @@ def setup_data(start_app):
 
     # Create organization
     r = requests.post(
-        f"{BASE_URL}/api/collections/organizations/records",
+        f"{base_url}/api/collections/organizations/records",
         json={"name": "Test Org"},
         headers=headers
     )
@@ -75,7 +102,7 @@ def setup_data(start_app):
     }
     for email, role in roles.items():
         r = requests.post(
-            f"{BASE_URL}/api/collections/organization_members/records",
+            f"{base_url}/api/collections/organization_members/records",
             json={"user": user_ids[email], "organization": org_id, "role": role},
             headers=headers
         )
@@ -83,16 +110,16 @@ def setup_data(start_app):
 
     return {"user_ids": user_ids, "org_id": org_id}
 
-def auth_as(email):
-    resp = requests.post(
-        f"{BASE_URL}/api/collections/users/auth-with-password",
-        json={"identity": email, "password": "password123"}
-    )
-    assert resp.status_code == 200, f"Failed to authenticate as {email}: {resp.text}"
-    return resp.json()["token"]
-
-def test_permissions(setup_data):
+def test_permissions(setup_data, base_url):
     org_id = setup_data["org_id"]
+    
+    def auth_as(email):
+        resp = requests.post(
+            f"{base_url}/api/collections/users/auth-with-password",
+            json={"identity": email, "password": "password123"}
+        )
+        assert resp.status_code == 200, f"Failed to authenticate as {email}: {resp.text}"
+        return resp.json()["token"]
     
     # Authenticate users
     editor_token = auth_as("u_editor@example.com")
@@ -102,7 +129,7 @@ def test_permissions(setup_data):
 
     # 1. Test Create (Editor)
     r = requests.post(
-        f"{BASE_URL}/api/collections/documents/records",
+        f"{base_url}/api/collections/documents/records",
         json={"title": "Doc 1", "content": "Content", "organization": org_id},
         headers={"Authorization": f"Bearer {editor_token}"}
     )
@@ -111,7 +138,7 @@ def test_permissions(setup_data):
 
     # 2. Test Create (Viewer)
     r = requests.post(
-        f"{BASE_URL}/api/collections/documents/records",
+        f"{base_url}/api/collections/documents/records",
         json={"title": "Doc 2", "content": "Content", "organization": org_id},
         headers={"Authorization": f"Bearer {viewer_token}"}
     )
@@ -119,21 +146,21 @@ def test_permissions(setup_data):
 
     # 3. Test Read (Viewer)
     r = requests.get(
-        f"{BASE_URL}/api/collections/documents/records/{doc_id}",
+        f"{base_url}/api/collections/documents/records/{doc_id}",
         headers={"Authorization": f"Bearer {viewer_token}"}
     )
     assert r.status_code == 200, f"Viewer should be able to read document. Got: {r.text}"
 
     # 4. Test Read (Outsider)
     r = requests.get(
-        f"{BASE_URL}/api/collections/documents/records/{doc_id}",
+        f"{base_url}/api/collections/documents/records/{doc_id}",
         headers={"Authorization": f"Bearer {outsider_token}"}
     )
     assert r.status_code in [403, 404], f"Outsider should not be able to read document. Got: {r.status_code}"
 
     # 5. Test Update (Viewer)
     r = requests.patch(
-        f"{BASE_URL}/api/collections/documents/records/{doc_id}",
+        f"{base_url}/api/collections/documents/records/{doc_id}",
         json={"title": "Updated by Viewer"},
         headers={"Authorization": f"Bearer {viewer_token}"}
     )
@@ -141,7 +168,7 @@ def test_permissions(setup_data):
 
     # 6. Test Update (Editor)
     r = requests.patch(
-        f"{BASE_URL}/api/collections/documents/records/{doc_id}",
+        f"{base_url}/api/collections/documents/records/{doc_id}",
         json={"title": "Updated by Editor"},
         headers={"Authorization": f"Bearer {editor_token}"}
     )
@@ -149,14 +176,14 @@ def test_permissions(setup_data):
 
     # 7. Test Delete (Editor)
     r = requests.delete(
-        f"{BASE_URL}/api/collections/documents/records/{doc_id}",
+        f"{base_url}/api/collections/documents/records/{doc_id}",
         headers={"Authorization": f"Bearer {editor_token}"}
     )
     assert r.status_code in [400, 403, 404], f"Editor should not be able to delete document. Got: {r.status_code}"
 
     # 8. Test Delete (Owner)
     r = requests.delete(
-        f"{BASE_URL}/api/collections/documents/records/{doc_id}",
+        f"{base_url}/api/collections/documents/records/{doc_id}",
         headers={"Authorization": f"Bearer {owner_token}"}
     )
     assert r.status_code in [200, 204], f"Owner should be able to delete document. Got: {r.text}"

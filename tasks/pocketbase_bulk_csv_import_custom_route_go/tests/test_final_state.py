@@ -12,13 +12,6 @@ from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
 PB_SEED_DIR = "/opt/pb_seed"
-PB_URL = "http://127.0.0.1:8090"
-IMPORT_URL = f"{PB_URL}/api/import/products"
-SUPER_AUTH_URL = f"{PB_URL}/api/collections/_superusers/auth-with-password"
-USER_AUTH_URL = f"{PB_URL}/api/collections/users/auth-with-password"
-USERS_RECORDS_URL = f"{PB_URL}/api/collections/users/records"
-PRODUCTS_RECORDS_URL = f"{PB_URL}/api/collections/products/records"
-HEALTH_URL = f"{PB_URL}/api/health"
 
 REGULAR_EMAIL = "regular@example.com"
 REGULAR_PASSWORD = "regular-pass-12345"
@@ -64,13 +57,22 @@ def _port_open(host: str, port: int) -> bool:
 
 
 @pytest.fixture(scope="session")
-def pb_server(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def pb_server(xprocess, app_port):
     _seed_pb_data_if_missing()
     _build_binary_if_missing()
 
     class Starter(ProcessStarter):
         name = "pb_server"
-        args = [os.path.join(PROJECT_DIR, "myapp"), "serve", "--http=0.0.0.0:8090"]
+        args = [os.path.join(PROJECT_DIR, "myapp"), "serve", f"--http=127.0.0.1:{app_port}"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -80,29 +82,47 @@ def pb_server(xprocess):
         terminate_on_interrupt = True
 
         def startup_check(self):
-            if not _port_open("127.0.0.1", 8090):
+            if not _port_open("127.0.0.1", app_port):
                 return False
             try:
-                r = requests.get(HEALTH_URL, timeout=2)
+                health_url = f"http://127.0.0.1:{app_port}/api/health"
+                r = requests.get(health_url, timeout=2)
                 return r.status_code == 200
             except requests.RequestException:
                 return False
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 
 @pytest.fixture(scope="session")
-def super_token(pb_server):
+def super_token(pb_server, app_port):
     email = os.environ.get("PB_SUPERUSER_EMAIL")
     password = os.environ.get("PB_SUPERUSER_PASSWORD")
     assert email and password, (
         "PB_SUPERUSER_EMAIL / PB_SUPERUSER_PASSWORD env vars must be set."
     )
+    super_auth_url = f"http://127.0.0.1:{app_port}/api/collections/_superusers/auth-with-password"
     r = requests.post(
-        SUPER_AUTH_URL,
+        super_auth_url,
         json={"identity": email, "password": password},
         timeout=10,
     )
@@ -114,12 +134,13 @@ def super_token(pb_server):
     return token
 
 
-def _clear_products(super_token: str):
+def _clear_products(super_token: str, app_port: int):
     """Delete every record in the products collection."""
     headers = {"Authorization": f"Bearer {super_token}"}
+    products_records_url = f"http://127.0.0.1:{app_port}/api/collections/products/records"
     # Fetch all records (perPage=500 should be plenty for our small tests).
     r = requests.get(
-        f"{PRODUCTS_RECORDS_URL}?perPage=500",
+        f"{products_records_url}?perPage=500",
         headers=headers,
         timeout=10,
     )
@@ -130,7 +151,7 @@ def _clear_products(super_token: str):
     for item in r.json().get("items", []):
         rid = item["id"]
         d = requests.delete(
-            f"{PRODUCTS_RECORDS_URL}/{rid}",
+            f"{products_records_url}/{rid}",
             headers=headers,
             timeout=10,
         )
@@ -139,10 +160,11 @@ def _clear_products(super_token: str):
         )
 
 
-def _list_products(super_token: str):
+def _list_products(super_token: str, app_port: int):
     headers = {"Authorization": f"Bearer {super_token}"}
+    products_records_url = f"http://127.0.0.1:{app_port}/api/collections/products/records"
     r = requests.get(
-        f"{PRODUCTS_RECORDS_URL}?perPage=500",
+        f"{products_records_url}?perPage=500",
         headers=headers,
         timeout=10,
     )
@@ -153,11 +175,13 @@ def _list_products(super_token: str):
 
 
 @pytest.fixture(scope="session")
-def user_token(super_token):
+def user_token(super_token, app_port):
+    users_records_url = f"http://127.0.0.1:{app_port}/api/collections/users/records"
+    user_auth_url = f"http://127.0.0.1:{app_port}/api/collections/users/auth-with-password"
     headers = {"Authorization": f"Bearer {super_token}"}
     # Create user (idempotent: if it already exists we just authenticate).
     create = requests.post(
-        USERS_RECORDS_URL,
+        users_records_url,
         headers=headers,
         json={
             "email": REGULAR_EMAIL,
@@ -173,7 +197,7 @@ def user_token(super_token):
         f"body={create.text!r}"
     )
     auth = requests.post(
-        USER_AUTH_URL,
+        user_auth_url,
         json={"identity": REGULAR_EMAIL, "password": REGULAR_PASSWORD},
         timeout=10,
     )
@@ -214,17 +238,18 @@ DUPLICATE_SKU_CSV = (
 )
 
 
-def _post_csv(csv_body: str, token: str | None):
+def _post_csv(csv_body: str, token: str | None, app_port: int):
+    import_url = f"http://127.0.0.1:{app_port}/api/import/products"
     files = {"file": ("data.csv", io.BytesIO(csv_body.encode("utf-8")), "text/csv")}
     headers = {}
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
-    return requests.post(IMPORT_URL, headers=headers, files=files, timeout=30)
+    return requests.post(import_url, headers=headers, files=files, timeout=30)
 
 
-def test_valid_batch_import_returns_200_and_inserts_all_rows(super_token):
-    _clear_products(super_token)
-    r = _post_csv(VALID_CSV_10, super_token)
+def test_valid_batch_import_returns_200_and_inserts_all_rows(super_token, app_port):
+    _clear_products(super_token, app_port)
+    r = _post_csv(VALID_CSV_10, super_token, app_port)
     assert r.status_code == 200, (
         f"Expected 200 for valid CSV, got {r.status_code}: {r.text!r}"
     )
@@ -236,7 +261,7 @@ def test_valid_batch_import_returns_200_and_inserts_all_rows(super_token):
         f"Expected empty errors array, got {body!r}"
     )
 
-    items = _list_products(super_token)
+    items = _list_products(super_token, app_port)
     assert len(items) == 10, (
         f"Expected 10 records in products, found {len(items)}: {items!r}"
     )
@@ -247,9 +272,9 @@ def test_valid_batch_import_returns_200_and_inserts_all_rows(super_token):
     )
 
 
-def test_invalid_price_rolls_back_entire_batch(super_token):
-    _clear_products(super_token)
-    r = _post_csv(INVALID_PRICE_CSV, super_token)
+def test_invalid_price_rolls_back_entire_batch(super_token, app_port):
+    _clear_products(super_token, app_port)
+    r = _post_csv(INVALID_PRICE_CSV, super_token, app_port)
     assert r.status_code == 400, (
         f"Expected 400 for CSV with invalid price, got {r.status_code}: {r.text!r}"
     )
@@ -276,15 +301,15 @@ def test_invalid_price_rolls_back_entire_batch(super_token):
         f"Expected error reason to mention 'price', got: {reason!r}"
     )
 
-    items = _list_products(super_token)
+    items = _list_products(super_token, app_port)
     assert len(items) == 0, (
         f"Expected rollback (0 records), but found {len(items)}: {items!r}"
     )
 
 
-def test_duplicate_sku_within_file_rolls_back(super_token):
-    _clear_products(super_token)
-    r = _post_csv(DUPLICATE_SKU_CSV, super_token)
+def test_duplicate_sku_within_file_rolls_back(super_token, app_port):
+    _clear_products(super_token, app_port)
+    r = _post_csv(DUPLICATE_SKU_CSV, super_token, app_port)
     assert r.status_code == 400, (
         f"Expected 400 for CSV with duplicate sku, got {r.status_code}: {r.text!r}"
     )
@@ -296,50 +321,50 @@ def test_duplicate_sku_within_file_rolls_back(super_token):
     assert isinstance(errors, list) and len(errors) >= 1, (
         f"Expected non-empty errors array, got {body!r}"
     )
-    items = _list_products(super_token)
+    items = _list_products(super_token, app_port)
     assert len(items) == 0, (
         f"Expected rollback (0 records), but found {len(items)}: {items!r}"
     )
 
 
-def test_unauthenticated_request_returns_401(super_token):
-    _clear_products(super_token)
-    r = _post_csv(VALID_CSV_10, token=None)
+def test_unauthenticated_request_returns_401(super_token, app_port):
+    _clear_products(super_token, app_port)
+    r = _post_csv(VALID_CSV_10, token=None, app_port=app_port)
     assert r.status_code == 401, (
         f"Expected 401 for unauthenticated request, got {r.status_code}: {r.text!r}"
     )
-    items = _list_products(super_token)
+    items = _list_products(super_token, app_port)
     assert len(items) == 0, (
         f"Expected zero records after 401 response, found {len(items)}: {items!r}"
     )
 
 
-def test_non_superuser_request_returns_403(super_token, user_token):
-    _clear_products(super_token)
-    r = _post_csv(VALID_CSV_10, user_token)
+def test_non_superuser_request_returns_403(super_token, user_token, app_port):
+    _clear_products(super_token, app_port)
+    r = _post_csv(VALID_CSV_10, user_token, app_port)
     assert r.status_code == 403, (
         f"Expected 403 for regular-user request, got {r.status_code}: {r.text!r}"
     )
-    items = _list_products(super_token)
+    items = _list_products(super_token, app_port)
     assert len(items) == 0, (
         f"Expected zero records after 403 response, found {len(items)}: {items!r}"
     )
 
 
-def test_rerun_after_failed_batch_still_succeeds(super_token):
-    _clear_products(super_token)
+def test_rerun_after_failed_batch_still_succeeds(super_token, app_port):
+    _clear_products(super_token, app_port)
     # First trigger a failure to make sure the previous transaction is fully rolled back.
-    failure = _post_csv(INVALID_PRICE_CSV, super_token)
+    failure = _post_csv(INVALID_PRICE_CSV, super_token, app_port)
     assert failure.status_code == 400, (
         f"Expected 400 from priming failure call, got {failure.status_code}: "
         f"{failure.text!r}"
     )
-    assert len(_list_products(super_token)) == 0, (
+    assert len(_list_products(super_token, app_port)) == 0, (
         "Failed batch left rows in the database; transaction did not roll back."
     )
 
     # Now submit a valid batch and ensure it fully succeeds.
-    success = _post_csv(VALID_CSV_10, super_token)
+    success = _post_csv(VALID_CSV_10, super_token, app_port)
     assert success.status_code == 200, (
         f"Expected 200 after rollback, got {success.status_code}: {success.text!r}"
     )
@@ -351,7 +376,7 @@ def test_rerun_after_failed_batch_still_succeeds(super_token):
         f"Expected empty errors on re-run, got {body!r}"
     )
 
-    items = _list_products(super_token)
+    items = _list_products(super_token, app_port)
     assert len(items) == 10, (
         f"Expected 10 records after re-run, found {len(items)}: {items!r}"
     )

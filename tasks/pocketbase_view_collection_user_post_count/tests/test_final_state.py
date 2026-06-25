@@ -11,8 +11,6 @@ from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
 PB_HOST = "127.0.0.1"
-PB_PORT = 8090
-PB_BASE_URL = f"http://{PB_HOST}:{PB_PORT}"
 
 
 def _port_open(host: str, port: int) -> bool:
@@ -24,8 +22,8 @@ def _port_open(host: str, port: int) -> bool:
             return False
 
 
-def _kill_existing_pocketbase():
-    """Make sure no stale PocketBase server is bound to port 8090 before the
+def _kill_existing_pocketbase(port: int):
+    """Make sure no stale PocketBase server is bound to port before the
     verifier starts a fresh one."""
     # Best-effort, ignore failures.
     subprocess.run(["pkill", "-f", "pocketbase"], capture_output=True)
@@ -33,43 +31,68 @@ def _kill_existing_pocketbase():
     subprocess.run(["pkill", "-f", "go-build"], capture_output=True)
     subprocess.run(["pkill", "-f", "go run . serve"], capture_output=True)
     deadline = time.time() + 15
-    while _port_open(PB_HOST, PB_PORT) and time.time() < deadline:
+    while _port_open(PB_HOST, port) and time.time() < deadline:
         time.sleep(0.5)
 
 
 @pytest.fixture(scope="session")
-def pocketbase_server(xprocess):
-    _kill_existing_pocketbase()
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def pocketbase_server(xprocess, app_port):
+    _kill_existing_pocketbase(app_port)
 
     class Starter(ProcessStarter):
         name = "pocketbase_final"
-        args = ["go", "run", ".", "serve", f"--http={PB_HOST}:{PB_PORT}"]
+        args = ["go", "run", ".", "serve", f"--http={PB_HOST}:{app_port}"]
         env = os.environ.copy()
         popen_kwargs = {"cwd": PROJECT_DIR, "text": True}
         timeout = 240
         terminate_on_interrupt = True
 
         def startup_check(self):
-            return _port_open(PB_HOST, PB_PORT)
+            return _port_open(PB_HOST, app_port)
 
-    xprocess.ensure(Starter.name, Starter)
+    # ensure() starts the process and blocks until startup_check is True
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
 
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 
 @pytest.fixture(scope="session")
-def superuser_token(pocketbase_server) -> str:
+def superuser_token(pocketbase_server, app_port) -> str:
     email = os.environ["POCKETBASE_SUPERUSER_EMAIL"]
     password = os.environ["POCKETBASE_SUPERUSER_PASSWORD"]
+    pb_base_url = f"http://{PB_HOST}:{app_port}"
     deadline = time.time() + 60
     last_err = ""
     while time.time() < deadline:
         try:
             resp = requests.post(
-                f"{PB_BASE_URL}/api/collections/_superusers/auth-with-password",
+                f"{pb_base_url}/api/collections/_superusers/auth-with-password",
                 json={"identity": email, "password": password},
                 timeout=10,
             )
@@ -83,11 +106,12 @@ def superuser_token(pocketbase_server) -> str:
 
 
 @pytest.fixture(scope="session")
-def seeded_data(pocketbase_server, superuser_token):
+def seeded_data(pocketbase_server, superuser_token, app_port):
     """Create three users (two with posts, one without) and return the captured
     ids / emails / latest-post timestamps for the verification assertions."""
     headers = {"Authorization": superuser_token}
     suffix = uuid.uuid4().hex[:8]
+    pb_base_url = f"http://{PB_HOST}:{app_port}"
 
     users_spec = [
         ("alice", f"alice-{suffix}@example.com"),
@@ -103,7 +127,7 @@ def seeded_data(pocketbase_server, superuser_token):
             "passwordConfirm": "Pass1234!",
         }
         resp = requests.post(
-            f"{PB_BASE_URL}/api/collections/users/records",
+            f"{pb_base_url}/api/collections/users/records",
             json=body,
             headers=headers,
             timeout=30,
@@ -118,7 +142,7 @@ def seeded_data(pocketbase_server, superuser_token):
 
     def _create_post(author_id: str, title: str) -> dict:
         resp = requests.post(
-            f"{PB_BASE_URL}/api/collections/posts/records",
+            f"{pb_base_url}/api/collections/posts/records",
             json={"author": author_id, "title": title},
             headers=headers,
             timeout=30,
@@ -170,9 +194,10 @@ def _fetch_all_items(url: str, token: str) -> list:
     return items
 
 
-def test_user_post_stats_sorted_by_post_count_desc(superuser_token, seeded_data):
+def test_user_post_stats_sorted_by_post_count_desc(superuser_token, seeded_data, app_port):
+    pb_base_url = f"http://{PB_HOST}:{app_port}"
     items = _fetch_all_items(
-        f"{PB_BASE_URL}/api/collections/user_post_stats/records?sort=-post_count",
+        f"{pb_base_url}/api/collections/user_post_stats/records?sort=-post_count",
         superuser_token,
     )
     by_id = {item.get("id"): item for item in items}
@@ -246,10 +271,11 @@ def test_user_post_stats_sorted_by_post_count_desc(superuser_token, seeded_data)
     )
 
 
-def test_user_post_stats_filter_post_count_gt_zero(superuser_token, seeded_data):
+def test_user_post_stats_filter_post_count_gt_zero(superuser_token, seeded_data, app_port):
     filter_expr = quote("(post_count>0)")
+    pb_base_url = f"http://{PB_HOST}:{app_port}"
     items = _fetch_all_items(
-        f"{PB_BASE_URL}/api/collections/user_post_stats/records?filter={filter_expr}",
+        f"{pb_base_url}/api/collections/user_post_stats/records?filter={filter_expr}",
         superuser_token,
     )
     returned_ids = {item.get("id") for item in items}

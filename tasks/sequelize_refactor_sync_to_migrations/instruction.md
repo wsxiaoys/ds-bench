@@ -19,8 +19,7 @@ You have an existing Express application that uses Sequelize with SQLite. The ap
 
 ## Acceptance Criteria
 - Project path: /home/user/project
-- Start command: node index.js
-- Port: 3000
+- Start command: node index.js --port <port>
 - The application must not use `sync()` to create tables.
 - The database must contain the `SequelizeMeta` table, indicating that migrations are being used.
 - API Endpoints:

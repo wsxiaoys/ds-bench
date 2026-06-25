@@ -5,8 +5,7 @@ Configure the PocketBase v0.31.0 application at `/home/user/myproject` so that i
 
 ## Acceptance Criteria
 - Project path: `/home/user/myproject`
-- Start command: `go run . serve --http=127.0.0.1:8090`
-- Port: `8090`
+- Start command: `go run . serve --http=127.0.0.1:<port>`
 - A view collection named `user_post_stats` must be present in the running PocketBase instance.
 - API endpoint `GET /api/collections/user_post_stats/records?sort=-post_count` must respond with HTTP `200` when called by an authenticated superuser. The JSON response must contain an `items` array.
 - Every entry of `items` must include all of the following fields:

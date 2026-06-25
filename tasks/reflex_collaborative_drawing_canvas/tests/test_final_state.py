@@ -22,8 +22,6 @@ from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
 DB_PATH = os.path.join(PROJECT_DIR, "reflex.db")
-BACKEND_PORT = 8000
-BASE_URL = f"http://localhost:{BACKEND_PORT}"
 LOG_PATH = "/tmp/reflex_backend.log"
 
 
@@ -117,7 +115,16 @@ def _prepare_environment():
 
 
 @pytest.fixture(scope="session")
-def backend(xprocess, _prepare_environment):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def backend(xprocess, _prepare_environment, app_port):
     class Starter(ProcessStarter):
         name = "reflex_backend"
         args = [
@@ -127,7 +134,7 @@ def backend(xprocess, _prepare_environment):
             "run",
             "--backend-only",
             "--backend-port",
-            str(BACKEND_PORT),
+            str(app_port),
             "--loglevel",
             "info",
         ]
@@ -142,22 +149,36 @@ def backend(xprocess, _prepare_environment):
         terminate_on_interrupt = True
 
         def startup_check(self) -> bool:
-            if not _port_open("127.0.0.1", BACKEND_PORT):
+            if not _port_open("127.0.0.1", app_port):
                 return False
             try:
-                resp = requests.get(f"{BASE_URL}/ping", timeout=2)
+                resp = requests.get(f"http://localhost:{app_port}/ping", timeout=2)
                 return resp.status_code == 200 and "pong" in resp.text.lower()
             except Exception:
                 return False
 
     xprocess.ensure(Starter.name, Starter)
 
+    # print the logs after the service has started
+    with open(LOG_PATH, "r", errors="replace") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     # An extra safety wait for the background polling task to settle.
-    assert _wait_for_backend(f"{BASE_URL}/ping", total=60), (
+    assert _wait_for_backend(f"http://localhost:{app_port}/ping", total=60), (
         "Reflex backend did not respond to /ping after fixture startup."
     )
 
-    yield BASE_URL
+    yield f"http://localhost:{app_port}"
+
+    # teardown: print the logs and terminate the service
+    with open(LOG_PATH, "r", errors="replace") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
@@ -197,8 +218,8 @@ def test_stroke_table_schema():
     )
 
 
-def test_ping_endpoint(backend):
-    resp = requests.get(f"{backend}/ping", timeout=5)
+def test_ping_endpoint(backend, app_port):
+    resp = requests.get(f"http://localhost:{app_port}/ping", timeout=5)
     assert resp.status_code == 200, (
         f"GET /ping expected 200, got {resp.status_code}: {resp.text!r}"
     )
@@ -207,9 +228,9 @@ def test_ping_endpoint(backend):
     )
 
 
-def test_strokes_crud_contract(backend):
+def test_strokes_crud_contract(backend, app_port):
     # Baseline listing
-    resp = requests.get(f"{backend}/api/strokes", timeout=10)
+    resp = requests.get(f"http://localhost:{app_port}/api/strokes", timeout=10)
     assert resp.status_code == 200, (
         f"GET /api/strokes expected 200, got {resp.status_code}: {resp.text!r}"
     )
@@ -229,7 +250,7 @@ def test_strokes_crud_contract(backend):
         "session_id": "sess-canvas-01",
     }
     resp = requests.post(
-        f"{backend}/api/strokes",
+        f"http://localhost:{app_port}/api/strokes",
         json=payload_one,
         timeout=10,
     )
@@ -260,7 +281,7 @@ def test_strokes_crud_contract(backend):
     )
 
     # GET should reflect the new row
-    resp = requests.get(f"{backend}/api/strokes", timeout=10)
+    resp = requests.get(f"http://localhost:{app_port}/api/strokes", timeout=10)
     assert resp.status_code == 200, (
         f"GET /api/strokes (post insert) expected 200, got {resp.status_code}"
     )
@@ -283,7 +304,7 @@ def test_strokes_crud_contract(backend):
         "session_id": "sess-canvas-02",
     }
     resp = requests.post(
-        f"{backend}/api/strokes",
+        f"http://localhost:{app_port}/api/strokes",
         json=payload_two,
         timeout=10,
     )
@@ -294,7 +315,7 @@ def test_strokes_crud_contract(backend):
     # Give the background poller multiple cycles to run (>= 6 cycles of 250 ms)
     time.sleep(1.5)
 
-    resp = requests.get(f"{backend}/api/strokes", timeout=10)
+    resp = requests.get(f"http://localhost:{app_port}/api/strokes", timeout=10)
     assert resp.status_code == 200, (
         f"GET /api/strokes (final) expected 200, got {resp.status_code}"
     )

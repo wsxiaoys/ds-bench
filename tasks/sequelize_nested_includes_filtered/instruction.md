@@ -19,8 +19,7 @@ Create an Express REST API using Sequelize and SQLite to manage Companies, Depar
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: npm start
-- Port: 3000
+- Start command: npm start -- --port <port>
 - API Endpoints:
   - POST `/seed`: Accepts a JSON array of companies with nested departments and employees. Returns status 200 OK after successfully syncing and seeding the database.
 

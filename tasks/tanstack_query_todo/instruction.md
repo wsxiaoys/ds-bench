@@ -8,7 +8,7 @@ Create a basic Todo list application that fetches and creates items using TanSta
 - Implement a React frontend that uses TanStack Query (`useQuery` and `useMutation`) to interact with the API.
 - The frontend must display the list of todos and provide a form to add new ones.
 - When a new todo is added, the list must update automatically without a page reload.
-- The application (both frontend and API) must be served on port 4821.
+- The application (both frontend and API) must be served on the port dynamically assigned at runtime.
 
 ## Implementation Hints
 - You can use Vite to build the React frontend and serve it statically from your backend server, or use a tool like `ts-node` to run a server that handles both API and SSR/static serving.
@@ -18,8 +18,7 @@ Create a basic Todo list application that fetches and creates items using TanSta
 
 ## Acceptance Criteria
 - Project path: `/home/user/tanstack-query-todo`
-- Start command: `npm start`
-- Port: 4821
+- Start command: `npm start -- --port <port>`
 - API Endpoints:
   - `GET /api/todos`: Returns status 200 and a JSON array of todo objects.
     ```json
@@ -45,7 +44,7 @@ Create a basic Todo list application that fetches and creates items using TanSta
     }
     ```
 - Frontend UI Requirements:
-  - The main page must be accessible at `http://localhost:4821/`.
+  - The main page must be accessible at `http://localhost:<port>/`.
   - The list of todos must be rendered inside a container with `id="todo-list"`. Each todo item should be an `<li>` element containing the todo text.
   - There must be an input field with `id="todo-input"` for entering new todo text.
   - There must be a submit button with `id="todo-submit"` to add the todo.

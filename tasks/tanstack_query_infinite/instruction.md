@@ -9,19 +9,18 @@ Implement an infinite scrolling feed using TanStack Query to demonstrate paginat
 - Create a mock API or server function to serve the feed data. Each page should return a list of items and a `nextCursor`.
 - Render the items in a list.
 - Add a "Load More" button to fetch the next page.
-- Configure the development server to run on port `5123`.
+- Configure the development server to accept a port argument so that it can be dynamically assigned at runtime.
 
 ## Implementation Hints
-- If using Vite, configure `vite.config.ts` (or equivalent) to use `port: 5123`.
+- If using Vite, you can pass `--port <port>` to `vite` (e.g., configure `dev` script in `package.json` to accept arguments or support port dynamic assignment).
 - Use `useInfiniteQuery` from `@tanstack/react-query` to manage the feed state.
 - Ensure the mock API can return at least two distinct pages of data to allow pagination testing.
 
 ## Acceptance Criteria
 - Project path: `/home/user/myproject`
-- Start command: `npm run dev`
-- Port: `5123`
+- Start command: `npm run dev -- --port <port>`
 - Required test criteria that will be evaluated:
-  1. The verifier will navigate to `http://localhost:5123/`.
+  1. The verifier will navigate to `http://localhost:$PORT/`.
   2. The verifier will check that the initial list of items (Page 1) is rendered.
   3. The verifier will find and click a button with the exact text "Load More".
   4. The verifier will check that the next set of items (Page 2) is appended to the DOM alongside Page 1.

@@ -21,8 +21,7 @@ You have a custom Go backend embedding PocketBase. The project was recently upgr
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: go run main.go serve --http="0.0.0.0:8090"
-- Port: 8090
+- Start command: go run main.go serve --http="0.0.0.0:<port>"
 - API Endpoints:
   - POST `/api/collections/posts/records`: Accepts a JSON body with a `title` and creates a record with an auto-generated `slug`. Returns 200 OK.
 

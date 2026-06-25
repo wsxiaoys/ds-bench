@@ -19,7 +19,6 @@ You need to set up a tRPC v11 backend within a Next.js App Router application. T
 
 ## Constraints
 - Project path: /home/user/myproject
-- Start command: `npm run dev`
-- Port: 3000
+- Start command: `npm run dev -- --port <port>`
 - Use `@trpc/server@next` for tRPC v11.
 - Must use `fetchRequestHandler` for the App Router.

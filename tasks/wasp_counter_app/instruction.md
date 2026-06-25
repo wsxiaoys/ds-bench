@@ -32,6 +32,5 @@ Wasp is a declarative DSL for building full-stack web applications. In this task
 
 ## Constraints
 - **Project Path**: `/home/user/counter-app`
-- **Start Command**: `wasp start`
-- **Port**: 3000
+- **Start Command**: `wasp start --port <port>`
 - **Database**: SQLite (default)

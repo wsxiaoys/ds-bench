@@ -17,13 +17,21 @@ def setup_npm_install():
     subprocess.run(["npm", "install"], cwd=PROJECT_DIR, check=True)
 
 @pytest.fixture(scope="session")
-def start_app(setup_npm_install, xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+@pytest.fixture(scope="session")
+def start_app(setup_npm_install, xprocess, app_port):
     """
     Starts the npm dev server using xprocess. Confirms readiness via port check.
     """
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--port", str(app_port)]
         env = os.environ.copy()
 
         # Pass required environment variables
@@ -41,20 +49,36 @@ def start_app(setup_npm_install, xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 5173)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 
-def test_browser_add_task(start_app, browser_verifier):
+def test_browser_add_task(start_app, app_port, browser_verifier):
     run_id = open("/logs/artifacts/run-id").read().strip()
     task_text = f"Test Task for {run_id}"
 
     reason = "The user should be able to add a new task."
-    truth = f"Navigate to http://localhost:5173. Locate the text input field, type '{task_text}', and click the submit button. Verify that the new task '{task_text}' appears in the task list."
+    truth = f"Navigate to http://localhost:{app_port}. Locate the text input field, type '{task_text}', and click the submit button. Verify that the new task '{task_text}' appears in the task list."
 
     result = browser_verifier.verify(
         reason=reason,
@@ -64,12 +88,12 @@ def test_browser_add_task(start_app, browser_verifier):
     )
     assert result.status == "pass", f"Browser verification failed for Add Task: {result.reason}"
 
-def test_browser_update_task(start_app, browser_verifier):
+def test_browser_update_task(start_app, app_port, browser_verifier):
     run_id = open("/logs/artifacts/run-id").read().strip()
     task_text = f"Test Task for {run_id}"
 
     reason = "The user should be able to update a task's status."
-    truth = f"Navigate to http://localhost:5173. Locate the task '{task_text}' in the list. Click its status toggle/button to change it from 'todo' to 'done'. Verify that the UI reflects the updated status (e.g., text strikethrough or status label change)."
+    truth = f"Navigate to http://localhost:{app_port}. Locate the task '{task_text}' in the list. Click its status toggle/button to change it from 'todo' to 'done'. Verify that the UI reflects the updated status (e.g., text strikethrough or status label change)."
 
     result = browser_verifier.verify(
         reason=reason,
@@ -79,12 +103,12 @@ def test_browser_update_task(start_app, browser_verifier):
     )
     assert result.status == "pass", f"Browser verification failed for Update Task: {result.reason}"
 
-def test_browser_delete_task(start_app, browser_verifier):
+def test_browser_delete_task(start_app, app_port, browser_verifier):
     run_id = open("/logs/artifacts/run-id").read().strip()
     task_text = f"Test Task for {run_id}"
 
     reason = "The user should be able to delete a task."
-    truth = f"Navigate to http://localhost:5173. Locate the delete button for the task '{task_text}'. Click the delete button. Verify that the task '{task_text}' is removed from the list."
+    truth = f"Navigate to http://localhost:{app_port}. Locate the delete button for the task '{task_text}'. Click the delete button. Verify that the task '{task_text}' is removed from the list."
 
     result = browser_verifier.verify(
         reason=reason,

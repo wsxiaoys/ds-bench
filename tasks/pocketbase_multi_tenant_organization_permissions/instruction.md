@@ -23,8 +23,7 @@ PocketBase allows defining powerful SQL-like API rules to control access to reco
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: ./pocketbase serve --http="0.0.0.0:8090"
-- Port: 8090
+- Start command: ./pocketbase serve --http="0.0.0.0:<port>"
 - API Endpoints:
   - The PocketBase REST API must be active and the collections (`organizations`, `organization_members`, `documents`) must exist.
   - The API rules on the `documents` collection must correctly enforce the role-based access control described in the requirements.

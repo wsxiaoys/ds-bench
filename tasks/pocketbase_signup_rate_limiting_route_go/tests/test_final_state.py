@@ -7,10 +7,18 @@ from xprocess import ProcessStarter
 PROJECT_DIR = "/home/user/pb"
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["go", "run", "main.go", "serve", "--http=0.0.0.0:8090"]
+        args = ["go", "run", "main.go", "serve", f"--http=0.0.0.0:{app_port}"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -21,15 +29,31 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8090)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
-def test_rate_limited_signup(start_app):
-    url = "http://localhost:8090/api/custom_signup"
+def test_rate_limited_signup(start_app, app_port):
+    url = f"http://localhost:{app_port}/api/custom_signup"
 
     # 1. First 5 Requests (Success)
     for i in range(1, 6):
@@ -50,9 +74,9 @@ def test_rate_limited_signup(start_app):
     response = requests.post(url, json=payload)
     assert response.status_code == 429, f"Expected status 429 for 6th request, got {response.status_code}: {response.text}"
 
-def test_users_created(start_app):
+def test_users_created(start_app, app_port):
     # Verify that the first 5 users were actually created by authenticating as them
-    auth_url = "http://localhost:8090/api/collections/users/auth-with-password"
+    auth_url = f"http://localhost:{app_port}/api/collections/users/auth-with-password"
 
     for i in range(1, 6):
         payload = {

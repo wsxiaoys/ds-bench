@@ -16,7 +16,7 @@ Your job is to extend a pre-built PocketBase v0.31.0 Go application that already
   - The withdrawal record is persisted with the submitted `wallet`, `amount`, and optional `note` values.
   - If any step inside the transaction fails, both the balance change AND the withdrawal record must be rolled back so the database stays consistent.
 - The hook must continue to propagate the request chain so that PocketBase's default save logic runs for the withdrawal record; forgetting to propagate is a known v0.23+ pitfall and will block all writes.
-- Keep the resulting binary runnable as a standalone PocketBase backend (`./wallet-app serve --http=0.0.0.0:8090`). Do not remove the existing migration registration or change the schema of either collection.
+- Keep the resulting binary runnable as a standalone PocketBase backend (`./wallet-app serve --http=127.0.0.1:<port>`). Do not remove the existing migration registration or change the schema of either collection.
 
 ## Implementation Hints
 - PocketBase v0.31 uses the chained hook API. Register your handler with `app.OnRecordCreateRequest("withdrawals").BindFunc(...)` and remember the post-v0.23 propagation rule: return `e.Next()` from the success path or the chain is silently aborted.
@@ -29,9 +29,8 @@ Your job is to extend a pre-built PocketBase v0.31.0 Go application that already
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: cd /home/user/myproject && ./wallet-app serve --http=0.0.0.0:8090
-- Port: 8090
-- The PocketBase server must be reachable on port 8090 after start (`GET /api/health` returns HTTP 200).
+- Start command: cd /home/user/myproject && ./wallet-app serve --http=127.0.0.1:<port>
+- The PocketBase server must be reachable on the assigned port after start (`GET /api/health` returns HTTP 200).
 - The `wallets` and `withdrawals` collections (provisioned by the bundled migration) must remain available with the schemas declared by the migration. Do not alter their schemas or API rules.
 - API endpoints exercised by verification (provided by PocketBase, gated by your hook):
   - `POST /api/collections/wallets/records`: Used by the verifier to seed wallets. Accepts a JSON body `{"owner": string, "balance": number}` and returns the created wallet record. This endpoint is NOT gated by your hook.

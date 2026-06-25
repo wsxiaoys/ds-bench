@@ -14,5 +14,4 @@ You have a Next.js project with tRPC v11 and React Query v5 set up in `/home/use
 
 ## Constraints
 - Project path: /home/user/project
-- Start command: npm run build && npm start
-- Port: 3000
+- Start command: npm run build && npm start -- --port <port>

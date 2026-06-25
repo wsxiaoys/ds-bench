@@ -15,9 +15,6 @@ PROJECT_DIR = "/home/user/myproject"
 DB_PATH = os.path.join(PROJECT_DIR, "reflex.db")
 REFLEX_LOG_PATH = "/tmp/reflex.log"
 
-FRONTEND_PORT = 3000
-BACKEND_PORT = 8000
-
 
 # ---------- helpers ----------
 
@@ -119,17 +116,22 @@ def _find_link_table(conn) -> str:
 
 # ---------- fixtures ----------
 
-@pytest.fixture(scope="session", autouse=True)
-def _no_stale_ports():
-    assert not _port_open(FRONTEND_PORT), (
-        f"Port {FRONTEND_PORT} is already in use before the verifier started the "
-        f"Reflex server. The task description requires the candidate to terminate "
-        f"any background `reflex run` processes after they finish."
-    )
-    assert not _port_open(BACKEND_PORT), (
-        f"Port {BACKEND_PORT} is already in use before the verifier started the "
-        f"Reflex server."
-    )
+@pytest.fixture(scope="session")
+def app_port():
+    """Finds and yields a free port on localhost for the frontend."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def backend_port():
+    """Finds and yields a free port on localhost for the backend."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
 
 
 @pytest.fixture(scope="session")
@@ -158,14 +160,19 @@ def prepared_db():
 
 
 @pytest.fixture(scope="session")
-def reflex_server(prepared_db, xprocess):
+def start_app(prepared_db, xprocess, app_port, backend_port):
     if os.path.exists(REFLEX_LOG_PATH):
         os.remove(REFLEX_LOG_PATH)
     log_fp = open(REFLEX_LOG_PATH, "w")
 
     class Starter(ProcessStarter):
         name = "reflex_server"
-        args = ["uv", "run", "reflex", "run", "--loglevel", "info"]
+        args = [
+            "uv", "run", "reflex", "run",
+            "--frontend-port", str(app_port),
+            "--backend-port", str(backend_port),
+            "--loglevel", "info"
+        ]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -177,13 +184,28 @@ def reflex_server(prepared_db, xprocess):
         terminate_on_interrupt = True
 
         def startup_check(self):
-            return _port_open(FRONTEND_PORT) and _port_open(BACKEND_PORT)
+            return _port_open(app_port) and _port_open(backend_port)
 
-    xprocess.ensure(Starter.name, Starter)
-    assert _wait_for_port(FRONTEND_PORT, 60), "Frontend port did not become ready."
-    assert _wait_for_port(BACKEND_PORT, 60), "Backend port did not become ready."
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
+    assert _wait_for_port(app_port, 60), "Frontend port did not become ready."
+    assert _wait_for_port(backend_port, 60), "Backend port did not become ready."
 
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
@@ -471,27 +493,27 @@ def test_delete_removes_links_but_not_tags(prepared_db):
 
 # ---------- server-level checks ----------
 
-def test_frontend_reachable(reflex_server):
+def test_frontend_reachable(start_app, app_port):
     last_exc = None
     for _ in range(30):
         try:
-            r = requests.get(f"http://localhost:{FRONTEND_PORT}/", timeout=10)
+            r = requests.get(f"http://localhost:{app_port}/", timeout=10)
             if r.status_code == 200 and r.text:
                 body = r.text.lower()
                 assert "<html" in body or "<!doctype" in body, (
-                    f"Frontend at port {FRONTEND_PORT} did not return HTML."
+                    f"Frontend at port {app_port} did not return HTML."
                 )
                 return
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
         time.sleep(2)
     raise AssertionError(
-        f"Frontend at http://localhost:{FRONTEND_PORT}/ never returned HTTP 200. "
+        f"Frontend at http://localhost:{app_port}/ never returned HTTP 200. "
         f"Last exception: {last_exc!r}"
     )
 
 
-def test_no_immutable_state_error_in_logs(reflex_server):
+def test_no_immutable_state_error_in_logs(start_app):
     assert os.path.exists(REFLEX_LOG_PATH), (
         f"Expected Reflex log at {REFLEX_LOG_PATH}."
     )
@@ -526,7 +548,7 @@ def _collect_py_sources() -> str:
     return combined
 
 
-def test_source_uses_link_model_and_state_contracts(reflex_server):
+def test_source_uses_link_model_and_state_contracts(start_app):
     combined = _collect_py_sources()
     assert combined, f"No Python source files found under {PROJECT_DIR}."
 

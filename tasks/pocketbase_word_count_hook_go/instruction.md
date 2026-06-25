@@ -19,19 +19,18 @@ Your job is to plug in PocketBase event hooks so that whenever an `articles` rec
 - The hooks must set `reading_time_minutes` to `ceil(word_count / 200)` (so 0 words -> 0 minutes, 1-200 words -> 1 minute, 201-400 words -> 2 minutes, etc.).
 - The computed values must overwrite anything the client supplied for `word_count` or `reading_time_minutes`, so clients cannot bypass the calculation.
 - The hook chain must continue normally so the record is persisted; if you stop the chain the record will never be saved.
-- Provision a superuser using the `superuser upsert` subcommand of the compiled binary, then start the server on `0.0.0.0:8090`.
+- Provision a superuser using the `superuser upsert` subcommand of the compiled binary, then start the server on `0.0.0.0:<port>`.
 
 ## Implementation Hints
 - Use the PocketBase v0.31 hook API (`BindFunc`) and remember to call `e.Next()` from your handler so the request continues through the middleware chain.
 - `OnRecordCreateRequest("articles")` and `OnRecordUpdateRequest("articles")` are the relevant hooks for REST traffic.
 - `e.Record.GetString("content")` returns the submitted text; `e.Record.Set(...)` writes the derived fields back onto the record before it is saved.
 - The standard library `strings.Fields` plus `math.Ceil` are enough to compute the word count and the rounded-up reading time.
-- Build the binary with `go build -o app .` and then run `./app superuser upsert admin@example.com SuperSecret123` to create the admin account before `./app serve --http=0.0.0.0:8090`.
+- Build the binary with `go build -o app .` and then run `./app superuser upsert admin@example.com SuperSecret123` to create the admin account before `./app serve --http=0.0.0.0:<port>`.
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: cd /home/user/myproject && ./app serve --http=0.0.0.0:8090
-- Port: 8090
+- Start command: cd /home/user/myproject && ./app serve --http=0.0.0.0:<port>
 - The superuser `admin@example.com` (password `SuperSecret123`) must exist so the verifier can authenticate via `POST /api/collections/_superusers/auth-with-password`.
 - The `articles` collection (already provisioned by the bundled migration) must remain available with its `word_count` and `reading_time_minutes` integer fields.
 - API behavior:

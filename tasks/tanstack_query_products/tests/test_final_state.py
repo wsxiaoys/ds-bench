@@ -6,17 +6,24 @@ from xprocess import ProcessStarter
 from pochi_verifier import PochiVerifier
 
 PROJECT_DIR = "/home/user/tanstack-query-products"
-PORT = 4782
 
 @pytest.fixture(scope="session")
 def browser_verifier():
     yield PochiVerifier()
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -27,16 +34,32 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", PORT)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
-def test_browser_verification(start_app, browser_verifier):
+def test_browser_verification(start_app, app_port, browser_verifier):
     reason = "The application should fetch and display a list of products."
-    truth = f"Navigate to http://localhost:{PORT}. Wait for the data to load. Verify that the page contains the text 'Laptop - $999'. Verify that the page contains the text 'Phone - $599'."
+    truth = f"Navigate to http://localhost:{app_port}. Wait for the data to load. Verify that the page contains the text 'Laptop - $999'. Verify that the page contains the text 'Phone - $599'."
     
     result = browser_verifier.verify(
         reason=reason,

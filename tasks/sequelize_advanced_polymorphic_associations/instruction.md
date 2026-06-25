@@ -20,8 +20,7 @@ Sequelize does not have a built-in `belongsToPolymorphic` method, but polymorphi
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: node index.js
-- Port: 3000
+- Start command: node index.js --port <port>
 - API Endpoints:
   - POST `/users`: Accepts `{ "name": string }`. Returns 201 Created and the user object.
   - POST `/products`: Accepts `{ "title": string }`. Returns 201 Created and the product object.

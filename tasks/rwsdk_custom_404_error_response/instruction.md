@@ -8,8 +8,7 @@ Implement the routes below. The 404 page must be rendered through React (JSX). T
 
 ## Acceptance Criteria
 - Project path: /home/user/myapp
-- Start command: npm run dev -- --host 0.0.0.0 --port 5173
-- Port: 5173
+- Start command: npm run dev -- --host 0.0.0.0 --port <port>
 - Routes:
   - `GET /home` returns JSX whose HTML contains the text `Welcome home`.
   - Any unmatched URL (e.g. `/does-not-exist`, `/nope/whatever`) must respond with status 404 and HTML containing `<h1>Page Not Found</h1>` and the text `The page you requested could not be found.`.

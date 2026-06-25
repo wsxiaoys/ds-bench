@@ -11,8 +11,6 @@ PROJECT_DIR = "/home/user/myproject"
 APP_BIN = os.path.join(PROJECT_DIR, "myapp")
 PB_DATA = os.path.join(PROJECT_DIR, "pb_data")
 HOST = "127.0.0.1"
-PORT = 8090
-BASE_URL = f"http://{HOST}:{PORT}"
 
 TEST_USER_EMAIL = "tester@example.com"
 TEST_USER_PASSWORD = "password12345"
@@ -27,10 +25,19 @@ def _port_open(host: str, port: int) -> bool:
 
 
 @pytest.fixture(scope="session")
-def server(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def server(xprocess, app_port):
     class Starter(ProcessStarter):
         name = "pocketbase_app"
-        args = [APP_BIN, "serve", f"--http={HOST}:{PORT}", f"--dir={PB_DATA}"]
+        args = [APP_BIN, "serve", f"--http={HOST}:{app_port}", f"--dir={PB_DATA}"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -40,23 +47,39 @@ def server(xprocess):
         terminate_on_interrupt = True
 
         def startup_check(self):
-            if not _port_open(HOST, PORT):
+            if not _port_open(HOST, app_port):
                 return False
             try:
-                r = requests.get(f"{BASE_URL}/api/health", timeout=2)
+                r = requests.get(f"http://{HOST}:{app_port}/api/health", timeout=2)
                 return r.status_code == 200
             except requests.RequestException:
                 return False
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 
-def _superuser_token() -> str:
+def _superuser_token(app_port: int) -> str:
     r = requests.post(
-        f"{BASE_URL}/api/collections/_superusers/auth-with-password",
+        f"http://{HOST}:{app_port}/api/collections/_superusers/auth-with-password",
         json={"identity": SUPERUSER_EMAIL, "password": SUPERUSER_PASSWORD},
         timeout=10,
     )
@@ -66,9 +89,9 @@ def _superuser_token() -> str:
     return r.json()["token"]
 
 
-def _user_token() -> str:
+def _user_token(app_port: int) -> str:
     r = requests.post(
-        f"{BASE_URL}/api/collections/users/auth-with-password",
+        f"http://{HOST}:{app_port}/api/collections/users/auth-with-password",
         json={"identity": TEST_USER_EMAIL, "password": TEST_USER_PASSWORD},
         timeout=10,
     )
@@ -78,9 +101,9 @@ def _user_token() -> str:
     return r.json()["token"]
 
 
-def _list_wallets(super_token: str):
+def _list_wallets(super_token: str, app_port: int):
     r = requests.get(
-        f"{BASE_URL}/api/collections/wallets/records",
+        f"http://{HOST}:{app_port}/api/collections/wallets/records",
         params={"perPage": 200, "sort": "balance"},
         headers={"Authorization": super_token},
         timeout=10,
@@ -89,8 +112,8 @@ def _list_wallets(super_token: str):
     return r.json()["items"]
 
 
-def _wallet_ids(super_token: str):
-    items = _list_wallets(super_token)
+def _wallet_ids(super_token: str, app_port: int):
+    items = _list_wallets(super_token, app_port)
     assert len(items) >= 2, f"Expected at least two wallets, got {items}."
     by_balance = {round(float(it["balance"])): it["id"] for it in items}
     # find one wallet with the highest balance => A, lowest => B
@@ -101,9 +124,9 @@ def _wallet_ids(super_token: str):
     return id_a, id_b
 
 
-def _set_balance(super_token: str, wallet_id: str, balance: float):
+def _set_balance(super_token: str, wallet_id: str, balance: float, app_port: int):
     r = requests.patch(
-        f"{BASE_URL}/api/collections/wallets/records/{wallet_id}",
+        f"http://{HOST}:{app_port}/api/collections/wallets/records/{wallet_id}",
         json={"balance": balance},
         headers={"Authorization": super_token},
         timeout=10,
@@ -113,9 +136,9 @@ def _set_balance(super_token: str, wallet_id: str, balance: float):
     )
 
 
-def _get_balance(super_token: str, wallet_id: str) -> float:
+def _get_balance(super_token: str, wallet_id: str, app_port: int) -> float:
     r = requests.get(
-        f"{BASE_URL}/api/collections/wallets/records/{wallet_id}",
+        f"http://{HOST}:{app_port}/api/collections/wallets/records/{wallet_id}",
         headers={"Authorization": super_token},
         timeout=10,
     )
@@ -125,11 +148,11 @@ def _get_balance(super_token: str, wallet_id: str) -> float:
     return float(r.json()["balance"])
 
 
-def _clear_transfers(super_token: str):
+def _clear_transfers(super_token: str, app_port: int):
     page = 1
     while True:
         r = requests.get(
-            f"{BASE_URL}/api/collections/transfers/records",
+            f"http://{HOST}:{app_port}/api/collections/transfers/records",
             params={"perPage": 200, "page": page},
             headers={"Authorization": super_token},
             timeout=10,
@@ -140,7 +163,7 @@ def _clear_transfers(super_token: str):
         data = r.json()
         for it in data["items"]:
             dr = requests.delete(
-                f"{BASE_URL}/api/collections/transfers/records/{it['id']}",
+                f"http://{HOST}:{app_port}/api/collections/transfers/records/{it['id']}",
                 headers={"Authorization": super_token},
                 timeout=10,
             )
@@ -152,9 +175,9 @@ def _clear_transfers(super_token: str):
         page += 1
 
 
-def _transfers_count(super_token: str) -> int:
+def _transfers_count(super_token: str, app_port: int) -> int:
     r = requests.get(
-        f"{BASE_URL}/api/collections/transfers/records",
+        f"http://{HOST}:{app_port}/api/collections/transfers/records",
         params={"perPage": 1},
         headers={"Authorization": super_token},
         timeout=10,
@@ -165,20 +188,20 @@ def _transfers_count(super_token: str) -> int:
     return int(r.json()["totalItems"])
 
 
-def _reset_state(super_token: str, id_a: str, id_b: str):
-    _clear_transfers(super_token)
-    _set_balance(super_token, id_a, 100)
-    _set_balance(super_token, id_b, 0)
+def _reset_state(super_token: str, id_a: str, id_b: str, app_port: int):
+    _clear_transfers(super_token, app_port)
+    _set_balance(super_token, id_a, 100, app_port)
+    _set_balance(super_token, id_b, 0, app_port)
 
 
-def test_single_transfer_succeeds(server):
-    super_token = _superuser_token()
-    id_a, id_b = _wallet_ids(super_token)
-    _reset_state(super_token, id_a, id_b)
+def test_single_transfer_succeeds(server, app_port):
+    super_token = _superuser_token(app_port)
+    id_a, id_b = _wallet_ids(super_token, app_port)
+    _reset_state(super_token, id_a, id_b, app_port)
 
-    user_token = _user_token()
+    user_token = _user_token(app_port)
     r = requests.post(
-        f"{BASE_URL}/api/wallets/transfer",
+        f"http://{HOST}:{app_port}/api/wallets/transfer",
         json={"fromId": id_a, "toId": id_b, "amount": 10},
         headers={"Authorization": user_token},
         timeout=10,
@@ -194,20 +217,20 @@ def test_single_transfer_succeeds(server):
         f"Expected toBalance=10 in response, got {body}."
     )
 
-    assert _get_balance(super_token, id_a) == 90, (
+    assert _get_balance(super_token, id_a, app_port) == 90, (
         "Wallet A balance was not persisted to 90 after single transfer."
     )
-    assert _get_balance(super_token, id_b) == 10, (
+    assert _get_balance(super_token, id_b, app_port) == 10, (
         "Wallet B balance was not persisted to 10 after single transfer."
     )
 
 
-def test_unauthenticated_transfer_is_rejected(server):
-    super_token = _superuser_token()
-    id_a, id_b = _wallet_ids(super_token)
+def test_unauthenticated_transfer_is_rejected(server, app_port):
+    super_token = _superuser_token(app_port)
+    id_a, id_b = _wallet_ids(super_token, app_port)
 
     r = requests.post(
-        f"{BASE_URL}/api/wallets/transfer",
+        f"http://{HOST}:{app_port}/api/wallets/transfer",
         json={"fromId": id_a, "toId": id_b, "amount": 1},
         timeout=10,
     )
@@ -216,16 +239,16 @@ def test_unauthenticated_transfer_is_rejected(server):
     )
 
 
-def test_50_concurrent_transfers_complete_without_deadlock(server):
-    super_token = _superuser_token()
-    id_a, id_b = _wallet_ids(super_token)
-    _reset_state(super_token, id_a, id_b)
+def test_50_concurrent_transfers_complete_without_deadlock(server, app_port):
+    super_token = _superuser_token(app_port)
+    id_a, id_b = _wallet_ids(super_token, app_port)
+    _reset_state(super_token, id_a, id_b, app_port)
 
-    user_token = _user_token()
+    user_token = _user_token(app_port)
 
     def do_transfer():
         return requests.post(
-            f"{BASE_URL}/api/wallets/transfer",
+            f"http://{HOST}:{app_port}/api/wallets/transfer",
             json={"fromId": id_a, "toId": id_b, "amount": 1},
             headers={"Authorization": user_token},
             timeout=30,
@@ -246,27 +269,27 @@ def test_50_concurrent_transfers_complete_without_deadlock(server):
         f"Expected every concurrent transfer to return HTTP 200, got statuses: {sorted(statuses)}."
     )
 
-    assert _get_balance(super_token, id_a) == 50, (
-        f"After 50x $1 concurrent transfers, A.balance must be 50, got {_get_balance(super_token, id_a)}."
+    assert _get_balance(super_token, id_a, app_port) == 50, (
+        f"After 50x $1 concurrent transfers, A.balance must be 50, got {_get_balance(super_token, id_a, app_port)}."
     )
-    assert _get_balance(super_token, id_b) == 50, (
-        f"After 50x $1 concurrent transfers, B.balance must be 50, got {_get_balance(super_token, id_b)}."
+    assert _get_balance(super_token, id_b, app_port) == 50, (
+        f"After 50x $1 concurrent transfers, B.balance must be 50, got {_get_balance(super_token, id_b, app_port)}."
     )
-    assert _transfers_count(super_token) == 50, (
-        f"Expected exactly 50 audit rows in transfers, got {_transfers_count(super_token)}."
+    assert _transfers_count(super_token, app_port) == 50, (
+        f"Expected exactly 50 audit rows in transfers, got {_transfers_count(super_token, app_port)}."
     )
 
 
-def test_insufficient_funds_returns_400_without_state_change(server):
-    super_token = _superuser_token()
-    id_a, id_b = _wallet_ids(super_token)
-    _reset_state(super_token, id_a, id_b)
+def test_insufficient_funds_returns_400_without_state_change(server, app_port):
+    super_token = _superuser_token(app_port)
+    id_a, id_b = _wallet_ids(super_token, app_port)
+    _reset_state(super_token, id_a, id_b, app_port)
 
-    user_token = _user_token()
+    user_token = _user_token(app_port)
 
-    before_transfers = _transfers_count(super_token)
+    before_transfers = _transfers_count(super_token, app_port)
     r = requests.post(
-        f"{BASE_URL}/api/wallets/transfer",
+        f"http://{HOST}:{app_port}/api/wallets/transfer",
         json={"fromId": id_a, "toId": id_b, "amount": 9999},
         headers={"Authorization": user_token},
         timeout=10,
@@ -275,12 +298,12 @@ def test_insufficient_funds_returns_400_without_state_change(server):
         f"Expected HTTP 400 for insufficient funds, got {r.status_code}: {r.text}"
     )
 
-    assert _get_balance(super_token, id_a) == 100, (
+    assert _get_balance(super_token, id_a, app_port) == 100, (
         "Wallet A balance should remain 100 after a failed transfer."
     )
-    assert _get_balance(super_token, id_b) == 0, (
+    assert _get_balance(super_token, id_b, app_port) == 0, (
         "Wallet B balance should remain 0 after a failed transfer."
     )
-    assert _transfers_count(super_token) == before_transfers, (
+    assert _transfers_count(super_token, app_port) == before_transfers, (
         "No new audit row should be inserted when the transfer fails."
     )

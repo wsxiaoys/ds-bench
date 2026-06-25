@@ -4,7 +4,7 @@
 ArkType implements the [Standard Schema](https://standardschema.dev) specification: every schema exposes a `~standard` property with a `validate(value)` method that returns either a typed success result or a list of issues. Build a small Express service that performs ALL request validation through this vendor-neutral interface — not through ArkType's own `.assert()` / direct-invocation APIs.
 
 ## Requirements
-- Implement an Express HTTP service in `/home/user/myproject` listening on port 3000.
+- Implement an Express HTTP service in `/home/user/myproject` listening on the port specified by the start command.
 - Define two ArkType schemas (using `arktype@2.2.0`):
   - A body schema for `POST /users` with `username` (alphanumeric, length 3..20), `email` (valid email), and an optional `age` (integer in [13, 120]).
   - A query schema for `GET /search` with `q` (string, length 1..100), `page` (integer >= 1), and `limit` (integer in [1, 50]). Because Express query values arrive as strings, the schema MUST coerce strings to numbers using ArkType morphs (a single declarative pipeline — no `JSON.parse`, `parseInt`, or other hand-written coercion).
@@ -24,8 +24,7 @@ ArkType implements the [Standard Schema](https://standardschema.dev) specificati
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: `npx tsx server.ts`
-- Port: 3000
+- Start command: `npx tsx server.ts --port <port>`
 - API Endpoints:
   - `POST /users`
     ```json

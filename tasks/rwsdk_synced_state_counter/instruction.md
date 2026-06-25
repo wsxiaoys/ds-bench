@@ -14,9 +14,8 @@ A RedwoodSDK project is pre-installed at `/home/user/myapp`. Build a globally sh
 
 ## Acceptance Criteria
 - Project path: /home/user/myapp
-- Start command: npm run dev -- --host 0.0.0.0 --port 5173
-- Port: 5173
+- Start command: npm run dev -- --host 0.0.0.0 --port <port>
 - `wrangler.jsonc` must contain the `SYNCED_STATE_SERVER` Durable Object binding and the SQLite migration tag `v1` referencing `SyncedStateServer`.
 - `GET /counter` returns HTML containing the text `Count:` and a button labelled `Increment` (must be the client component).
-- Browser verification: on http://localhost:5173/counter, after clicking `Reset` then `Increment` three times, the text `Count: 3` is visible. Clicking `Reset` again returns the page to `Count: 0`.
+- Browser verification: on http://localhost:$PORT/counter, after clicking `Reset` then `Increment` three times, the text `Count: 3` is visible. Clicking `Reset` again returns the page to `Count: 0`.
 

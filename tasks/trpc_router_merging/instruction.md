@@ -20,6 +20,5 @@ We are using tRPC v11 in a Next.js project. The application has grown, and the A
 
 ## Constraints
 - Project path: `/home/user/project`
-- Start command: `npm run dev`
-- Port: 3000
+- Start command: `npm run dev -- --port <port>`
 - You must use the `router` function from `src/server/trpc.ts` to merge the routers (do not use the deprecated `mergeRouters` function unless necessary, but namespacing via `router()` is preferred).

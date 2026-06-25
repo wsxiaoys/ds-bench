@@ -10,19 +10,27 @@ from pochi_verifier import PochiVerifier
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
-BASE_URL = "http://localhost:5173"
 
 
 # ---------------------------------------------------------------------------
 # App lifecycle fixture
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="session")
-def start_app(xprocess):
-    """Start the RedwoodSDK dev server via `npm run dev` and wait for port 5173."""
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
+    """Start the RedwoodSDK dev server via `npm run dev` and wait for port."""
 
     class Starter(ProcessStarter):
         name = "rwsdk_dev"
-        args = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+        args = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -35,16 +43,32 @@ def start_app(xprocess):
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(2)
-                    if s.connect_ex(("localhost", 5173)) != 0:
+                    if s.connect_ex(("localhost", app_port)) != 0:
                         return False
                 # also ensure HTTP responds
-                r = requests.get(BASE_URL + "/login", timeout=5)
+                r = requests.get(f"http://localhost:{app_port}/login", timeout=5)
                 return r.status_code < 500
             except Exception:
                 return False
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
@@ -116,8 +140,8 @@ def test_source_uses_interrupter_pattern_for_dashboard():
 # ---------------------------------------------------------------------------
 # HTTP behavior checks
 # ---------------------------------------------------------------------------
-def test_unauthenticated_dashboard_redirects_to_login(start_app):
-    r = requests.get(BASE_URL + "/dashboard", allow_redirects=False, timeout=15)
+def test_unauthenticated_dashboard_redirects_to_login(start_app, app_port):
+    r = requests.get(f"http://localhost:{app_port}/dashboard", allow_redirects=False, timeout=15)
     assert r.status_code == 302, (
         f"Expected 302 redirect for unauthenticated /dashboard, got {r.status_code}."
     )
@@ -127,8 +151,8 @@ def test_unauthenticated_dashboard_redirects_to_login(start_app):
     )
 
 
-def test_login_page_renders_form(start_app):
-    r = requests.get(BASE_URL + "/login", allow_redirects=False, timeout=15)
+def test_login_page_renders_form(start_app, app_port):
+    r = requests.get(f"http://localhost:{app_port}/login", allow_redirects=False, timeout=15)
     assert r.status_code == 200, f"Expected 200 for GET /login, got {r.status_code}."
     body = r.text
     assert re.search(r"<form\b[^>]*method\s*=\s*['\"]?post['\"]?", body, re.IGNORECASE), (
@@ -142,9 +166,9 @@ def test_login_page_renders_form(start_app):
     )
 
 
-def test_invalid_login_returns_401_and_no_session_cookie(start_app):
+def test_invalid_login_returns_401_and_no_session_cookie(start_app, app_port):
     r = requests.post(
-        BASE_URL + "/login",
+        f"http://localhost:{app_port}/login",
         data={"username": "demo", "password": "wrong"},
         allow_redirects=False,
         timeout=15,
@@ -165,9 +189,9 @@ def test_invalid_login_returns_401_and_no_session_cookie(start_app):
         )
 
 
-def _login_and_capture_cookie():
+def _login_and_capture_cookie(app_port):
     r = requests.post(
-        BASE_URL + "/login",
+        f"http://localhost:{app_port}/login",
         data={"username": "demo", "password": "pass"},
         allow_redirects=False,
         timeout=15,
@@ -175,12 +199,12 @@ def _login_and_capture_cookie():
     return r
 
 
-def test_valid_login_sets_signed_session_cookie(start_app):
-    r = _login_and_capture_cookie()
+def test_valid_login_sets_signed_session_cookie(start_app, app_port):
+    r = _login_and_capture_cookie(app_port)
     assert r.status_code == 302, (
         f"Expected 302 redirect on successful login, got {r.status_code}."
     )
-    assert r.headers.get("Location", "") in {"/dashboard", BASE_URL + "/dashboard"}, (
+    assert r.headers.get("Location", "") in {"/dashboard", f"http://localhost:{app_port}/dashboard"}, (
         f"Expected Location: /dashboard after successful login, got '{r.headers.get('Location')}'."
     )
 
@@ -204,10 +228,10 @@ def test_valid_login_sets_signed_session_cookie(start_app):
     )
 
 
-def test_authenticated_dashboard_shows_username(start_app):
+def test_authenticated_dashboard_shows_username(start_app, app_port):
     s = requests.Session()
     login = s.post(
-        BASE_URL + "/login",
+        f"http://localhost:{app_port}/login",
         data={"username": "demo", "password": "pass"},
         allow_redirects=False,
         timeout=15,
@@ -215,7 +239,7 @@ def test_authenticated_dashboard_shows_username(start_app):
     assert login.status_code == 302, f"Login failed: status={login.status_code}"
     assert "session" in s.cookies, "Login did not place a `session` cookie in the client jar."
 
-    r = s.get(BASE_URL + "/dashboard", allow_redirects=False, timeout=15)
+    r = s.get(f"http://localhost:{app_port}/dashboard", allow_redirects=False, timeout=15)
     assert r.status_code == 200, (
         f"Expected 200 for authenticated /dashboard, got {r.status_code}."
     )
@@ -224,10 +248,10 @@ def test_authenticated_dashboard_shows_username(start_app):
     )
 
 
-def test_tampered_cookie_is_rejected(start_app):
+def test_tampered_cookie_is_rejected(start_app, app_port):
     s = requests.Session()
     login = s.post(
-        BASE_URL + "/login",
+        f"http://localhost:{app_port}/login",
         data={"username": "demo", "password": "pass"},
         allow_redirects=False,
         timeout=15,
@@ -242,7 +266,7 @@ def test_tampered_cookie_is_rejected(start_app):
     tampered = raw_value[:-1] + flipped
 
     r = requests.get(
-        BASE_URL + "/dashboard",
+        f"http://localhost:{app_port}/dashboard",
         cookies={"session": tampered},
         allow_redirects=False,
         timeout=15,
@@ -256,17 +280,17 @@ def test_tampered_cookie_is_rejected(start_app):
     )
 
 
-def test_logout_clears_cookie_and_blocks_dashboard(start_app):
+def test_logout_clears_cookie_and_blocks_dashboard(start_app, app_port):
     s = requests.Session()
     login = s.post(
-        BASE_URL + "/login",
+        f"http://localhost:{app_port}/login",
         data={"username": "demo", "password": "pass"},
         allow_redirects=False,
         timeout=15,
     )
     assert login.status_code == 302
 
-    logout = s.post(BASE_URL + "/logout", allow_redirects=False, timeout=15)
+    logout = s.post(f"http://localhost:{app_port}/logout", allow_redirects=False, timeout=15)
     assert logout.status_code == 302, (
         f"Expected 302 on /logout, got {logout.status_code}."
     )
@@ -289,7 +313,7 @@ def test_logout_clears_cookie_and_blocks_dashboard(start_app):
     # After logout the jar's cookie may still exist client-side until rejected;
     # follow up with a fresh request that omits the cookie entirely to confirm
     # /dashboard still redirects when unauthenticated.
-    r = requests.get(BASE_URL + "/dashboard", allow_redirects=False, timeout=15)
+    r = requests.get(f"http://localhost:{app_port}/dashboard", allow_redirects=False, timeout=15)
     assert r.status_code == 302 and r.headers.get("Location", "").endswith("/login"), (
         "After logout, /dashboard must redirect unauthenticated visitors to /login."
     )
@@ -298,7 +322,7 @@ def test_logout_clears_cookie_and_blocks_dashboard(start_app):
 # ---------------------------------------------------------------------------
 # Browser verification
 # ---------------------------------------------------------------------------
-def test_browser_full_flow(start_app):
+def test_browser_full_flow(start_app, app_port):
     reason = (
         "The /dashboard route must be protected by an rwsdk interrupter. Unauthenticated "
         "browser visits must be redirected to /login. After logging in with demo / pass, the "
@@ -306,14 +330,14 @@ def test_browser_full_flow(start_app):
         "/login and revoke access."
     )
     truth = (
-        "Open a fresh browser context (no cookies). Navigate to http://localhost:5173/dashboard. "
+        f"Open a fresh browser context (no cookies). Navigate to http://localhost:{app_port}/dashboard. "
         "Expected: the browser ends up at /login and the login form is visible. "
         "Fill the form fields named 'username' with 'demo' and 'password' with 'pass', then "
         "submit the form. Expected: the browser navigates to /dashboard and the visible page "
         "text contains 'demo'. Then trigger logout (click a Logout button if present, or "
-        "navigate the browser so it submits a POST to http://localhost:5173/logout). Expected: "
+        f"navigate the browser so it submits a POST to http://localhost:{app_port}/logout). Expected: "
         "the browser is redirected back to /login. Finally, navigate again to "
-        "http://localhost:5173/dashboard. Expected: the browser is once again redirected to "
+        f"http://localhost:{app_port}/dashboard. Expected: the browser is once again redirected to "
         "/login."
     )
 

@@ -15,8 +15,7 @@ Build a small file storage backend with RedwoodSDK (`rwsdk`) on Cloudflare Worke
 
 ## Acceptance Criteria
 - Project path: `/home/user/myproject`
-- Start command: `npm run dev -- --host 0.0.0.0 --port 5173`
-- Port: `5173`
+- Start command: `npm run dev -- --host 0.0.0.0 --port <port>`
 - A Cloudflare R2 binding named `BUCKET` must be declared in `wrangler.jsonc` under `r2_buckets`.
 - API endpoints (all responses are JSON unless noted):
   - `POST /api/files`

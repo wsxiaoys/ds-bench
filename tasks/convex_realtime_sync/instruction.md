@@ -20,9 +20,8 @@ Create a collaborative counter where multiple clients see updates instantly usin
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: npm run dev
-- Port: 5173
-- The React app must be accessible at `http://localhost:5173`.
+- Start command: `npm run dev -- --port <port>`
+- The React app must be accessible at `http://localhost:<port>`.
 - The app must display the current count for the specific `run-id`.
 - The app must have a button with the text "Increment" that increments the count when clicked.
 - The counter data must be stored in Convex and isolated by `run-id` (read from `/logs/artifacts/run-id`).

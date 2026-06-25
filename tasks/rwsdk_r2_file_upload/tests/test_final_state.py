@@ -12,7 +12,15 @@ import requests
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
-BASE_URL = "http://localhost:5173"
+
+
+@pytest.fixture(scope="session")
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
 
 # Deterministic 1x1 transparent PNG (67 bytes). The bytes are the standard
 # minimal PNG referenced in the task's verification plan.
@@ -68,10 +76,10 @@ def reset_local_r2_state():
 
 
 @pytest.fixture(scope="session")
-def app_server(xprocess, reset_local_r2_state):
+def app_server(xprocess, app_port, reset_local_r2_state):
     class Starter(ProcessStarter):
         name = "rwsdk_r2_dev_server"
-        args = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+        args = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -81,17 +89,32 @@ def app_server(xprocess, reset_local_r2_state):
         terminate_on_interrupt = True
 
         def startup_check(self):
-            return _wait_for_port("localhost", 5173, timeout=2.0)
+            return _wait_for_port("localhost", app_port, timeout=2.0)
 
-    xprocess.ensure(Starter.name, Starter)
+    base_url = f"http://localhost:{app_port}"
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
 
     # Make sure the worker is actually serving HTTP, not just that the port is
     # open (Vite opens the port early but the worker may still be warming up).
-    assert _wait_for_http(BASE_URL + "/api/files", timeout=240), (
-        "Dev server did not start responding on http://localhost:5173 within 240s."
+    assert _wait_for_http(base_url + "/api/files", timeout=240), (
+        f"Dev server did not start responding on http://localhost:{app_port} within 240s."
     )
 
-    yield BASE_URL
+    yield base_url
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()

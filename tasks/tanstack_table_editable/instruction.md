@@ -10,7 +10,7 @@ Create a web application that displays a data table with inline editing capabili
 - Use TanStack Form to manage the state and validation of the inline edit form (e.g., Name is required, Email must be a valid format).
 - Provide "Save" and "Cancel" buttons when a row is in edit mode.
 - Saving should update the table data and exit edit mode. Canceling should revert changes and exit edit mode.
-- Run the application on port 5732.
+- Run the application on the specified port.
 
 ## Implementation Hints
 - Use `useReactTable` to manage the table state and columns.
@@ -19,10 +19,9 @@ Create a web application that displays a data table with inline editing capabili
 
 ## Acceptance Criteria
 - Project path: /home/user/project
-- Start command: npm run dev
-- Port: 5732
+- Start command: npm run dev -- --port <port>
 - Test Criteria:
-  1. The app must serve a web page on port 5732.
+  1. The app must serve a web page on the specified port.
   2. The table must display at least 3 initial user records containing columns for ID, Name, Email, and Role.
   3. Each row must have an "Edit" button.
   4. Clicking "Edit" changes the row's Name, Email, and Role cells into input fields managed by TanStack Form, and shows "Save" and "Cancel" buttons.

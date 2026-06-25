@@ -11,7 +11,6 @@ import requests
 
 PROJECT_DIR = "/home/user/myapp"
 APP_PKG_DIR = "/home/user/myapp/myapp"
-BACKEND = "http://localhost:8000"
 
 
 # ---------------------------------------------------------------------------
@@ -266,62 +265,81 @@ def _kill_servers():
         subprocess.run(["pkill", "-f", pattern], check=False)
 
 
+@pytest.fixture(scope="session")
+def app_port():
+    """Finds and yields a free port on localhost."""
+    import socket as _socket
+    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
 @pytest.fixture(scope="module")
-def reflex_backend():
+def reflex_backend(xprocess, app_port):
     _kill_servers()
     # Give the OS a moment to free the ports.
     time.sleep(2)
 
-    env = os.environ.copy()
-    proc = subprocess.Popen(
-        ["uv", "run", "reflex", "run", "--backend-only", "--loglevel", "debug"],
-        cwd=PROJECT_DIR,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=env,
-    )
+    from xprocess import ProcessStarter
 
-    started = False
-    deadline = time.time() + 240
-    last_err = ""
-    while time.time() < deadline:
-        if proc.poll() is not None:
-            break
-        try:
-            r = requests.get(f"{BACKEND}/ping", timeout=2)
-            if r.status_code == 200 and "pong" in r.text.lower():
-                started = True
-                break
-        except Exception as e:
-            last_err = str(e)
-        time.sleep(2)
+    class Starter(ProcessStarter):
+        name = "reflex_backend"
+        args = [
+            "uv",
+            "run",
+            "reflex",
+            "run",
+            "--backend-only",
+            "--backend-port",
+            str(app_port),
+            "--loglevel",
+            "debug",
+        ]
+        env = os.environ.copy()
+        popen_kwargs = {
+            "cwd": PROJECT_DIR,
+            "text": True,
+        }
+        timeout = 240
+        terminate_on_interrupt = True
 
-    if not started:
-        try:
-            proc.terminate()
-            proc.wait(timeout=10)
-        except Exception:
-            proc.kill()
-        _kill_servers()
-        pytest.fail(
-            f"Reflex backend did not become ready on {BACKEND}/ping within timeout. "
-            f"Last error: {last_err}"
-        )
+        def startup_check(self) -> bool:
+            if not _port_open("localhost", app_port):
+                return False
+            try:
+                r = requests.get(f"http://localhost:{app_port}/ping", timeout=2)
+                return r.status_code == 200 and "pong" in r.text.lower()
+            except Exception:
+                return False
+
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r", errors="replace") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
 
     yield
 
-    try:
-        proc.terminate()
-        proc.wait(timeout=10)
-    except Exception:
-        proc.kill()
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r", errors="replace") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
+    info = xprocess.getinfo(Starter.name)
+    info.terminate()
     _kill_servers()
     time.sleep(2)
 
 
-def test_login_with_correct_credentials_returns_access_token(reflex_backend):
+def test_login_with_correct_credentials_returns_access_token(reflex_backend, app_port):
     r = requests.post(
-        f"{BACKEND}/api/login",
+        f"http://localhost:{app_port}/api/login",
         json={"username": "admin", "password": "secret"},
         timeout=10,
     )
@@ -336,9 +354,9 @@ def test_login_with_correct_credentials_returns_access_token(reflex_backend):
     )
 
 
-def test_login_with_wrong_credentials_returns_401(reflex_backend):
+def test_login_with_wrong_credentials_returns_401(reflex_backend, app_port):
     r = requests.post(
-        f"{BACKEND}/api/login",
+        f"http://localhost:{app_port}/api/login",
         json={"username": "admin", "password": "wrong"},
         timeout=10,
     )
@@ -347,9 +365,9 @@ def test_login_with_wrong_credentials_returns_401(reflex_backend):
     )
 
 
-def test_me_with_valid_token_returns_admin(reflex_backend):
+def test_me_with_valid_token_returns_admin(reflex_backend, app_port):
     login = requests.post(
-        f"{BACKEND}/api/login",
+        f"http://localhost:{app_port}/api/login",
         json={"username": "admin", "password": "secret"},
         timeout=10,
     )
@@ -358,7 +376,7 @@ def test_me_with_valid_token_returns_admin(reflex_backend):
     assert token, "Login response did not include access_token."
 
     r = requests.get(
-        f"{BACKEND}/api/me",
+        f"http://localhost:{app_port}/api/me",
         headers={"Authorization": f"Bearer {token}"},
         timeout=10,
     )
@@ -370,16 +388,16 @@ def test_me_with_valid_token_returns_admin(reflex_backend):
     )
 
 
-def test_me_without_token_returns_unauthorized(reflex_backend):
-    r = requests.get(f"{BACKEND}/api/me", timeout=10)
+def test_me_without_token_returns_unauthorized(reflex_backend, app_port):
+    r = requests.get(f"http://localhost:{app_port}/api/me", timeout=10)
     assert r.status_code in (401, 403), (
         f"Expected 401 or 403 from GET /api/me without a token, got {r.status_code}: {r.text}"
     )
 
 
-def test_me_with_malformed_token_returns_unauthorized(reflex_backend):
+def test_me_with_malformed_token_returns_unauthorized(reflex_backend, app_port):
     r = requests.get(
-        f"{BACKEND}/api/me",
+        f"http://localhost:{app_port}/api/me",
         headers={"Authorization": "Bearer not.a.real.token"},
         timeout=10,
     )

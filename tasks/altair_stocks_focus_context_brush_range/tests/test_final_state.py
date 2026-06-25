@@ -13,7 +13,15 @@ from pochi_verifier import PochiVerifier
 PROJECT_DIR = "/home/user/myproject"
 CHART_HTML = os.path.join(PROJECT_DIR, "chart.html")
 BUILD_SCRIPT = os.path.join(PROJECT_DIR, "build_chart.py")
-PREVIEW_PORT = 8765
+
+
+@pytest.fixture(scope="session")
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
 
 
 def _extract_vega_lite_spec(html: str) -> dict[str, Any]:
@@ -245,12 +253,12 @@ def test_lower_context_view(vega_spec):
 
 
 @pytest.fixture(scope="session")
-def chart_preview_server(xprocess):
+def chart_preview_server(xprocess, app_port):
     """Serve the project directory over HTTP so a headless browser can load chart.html."""
 
     class Starter(ProcessStarter):
         name = "altair_chart_preview"
-        args = ["python3", "-m", "http.server", str(PREVIEW_PORT)]
+        args = ["python3", "-m", "http.server", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -261,15 +269,31 @@ def chart_preview_server(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", PREVIEW_PORT)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
-    yield f"http://localhost:{PREVIEW_PORT}/chart.html"
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
+    yield f"http://localhost:{app_port}/chart.html"
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 
-def test_browser_focus_context_brush(chart_preview_server):
+def test_browser_focus_context_brush(chart_preview_server, app_port):
     reason = (
         "The Altair-generated chart.html must render a classic Focus + Context "
         "(overview + detail) S&P 500 chart: two stacked area charts where the "

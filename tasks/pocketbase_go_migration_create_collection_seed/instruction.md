@@ -21,8 +21,7 @@ PocketBase can be extended using Go. When used as a Go framework, you can write 
 
 ## Acceptance Criteria
 - Project path: `/home/user/myproject`
-- Start command: `go run main.go serve --http=0.0.0.0:8090`
-- Port: 8090
+- Start command: `go run main.go serve --http=127.0.0.1:<port>`
 - API Endpoints:
   - GET `/api/collections/configs/records`: Returns status 200 and a JSON response containing the `items` array with the seeded records.
 

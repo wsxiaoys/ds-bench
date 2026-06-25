@@ -25,8 +25,7 @@ Convex is a reactive backend-as-a-service. Expo is a framework for React Native.
 
 ## Acceptance Criteria
 - Project path: /home/user/my-app
-- Start command: npx expo start --web --port 8081
-- Port: 8081
+- Start command: npx expo start --web --port <port>
 - The Convex backend must be deployed and active.
 - The web app must load successfully.
 - The web app must contain an input field with `data-testid="task-input"` (React Native web translates `testID` to `data-testid`).

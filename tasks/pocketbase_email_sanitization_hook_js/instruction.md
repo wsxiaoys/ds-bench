@@ -11,7 +11,7 @@ A PocketBase v0.31.0 binary has been pre-extracted to `/home/user/myproject/pock
 - Before the record is persisted, the hook must rewrite the submitted `email` value so that it has all leading/trailing whitespace removed AND is fully lowercased.
 - Only the `users` collection should be affected. Other auth collections (such as `_superusers`) must NOT have their email modified by this hook.
 - The hook must work whether the submitted email is already clean or whether it contains surrounding whitespace and mixed casing.
-- Start the PocketBase server bound to all interfaces on TCP port 8090.
+- Start the PocketBase server bound to all interfaces on the dynamically assigned port.
 
 ## Implementation Hints
 - PocketBase v0.31.0 uses the post-v0.23 hook API: handlers must propagate the chain (otherwise the operation is silently blocked).
@@ -21,8 +21,7 @@ A PocketBase v0.31.0 binary has been pre-extracted to `/home/user/myproject/pock
 
 ## Acceptance Criteria
 - Project path: `/home/user/myproject`
-- Start command: `./pocketbase serve --http=0.0.0.0:8090`
-- Port: 8090
+- Start command: `./pocketbase serve --http=0.0.0.0:<port>`
 - A hook file with the extension `.pb.js` exists under `/home/user/myproject/pb_hooks/`.
 - After the server is running, creating a new user through the public REST API `POST /api/collections/users/records` with a JSON body of the form
 

@@ -22,8 +22,7 @@ You have an empty Express project initialized at `/home/user/myproject` with `ex
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: node index.js
-- Port: 3000
+- Start command: node index.js --port <port>
 - API Endpoints:
   - GET `/profile`:
     - When a valid `pb_auth` cookie is provided in the request: Returns status 200 and a JSON object containing the user's `id` and `email`.

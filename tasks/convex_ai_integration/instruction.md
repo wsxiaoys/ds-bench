@@ -23,8 +23,7 @@ Convex is a reactive backend-as-a-service. You need to build a Convex backend th
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: npm run dev
-- Port: 5173
+- Start command: npm run dev -- --port <port>
 - Convex API:
   - Query `api.ai.list`: Returns a JSON array of generation objects.
   - Action `api.ai.generate`: Accepts a JSON object with a `prompt` string, calls OpenAI, and saves the result via the mutation.

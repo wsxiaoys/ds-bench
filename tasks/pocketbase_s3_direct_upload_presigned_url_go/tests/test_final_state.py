@@ -7,14 +7,22 @@ from xprocess import ProcessStarter
 PROJECT_DIR = "/home/user/myproject"
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     # First run go mod tidy
     import subprocess
     subprocess.run(["go", "mod", "tidy"], cwd=PROJECT_DIR, check=True)
 
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["go", "run", "main.go", "serve", "--http=0.0.0.0:8090"]
+        args = ["go", "run", "main.go", "serve", f"--http=0.0.0.0:{app_port}"]
 
         env = os.environ.copy()
         env["AWS_REGION"] = "us-east-1"
@@ -31,22 +39,38 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8090)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
-def test_missing_filename_parameter(start_app):
+def test_missing_filename_parameter(start_app, app_port):
     """Verify that a request without the filename parameter returns status 400."""
-    response = requests.get("http://localhost:8090/api/s3-presign")
+    response = requests.get(f"http://localhost:{app_port}/api/s3-presign")
     assert response.status_code == 400, f"Expected status 400 for missing filename, got {response.status_code}"
 
-def test_generate_presigned_url(start_app):
+def test_generate_presigned_url(start_app, app_port):
     """Verify that a valid request returns a presigned URL in the correct format."""
     run_id = open("/logs/artifacts/run-id").read().strip()
-    response = requests.get("http://localhost:8090/api/s3-presign?filename=test_video.mp4")
+    response = requests.get(f"http://localhost:{app_port}/api/s3-presign?filename=test_video.mp4")
 
     assert response.status_code == 200, f"Expected status 200, got {response.status_code}. Response: {response.text}"
 

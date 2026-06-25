@@ -31,13 +31,12 @@ A minimal Vite + TypeScript project has already been scaffolded for you at `/hom
 
 ## Acceptance Criteria
 - Project path: /home/user/myapp
-- Start command: `npm run preview -- --host 0.0.0.0 --port 4173`
-- Port: 4173
+- Start command: `npm run preview -- --host 0.0.0.0 --port <port>`
 - `npm run build` must complete without errors and produce a `dist/` directory containing `index.html`.
 - `capacitor.config.ts` (or `capacitor.config.json`) must exist at the project root with `appName` equal to `Photo Gallery`, `appId` equal to `com.example.photogallery`, and `webDir` equal to `dist`.
 - `package.json` must list `@capacitor/core`, `@capacitor/cli`, `@capacitor/camera`, `@capacitor/filesystem`, and `@capacitor/preferences` as dependencies (any of `dependencies` or `devDependencies`). The installed version of `@capacitor/camera` must be 8.1.0 or newer.
 - `npx cap sync` executed after the production build must exit with status 0.
-- The served page at `http://localhost:4173/` must contain elements with the HTML ids `capture-btn` and `capture-status`. On initial load (before any capture has been attempted), `#capture-status` must contain the literal text `idle`.
+- The served page at `http://localhost:$PORT/` must contain elements with the HTML ids `capture-btn` and `capture-status`. On initial load (before any capture has been attempted), `#capture-status` must contain the literal text `idle`.
 - `window.gallery.capturePhoto`, `window.gallery.listPhotos`, and `window.gallery.deletePhoto` must all be defined as async functions on the served page.
 - Calling (or clicking through to) `window.gallery.capturePhoto()` after the file picker provides a JPEG must:
     - Resolve with a string of the form `photos/<isoTimestamp>.jpeg`, where `<isoTimestamp>` is the value of an ISO-8601 timestamp produced by `new Date().toISOString()` (e.g. `photos/2026-01-02T03:04:05.678Z.jpeg`).

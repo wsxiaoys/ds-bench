@@ -28,8 +28,7 @@ The API must expose endpoints to create, read, delete, and count sessions. Sessi
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: npm run dev
-- Port: 5173
+- Start command: npm run dev -- --port <port>
 - KV binding: A binding named `SESSIONS` is configured in `wrangler.jsonc` and is reachable from route handlers at runtime.
 - KV key naming: All session entries are stored under keys matching the pattern `sess:<sessionId>`.
 - Session id format: 32 lowercase hexadecimal characters (`^[0-9a-f]{32}$`).

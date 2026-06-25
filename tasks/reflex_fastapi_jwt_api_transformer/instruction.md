@@ -22,13 +22,12 @@ Reflex apps are powered by a FastAPI backend, and Reflex exposes the `api_transf
 - For the random secret, prefer `secrets.token_urlsafe(32)`. Generate it once at module import / app startup and reuse it.
 - For backend-only state, see https://reflex.dev/docs/state/overview/ — any state attribute whose name begins with `_` is backend-only and not synced to the browser.
 - Initialize the Reflex project non-interactively with `uv run reflex init --template blank` (the project is already prepared during initial state, but you may re-run it).
-- Start the dev server with `uv run reflex run --loglevel debug`. The Reflex backend listens on port 8000; the frontend on port 3000.
+- Start the dev server with `uv run reflex run --backend-only --backend-port <port> --loglevel debug`.
 - Remember to kill any background Reflex/uv processes you start before the task ends.
 
 ## Acceptance Criteria
 - Project path: /home/user/myapp
-- Start command: cd /home/user/myapp && uv run reflex run --loglevel debug
-- Port: 8000 (backend FastAPI/Reflex)
+- Start command: cd /home/user/myapp && uv run reflex run --backend-only --backend-port <port> --loglevel debug
 - API Endpoints (mounted on the Reflex backend via `api_transformer`):
   - POST `/api/login`:
     ```json

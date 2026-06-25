@@ -13,12 +13,11 @@ Implement a custom user signup route in a PocketBase Go application and protect 
 ## Implementation Hints
 - You can use PocketBase's built-in `apis.RateLimit()` middleware by configuring the app settings, or implement a custom rate limiting middleware using standard Go libraries (e.g., `golang.org/x/time/rate`).
 - To create a user, you'll need to interact with the PocketBase `users` collection programmatically using `core.NewRecord()` and `app.Save()`.
-- Ensure the application is started using `go run main.go serve --http=0.0.0.0:8090`.
+- Ensure the application is started using `go run main.go serve --http=0.0.0.0:<port>`.
 
 ## Acceptance Criteria
 - Project path: /home/user/pb
-- Start command: go run main.go serve --http=0.0.0.0:8090
-- Port: 8090
+- Start command: go run main.go serve --http=0.0.0.0:<port>
 - API Endpoints:
   - POST `/api/custom_signup`: Accepts a JSON body and creates a user.
 

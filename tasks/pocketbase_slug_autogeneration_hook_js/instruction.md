@@ -19,8 +19,7 @@ PocketBase allows extending its functionality using JavaScript (ES5) via an embe
 
 ## Acceptance Criteria
 - Project path: /home/user/pocketbase_app
-- Start command: ./pocketbase serve --http="0.0.0.0:8090"
-- Port: 8090
+- Start command: ./pocketbase serve --http="0.0.0.0:<port>"
 - API Endpoints:
   - POST `/api/collections/posts/records`: Creates a new post.
     - When providing a valid `title`, the response should be a 200 OK and the returned record object must contain a `slug` field with the slugified version of the title.

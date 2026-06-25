@@ -20,8 +20,7 @@ When PocketBase is configured with S3 storage, file uploads are proxied through 
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: go run main.go serve --http="0.0.0.0:8090"
-- Port: 8090
+- Start command: go run main.go serve --http="0.0.0.0:<port>"
 - API Endpoints:
   - GET `/api/s3-presign?filename=<filename>`: Returns status 200 and a JSON object containing the presigned URL.
 

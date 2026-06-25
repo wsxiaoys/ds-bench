@@ -19,8 +19,7 @@ In Sequelize, the `paranoid` option allows for soft deletes (setting a `deletedA
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: node index.js
-- Port: 3000
+- Start command: node index.js --port <port>
 - API Endpoints:
   - POST `/users`: Accepts `{"username": string}` and returns 201 with the created user object (must include `id`).
   - POST `/users/:id/posts`: Accepts `{"title": string}` and returns 201 with the created post object (must include `id`).

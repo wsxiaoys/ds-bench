@@ -18,8 +18,7 @@ You are building a custom Go application that embeds PocketBase as a framework. 
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: go build -o myapp && ./myapp serve --http="0.0.0.0:8090"
-- Port: 8090
+- Start command: go build -o myapp && ./myapp serve --http="0.0.0.0:<port>"
 - API Endpoints:
   - POST `/api/collections/posts/records`: Accepts a JSON body with a `title`.
     - If `title` is provided, returns 200 OK with the created record, which must include the generated `slug`.

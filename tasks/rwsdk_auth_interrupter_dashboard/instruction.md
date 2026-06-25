@@ -25,8 +25,7 @@ You are extending a freshly scaffolded RedwoodSDK (`rwsdk`) project. Build a ses
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: npm run dev
-- Port: 5173
+- Start command: npm run dev -- --port <port>
 - Demo credentials: username `demo`, password `pass` (the verifier uses these to log in).
 - Session cookie:
   - Name: `session`

@@ -26,7 +26,7 @@ This exercises PocketBase's relational [API Rules](https://pocketbase.io/docs/ap
     - All five rules (`listRule`, `viewRule`, `createRule`, `updateRule`, `deleteRule`) must require the requester to be authenticated AND to be a member of the task's parent project (via the `project` relation's `members` field).
 - Guests (unauthenticated requests) MUST NOT be able to list, view, create, update or delete any record from either collection.
 - Superusers retain unrestricted access (PocketBase already grants this; do not break it).
-- Start the PocketBase server bound to all interfaces on TCP port 8090.
+- Start the PocketBase server bound to all interfaces on a port specified dynamically.
 
 ## Implementation Hints
 - PocketBase v0.31 uses the JS migration API documented at [JS Migrations](https://pocketbase.io/docs/js-migrations/). A migration file is a single `migrate((app) => { ... }, (app) => { ... })` call; the second callback is the down/rollback.
@@ -38,11 +38,10 @@ This exercises PocketBase's relational [API Rules](https://pocketbase.io/docs/ap
 
 ## Acceptance Criteria
 - Project path: `/home/user/myproject`
-- Start command: `./pocketbase serve --http=0.0.0.0:8090`
-- Port: 8090
+- Start command: `./pocketbase serve --http=0.0.0.0:<port>`
 - A migration file with the extension `.js` exists under `/home/user/myproject/pb_migrations/`.
 - After the server has started, the PocketBase REST API exposes two new application collections (`projects` and `tasks`) with the schemas described in Requirements. Their fields can be inspected by an authenticated superuser via `GET /api/collections/{projects|tasks}`.
-- API endpoints exercised by verification (all under `http://127.0.0.1:8090`):
+- API endpoints exercised by verification (all under `http://127.0.0.1:<port>`):
   - `POST /api/collections/_superusers/auth-with-password` - used by the verifier to obtain a superuser token for seeding test data.
   - `POST /api/collections/users/records` - used by the verifier to register regular users.
   - `POST /api/collections/users/auth-with-password` - used by the verifier to obtain per-user tokens.

@@ -96,9 +96,8 @@ The length of `filtered` MUST equal `result_count`. Sort order in the JSON list 
 
 ## Acceptance Criteria
 - Project path: `/home/user/filtered_table`
-- Start command (run from the project path): `uv run reflex run --backend-port 8000 --frontend-port 3000 --loglevel info`
-- Frontend port: 3000 (the `/` page must render with HTTP 200).
-- Backend port: 8000 (the `/api/filter` endpoint is mounted here via `api_transformer`).
+- Start command (run from the project path): `uv run reflex run --backend-port <backend_port> --frontend-port <frontend_port> --loglevel info`
+- The ports are not fixed; they will be dynamically assigned at runtime via the arguments.
 - After seeding completes, the SQLite database at `/home/user/filtered_table/reflex.db` must contain exactly 240 rows in the `product` table, distributed 40 per category for the six categories listed above, with `name`, `sku`, `price`, and `in_stock` matching the Seed Algorithm.
 - Source code under `/home/user/filtered_table/filtered_table/` must contain literal occurrences of all of the following Reflex idioms (verified by `grep`):
   - `rx.debounce_input`
@@ -107,9 +106,8 @@ The length of `filtered` MUST equal `result_count`. Sort order in the JSON list 
   - `rx.foreach`
   - `background=True`
   - `api_transformer`
-- `GET http://localhost:3000/` returns HTTP 200 and the rendered page body references the table heading text used in the UI.
-- `GET http://localhost:8000/api/filter` returns the JSON object described in the API Contract, with `result_count` and `filtered` shaped as specified, and the list length matching `result_count`.
+- `GET http://localhost:<frontend_port>/` returns HTTP 200 and the rendered page body references the table heading text used in the UI.
+- `GET http://localhost:<backend_port>/api/filter` returns the JSON object described in the API Contract, with `result_count` and `filtered` shaped as specified, and the list length matching `result_count`.
 - The filter logic implements the semantics described above for arbitrary combinations of the parameters, applied against the seeded data.
 - Background server teardown: after finishing the implementation, kill every background `reflex run` (and any other background server) you started. The verifier starts its own server fresh.
 - No external environment variables are required.
-

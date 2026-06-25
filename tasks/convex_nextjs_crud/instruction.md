@@ -27,8 +27,7 @@ Create a basic CRUD task manager application using Next.js and Convex as the bac
 
 ## Acceptance Criteria
 - Project path: /home/user/task-manager
-- Start command: npm run dev
-- Port: 3000
+- Start command: npm run dev -- --port <port>
 - Web Features:
   - The root page (`/`) should load successfully.
   - Users can enter text into an input field (identified by `data-testid="task-input"`) and click a button (identified by `data-testid="add-button"`) to add a new task.

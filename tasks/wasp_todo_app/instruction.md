@@ -40,6 +40,5 @@ Wasp is a declarative DSL for building full-stack web applications using React, 
 
 ## Constraints
 - **Project Path**: `/home/user/todo-app`
-- **Start Command**: `wasp start`
-- **Port**: 3000
+- **Start Command**: `wasp start --port <port>`
 - **Database**: SQLite (default)

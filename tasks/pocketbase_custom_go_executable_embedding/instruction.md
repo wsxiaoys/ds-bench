@@ -24,8 +24,7 @@ PocketBase can be used as a standalone application, but it can also be imported 
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: ./server serve --http="0.0.0.0:8090"
-- Port: 8090
+- Start command: ./server serve --http="0.0.0.0:<port>"
 - API Endpoints:
   - `POST /api/collections/posts/records`: Creates a new post.
     - If `title` is missing or empty, returns HTTP 400 with a message containing "Title cannot be empty".

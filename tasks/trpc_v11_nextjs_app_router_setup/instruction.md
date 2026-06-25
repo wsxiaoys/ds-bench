@@ -34,5 +34,4 @@ export type AppRouter = typeof appRouter;
 
 ## Constraints
 - Project path: `/home/user/myproject`
-- Start command: `npm run dev`
-- Port: 3000
+- Start command: `npm run dev -- --port <port>`

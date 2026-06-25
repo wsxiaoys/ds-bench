@@ -9,9 +9,6 @@ from pochi_verifier import PochiVerifier
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
-PORT = 5173
-BASE_URL = f"http://localhost:{PORT}"
-API_URL = f"{BASE_URL}/api/todos"
 
 
 def _wait_for_http(url: str, timeout: float = 180.0) -> bool:
@@ -34,14 +31,23 @@ def _reset_wrangler_state() -> None:
 
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     """Start the rwsdk dev server with a fresh local KV namespace."""
 
     _reset_wrangler_state()
 
     class Starter(ProcessStarter):
         name = "rwsdk_dev"
-        args = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", str(PORT)]
+        args = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -52,25 +58,41 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                if s.connect_ex(("127.0.0.1", PORT)) != 0:
+                if s.connect_ex(("127.0.0.1", app_port)) != 0:
                     return False
             try:
-                r = requests.get(BASE_URL + "/", timeout=5)
+                r = requests.get(f"http://localhost:{app_port}/", timeout=5)
                 return r.status_code < 500
             except requests.RequestException:
                 return False
 
-    xprocess.ensure(Starter.name, Starter)
-    assert _wait_for_http(BASE_URL + "/"), "rwsdk dev server did not become ready in time."
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
+    assert _wait_for_http(f"http://localhost:{app_port}/"), "rwsdk dev server did not become ready in time."
 
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 
-def _get_todos_json() -> dict:
-    r = requests.get(API_URL, timeout=10)
+def _get_todos_json(app_port: int) -> dict:
+    api_url = f"http://localhost:{app_port}/api/todos"
+    r = requests.get(api_url, timeout=10)
     assert r.status_code == 200, f"GET /api/todos returned {r.status_code}: {r.text}"
     assert "application/json" in r.headers.get("content-type", ""), (
         f"GET /api/todos must return application/json, got {r.headers.get('content-type')}"
@@ -78,9 +100,9 @@ def _get_todos_json() -> dict:
     return r.json()
 
 
-def test_step1_initial_empty_state(start_app):
+def test_step1_initial_empty_state(start_app, app_port):
     """The KV store starts empty; the JSON endpoint reports no todos."""
-    data = _get_todos_json()
+    data = _get_todos_json(app_port)
     assert isinstance(data, dict), f"Expected JSON object, got {type(data).__name__}"
     assert "todos" in data, "Response missing 'todos' field."
     assert "remaining" in data, "Response missing 'remaining' field."
@@ -88,7 +110,7 @@ def test_step1_initial_empty_state(start_app):
     assert data["remaining"] == 0, f"Expected remaining=0, got {data['remaining']!r}"
 
 
-def test_step2_add_three_todos_via_browser(start_app):
+def test_step2_add_three_todos_via_browser(start_app, app_port):
     """Add three todos via the browser and verify they render with remaining=3."""
     reason = (
         "The home page must let the user add new todos via a server-rendered HTML form "
@@ -96,7 +118,7 @@ def test_step2_add_three_todos_via_browser(start_app):
         "re-render the page server-side with the new items and updated remaining count."
     )
     truth = (
-        f"Navigate to {BASE_URL}/. Locate the text input with aria-label='New todo title' "
+        f"Navigate to http://localhost:{app_port}/. Locate the text input with aria-label='New todo title' "
         "and submit the form three times in order with these titles: 'Buy milk', "
         "'Walk the dog', 'Write report'. After each submission the page should reload "
         "server-side. After all three submissions, verify the page contains exactly "
@@ -114,9 +136,9 @@ def test_step2_add_three_todos_via_browser(start_app):
     assert result.status == "pass", f"Browser verification failed: {result.reason}"
 
 
-def test_step3_kv_state_after_adds(start_app):
+def test_step3_kv_state_after_adds(start_app, app_port):
     """The JSON endpoint reflects the three added todos with done=false."""
-    data = _get_todos_json()
+    data = _get_todos_json(app_port)
     todos = data["todos"]
     assert len(todos) == 3, f"Expected 3 todos in KV, got {len(todos)}: {todos!r}"
     titles = [t["title"] for t in todos]
@@ -133,7 +155,7 @@ def test_step3_kv_state_after_adds(start_app):
     assert data["remaining"] == 3, f"Expected remaining=3, got {data['remaining']!r}"
 
 
-def test_step4_toggle_one_via_browser(start_app):
+def test_step4_toggle_one_via_browser(start_app, app_port):
     """Toggle 'Walk the dog' via the browser and verify UI reflects the change."""
     reason = (
         "Each todo row must expose a toggle form bound to a rwsdk serverAction that "
@@ -141,7 +163,7 @@ def test_step4_toggle_one_via_browser(start_app):
         "marked done and the remaining count decremented."
     )
     truth = (
-        f"Navigate to {BASE_URL}/. Three todos should already be present: 'Buy milk', "
+        f"Navigate to http://localhost:{app_port}/. Three todos should already be present: 'Buy milk', "
         "'Walk the dog', 'Write report'. Locate the toggle control whose aria-label is "
         "'Toggle Walk the dog' and submit the toggle form (check the checkbox; if it "
         "auto-submits on change, that is sufficient; otherwise click any associated "
@@ -160,9 +182,9 @@ def test_step4_toggle_one_via_browser(start_app):
     assert result.status == "pass", f"Browser verification failed: {result.reason}"
 
 
-def test_step5_kv_state_after_toggle(start_app):
+def test_step5_kv_state_after_toggle(start_app, app_port):
     """The JSON endpoint shows 'Walk the dog' as done=true; others remain false."""
-    data = _get_todos_json()
+    data = _get_todos_json(app_port)
     by_title = {t["title"]: t for t in data["todos"]}
     assert set(by_title.keys()) == {"Buy milk", "Walk the dog", "Write report"}, (
         f"Unexpected titles after toggle: {list(by_title.keys())!r}"
@@ -179,14 +201,14 @@ def test_step5_kv_state_after_toggle(start_app):
     assert data["remaining"] == 2, f"Expected remaining=2, got {data['remaining']!r}"
 
 
-def test_step6_delete_one_via_browser(start_app):
+def test_step6_delete_one_via_browser(start_app, app_port):
     """Delete 'Buy milk' via the browser and verify it disappears from the UI."""
     reason = (
         "Each todo row must expose a delete form bound to a rwsdk serverAction that "
         "removes the todo from KV. After deletion the page must re-render without that row."
     )
     truth = (
-        f"Navigate to {BASE_URL}/. The page should currently list three todos: "
+        f"Navigate to http://localhost:{app_port}/. The page should currently list three todos: "
         "'Buy milk' (not done), 'Walk the dog' (done), 'Write report' (not done). "
         "Locate and click the button whose aria-label is 'Delete Buy milk'. After the "
         "page re-renders, verify the page contains exactly two elements with attribute "
@@ -204,9 +226,9 @@ def test_step6_delete_one_via_browser(start_app):
     assert result.status == "pass", f"Browser verification failed: {result.reason}"
 
 
-def test_step7_kv_state_after_delete(start_app):
+def test_step7_kv_state_after_delete(start_app, app_port):
     """The JSON endpoint shows only the remaining two todos with correct done flags."""
-    data = _get_todos_json()
+    data = _get_todos_json(app_port)
     todos = data["todos"]
     assert len(todos) == 2, f"Expected 2 todos after delete, got {len(todos)}: {todos!r}"
     titles = [t["title"] for t in todos]

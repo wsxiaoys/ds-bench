@@ -5,8 +5,7 @@ A Go project that embeds PocketBase v0.31.0 is already scaffolded at `/home/user
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: /home/user/myproject/myapp serve --http="0.0.0.0:8090" --dir=/home/user/myproject/pb_data
-- Port: 8090
+- Start command: /home/user/myproject/myapp serve --http="0.0.0.0:<port>" --dir=/home/user/myproject/pb_data
 - API Endpoints:
   - `POST /api/wallets/transfer` (requires `Authorization: <user-token>`):
     - Request body:

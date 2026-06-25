@@ -31,10 +31,9 @@ Convex is a reactive backend-as-a-service (BaaS) that provides a real-time datab
 
 ## Acceptance Criteria
 - Project path: /home/user/my-app
-- Start command: npm run dev
-- Port: 5173
+- Start command: npm run dev -- --port <port>
 - The Convex backend must be successfully deployed (schema and functions pushed to the cloud).
-- The React app should be running and accessible on port 5173.
+- The React app should be running and accessible on the specified port.
 - UI features (Browser verification):
   - The page displays a list of tasks for the current `runId`.
   - There is a text input field and a submit button to add a new task.

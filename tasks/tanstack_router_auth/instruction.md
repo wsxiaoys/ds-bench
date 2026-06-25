@@ -11,7 +11,7 @@ Implement a simple authentication flow using TanStack Router. You need to create
   - `/`: Public home page. Must contain a link with text "Go to Dashboard" pointing to `/dashboard`.
   - `/login`: Login page. Must contain a button with text "Login" that sets the authentication state to true and redirects to `/dashboard`.
   - `/dashboard`: Protected page. If a user is not authenticated, they must be redirected to `/login`. If authenticated, the page must display "Welcome to Dashboard" and contain a "Logout" button that sets authentication to false and redirects to `/login`.
-- The application must run on port **6382**.
+- The application must run on a port specified by the `--port` argument.
 
 ## Implementation Hints
 - You can use Vite with the `@tanstack/router-vite-plugin` and `@tanstack/react-router`.
@@ -20,8 +20,7 @@ Implement a simple authentication flow using TanStack Router. You need to create
 
 ## Acceptance Criteria
 - Project path: /home/user/project
-- Start command: npm run dev
-- Port: 6382
+- Start command: npm run dev -- --port <port>
 - The app must serve the following routes:
   - GET `/`: Returns the home page with a "Go to Dashboard" link.
   - GET `/login`: Returns the login page with a "Login" button.

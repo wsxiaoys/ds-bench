@@ -17,8 +17,6 @@ except Exception:  # pragma: no cover - environment-specific
 PROJECT_DIR = "/home/user/myproject"
 SOLUTION_PATH = os.path.join(PROJECT_DIR, "solution.py")
 CHART_HTML = os.path.join(PROJECT_DIR, "chart.html")
-HTTP_PORT = 8765
-BASE_URL = f"http://localhost:{HTTP_PORT}"
 
 
 # ----------------------------- helpers ---------------------------------------
@@ -114,12 +112,21 @@ def chart_spec(run_solution):
 
 
 @pytest.fixture(scope="session")
-def static_server(run_solution, xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def static_server(run_solution, xprocess, app_port):
     """Serve the project directory so the browser verifier can load chart.html."""
 
     class Starter(ProcessStarter):
         name = "altair_static_server"
-        args = [sys.executable, "-m", "http.server", str(HTTP_PORT)]
+        args = [sys.executable, "-m", "http.server", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {"cwd": PROJECT_DIR, "text": True}
         timeout = 60
@@ -127,10 +134,26 @@ def static_server(run_solution, xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", HTTP_PORT)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
-    yield BASE_URL
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
+    yield f"http://localhost:{app_port}"
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
@@ -279,7 +302,7 @@ def test_browser_cross_filter_behavior(static_server):
         "both the bar chart and the heatmap so they reflect only the brushed cars."
     )
     truth = (
-        f"Navigate to {BASE_URL}/chart.html and wait for the Vega-Embed runtime to finish "
+        f"Navigate to {static_server}/chart.html and wait for the Vega-Embed runtime to finish "
         "rendering. Confirm that three sub-plots are visible on the page, arranged with two "
         "plots side-by-side on top and one plot beneath them. The top-left view is a scatter "
         "plot of dots with axes labelled Horsepower (x) and Miles_per_Gallon (y) and dot color "

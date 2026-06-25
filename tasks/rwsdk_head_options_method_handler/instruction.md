@@ -8,8 +8,7 @@ Add an `/api/items` route to `defineApp([...])` that handles the following metho
 
 ## Acceptance Criteria
 - Project path: /home/user/myapp
-- Start command: npm run dev -- --host 0.0.0.0 --port 5173
-- Port: 5173
+- Start command: npm run dev -- --host 0.0.0.0 --port <port>
 - Route `/api/items` (must be method-aware):
   - `GET`: status 200, JSON body `{"items": ["alpha", "beta", "gamma"]}`.
   - `HEAD`: status 200, no response body, response header `X-Items-Count: 3`.

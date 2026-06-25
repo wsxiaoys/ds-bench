@@ -4,7 +4,7 @@
 `trpc-panel` is a popular tool for automatically generating a testing UI for tRPC routers, similar to Swagger UI. Although originally designed for tRPC v10, it can be integrated with tRPC v11. Your task is to set up a basic Express server with a tRPC v11 router and integrate `trpc-panel` to serve a documentation UI.
 
 ## Requirements
-- Create an Express server running on port 3000.
+- Create an Express server running on the port specified by the `--port` command line argument.
 - Set up a tRPC v11 router with at least one public procedure (e.g., a `hello` query that takes a `name` string input via `zod` and returns a greeting).
 - Serve the tRPC API at `/trpc`.
 - Integrate `trpc-panel` and serve it at the `/panel` endpoint.
@@ -19,5 +19,4 @@
 
 ## Constraints
 - Project path: `/home/user/project`
-- Start command: `node index.js`
-- Port: 3000
+- Start command: `node index.js --port <port>`

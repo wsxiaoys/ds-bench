@@ -35,5 +35,4 @@ Wasp supports complex database relationships using Prisma. In this task, you wil
 
 ## Constraints
 - **Project Path**: `/home/user/many-to-many`
-- **Start Command**: `wasp start`
-- **Port**: 3000
+- **Start Command**: `wasp start --port <port>`

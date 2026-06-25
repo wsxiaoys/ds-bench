@@ -35,13 +35,12 @@ A minimal Vite TypeScript project has already been scaffolded for you at `/home/
 
 ## Acceptance Criteria
 - Project path: /home/user/myapp
-- Start command: `npm run preview -- --host 0.0.0.0 --port 4173`
-- Port: 4173
+- Start command: `npm run preview -- --host 0.0.0.0 --port <port>`
 - `npm run build` must complete without errors and produce a `dist/` directory containing `index.html`.
 - `capacitor.config.ts` (or `capacitor.config.json`) must exist at the project root with `appName` equal to `KV Admin`, `appId` equal to `com.example.kvadmin`, and `webDir` equal to `dist`.
 - `package.json` must list `@capacitor/core`, `@capacitor/cli`, and `@capacitor/preferences` as dependencies (any of `dependencies` or `devDependencies`). The installed major version of `@capacitor/preferences` must be `8`.
 - `npx cap sync` executed after the production build must exit with status 0.
-- The served page at `http://localhost:4173/` must contain elements with HTML ids `kv-key`, `kv-value`, `kv-set-btn`, `kv-remove-btn`, `kv-clear-btn`, and `kv-list`.
+- The served page at `http://localhost:$PORT/` must contain elements with HTML ids `kv-key`, `kv-value`, `kv-set-btn`, `kv-remove-btn`, `kv-clear-btn`, and `kv-list`.
 - On a fresh browser session (empty `localStorage`), `#kv-list` must initially contain zero `<li>` children.
 - After entering a key in `#kv-key` and a value in `#kv-value` and clicking `#kv-set-btn`, a `<li data-key="<key>"><key>=<value></li>` element must appear inside `#kv-list`, and the value must be retrievable via `Preferences.get`.
 - Stored entries must persist across full page reloads (the list rebuilds itself from Preferences on load).

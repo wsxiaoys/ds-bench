@@ -12,14 +12,22 @@ def browser_verifier():
     yield PochiVerifier()
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     """
     Starts the npm run dev service using xprocess. Confirms readiness via port check.
     """
 
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -30,11 +38,26 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8432)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    # ensure() starts the process and blocks until startup_check is True
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
 
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
@@ -50,9 +73,9 @@ def test_code_inspection():
     assert "@tanstack/react-router" in result.stdout, \
         "Could not find usage of TanStack Router (@tanstack/react-router) in the source code."
 
-def test_ecommerce_cart_browser(start_app, browser_verifier):
+def test_ecommerce_cart_browser(start_app, app_port, browser_verifier):
     reason = "The application should display products, allow adding them to a cart, and sync the cart state to the URL search parameters."
-    truth = "Navigate to http://localhost:8432/. Verify that the page loads and displays a list of products. Simulate clicking an 'Add to Cart' button for a product. Verify that the URL updates to include the cart state in the search parameters, and the UI displays the item in the cart. Note the current URL. Then navigate directly to that URL in a new browser context. Verify that the cart UI correctly displays the item based purely on the URL search parameters."
+    truth = f"Navigate to http://localhost:{app_port}/. Verify that the page loads and displays a list of products. Simulate clicking an 'Add to Cart' button for a product. Verify that the URL updates to include the cart state in the search parameters, and the UI displays the item in the cart. Note the current URL. Then navigate directly to that URL in a new browser context. Verify that the cart UI correctly displays the item based purely on the URL search parameters."
 
     verifier = PochiVerifier()
     result = verifier.verify(

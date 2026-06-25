@@ -17,8 +17,7 @@ Create an Express REST API with Sequelize and SQLite that automatically generate
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: npm start
-- Port: 3000
+- Start command: npm start -- --port <port>
 - API Endpoints:
   - POST `/articles`: Accepts a JSON object with a `title` string. Returns 201 Created with the created article object (including `id`, `title`, and the generated `slug`).
 

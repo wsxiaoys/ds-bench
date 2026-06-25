@@ -76,13 +76,26 @@ def _kill_port(port: int) -> None:
 
 
 @pytest.fixture(scope="session")
-def pb_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def pb_app(xprocess, app_port):
+    global PB_PORT, PB_HTTP
+    PB_PORT = app_port
+    PB_HTTP = f"http://127.0.0.1:{app_port}"
+
     _kill_port(PB_PORT)
     _ensure_built()
 
     class Starter(ProcessStarter):
         name = "pb_app"
-        args = [PB_BIN, "serve", "--http=0.0.0.0:8090"]
+        args = [PB_BIN, "serve", f"--http=0.0.0.0:{app_port}"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -93,13 +106,29 @@ def pb_app(xprocess):
 
         def startup_check(self):
             try:
-                r = requests.get(f"{PB_HTTP}/api/health", timeout=2)
+                r = requests.get(f"http://127.0.0.1:{app_port}/api/health", timeout=2)
                 return r.status_code == 200
             except requests.RequestException:
                 return False
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
@@ -190,7 +219,7 @@ def _parse_rfc3339(s: str) -> datetime:
     return datetime.fromisoformat(txt)
 
 
-def test_presign_requires_auth(pb_app):
+def test_presign_requires_auth(pb_app, app_port):
     r = _presign(None)
     assert r.status_code == 401, (
         f"Expected unauthenticated POST /api/uploads/presign to return 401, "
@@ -198,7 +227,7 @@ def test_presign_requires_auth(pb_app):
     )
 
 
-def test_finalize_requires_auth(pb_app):
+def test_finalize_requires_auth(pb_app, app_port):
     r = requests.post(
         f"{PB_HTTP}/api/uploads/finalize",
         json={"key": "anything"},
@@ -210,7 +239,7 @@ def test_finalize_requires_auth(pb_app):
     )
 
 
-def test_presign_success_shape(pb_app, user_token, super_token, user_id):
+def test_presign_success_shape(pb_app, user_token, super_token, user_id, app_port):
     sent_at = datetime.now(tz=timezone.utc)
     r = _presign(user_token)
     assert r.status_code == 200, (
@@ -266,7 +295,7 @@ def test_presign_success_shape(pb_app, user_token, super_token, user_id):
     )
 
 
-def test_full_upload_and_finalize_flow(pb_app, user_token, super_token, user_id, s3_client):
+def test_full_upload_and_finalize_flow(pb_app, user_token, super_token, user_id, s3_client, app_port):
     r = _presign(user_token)
     assert r.status_code == 200, f"/presign failed: {r.status_code} {r.text}"
     body = r.json()
@@ -313,7 +342,7 @@ def test_full_upload_and_finalize_flow(pb_app, user_token, super_token, user_id,
     )
 
 
-def test_finalize_missing_object_returns_404(pb_app, user_token):
+def test_finalize_missing_object_returns_404(pb_app, user_token, app_port):
     r = _presign(user_token)
     assert r.status_code == 200, f"/presign failed: {r.status_code} {r.text}"
     key = r.json()["key"]
@@ -338,7 +367,7 @@ def test_finalize_missing_object_returns_404(pb_app, user_token):
     )
 
 
-def test_user_cannot_finalize_other_users_key(pb_app, user_token, other_token, s3_client):
+def test_user_cannot_finalize_other_users_key(pb_app, user_token, other_token, s3_client, app_port):
     r = _presign(user_token)
     assert r.status_code == 200, f"/presign failed: {r.status_code} {r.text}"
     key = r.json()["key"]

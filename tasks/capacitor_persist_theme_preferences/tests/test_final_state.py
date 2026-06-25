@@ -11,8 +11,6 @@ from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myapp"
 PREVIEW_HOST = "127.0.0.1"
-PREVIEW_PORT = 4173
-PREVIEW_URL = f"http://{PREVIEW_HOST}:{PREVIEW_PORT}/"
 
 
 def _read_capacitor_config():
@@ -112,7 +110,16 @@ def test_capacitor_sync_succeeds():
 
 
 @pytest.fixture(scope="module")
-def preview_server(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="module")
+def start_app(xprocess, app_port):
     class Starter(ProcessStarter):
         name = "vite_preview"
         args = [
@@ -123,7 +130,7 @@ def preview_server(xprocess):
             "--host",
             "0.0.0.0",
             "--port",
-            str(PREVIEW_PORT),
+            str(app_port),
             "--strictPort",
         ]
         env = os.environ.copy()
@@ -136,17 +143,39 @@ def preview_server(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex((PREVIEW_HOST, PREVIEW_PORT)) == 0
+                return s.connect_ex((PREVIEW_HOST, app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     # Give Vite a brief moment to fully bind even after the port is open.
     time.sleep(1.0)
-    yield PREVIEW_URL
+
+    yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 
-def test_index_served_with_toggle_button(preview_server):
+@pytest.fixture(scope="module")
+def preview_server(start_app, app_port):
+    yield f"http://{PREVIEW_HOST}:{app_port}/"
+
+
+def test_index_served_with_toggle_button(preview_server, app_port):
     response = requests.get(preview_server, timeout=30)
     assert response.status_code == 200, (
         f"GET {preview_server} returned status {response.status_code}; expected 200."
@@ -175,7 +204,7 @@ def _read_preferences_value(page) -> str | None:
     )
 
 
-def test_theme_toggle_flow(preview_server):
+def test_theme_toggle_flow(preview_server, app_port):
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
 

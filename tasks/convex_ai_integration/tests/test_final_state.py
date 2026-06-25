@@ -13,10 +13,18 @@ def browser_verifier():
     yield PochiVerifier()
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -27,10 +35,26 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 5173)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
@@ -96,12 +120,12 @@ main().catch(err => {
 
     assert found, f"Expected to find a generation with prompt 'Say hello world' and a non-empty result. Got: {data}"
 
-def test_ui(start_app, browser_verifier):
+def test_ui(start_app, app_port, browser_verifier):
     """
     Verify the UI can trigger generation and display the result.
     """
     reason = "The application should have an input field to submit a prompt, trigger the AI generation, and display the result in a list."
-    truth = "Navigate to http://localhost:5173. Verify that the page loads. Find the input field for the prompt, type 'What is the capital of France?', and click the submit button. Wait a few seconds for the AI generation to complete. Verify that 'What is the capital of France?' and the corresponding response (e.g. 'Paris') appear on the page."
+    truth = f"Navigate to http://localhost:{app_port}. Verify that the page loads. Find the input field for the prompt, type 'What is the capital of France?', and click the submit button. Wait a few seconds for the AI generation to complete. Verify that 'What is the capital of France?' and the corresponding response (e.g. 'Paris') appear on the page."
 
     result = browser_verifier.verify(
         reason=reason,

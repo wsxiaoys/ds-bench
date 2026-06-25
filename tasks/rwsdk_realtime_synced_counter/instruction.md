@@ -15,12 +15,11 @@ A freshly scaffolded RedwoodSDK (rwsdk) project lives at `/home/user/myproject` 
 - The counter component is a client component (`"use client"`); the page is a server component that reads `/logs/artifacts/run-id` from the worker env and passes it as a prop (used as the third argument / room ID to `useSyncedState`).
 - Workers do not expose `process.env`; the `/logs/artifacts/run-id` shell variable must be propagated into the worker `env` (e.g., via a `.dev.vars` file or wrangler `vars`).
 - For the `/api/count` endpoint, the worker needs read access to the latest synced value. The `SyncedStateServer` exposes hooks for that purpose; consult the rwsdk Realtime docs for the appropriate handler.
-- Bind the dev server to `0.0.0.0:5173` so it is reachable on `localhost:5173` from outside Vite's default loopback binding.
+- Bind the dev server to `0.0.0.0` so it is reachable from outside Vite's default loopback binding.
 
 ## Acceptance Criteria
 - Project path: `/home/user/myproject`
-- Start command: `npm run dev -- --host 0.0.0.0 --port 5173`
-- Port: `5173`
+- Start command: `npm run dev -- --host 0.0.0.0 --port <port>`
 - The room ID used by `useSyncedState` must equal the value of the `/logs/artifacts/run-id` available at server startup. The initial count is `0`.
 - API endpoints:
   - `GET /` returns a `200 OK` HTML response containing the counter UI: a visible numeric count display, an **Increment** button, and a **Decrement** button. After client hydration, clicking the buttons must update the displayed count without a full page reload.

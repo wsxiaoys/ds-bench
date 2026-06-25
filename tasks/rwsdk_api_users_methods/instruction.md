@@ -8,8 +8,7 @@ Implement the following endpoints under `/api/users`. Persist state in a module-
 
 ## Acceptance Criteria
 - Project path: /home/user/myapp
-- Start command: npm run dev -- --host 0.0.0.0 --port 5173
-- Port: 5173
+- Start command: npm run dev -- --host 0.0.0.0 --port <port>
 - Endpoints (all `Content-Type: application/json`):
   - `GET /api/users` → status 200; body `{"users": [...]}` (array sorted by insertion order, may be empty).
   - `POST /api/users` with JSON body `{name, email}` → status 201; body is the created user `{id, name, email}` with `id` newly generated.

@@ -9,7 +9,7 @@ Define the following schema with migrations:
 - `Post`: id, title, content (optional), published Boolean @default(false), authorId (FK to User), createdAt DateTime @default(now())
 - `Comment`: id, body, postId (FK to Post), authorId (FK to User)
 
-Build an Express server at `server.js` on port 3000 with these endpoints:
+Build an Express server at `server.js` with these endpoints:
 - `POST /users` — create user
 - `GET /users/:id/posts` — get published posts by user (include comment count)
 - `POST /posts` — create post (body: `{ title, content, authorId }`)
@@ -17,6 +17,5 @@ Build an Express server at `server.js` on port 3000 with these endpoints:
 - `POST /posts/:id/comments` — add a comment (body: `{ body, authorId }`)
 - `GET /posts/:id` — get post with author and comments included
 
-Start the server: `node server.js`
-Port: 3000
+Start the server: `node server.js --port <port>`
 Project path: `/home/user/myproject`

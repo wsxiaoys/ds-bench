@@ -8,7 +8,6 @@ import requests
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
-BASE_URL = "http://localhost:3000"
 
 
 def _port_open(host: str, port: int) -> bool:
@@ -18,12 +17,21 @@ def _port_open(host: str, port: int) -> bool:
 
 
 @pytest.fixture(scope="session")
-def server(xprocess):
-    """Start the Express server with `npx tsx server.ts` on port 3000."""
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def server(xprocess, app_port):
+    """Start the Express server with `npx tsx server.ts` on dynamic port."""
 
     class Starter(ProcessStarter):
         name = "express_server"
-        args = ["npx", "--no-install", "tsx", "server.ts"]
+        args = ["npx", "--no-install", "tsx", "server.ts", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -33,20 +41,35 @@ def server(xprocess):
         terminate_on_interrupt = True
 
         def startup_check(self):
-            return _port_open("localhost", 3000)
+            return _port_open("localhost", app_port)
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
 
     # Extra grace period for first-route warm-up.
     deadline = time.time() + 10
+    base_url = f"http://localhost:{app_port}"
     while time.time() < deadline:
         try:
-            requests.get(BASE_URL + "/__warmup__", timeout=2)
+            requests.get(base_url + "/__warmup__", timeout=2)
             break
         except Exception:
             time.sleep(0.25)
 
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
@@ -57,21 +80,21 @@ def server(xprocess):
 # ---------------------------------------------------------------------------
 
 
-def test_server_binds_to_port_3000(server):
-    """Verification step 9: server listens on port 3000."""
-    assert _port_open("localhost", 3000), (
-        "Expected the Express server to be listening on port 3000."
+def test_server_binds_to_port(server, app_port):
+    """Verification step 9: server listens on dynamic port."""
+    assert _port_open("localhost", app_port), (
+        f"Expected the Express server to be listening on port {app_port}."
     )
 
 
-def test_post_users_valid_returns_201(server):
+def test_post_users_valid_returns_201(server, app_port):
     """Verification step 1: POST /users with a valid body returns 201 and echoes the user."""
     payload = {
         "username": "alice123",
         "email": "alice@example.com",
         "age": 30,
     }
-    r = requests.post(BASE_URL + "/users", json=payload, timeout=15)
+    r = requests.post(f"http://localhost:{app_port}/users", json=payload, timeout=15)
     assert r.status_code == 201, (
         f"Expected 201 for valid /users body, got {r.status_code}. "
         f"body={r.text!r}"
@@ -88,14 +111,14 @@ def test_post_users_valid_returns_201(server):
     )
 
 
-def test_post_users_invalid_email_returns_400(server):
+def test_post_users_invalid_email_returns_400(server, app_port):
     """Verification step 2: POST /users with invalid email returns 400 with issues JSON."""
     payload = {
         "username": "bob42",
         "email": "not-an-email",
         "age": 25,
     }
-    r = requests.post(BASE_URL + "/users", json=payload, timeout=15)
+    r = requests.post(f"http://localhost:{app_port}/users", json=payload, timeout=15)
     assert r.status_code == 400, (
         f"Expected 400 for invalid email, got {r.status_code}. body={r.text!r}"
     )
@@ -113,10 +136,10 @@ def test_post_users_invalid_email_returns_400(server):
     ), f"Each issue must have a string 'message' field, got {issues!r}"
 
 
-def test_post_users_invalid_username_returns_400(server):
+def test_post_users_invalid_username_returns_400(server, app_port):
     """Verification step 3: POST /users with too-short username returns 400."""
     payload = {"username": "ab", "email": "ab@example.com"}
-    r = requests.post(BASE_URL + "/users", json=payload, timeout=15)
+    r = requests.post(f"http://localhost:{app_port}/users", json=payload, timeout=15)
     assert r.status_code == 400, (
         f"Expected 400 for too-short username, got {r.status_code}. "
         f"body={r.text!r}"
@@ -130,10 +153,10 @@ def test_post_users_invalid_username_returns_400(server):
     )
 
 
-def test_get_search_valid_coerces_numbers(server):
+def test_get_search_valid_coerces_numbers(server, app_port):
     """Verification step 4: GET /search with valid query coerces page/limit to numbers."""
     r = requests.get(
-        BASE_URL + "/search",
+        f"http://localhost:{app_port}/search",
         params={"q": "hi", "page": "2", "limit": "10"},
         timeout=15,
     )
@@ -158,10 +181,10 @@ def test_get_search_valid_coerces_numbers(server):
     ), f"Expected limit to be a number after coercion, got {data!r}"
 
 
-def test_get_search_page_zero_rejected(server):
+def test_get_search_page_zero_rejected(server, app_port):
     """Verification step 5: GET /search?page=0 fails the >=1 constraint."""
     r = requests.get(
-        BASE_URL + "/search",
+        f"http://localhost:{app_port}/search",
         params={"q": "hi", "page": "0", "limit": "10"},
         timeout=15,
     )
@@ -177,10 +200,10 @@ def test_get_search_page_zero_rejected(server):
     )
 
 
-def test_get_search_non_numeric_page_rejected(server):
+def test_get_search_non_numeric_page_rejected(server, app_port):
     """Verification step 6: GET /search with non-numeric page fails coercion."""
     r = requests.get(
-        BASE_URL + "/search",
+        f"http://localhost:{app_port}/search",
         params={"q": "hi", "page": "abc", "limit": "10"},
         timeout=15,
     )
@@ -197,10 +220,10 @@ def test_get_search_non_numeric_page_rejected(server):
     )
 
 
-def test_get_search_limit_above_max_rejected(server):
+def test_get_search_limit_above_max_rejected(server, app_port):
     """Verification step 7: GET /search with limit > 50 fails."""
     r = requests.get(
-        BASE_URL + "/search",
+        f"http://localhost:{app_port}/search",
         params={"q": "hi", "page": "1", "limit": "999"},
         timeout=15,
     )

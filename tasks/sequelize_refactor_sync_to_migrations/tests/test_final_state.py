@@ -9,10 +9,18 @@ PROJECT_DIR = "/home/user/project"
 DB_PATH = os.path.join(PROJECT_DIR, "database.sqlite")
 
 @pytest.fixture(scope="session")
-def app_server(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+@pytest.fixture(scope="session")
+def app_server(xprocess, app_port):
     class Starter(ProcessStarter):
         name = "app_server"
-        args = ["node", "index.js"]
+        args = ["node", "index.js", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -23,10 +31,26 @@ def app_server(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 3000)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield xprocess
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     if info.isrunning():
         info.terminate()
@@ -53,21 +77,21 @@ def test_migrations_exist():
     finally:
         conn.close()
 
-def test_create_and_list_user(app_server):
+def test_create_and_list_user(app_server, app_port):
     # Create User
-    response = requests.post("http://localhost:3000/users", json={"username": "alice"})
+    response = requests.post(f"http://localhost:{app_port}/users", json={"username": "alice"})
     assert response.status_code == 201, f"Expected status 201, got {response.status_code}"
     data = response.json()
     assert data.get("username") == "alice", f"Expected username 'alice', got {data.get('username')}"
     
     # List Users
-    response = requests.get("http://localhost:3000/users")
+    response = requests.get(f"http://localhost:{app_port}/users")
     assert response.status_code == 200, f"Expected status 200, got {response.status_code}"
     users = response.json()
     assert isinstance(users, list), "Expected response to be a list"
     assert any(u.get("username") == "alice" for u in users), "Expected user 'alice' in the list"
 
-def test_data_persistence(app_server):
+def test_data_persistence(app_server, app_port):
     # Kill the node process
     info = app_server.getinfo("app_server")
     info.terminate()
@@ -75,7 +99,7 @@ def test_data_persistence(app_server):
     # Restart the node process
     class Starter(ProcessStarter):
         name = "app_server"
-        args = ["node", "index.js"]
+        args = ["node", "index.js", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -86,12 +110,26 @@ def test_data_persistence(app_server):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 3000)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
                 
-    app_server.ensure(Starter.name, Starter)
+    pid, logpath = app_server.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
     
     # Verify data still exists
-    response = requests.get("http://localhost:3000/users")
-    assert response.status_code == 200, f"Expected status 200, got {response.status_code}"
-    users = response.json()
-    assert any(u.get("username") == "alice" for u in users), "Data did not persist across restarts; 'alice' is missing."
+    try:
+        response = requests.get(f"http://localhost:{app_port}/users")
+        assert response.status_code == 200, f"Expected status 200, got {response.status_code}"
+        users = response.json()
+        assert any(u.get("username") == "alice" for u in users), "Data did not persist across restarts; 'alice' is missing."
+    finally:
+        with open(logpath, "r") as f:
+            logs = f.read()
+            print("=== Begin: Captured xprocess logfile when teardown =============================")
+            print(logs)
+            print("===== End: Captured xprocess logfile when teardown =============================")

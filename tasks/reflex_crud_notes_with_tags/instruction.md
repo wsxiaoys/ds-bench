@@ -35,14 +35,12 @@ A non-Reflex CLI helper `probe.py` at the project root must expose the same data
 ## Acceptance Criteria
 
 - Project path: `/home/user/myproject`
-- Start command: `cd /home/user/myproject && uv run reflex run --loglevel info`
-- Frontend port: `3000`
-- Backend port: `8000`
+- Start command: `cd /home/user/myproject && uv run reflex run --frontend-port <frontend_port> --backend-port <backend_port> --loglevel info`
 - Database: SQLite at `/home/user/myproject/reflex.db`. After `uv run reflex db migrate`, the schema MUST contain:
   - A `note` table (with at least `id` and `content` columns).
   - A `tag` table (with at least `id` and `name` columns).
   - A separate **link table** whose name is anything (e.g. `notetaglink`) that has exactly two columns which are FOREIGN KEYs into `note.id` and `tag.id`.
-- UI contract on `http://localhost:3000/`:
+- UI contract on `http://localhost:<frontend_port>/`:
   - The page renders without compile or runtime errors and returns valid HTML on a `GET /`.
 - CLI contract — `probe.py` at the project root, invoked as `cd /home/user/myproject && uv run python probe.py <subcommand> [args]`. Every subcommand MUST print exactly one JSON object on its own line on stdout (extra log lines are tolerated; the verifier parses the last JSON object on stdout). Exit code MUST be 0 on success and non-zero on failure.
   - Subcommand `counts`:

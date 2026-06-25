@@ -8,8 +8,7 @@ Implement the following routes inside the existing `defineApp([...])` call. You 
 
 ## Acceptance Criteria
 - Project path: /home/user/myapp
-- Start command: npm run dev -- --host 0.0.0.0 --port 5173
-- Port: 5173
+- Start command: npm run dev -- --host 0.0.0.0 --port <port>
 - The dev server must boot cleanly without throwing errors.
 - Routes to implement (all wrapped by the existing `render(Document, ...)` block unless noted):
   - `GET /ping` returns a JSX element whose rendered HTML contains the text `Pong!` inside an `<h1>` tag.

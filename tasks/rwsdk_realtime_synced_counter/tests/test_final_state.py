@@ -9,8 +9,6 @@ from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
 APP_HOST = "localhost"
-APP_PORT = 5173
-BASE_URL = f"http://{APP_HOST}:{APP_PORT}"
 
 
 def _port_open(host: str, port: int) -> bool:
@@ -20,10 +18,19 @@ def _port_open(host: str, port: int) -> bool:
 
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     class Starter(ProcessStarter):
         name = "rwsdk_dev_server"
-        args = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", str(APP_PORT)]
+        args = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -33,15 +40,23 @@ def start_app(xprocess):
         terminate_on_interrupt = True
 
         def startup_check(self):
-            return _port_open(APP_HOST, APP_PORT)
+            return _port_open(APP_HOST, app_port)
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
 
     # Give Vite + miniflare a moment to fully initialize after the port opens.
+    base_url = f"http://{APP_HOST}:{app_port}"
     deadline = time.time() + 60
     while time.time() < deadline:
         try:
-            r = requests.get(f"{BASE_URL}/api/count", timeout=5)
+            r = requests.get(f"{base_url}/api/count", timeout=5)
             if r.status_code < 500:
                 break
         except requests.RequestException:
@@ -49,6 +64,12 @@ def start_app(xprocess):
         time.sleep(1)
 
     yield
+
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
@@ -59,9 +80,10 @@ def browser_verifier():
     yield PochiVerifier()
 
 
-def test_initial_count_is_zero(start_app):
+def test_initial_count_is_zero(start_app, app_port):
     """Verification step 1: GET /api/count should return {\"count\": 0} initially."""
-    response = requests.get(f"{BASE_URL}/api/count", timeout=10)
+    base_url = f"http://{APP_HOST}:{app_port}"
+    response = requests.get(f"{base_url}/api/count", timeout=10)
     assert response.status_code == 200, (
         f"Expected 200 from GET /api/count, got {response.status_code}: {response.text}"
     )
@@ -75,9 +97,10 @@ def test_initial_count_is_zero(start_app):
     )
 
 
-def test_counter_page_has_client_hydration_script(start_app):
+def test_counter_page_has_client_hydration_script(start_app, app_port):
     """Verification step 2: GET / should include a script tag for /src/client.tsx."""
-    response = requests.get(f"{BASE_URL}/", timeout=10)
+    base_url = f"http://{APP_HOST}:{app_port}"
+    response = requests.get(f"{base_url}/", timeout=10)
     assert response.status_code == 200, (
         f"Expected 200 from GET /, got {response.status_code}: {response.text[:500]}"
     )
@@ -88,18 +111,19 @@ def test_counter_page_has_client_hydration_script(start_app):
     )
 
 
-def test_two_tab_realtime_sync(start_app, browser_verifier):
+def test_two_tab_realtime_sync(start_app, app_port, browser_verifier):
     """Verification step 3: drive two tabs in the same browser session and verify sync."""
+    base_url = f"http://{APP_HOST}:{app_port}"
     reason = (
         "Two open tabs of the counter page must stay in sync via useSyncedState. "
         "Clicking Increment in one tab must update the count in the other tab "
         "without a manual refresh."
     )
     truth = (
-        f"Open {BASE_URL}/ in a tab (call it tab A). Verify the page shows a numeric "
+        f"Open {base_url}/ in a tab (call it tab A). Verify the page shows a numeric "
         "count display whose value is 0, plus an 'Increment' button and a 'Decrement' "
         "button. Click 'Increment' 3 times in tab A. Verify the count display in tab "
-        f"A now shows 3. Open {BASE_URL}/ in a second tab (tab B) using the same "
+        f"A now shows 3. Open {base_url}/ in a second tab (tab B) using the same "
         "browser context. Verify the count display in tab B also shows 3 without you "
         "clicking anything in tab B. In tab B, click 'Decrement' once. Verify the "
         "count display in tab B shows 2. Switch back to tab A and verify, without "
@@ -116,9 +140,10 @@ def test_two_tab_realtime_sync(start_app, browser_verifier):
     )
 
 
-def test_final_count_via_api(start_app):
+def test_final_count_via_api(start_app, app_port):
     """Verification step 4: after browser interaction, GET /api/count returns {\"count\": 2}."""
-    response = requests.get(f"{BASE_URL}/api/count", timeout=10)
+    base_url = f"http://{APP_HOST}:{app_port}"
+    response = requests.get(f"{base_url}/api/count", timeout=10)
     assert response.status_code == 200, (
         f"Expected 200 from GET /api/count, got {response.status_code}: {response.text}"
     )

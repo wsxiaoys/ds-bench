@@ -27,14 +27,13 @@ A minimal Vite TypeScript project has already been scaffolded for you at `/home/
 
 ## Acceptance Criteria
 - Project path: /home/user/myapp
-- Start command: `npm run preview -- --host 0.0.0.0 --port 4173`
-- Port: 4173
+- Start command: `npm run preview -- --host 0.0.0.0 --port <port>`
 - `npm run build` must complete without errors and produce a `dist/` directory containing `index.html`.
 - `capacitor.config.ts` (or `capacitor.config.json`) must exist at the project root with `appName` equal to `Theme Demo`, `appId` equal to `com.example.themedemo`, and `webDir` equal to `dist`.
 - `package.json` must list `@capacitor/core`, `@capacitor/cli`, and `@capacitor/preferences` as dependencies (any of `dependencies` or `devDependencies`).
 - `npx cap sync --inline` (or `npx cap sync`) executed after the production build must exit with status 0.
-- The served page at `http://localhost:4173/` must contain a single visible toggle button with the HTML id `theme-toggle`.
-- Loading `http://localhost:4173/` in a fresh browser session must apply the `light` theme by default; the `<body>` element must NOT have the CSS class `dark`.
+- The served page at `http://localhost:$PORT/` must contain a single visible toggle button with the HTML id `theme-toggle`.
+- Loading `http://localhost:$PORT/` in a fresh browser session must apply the `light` theme by default; the `<body>` element must NOT have the CSS class `dark`.
 - Clicking the `#theme-toggle` button once must add the CSS class `dark` to the `<body>` element.
 - After clicking the button to enable dark mode and reloading the page, the `<body>` element must still have the CSS class `dark` (the value must persist through Capacitor Preferences).
 - Clicking the button again must remove the `dark` class from `<body>`, and that lighter state must also persist across a reload.

@@ -18,8 +18,7 @@ Create a simple REST API using Express.js and Sequelize (with SQLite) to manage 
 
 ## Acceptance Criteria
 - Project path: /home/user/project
-- Start command: node index.js
-- Port: 3000
+- Start command: node index.js --port <port>
 - API Endpoints:
   - POST `/roles`: Accepts JSON body and returns 200 OK with the upserted record.
     ```json

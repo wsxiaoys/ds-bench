@@ -8,13 +8,20 @@ from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
 PB_URL = "http://127.0.0.1:8090"
-APP_URL = "http://localhost:3000"
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["node", "index.js"]
+        args = ["node", "index.js", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -25,14 +32,30 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 3000)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
-def test_valid_token_request(start_app):
+def test_valid_token_request(start_app, app_port):
     # 1. Log in to PocketBase to get a valid token
     auth_resp = requests.post(
         f"{PB_URL}/api/collections/users/auth-with-password",
@@ -53,7 +76,7 @@ def test_valid_token_request(start_app):
     cookies = {"pb_auth": cookie_val}
 
     # 3. Request /profile
-    resp = requests.get(f"{APP_URL}/profile", cookies=cookies, timeout=5)
+    resp = requests.get(f"http://localhost:{app_port}/profile", cookies=cookies, timeout=5)
     
     # 4. Verify response
     assert resp.status_code == 200, f"Expected 200 OK, got {resp.status_code}. Body: {resp.text}"
@@ -67,9 +90,9 @@ def test_valid_token_request(start_app):
     # The token should ideally be refreshed, so we just check it's present and not empty
     assert "pb_auth=;" not in set_cookie, "Set-Cookie header cleared the token instead of refreshing it"
 
-def test_invalid_token_request(start_app):
+def test_invalid_token_request(start_app, app_port):
     cookies = {"pb_auth": "invalid_token_string"}
-    resp = requests.get(f"{APP_URL}/profile", cookies=cookies, timeout=5)
+    resp = requests.get(f"http://localhost:{app_port}/profile", cookies=cookies, timeout=5)
     
     assert resp.status_code == 401, f"Expected 401 Unauthorized, got {resp.status_code}"
     body = resp.json()
@@ -81,8 +104,8 @@ def test_invalid_token_request(start_app):
     assert "pb_auth=;" in set_cookie or "Expires=" in set_cookie or "Max-Age=0" in set_cookie, \
         f"Expected Set-Cookie to clear the cookie, got: {set_cookie}"
 
-def test_missing_token_request(start_app):
-    resp = requests.get(f"{APP_URL}/profile", timeout=5)
+def test_missing_token_request(start_app, app_port):
+    resp = requests.get(f"http://localhost:{app_port}/profile", timeout=5)
     
     assert resp.status_code == 401, f"Expected 401 Unauthorized, got {resp.status_code}"
     body = resp.json()

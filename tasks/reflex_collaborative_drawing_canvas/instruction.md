@@ -18,15 +18,14 @@ A REST surface mounted on the Reflex FastAPI backend (via `api_transformer`) mus
 - Model state mutation inside background events with `async with self:` to avoid `ImmutableStateError`.
 - For SVG elements use `rx.el.svg`, `rx.el.svg.line`, etc.
 - The REST endpoints can be attached using `rx.App(api_transformer=fastapi_app)`. They run on the Reflex backend port.
-- After the app is running, leave it running for verification, but **kill every background server you started** (including `reflex run`, `next dev`, anything bound to ports 8000/3000) before reporting completion.
+- After the app is running, leave it running for verification, but **kill every background server you started** (including `reflex run`, `next dev`, anything bound to the ports) before reporting completion.
 
 ## Acceptance Criteria
 - Project path: `/home/user/myproject`.
-- Start command: `cd /home/user/myproject && uv run reflex run --backend-only --backend-port 8000 --loglevel info`.
-- Port: 8000 (backend only).
+- Start command: `cd /home/user/myproject && uv run reflex run --backend-only --backend-port <port> --loglevel info`.
 - Database: `/home/user/myproject/reflex.db`, applied via `uv run reflex db migrate`.
 - Table `stroke` must exist with the columns (any order, any nullability that still allows inserts): `id` (integer primary key), `x1` (real/float), `y1` (real/float), `x2` (real/float), `y2` (real/float), `color` (text), `session_id` (text).
-- REST API (mounted on backend port 8000):
+- REST API (mounted on backend port <port>):
   - `POST /api/strokes`
     ```json
     // Request body
@@ -71,5 +70,5 @@ A REST surface mounted on the Reflex FastAPI backend (via `api_transformer`) mus
 - A background event handler decorated with `@rx.event(background=True)` must periodically (~every 250 ms) read the `stroke` table and update the reactive state. After the server has been running for at least 1.5 seconds while strokes are inserted, the backend log must contain no `ImmutableStateError` traceback.
 - The index page (`/`) must render an `<svg>` element that contains an `rx.foreach` over the polled stroke list, producing one `<line>` per stroke. The compiled frontend artifact must exist at `/home/user/myproject/.web/pages/index.js` (or `index.jsx`) and reference both an `svg` tag and a `line` tag.
 - No environment variables are required from the runner; all values used to seed strokes during verification are sent by the verifier.
-- After implementation, terminate every background process you started so that ports 8000 and 3000 are free.
+- After implementation, terminate every background process you started so that the ports are free.
 

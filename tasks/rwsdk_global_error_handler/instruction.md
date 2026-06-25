@@ -12,8 +12,7 @@ Change `src/worker.tsx` so the default export is `{ fetch: async (request, env, 
 
 ## Acceptance Criteria
 - Project path: /home/user/myapp
-- Start command: npm run dev -- --host 0.0.0.0 --port 5173
-- Port: 5173
+- Start command: npm run dev -- --host 0.0.0.0 --port <port>
 - Routes:
   - `GET /ok` → status 200, JSON body `{"ok": true}` (content-type `application/json`).
   - `GET /err/known` → throws `new ErrorResponse(404, "resource missing")`. Response status 404, JSON body `{"error": "resource missing", "code": 404}`.

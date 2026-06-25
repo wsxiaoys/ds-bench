@@ -9,7 +9,6 @@ from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
 BINARY_PATH = os.path.join(PROJECT_DIR, "app")
-BASE_URL = "http://127.0.0.1:8090"
 SUPERUSER_EMAIL = "admin@example.com"
 SUPERUSER_PASSWORD = "SuperSecret123"
 
@@ -20,12 +19,12 @@ def _port_open(host: str, port: int) -> bool:
         return s.connect_ex((host, port)) == 0
 
 
-def _wait_for_health(timeout: float = 60.0) -> None:
+def _wait_for_health(port: int, timeout: float = 60.0) -> None:
     deadline = time.time() + timeout
     last_err = None
     while time.time() < deadline:
         try:
-            r = requests.get(f"{BASE_URL}/api/health", timeout=2)
+            r = requests.get(f"http://127.0.0.1:{port}/api/health", timeout=2)
             if r.status_code == 200:
                 return
         except Exception as exc:
@@ -34,8 +33,17 @@ def _wait_for_health(timeout: float = 60.0) -> None:
     raise RuntimeError(f"PocketBase /api/health did not become ready in time: {last_err}")
 
 
+@pytest.fixture(scope="session")
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
 @pytest.fixture(scope="session", autouse=True)
-def start_pocketbase(xprocess):
+def start_pocketbase(xprocess, app_port):
     """Build the binary if needed, ensure the superuser exists, and run `serve`."""
 
     # Build the binary if it is missing (the executor is expected to build it,
@@ -64,7 +72,7 @@ def start_pocketbase(xprocess):
 
     class Starter(ProcessStarter):
         name = "pocketbase_serve"
-        args = [BINARY_PATH, "serve", "--http=0.0.0.0:8090"]
+        args = [BINARY_PATH, "serve", f"--http=0.0.0.0:{app_port}"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -74,21 +82,36 @@ def start_pocketbase(xprocess):
         terminate_on_interrupt = True
 
         def startup_check(self):
-            return _port_open("127.0.0.1", 8090)
+            return _port_open("127.0.0.1", app_port)
 
-    xprocess.ensure(Starter.name, Starter)
-    _wait_for_health()
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
+    _wait_for_health(app_port)
 
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 
 @pytest.fixture(scope="session")
-def auth_token(start_pocketbase) -> str:
+def auth_token(start_pocketbase, app_port) -> str:
     resp = requests.post(
-        f"{BASE_URL}/api/collections/_superusers/auth-with-password",
+        f"http://127.0.0.1:{app_port}/api/collections/_superusers/auth-with-password",
         json={"identity": SUPERUSER_EMAIL, "password": SUPERUSER_PASSWORD},
         timeout=10,
     )
@@ -107,28 +130,29 @@ def _auth_headers(token: str) -> dict:
     return {"Authorization": token, "Content-Type": "application/json"}
 
 
-def _create_article(token: str, payload: dict) -> requests.Response:
+def _create_article(token: str, app_port: int, payload: dict) -> requests.Response:
     return requests.post(
-        f"{BASE_URL}/api/collections/articles/records",
+        f"http://127.0.0.1:{app_port}/api/collections/articles/records",
         headers=_auth_headers(token),
         json=payload,
         timeout=10,
     )
 
 
-def _update_article(token: str, record_id: str, payload: dict) -> requests.Response:
+def _update_article(token: str, record_id: str, app_port: int, payload: dict) -> requests.Response:
     return requests.patch(
-        f"{BASE_URL}/api/collections/articles/records/{record_id}",
+        f"http://127.0.0.1:{app_port}/api/collections/articles/records/{record_id}",
         headers=_auth_headers(token),
         json=payload,
         timeout=10,
     )
 
 
-def test_short_article_word_count(auth_token: str):
+def test_short_article_word_count(auth_token: str, app_port: int):
     """4 whitespace-separated words -> word_count = 4, reading_time_minutes = 1."""
     resp = _create_article(
         auth_token,
+        app_port,
         {"title": "Short post", "content": "alpha beta gamma delta"},
     )
     assert resp.status_code == 200 or resp.status_code == 201, (
@@ -143,12 +167,13 @@ def test_short_article_word_count(auth_token: str):
     )
 
 
-def test_long_article_word_count(auth_token: str):
+def test_long_article_word_count(auth_token: str, app_port: int):
     """250 whitespace-separated tokens -> word_count = 250, reading_time_minutes = 2."""
     tokens = [f"w{i}" for i in range(1, 251)]
     content = " ".join(tokens)
     resp = _create_article(
         auth_token,
+        app_port,
         {"title": "Long post", "content": content},
     )
     assert resp.status_code in (200, 201), (
@@ -163,10 +188,11 @@ def test_long_article_word_count(auth_token: str):
     )
 
 
-def test_hook_overrides_client_supplied_counters(auth_token: str):
+def test_hook_overrides_client_supplied_counters(auth_token: str, app_port: int):
     """Client-supplied word_count/reading_time_minutes must be overwritten."""
     resp = _create_article(
         auth_token,
+        app_port,
         {
             "title": "Lying post",
             "content": "one two three",
@@ -188,10 +214,11 @@ def test_hook_overrides_client_supplied_counters(auth_token: str):
     )
 
 
-def test_update_recomputes_counters(auth_token: str):
+def test_update_recomputes_counters(auth_token: str, app_port: int):
     """Updating an article must recompute word_count and reading_time_minutes."""
     create = _create_article(
         auth_token,
+        app_port,
         {"title": "To update", "content": "alpha beta gamma delta"},
     )
     assert create.status_code in (200, 201), (
@@ -202,7 +229,7 @@ def test_update_recomputes_counters(auth_token: str):
         f"Created article must return an id; got: {create.json()}"
     )
 
-    update = _update_article(auth_token, record_id, {"content": "hello world"})
+    update = _update_article(auth_token, record_id, app_port, {"content": "hello world"})
     assert update.status_code == 200, (
         f"Expected 200 on update, got {update.status_code}: {update.text}"
     )
@@ -215,10 +242,11 @@ def test_update_recomputes_counters(auth_token: str):
     )
 
 
-def test_empty_content_yields_zero(auth_token: str):
+def test_empty_content_yields_zero(auth_token: str, app_port: int):
     """Whitespace-only content yields word_count = 0 and reading_time_minutes = 0."""
     resp = _create_article(
         auth_token,
+        app_port,
         {"title": "Empty", "content": "   "},
     )
     assert resp.status_code in (200, 201), (

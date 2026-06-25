@@ -8,7 +8,15 @@ from xprocess import ProcessStarter
 PROJECT_DIR = "/home/user/myproject"
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     # Compile the Go application
     compile_result = subprocess.run(
         ["go", "build", "-o", "myapp", "main.go"],
@@ -21,7 +29,7 @@ def start_app(xprocess):
 
     class Starter(ProcessStarter):
         name = "pocketbase_app"
-        args = ["./myapp", "serve", "--http=0.0.0.0:8090"]
+        args = ["./myapp", "serve", f"--http=0.0.0.0:{app_port}"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -32,17 +40,31 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8090)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
 
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
-def test_create_post_success(start_app):
-    url = "http://localhost:8090/api/collections/posts/records"
+def test_create_post_success(start_app, app_port):
+    url = f"http://localhost:{app_port}/api/collections/posts/records"
     payload = {"title": "My First Post"}
     response = requests.post(url, json=payload)
     
@@ -52,8 +74,8 @@ def test_create_post_success(start_app):
     assert data.get("title") == "My First Post", f"Expected title 'My First Post', got: {data.get('title')}"
     assert data.get("slug") == "my-first-post", f"Expected slug 'my-first-post', got: {data.get('slug')}"
 
-def test_create_post_validation_error(start_app):
-    url = "http://localhost:8090/api/collections/posts/records"
+def test_create_post_validation_error(start_app, app_port):
+    url = f"http://localhost:{app_port}/api/collections/posts/records"
     payload = {"title": ""}
     response = requests.post(url, json=payload)
     

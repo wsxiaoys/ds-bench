@@ -12,7 +12,15 @@ def browser_verifier():
     yield PochiVerifier()
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     """
     Starts the Next.js app using xprocess. Confirms readiness via port check.
     """
@@ -21,7 +29,7 @@ def start_app(xprocess):
 
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -32,23 +40,39 @@ def start_app(xprocess):
 
         def startup_check(self):
             """
-            Custom check: returns True if port 3000 is accepting connections.
+            Custom check: returns True if the target port is accepting connections.
             """
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 3000)) == 0
+                return s.connect_ex(("localhost", app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
-def test_browser_task_manager(start_app, browser_verifier):
+def test_browser_task_manager(start_app, app_port, browser_verifier):
     run_id = open("/logs/artifacts/run-id").read().strip()
     task_text = f"Test Task {run_id}"
 
     reason = "The application should allow users to create, toggle, and delete tasks. It should filter tasks by the current runId."
     truth = f"""
-1. Navigate to http://localhost:3000
+1. Navigate to http://localhost:{app_port}
 2. Find the input field (e.g., `data-testid="task-input"`) and enter `{task_text}`.
 3. Click the add button (e.g., `data-testid="add-button"`).
 4. Verify that the task `{task_text}` appears in a `data-testid="task-item"` element.

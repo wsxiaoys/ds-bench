@@ -26,16 +26,16 @@ Build a Reflex web application that exposes tenant-scoped pages under `/t/[tenan
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: `cd /home/user/myproject && uv run reflex run --env prod`
+- Start command: `cd /home/user/myproject && uv run reflex run --env prod --frontend-port <port>`
 - Ports:
-  - Frontend (Next.js, browser-facing): `3000`
+  - Frontend (Next.js, browser-facing): Dynamically assigned via `--frontend-port <port>`
   - Backend (FastAPI / Reflex websocket): `8000`
 - The verifier starts its own server using the start command above. The agent MUST shut down any background processes it started for development or testing before finishing the task.
-- Browser-visible routes (port 3000):
-  - `http://localhost:3000/t/acme/dashboard` → page displays `Acme Corp` and `Dashboard` (no `Tenant Not Found`).
-  - `http://localhost:3000/t/globex/settings` → page displays `Globex Inc` and `Settings` (no `Tenant Not Found`).
-  - `http://localhost:3000/t/initech/dashboard` → page displays `Initech LLC` and `Dashboard`.
-  - `http://localhost:3000/t/no-such-tenant/dashboard` → page displays `Tenant Not Found` and does NOT display any of `Acme Corp`, `Globex Inc`, or `Initech LLC`.
+- Browser-visible routes (port $PORT):
+  - `http://localhost:$PORT/t/acme/dashboard` → page displays `Acme Corp` and `Dashboard` (no `Tenant Not Found`).
+  - `http://localhost:$PORT/t/globex/settings` → page displays `Globex Inc` and `Settings` (no `Tenant Not Found`).
+  - `http://localhost:$PORT/t/initech/dashboard` → page displays `Initech LLC` and `Dashboard`.
+  - `http://localhost:$PORT/t/no-such-tenant/dashboard` → page displays `Tenant Not Found` and does NOT display any of `Acme Corp`, `Globex Inc`, or `Initech LLC`.
 - Backend API endpoints (port 8000):
   - `GET http://localhost:8000/api/me` with header `X-Tenant-Id: acme` → HTTP 200, JSON body `{"slug": "acme", "name": "Acme Corp"}`.
   - `GET http://localhost:8000/api/me` with header `X-Tenant-Id: initech` → HTTP 200, JSON body `{"slug": "initech", "name": "Initech LLC"}`.

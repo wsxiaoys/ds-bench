@@ -8,18 +8,16 @@ Create an e-commerce shopping cart application using TanStack Query for data fet
 - Display a list of products fetched using TanStack Query (you can use mock data or a mock API function).
 - Implement a shopping cart where the cart state (items and their quantities) is stored entirely in the URL search parameters using TanStack Router.
 - Users must be able to add products to the cart, remove them, and adjust quantities, with all changes reflecting in the URL.
-- The application must run on port 8432.
 
 ## Implementation Hints
-- Configure your dev server (e.g., Vite) to run on port `8432`.
+- Configure your dev server (e.g., Vite) to support dynamic port assignment via the `--port` argument.
 - Use `useQuery` from `@tanstack/react-query` to fetch the product list.
 - Define a route using `@tanstack/react-router` and use its search param API (e.g., `validateSearch`) to parse and serialize the cart state in the URL.
 - Use the router's navigation API (`useNavigate` or `Link`) to update the cart state in the URL when a user interacts with the cart.
 
 ## Acceptance Criteria
 - Project path: /home/user/ecommerce-cart
-- Start command: npm run dev
-- Port: 8432
+- Start command: npm run dev -- --port <port>
 - Routes and Features:
   - GET `/`: Displays a list of products. Each product has an "Add to Cart" button.
   - The cart state must be managed via URL search parameters (e.g., `/?cart=...` or `/?items=...`).

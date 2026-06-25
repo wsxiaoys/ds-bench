@@ -5,8 +5,7 @@ Build a custom PocketBase v0.31.0 backend in Go that exposes two authenticated R
 
 ## Acceptance Criteria
 - Project path: `/home/user/myapp`
-- Start command: `./myapp serve --http=0.0.0.0:8090` (the executable named `myapp` must be produced by `go build` in the project directory; the verifier will (re)build it if missing).
-- Port: `8090`
+- Start command: `./myapp serve --http=0.0.0.0:<port>` (the executable named `myapp` must be produced by `go build` in the project directory; the verifier will (re)build it if missing).
 - The PocketBase application must use the `github.com/pocketbase/pocketbase` module at version `v0.31.0`.
 - A pre-seeded superuser is available for collection bootstrapping: `admin@example.com` / `1234567890`.
 - A pre-seeded regular auth user lives in the `users` collection: `user@example.com` / `password1234`.

@@ -8,11 +8,19 @@ import requests
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
-BASE_URL = "http://localhost:5173"
 
 
 @pytest.fixture(scope="session")
-def start_app(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port):
     """
     Start the rwsdk dev server via `npm run dev`. Confirm readiness by
     probing the configured port until it accepts TCP connections.
@@ -20,7 +28,7 @@ def start_app(xprocess):
 
     class Starter(ProcessStarter):
         name = "start_rwsdk_app"
-        args = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+        args = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", str(app_port)]
         # CRITICAL: set `env` as a class attribute here, NEVER inside `popen_kwargs`.
         env = os.environ.copy()
         popen_kwargs = {
@@ -32,17 +40,33 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                if s.connect_ex(("localhost", 5173)) != 0:
+                if s.connect_ex(("localhost", app_port)) != 0:
                     return False
             # Also wait until the app responds to an HTTP request.
             try:
-                r = requests.get(f"{BASE_URL}/api/sessions/count", timeout=5)
+                r = requests.get(f"http://localhost:{app_port}/api/sessions/count", timeout=5)
                 return r.status_code in (200, 404, 500)
             except requests.RequestException:
                 return False
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
@@ -94,26 +118,26 @@ def test_wrangler_declares_sessions_kv_binding(start_app):
     )
 
 
-def test_initial_count_is_zero(start_app):
-    r = requests.get(f"{BASE_URL}/api/sessions/count", timeout=10)
+def test_initial_count_is_zero(start_app, app_port):
+    r = requests.get(f"http://localhost:{app_port}/api/sessions/count", timeout=10)
     assert r.status_code == 200, f"Expected 200 from /api/sessions/count, got {r.status_code}: {r.text}"
     body = r.json()
     assert body == {"count": 0}, f"Expected initial count {{'count': 0}}, got {body}"
 
 
-def test_unauthenticated_me_returns_401(start_app):
-    r = requests.get(f"{BASE_URL}/api/sessions/me", timeout=10)
+def test_unauthenticated_me_returns_401(start_app, app_port):
+    r = requests.get(f"http://localhost:{app_port}/api/sessions/me", timeout=10)
     assert r.status_code == 401, (
         f"Expected 401 for unauthenticated GET /api/sessions/me, got {r.status_code}: {r.text}"
     )
 
 
-def test_full_session_lifecycle(start_app):
+def test_full_session_lifecycle(start_app, app_port):
     # ---- Step 4: create alice's session ----
     alice = requests.Session()
     now_before = int(time.time())
     r = alice.post(
-        f"{BASE_URL}/api/sessions",
+        f"http://localhost:{app_port}/api/sessions",
         json={"userId": "alice"},
         headers={"Content-Type": "application/json"},
         timeout=10,
@@ -162,7 +186,7 @@ def test_full_session_lifecycle(start_app):
     )
 
     # ---- Step 5: read /api/sessions/me using the session's cookie jar ----
-    r = alice.get(f"{BASE_URL}/api/sessions/me", timeout=10)
+    r = alice.get(f"http://localhost:{app_port}/api/sessions/me", timeout=10)
     assert r.status_code == 200, (
         f"Expected 200 from GET /api/sessions/me with valid cookie, got {r.status_code}: {r.text}"
     )
@@ -181,7 +205,7 @@ def test_full_session_lifecycle(start_app):
     )
 
     # ---- Step 6: count should now be 1 ----
-    r = requests.get(f"{BASE_URL}/api/sessions/count", timeout=10)
+    r = requests.get(f"http://localhost:{app_port}/api/sessions/count", timeout=10)
     assert r.status_code == 200, (
         f"Expected 200 from /api/sessions/count, got {r.status_code}: {r.text}"
     )
@@ -190,7 +214,7 @@ def test_full_session_lifecycle(start_app):
     # ---- Step 7: create bob's session in a fresh requests.Session ----
     bob = requests.Session()
     r = bob.post(
-        f"{BASE_URL}/api/sessions",
+        f"http://localhost:{app_port}/api/sessions",
         json={"userId": "bob"},
         headers={"Content-Type": "application/json"},
         timeout=10,
@@ -207,14 +231,14 @@ def test_full_session_lifecycle(start_app):
         "Expected a different sessionId for bob; got the same value as alice."
     )
 
-    r = requests.get(f"{BASE_URL}/api/sessions/count", timeout=10)
+    r = requests.get(f"http://localhost:{app_port}/api/sessions/count", timeout=10)
     assert r.status_code == 200
     assert r.json() == {"count": 2}, f"Expected count 2 after two POSTs, got {r.json()}"
 
     # ---- Step 8: tampered/unknown sid returns 401 ----
     bogus_sid = "deadbeefdeadbeefdeadbeefdeadbeef"
     r = requests.get(
-        f"{BASE_URL}/api/sessions/me",
+        f"http://localhost:{app_port}/api/sessions/me",
         headers={"Cookie": f"sid={bogus_sid}"},
         timeout=10,
     )
@@ -223,7 +247,7 @@ def test_full_session_lifecycle(start_app):
     )
 
     # ---- Step 9: delete alice's session ----
-    r = alice.delete(f"{BASE_URL}/api/sessions/me", timeout=10)
+    r = alice.delete(f"http://localhost:{app_port}/api/sessions/me", timeout=10)
     assert r.status_code == 204, (
         f"Expected 204 from DELETE /api/sessions/me, got {r.status_code}: {r.text}"
     )
@@ -247,7 +271,7 @@ def test_full_session_lifecycle(start_app):
 
     # ---- Step 10: old sid should no longer authenticate ----
     r = requests.get(
-        f"{BASE_URL}/api/sessions/me",
+        f"http://localhost:{app_port}/api/sessions/me",
         headers={"Cookie": f"sid={sid_alice}"},
         timeout=10,
     )
@@ -256,7 +280,7 @@ def test_full_session_lifecycle(start_app):
     )
 
     # ---- Step 11: count should reflect the deletion ----
-    r = requests.get(f"{BASE_URL}/api/sessions/count", timeout=10)
+    r = requests.get(f"http://localhost:{app_port}/api/sessions/count", timeout=10)
     assert r.status_code == 200
     assert r.json() == {"count": 1}, (
         f"Expected count 1 after deleting alice, got {r.json()}"

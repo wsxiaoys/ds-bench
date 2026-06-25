@@ -19,8 +19,7 @@ You have a React project at `/home/user/tanstack-form-wizard`. Create a multi-st
 
 ## Acceptance Criteria
 - Project path: `/home/user/tanstack-form-wizard`
-- Start command: `npm run dev -- --port 7345` (or ensure your app listens on port 7345)
-- Port: 7345
+- Start command: `npm run dev -- --port <port>`
 - UI Requirements:
   - Initial load shows Step 1 with `firstName` and `lastName` inputs, and a "Next" button.
   - Clicking "Next" without filling fields displays validation errors.

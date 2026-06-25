@@ -33,13 +33,12 @@ A minimal Vite + TypeScript project has already been scaffolded for you at `/hom
 
 ## Acceptance Criteria
 - Project path: /home/user/myapp
-- Start command: `npm run preview -- --host 0.0.0.0 --port 4173`
-- Port: 4173
+- Start command: `npm run preview -- --host 0.0.0.0 --port <port>`
 - `npm run build` must complete without errors and produce a `dist/` directory containing both `index.html` and `sample.pdf`.
 - `capacitor.config.ts` (or `capacitor.config.json`) must exist at the project root with `appName` equal to `Filesystem Demo`, `appId` equal to `com.example.fsdemo`, and `webDir` equal to `dist`.
 - `package.json` must list `@capacitor/core`, `@capacitor/cli`, and `@capacitor/filesystem` as dependencies (any of `dependencies` or `devDependencies`).
 - `npx cap sync` executed after the production build must exit with status 0.
-- The served page at `http://localhost:4173/` must contain elements with the HTML ids `download-pdf`, `download-status`, `file-size`, and `file-sha256`.
+- The served page at `http://localhost:$PORT/` must contain elements with the HTML ids `download-pdf`, `download-status`, `file-size`, and `file-sha256`.
 - On initial load, `#download-status` must contain the literal text `idle` and `#file-size` and `#file-sha256` must be empty.
 - Clicking `#download-pdf` must:
     - First change `#download-status` to `downloading`.

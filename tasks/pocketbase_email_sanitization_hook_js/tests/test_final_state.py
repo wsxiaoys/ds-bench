@@ -9,9 +9,6 @@ from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
 HOOKS_DIR = os.path.join(PROJECT_DIR, "pb_hooks")
-BASE_URL = "http://127.0.0.1:8090"
-
-PB_PORT = 8090
 PASSWORD = "Test123Password!"
 
 
@@ -34,10 +31,19 @@ def _superuser_password() -> str:
 
 
 @pytest.fixture(scope="session")
-def start_pocketbase(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def start_pocketbase(xprocess, app_port):
     class Starter(ProcessStarter):
         name = "start_pocketbase"
-        args = ["./pocketbase", "serve", "--http=0.0.0.0:8090"]
+        args = ["./pocketbase", "serve", f"--http=0.0.0.0:{app_port}"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -50,20 +56,27 @@ def start_pocketbase(xprocess):
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(2)
-                    if s.connect_ex(("127.0.0.1", PB_PORT)) != 0:
+                    if s.connect_ex(("127.0.0.1", app_port)) != 0:
                         return False
-                resp = requests.get(f"{BASE_URL}/api/health", timeout=5)
+                resp = requests.get(f"http://127.0.0.1:{app_port}/api/health", timeout=5)
                 return resp.status_code == 200
             except Exception:
                 return False
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
 
     # extra readiness wait for /api/health
     deadline = time.time() + 30
     while time.time() < deadline:
         try:
-            r = requests.get(f"{BASE_URL}/api/health", timeout=2)
+            r = requests.get(f"http://127.0.0.1:{app_port}/api/health", timeout=2)
             if r.status_code == 200:
                 break
         except Exception:
@@ -71,6 +84,13 @@ def start_pocketbase(xprocess):
         time.sleep(0.5)
 
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
@@ -84,14 +104,15 @@ def test_hook_file_exists():
     )
 
 
-def test_sanitization_on_dirty_email(start_pocketbase):
+def test_sanitization_on_dirty_email(start_pocketbase, app_port):
     """A mixed-case, whitespace-padded email must be persisted as trimmed + lowercase."""
     run_id = _run_id()
     dirty_email = f"  HARBOR-Sanitize-{run_id}@Example.COM  "
     expected_email = f"harbor-sanitize-{run_id}@example.com"
+    base_url = f"http://127.0.0.1:{app_port}"
 
     create_resp = requests.post(
-        f"{BASE_URL}/api/collections/users/records",
+        f"{base_url}/api/collections/users/records",
         json={
             "email": dirty_email,
             "password": PASSWORD,
@@ -105,7 +126,7 @@ def test_sanitization_on_dirty_email(start_pocketbase):
     )
 
     auth_resp = requests.post(
-        f"{BASE_URL}/api/collections/users/auth-with-password",
+        f"{base_url}/api/collections/users/auth-with-password",
         json={"identity": expected_email, "password": PASSWORD},
         timeout=15,
     )
@@ -123,13 +144,14 @@ def test_sanitization_on_dirty_email(start_pocketbase):
     )
 
 
-def test_sanitization_idempotent_on_clean_email(start_pocketbase):
+def test_sanitization_idempotent_on_clean_email(start_pocketbase, app_port):
     """An already-clean email must be accepted and stored unchanged."""
     run_id = _run_id()
     clean_email = f"harbor-clean-{run_id}@example.com"
+    base_url = f"http://127.0.0.1:{app_port}"
 
     create_resp = requests.post(
-        f"{BASE_URL}/api/collections/users/records",
+        f"{base_url}/api/collections/users/records",
         json={
             "email": clean_email,
             "password": PASSWORD,
@@ -143,7 +165,7 @@ def test_sanitization_idempotent_on_clean_email(start_pocketbase):
     )
 
     auth_resp = requests.post(
-        f"{BASE_URL}/api/collections/users/auth-with-password",
+        f"{base_url}/api/collections/users/auth-with-password",
         json={"identity": clean_email, "password": PASSWORD},
         timeout=15,
     )
@@ -159,13 +181,14 @@ def test_sanitization_idempotent_on_clean_email(start_pocketbase):
     )
 
 
-def test_superusers_collection_not_affected(start_pocketbase):
+def test_superusers_collection_not_affected(start_pocketbase, app_port):
     """The hook must only target the 'users' collection."""
     su_email = _superuser_email()
     su_password = _superuser_password()
+    base_url = f"http://127.0.0.1:{app_port}"
 
     auth_resp = requests.post(
-        f"{BASE_URL}/api/collections/_superusers/auth-with-password",
+        f"{base_url}/api/collections/_superusers/auth-with-password",
         json={"identity": su_email, "password": su_password},
         timeout=15,
     )

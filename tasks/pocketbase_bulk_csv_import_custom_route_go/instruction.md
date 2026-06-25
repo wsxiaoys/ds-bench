@@ -5,8 +5,7 @@ Implement a Go-embedded PocketBase v0.31.0 application that exposes a superuser-
 
 ## Acceptance Criteria
 - Project path: /home/user/myproject
-- Start command: `./myapp serve --http=0.0.0.0:8090` (the binary is produced by `go build -o myapp .` inside the project directory).
-- Port: 8090
+- Start command: `./myapp serve --http=127.0.0.1:<port>` (the binary is produced by `go build -o myapp .` inside the project directory).
 - A `base` collection named `products` with the fields `sku` (text), `name` (text) and `price` (number) must exist after the server has started.
 - Route: `POST /api/import/products`
   - Must require superuser authentication (`Authorization: Bearer <superuser-token>`).

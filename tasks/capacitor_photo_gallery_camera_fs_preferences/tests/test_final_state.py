@@ -11,8 +11,6 @@ from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myapp"
 PREVIEW_HOST = "127.0.0.1"
-PREVIEW_PORT = 4173
-PREVIEW_URL = f"http://{PREVIEW_HOST}:{PREVIEW_PORT}/"
 
 ISO_TIMESTAMP_PATH_REGEX = re.compile(
     r"^photos/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z\.jpeg$"
@@ -172,7 +170,19 @@ def test_capacitor_sync_succeeds():
 
 
 @pytest.fixture(scope="module")
-def preview_server(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="module")
+def start_app(xprocess, app_port):
+    """
+    Starts the Vite preview service using xprocess. Confirms readiness via port check.
+    """
     class Starter(ProcessStarter):
         name = "vite_preview"
         args = [
@@ -183,7 +193,7 @@ def preview_server(xprocess):
             "--host",
             "0.0.0.0",
             "--port",
-            str(PREVIEW_PORT),
+            str(app_port),
             "--strictPort",
         ]
         env = os.environ.copy()
@@ -196,16 +206,36 @@ def preview_server(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex((PREVIEW_HOST, PREVIEW_PORT)) == 0
+                return s.connect_ex((PREVIEW_HOST, app_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
-    time.sleep(1.0)
-    yield PREVIEW_URL
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
+    yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 
-def test_index_served_with_required_elements(preview_server):
+@pytest.fixture(scope="module")
+def preview_server(start_app, app_port):
+    yield f"http://{PREVIEW_HOST}:{app_port}/"
+
+
+def test_index_served_with_required_elements(preview_server, app_port):
     response = requests.get(preview_server, timeout=30)
     assert response.status_code == 200, (
         f"GET {preview_server} returned status {response.status_code}; expected 200."
@@ -274,7 +304,7 @@ def _capture_with_fixture(page, tmp_path, fixture_name: str, fixture_bytes: byte
     )
 
 
-def test_photo_gallery_full_flow(preview_server, tmp_path):
+def test_photo_gallery_full_flow(preview_server, app_port, tmp_path):
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
 

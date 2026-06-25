@@ -12,7 +12,6 @@ PROJECT_DIR = "/home/user/myproject"
 MIGRATIONS_DIR = os.path.join(PROJECT_DIR, "pb_migrations")
 BASE_URL = "http://127.0.0.1:8090"
 
-PB_PORT = 8090
 USER_PASSWORD = "Test123Password!"
 
 
@@ -85,10 +84,21 @@ def _register_and_login_user(email: str) -> Dict[str, str]:
 
 
 @pytest.fixture(scope="session")
-def start_pocketbase(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    global BASE_URL
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+    BASE_URL = f"http://127.0.0.1:{port}"
+    yield port
+
+
+@pytest.fixture(scope="session")
+def start_pocketbase(xprocess, app_port):
     class Starter(ProcessStarter):
         name = "start_pocketbase"
-        args = ["./pocketbase", "serve", "--http=0.0.0.0:8090"]
+        args = ["./pocketbase", "serve", f"--http=0.0.0.0:{app_port}"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -101,14 +111,21 @@ def start_pocketbase(xprocess):
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(2)
-                    if s.connect_ex(("127.0.0.1", PB_PORT)) != 0:
+                    if s.connect_ex(("127.0.0.1", app_port)) != 0:
                         return False
                 resp = requests.get(f"{BASE_URL}/api/health", timeout=5)
                 return resp.status_code == 200
             except Exception:
                 return False
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
 
     deadline = time.time() + 30
     while time.time() < deadline:
@@ -122,12 +139,19 @@ def start_pocketbase(xprocess):
 
     yield
 
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
+
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 
 @pytest.fixture(scope="session")
-def seeded_state(start_pocketbase) -> Dict[str, Any]:
+def seeded_state(start_pocketbase, app_port) -> Dict[str, Any]:
     """Set up superuser auth, three users, and a project membership for testing."""
     run_id = _run_id()
     superuser_token = _login_superuser()
@@ -178,7 +202,7 @@ def _find_field(fields: List[Dict[str, Any]], name: str) -> Optional[Dict[str, A
     return None
 
 
-def test_projects_collection_schema(seeded_state):
+def test_projects_collection_schema(seeded_state, app_port):
     token = seeded_state["superuser_token"]
     resp = requests.get(
         f"{BASE_URL}/api/collections/projects",
@@ -231,7 +255,7 @@ def test_projects_collection_schema(seeded_state):
     )
 
 
-def test_tasks_collection_schema(seeded_state):
+def test_tasks_collection_schema(seeded_state, app_port):
     token = seeded_state["superuser_token"]
     resp = requests.get(
         f"{BASE_URL}/api/collections/tasks",
@@ -291,7 +315,7 @@ def test_tasks_collection_schema(seeded_state):
     )
 
 
-def test_member_can_list_and_view_project(seeded_state):
+def test_member_can_list_and_view_project(seeded_state, app_port):
     project_id = seeded_state["project_id"]
     run_id = seeded_state["run_id"]
     expected_name = f"harbor-proj-{run_id}"
@@ -331,7 +355,7 @@ def test_member_can_list_and_view_project(seeded_state):
         )
 
 
-def test_outsider_is_blocked_from_project(seeded_state):
+def test_outsider_is_blocked_from_project(seeded_state, app_port):
     token = seeded_state["outsider"]["token"]
     project_id = seeded_state["project_id"]
 
@@ -362,7 +386,7 @@ def test_outsider_is_blocked_from_project(seeded_state):
     )
 
 
-def test_guest_is_blocked_from_project(seeded_state):
+def test_guest_is_blocked_from_project(seeded_state, app_port):
     project_id = seeded_state["project_id"]
     view_resp = requests.get(
         f"{BASE_URL}/api/collections/projects/records/{project_id}",
@@ -374,7 +398,7 @@ def test_guest_is_blocked_from_project(seeded_state):
     )
 
 
-def test_member_can_create_task(seeded_state):
+def test_member_can_create_task(seeded_state, app_port):
     token = seeded_state["member_a"]["token"]
     project_id = seeded_state["project_id"]
     run_id = seeded_state["run_id"]
@@ -407,7 +431,7 @@ def test_member_can_create_task(seeded_state):
     seeded_state["task_id"] = task_id
 
 
-def test_outsider_cannot_create_task(seeded_state):
+def test_outsider_cannot_create_task(seeded_state, app_port):
     token = seeded_state["outsider"]["token"]
     project_id = seeded_state["project_id"]
     run_id = seeded_state["run_id"]
@@ -446,7 +470,7 @@ def test_outsider_cannot_create_task(seeded_state):
     )
 
 
-def test_member_can_list_and_view_tasks(seeded_state):
+def test_member_can_list_and_view_tasks(seeded_state, app_port):
     task_id = seeded_state.get("task_id")
     assert task_id, "task_id missing from seeded_state; predecessor test must have failed."
     project_id = seeded_state["project_id"]
@@ -482,7 +506,7 @@ def test_member_can_list_and_view_tasks(seeded_state):
     )
 
 
-def test_outsider_cannot_list_or_view_tasks(seeded_state):
+def test_outsider_cannot_list_or_view_tasks(seeded_state, app_port):
     task_id = seeded_state.get("task_id")
     assert task_id, "task_id missing from seeded_state; predecessor test must have failed."
     token = seeded_state["outsider"]["token"]
@@ -514,7 +538,7 @@ def test_outsider_cannot_list_or_view_tasks(seeded_state):
     )
 
 
-def test_member_can_update_and_delete_task(seeded_state):
+def test_member_can_update_and_delete_task(seeded_state, app_port):
     task_id = seeded_state.get("task_id")
     assert task_id, "task_id missing from seeded_state; predecessor test must have failed."
     token = seeded_state["member_a"]["token"]
@@ -555,7 +579,7 @@ def test_member_can_update_and_delete_task(seeded_state):
     )
 
 
-def test_outsider_cannot_modify_others_task(seeded_state):
+def test_outsider_cannot_modify_others_task(seeded_state, app_port):
     token = seeded_state["outsider"]["token"]
     su_token = seeded_state["superuser_token"]
     project_id = seeded_state["project_id"]
@@ -616,7 +640,7 @@ def test_outsider_cannot_modify_others_task(seeded_state):
     seeded_state["victim_task_id"] = victim_task_id
 
 
-def test_superuser_retains_full_access(seeded_state):
+def test_superuser_retains_full_access(seeded_state, app_port):
     su_token = seeded_state["superuser_token"]
     project_id = seeded_state["project_id"]
     victim_task_id = seeded_state.get("victim_task_id")

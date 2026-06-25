@@ -12,10 +12,6 @@ from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/filtered_table"
 DB_PATH = os.path.join(PROJECT_DIR, "reflex.db")
-FRONTEND_PORT = 3000
-BACKEND_PORT = 8000
-FRONTEND_URL = f"http://localhost:{FRONTEND_PORT}"
-BACKEND_URL = f"http://localhost:{BACKEND_PORT}"
 
 CATEGORIES = ["Electronics", "Books", "Clothing", "Home", "Toys", "Sports"]
 
@@ -41,7 +37,25 @@ def _wait_for_http(url: str, timeout: float = 180.0) -> bool:
 
 
 @pytest.fixture(scope="session")
-def reflex_server(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost for the frontend."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def backend_port():
+    """Finds and yields a free port on localhost for the backend."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def start_app(xprocess, app_port, backend_port):
     """Start the reflex server fresh and wait for both ports to be ready."""
 
     class Starter(ProcessStarter):
@@ -52,9 +66,9 @@ def reflex_server(xprocess):
             "reflex",
             "run",
             "--backend-port",
-            str(BACKEND_PORT),
+            str(backend_port),
             "--frontend-port",
-            str(FRONTEND_PORT),
+            str(app_port),
             "--loglevel",
             "info",
         ]
@@ -67,21 +81,35 @@ def reflex_server(xprocess):
         terminate_on_interrupt = True
 
         def startup_check(self):
-            return _port_open("localhost", BACKEND_PORT) and _port_open(
-                "localhost", FRONTEND_PORT
+            return _port_open("localhost", backend_port) and _port_open(
+                "localhost", app_port
             )
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
+
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
 
     # Give frontend a moment to finish first compile after socket is open.
-    assert _wait_for_http(f"{BACKEND_URL}/api/filter", timeout=120), (
+    assert _wait_for_http(f"http://localhost:{backend_port}/api/filter", timeout=120), (
         "Backend /api/filter endpoint did not become reachable in time."
     )
-    assert _wait_for_http(f"{FRONTEND_URL}/", timeout=180), (
+    assert _wait_for_http(f"http://localhost:{app_port}/", timeout=180), (
         "Frontend / page did not become reachable in time."
     )
 
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
@@ -229,19 +257,20 @@ def test_seed_books_second_row():
 # ---------------------------------------------------------------------------
 
 
-def test_frontend_page_renders(reflex_server):
-    response = requests.get(f"{FRONTEND_URL}/", timeout=30)
+def test_frontend_page_renders(start_app, app_port):
+    frontend_url = f"http://localhost:{app_port}"
+    response = requests.get(f"{frontend_url}/", timeout=30)
     assert response.status_code == 200, (
-        f"Expected HTTP 200 from {FRONTEND_URL}/, got {response.status_code}."
+        f"Expected HTTP 200 from {frontend_url}/, got {response.status_code}."
     )
     assert response.text.strip(), (
-        f"Frontend body at {FRONTEND_URL}/ is empty; page did not render."
+        f"Frontend body at {frontend_url}/ is empty; page did not render."
     )
 
 
-def _filter(params: dict) -> dict:
+def _filter(params: dict, backend_port: int) -> dict:
     qs = urlencode({k: v for k, v in params.items() if v is not None})
-    url = f"{BACKEND_URL}/api/filter"
+    url = f"http://localhost:{backend_port}/api/filter"
     if qs:
         url = f"{url}?{qs}"
     response = requests.get(url, timeout=30)
@@ -262,8 +291,8 @@ def _filter(params: dict) -> dict:
     return data
 
 
-def test_filter_no_filters_default_sort(reflex_server):
-    data = _filter({"sort_by": "id", "sort_dir": "asc"})
+def test_filter_no_filters_default_sort(start_app, backend_port):
+    data = _filter({"sort_by": "id", "sort_dir": "asc"}, backend_port)
     assert data["result_count"] == 240, (
         f"Unfiltered query should return all 240 rows, got {data['result_count']}."
     )
@@ -277,8 +306,8 @@ def test_filter_no_filters_default_sort(reflex_server):
     )
 
 
-def test_filter_category_books(reflex_server):
-    data = _filter({"category": "Books"})
+def test_filter_category_books(start_app, backend_port):
+    data = _filter({"category": "Books"}, backend_port)
     assert data["result_count"] == 40, (
         f"category=Books should return 40 rows, got {data['result_count']}."
     )
@@ -288,8 +317,8 @@ def test_filter_category_books(reflex_server):
         )
 
 
-def test_filter_books_in_stock_only(reflex_server):
-    data = _filter({"category": "Books", "in_stock_only": "true"})
+def test_filter_books_in_stock_only(start_app, backend_port):
+    data = _filter({"category": "Books", "in_stock_only": "true"}, backend_port)
     assert data["result_count"] == 30, (
         f"category=Books & in_stock_only should return 30 rows, got {data['result_count']}."
     )
@@ -300,8 +329,8 @@ def test_filter_books_in_stock_only(reflex_server):
         )
 
 
-def test_filter_price_window_20_to_30(reflex_server):
-    data = _filter({"min_price": 20, "max_price": 30})
+def test_filter_price_window_20_to_30(start_app, backend_port):
+    data = _filter({"min_price": 20, "max_price": 30}, backend_port)
     assert data["result_count"] == 51, (
         f"min_price=20 & max_price=30 should return 51 rows, got {data['result_count']}."
     )
@@ -311,8 +340,8 @@ def test_filter_price_window_20_to_30(reflex_server):
         )
 
 
-def test_filter_text_search_books_hash_one(reflex_server):
-    data = _filter({"search": "Books #1"})
+def test_filter_text_search_books_hash_one(start_app, backend_port):
+    data = _filter({"search": "Books #1"}, backend_port)
     assert data["result_count"] == 10, (
         f"search='Books #1' should return 10 rows (Books #10 - Books #19), "
         f"got {data['result_count']}."
@@ -323,8 +352,8 @@ def test_filter_text_search_books_hash_one(reflex_server):
         )
 
 
-def test_filter_sort_price_desc(reflex_server):
-    data = _filter({"sort_by": "price", "sort_dir": "desc"})
+def test_filter_sort_price_desc(start_app, backend_port):
+    data = _filter({"sort_by": "price", "sort_dir": "desc"}, backend_port)
     assert data["result_count"] == 240, (
         f"Unfiltered sort-by-price-desc should return 240 rows, got {data['result_count']}."
     )
@@ -340,8 +369,8 @@ def test_filter_sort_price_desc(reflex_server):
     )
 
 
-def test_filter_in_stock_only_sort_name_asc(reflex_server):
-    data = _filter({"in_stock_only": "true", "sort_by": "name", "sort_dir": "asc"})
+def test_filter_in_stock_only_sort_name_asc(start_app, backend_port):
+    data = _filter({"in_stock_only": "true", "sort_by": "name", "sort_dir": "asc"}, backend_port)
     assert data["result_count"] == 180, (
         f"in_stock_only should return 180 rows, got {data['result_count']}."
     )
@@ -351,7 +380,7 @@ def test_filter_in_stock_only_sort_name_asc(reflex_server):
     )
 
 
-def test_filter_combined_electronics_under_20_in_stock(reflex_server):
+def test_filter_combined_electronics_under_20_in_stock(start_app, backend_port):
     data = _filter(
         {
             "category": "Electronics",
@@ -359,7 +388,8 @@ def test_filter_combined_electronics_under_20_in_stock(reflex_server):
             "in_stock_only": "true",
             "sort_by": "price",
             "sort_dir": "asc",
-        }
+        },
+        backend_port,
     )
     assert data["result_count"] == 12, (
         f"Electronics & price<=20 & in_stock_only should return 12 rows, "

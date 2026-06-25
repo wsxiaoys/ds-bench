@@ -32,5 +32,4 @@ Wasp allows passing arguments to Queries. In this task, you will implement a Tas
 
 ## Constraints
 - **Project Path**: `/home/user/task-deadlines`
-- **Start Command**: `wasp start`
-- **Port**: 3000
+- **Start Command**: `wasp start --port <port>`

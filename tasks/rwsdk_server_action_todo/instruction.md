@@ -20,12 +20,11 @@ Build a server-rendered Todo application powered by RedwoodSDK (rwsdk). The page
 - A `serverAction` triggers a full server re-render of the current page, so the UI naturally reflects the new KV state after each submission. No client-side state management is required.
 - Component files containing JSX that uses a server action via `<form action={...}>` must be marked with the `"use client"` directive (per the RSC docs). The action module itself should be `"use server"`.
 - Configure a local KV namespace in `wrangler.jsonc` with the binding `TODOS`. Miniflare will allocate a fresh KV store per container at startup.
-- Run the dev server with `npm run dev`. It must listen on port `5173` and be reachable on `0.0.0.0`.
+- Run the dev server with `npm run dev`. It must accept a port argument and be reachable on `0.0.0.0`.
 
 ## Acceptance Criteria
 - Project path: `/home/user/myproject`
-- Start command: `npm run dev -- --host 0.0.0.0 --port 5173`
-- Port: `5173`
+- Start command: `npm run dev -- --host 0.0.0.0 --port <port>`
 - Routes:
   - `GET /` — renders the server-rendered Todo page (HTML).
   - `POST /` (or the rwsdk-internal RSC action URL) — produced automatically by `<form action={serverAction}>`. The page re-renders with updated state.

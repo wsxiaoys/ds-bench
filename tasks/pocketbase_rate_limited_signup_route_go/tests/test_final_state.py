@@ -9,9 +9,6 @@ from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
 START_SCRIPT = "/home/user/myproject/start.sh"
-BASE_URL = "http://127.0.0.1:8090"
-HEALTH_URL = f"{BASE_URL}/api/health"
-SIGNUP_URL = f"{BASE_URL}/api/collections/users/records"
 
 
 def _run_id() -> str:
@@ -27,11 +24,11 @@ def _port_open(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _wait_health(timeout: float = 60.0) -> bool:
+def _wait_health(health_url: str, timeout: float = 60.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            r = requests.get(HEALTH_URL, timeout=2)
+            r = requests.get(health_url, timeout=2)
             if r.status_code == 200:
                 return True
         except requests.RequestException:
@@ -55,46 +52,72 @@ def _signup_payload(prefix: str, idx: int) -> dict:
 
 
 @pytest.fixture(scope="session")
-def start_pocketbase(xprocess):
+def app_port():
+    """Finds and yields a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # Bind to any available port
+        port = s.getsockname()[1]  # Get the assigned port
+        yield port
+
+
+@pytest.fixture(scope="session")
+def start_pocketbase(xprocess, app_port):
     assert os.path.isfile(START_SCRIPT) and os.access(START_SCRIPT, os.X_OK), (
         f"Expected an executable start script at {START_SCRIPT}."
     )
 
     class Starter(ProcessStarter):
         name = "pocketbase_app"
-        args = ["bash", START_SCRIPT]
+        args = ["bash", START_SCRIPT, "--port", str(app_port)]
         env = os.environ.copy()
         popen_kwargs = {"cwd": PROJECT_DIR, "text": True}
         timeout = 180
         terminate_on_interrupt = True
 
         def startup_check(self):
-            return _port_open(8090)
+            return _port_open(app_port)
 
-    xprocess.ensure(Starter.name, Starter)
+    pid, logpath = xprocess.ensure(Starter.name, Starter)
 
-    assert _wait_health(timeout=60.0), (
-        f"PocketBase did not become healthy at {HEALTH_URL} within 60s."
+    # print the logs after the service has started
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile after started =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile after started =============================")
+
+    health_url = f"http://localhost:{app_port}/api/health"
+    assert _wait_health(health_url, timeout=60.0), (
+        f"PocketBase did not become healthy at {health_url} within 60s."
     )
 
     yield
+
+    # teardown: print the logs and terminate the service
+    with open(logpath, "r") as f:
+        logs = f.read()
+        print("=== Begin: Captured xprocess logfile when teardown =============================")
+        print(logs)
+        print("===== End: Captured xprocess logfile when teardown =============================")
 
     info = xprocess.getinfo(Starter.name)
     info.terminate()
 
 
-def test_health_endpoint(start_pocketbase):
-    r = requests.get(HEALTH_URL, timeout=5)
+def test_health_endpoint(start_pocketbase, app_port):
+    health_url = f"http://localhost:{app_port}/api/health"
+    r = requests.get(health_url, timeout=5)
     assert r.status_code == 200, (
-        f"Expected 200 from {HEALTH_URL}, got {r.status_code}: {r.text!r}"
+        f"Expected 200 from {health_url}, got {r.status_code}: {r.text!r}"
     )
 
 
-def test_get_users_records_not_rate_limited(start_pocketbase):
+def test_get_users_records_not_rate_limited(start_pocketbase, app_port):
+    signup_url = f"http://localhost:{app_port}/api/collections/users/records"
     _wait_bucket_reset(65.0)
     statuses = []
     for _ in range(10):
-        r = requests.get(SIGNUP_URL, timeout=5)
+        r = requests.get(signup_url, timeout=5)
         statuses.append(r.status_code)
     assert all(s != 429 for s in statuses), (
         f"GET /api/collections/users/records should not be rate-limited, "
@@ -102,7 +125,8 @@ def test_get_users_records_not_rate_limited(start_pocketbase):
     )
 
 
-def test_signup_rate_limit_behavior(start_pocketbase):
+def test_signup_rate_limit_behavior(start_pocketbase, app_port):
+    signup_url = f"http://localhost:{app_port}/api/collections/users/records"
     _wait_bucket_reset(65.0)
 
     # 1) Requests 1-3 must NOT be 429.
@@ -111,7 +135,7 @@ def test_signup_rate_limit_behavior(start_pocketbase):
     for i in range(1, 4):
         payload = _signup_payload("ok", i)
         r = requests.post(
-            SIGNUP_URL,
+            signup_url,
             json=payload,
             headers={"Content-Type": "application/json"},
             timeout=10,
@@ -137,7 +161,7 @@ def test_signup_rate_limit_behavior(start_pocketbase):
     # 2) Fourth request must be 429 with Retry-After header and JSON retryAfter.
     payload4 = _signup_payload("blocked", 4)
     r4 = requests.post(
-        SIGNUP_URL,
+        signup_url,
         json=payload4,
         headers={"Content-Type": "application/json"},
         timeout=10,
@@ -190,7 +214,7 @@ def test_signup_rate_limit_behavior(start_pocketbase):
     time.sleep(retry_after_seconds + 1)
     payload5 = _signup_payload("recover", 5)
     r5 = requests.post(
-        SIGNUP_URL,
+        signup_url,
         json=payload5,
         headers={"Content-Type": "application/json"},
         timeout=10,
