@@ -56,9 +56,12 @@ def test_rwsdk_package_installed():
     )
 
 
-def test_session_secret_env_var_set():
-    secret = os.environ.get("SESSION_SECRET")
-    assert secret is not None and len(secret) > 0, (
-        "SESSION_SECRET environment variable must be set in the task environment "
+def test_session_secret_file_exists():
+    secret_file = "/home/user/session_secret.txt"
+    assert os.path.isfile(secret_file), (
+        f"Session secret file must exist at {secret_file} "
         "so the app can sign session cookies."
     )
+    with open(secret_file, "r") as f:
+        secret = f.read().strip()
+    assert len(secret) > 0, "Session secret file must not be empty."

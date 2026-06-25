@@ -13,7 +13,7 @@ You are extending a freshly scaffolded RedwoodSDK (`rwsdk`) project. Build a ses
   - `POST /logout` — clears the session cookie and redirects to `/login`.
 - Hardcode at least one demo credential pair in an in-memory or JSON user store. The pair `demo` / `pass` MUST be valid (the verifier signs in with it).
 - Use rwsdk's interrupter pattern from `rwsdk/router` / `rwsdk/worker` to gate `/dashboard`. The interrupter must be a function that inspects request/ctx and returns/throws a `Response` when not authenticated.
-- The session cookie value must be cryptographically signed (HMAC) so it cannot be forged. The signing secret must be read from the `SESSION_SECRET` environment variable (already wired into the runtime via Vite/wrangler env).
+- The session cookie value must be cryptographically signed (HMAC) so it cannot be forged. The signing secret must be read from the `/home/user/session_secret.txt` file.
 
 ## Implementation Hints
 - Start from the existing scaffold at the project path below; the `rwsdk` dependency and Vite config are already installed.
