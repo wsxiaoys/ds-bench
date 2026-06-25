@@ -3,7 +3,7 @@ import os
 
 def test_wasp_installed():
     try:
-        subprocess.run(["wasp", "--version"], capture_output=True, text=True, check=True)
+        subprocess.run(["wasp", "version"], capture_output=True, text=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         assert False, "Wasp is not installed."
 
