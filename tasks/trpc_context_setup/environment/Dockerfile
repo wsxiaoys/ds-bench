@@ -7,6 +7,7 @@ RUN apt-get update -y && \
         curl ca-certificates ripgrep git python3 python3-pip python3-pytest bash && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
+    pip3 install --break-system-packages pytest-xprocess portpicker && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

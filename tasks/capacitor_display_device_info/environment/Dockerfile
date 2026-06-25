@@ -22,6 +22,7 @@ RUN apt-get update -y && \
     pip3 install --break-system-packages \
         pytest-json-ctrf \
         pytest-xprocess \
+        portpicker \
         requests \
         playwright && \
     python3 -m playwright install chromium && \

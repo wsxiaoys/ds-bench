@@ -9,7 +9,7 @@ RUN apt-get update -y && \
     ln -s /usr/bin/python3 /usr/bin/python && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    pip3 install --break-system-packages pytest-json-ctrf requests pytest-xprocess && \
+    pip3 install --break-system-packages pytest-json-ctrf requests pytest-xprocess portpicker && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -45,6 +45,6 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 # Container contents:
 #   - apt packages: curl wget ca-certificates git python3 python3-pip python3-pytest bash ripgrep
 #   - Node.js v24 (via NodeSource) for running `npm run dev` (rwsdk + Vite + workerd/miniflare)
-#   - pip3 packages: pytest-json-ctrf, requests (HTTP verification), pytest-xprocess (start `npm run dev`)
+#   - pip3 packages: pytest-json-ctrf, requests (HTTP verification), pytest-xprocess (start `npm run dev`), portpicker
 #   - /home/user/myproject: freshly scaffolded RedwoodSDK project with node_modules pre-installed
 #   - KV: provided by miniflare locally; no Cloudflare account, account ID, or API token needed

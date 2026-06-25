@@ -16,7 +16,7 @@ RUN apt-get update -y && \
     curl -LsSf https://astral.sh/uv/install.sh | sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv && \
     ln -s /root/.local/bin/uvx /usr/local/bin/uvx && \
-    pip3 install --break-system-packages pytest-json-ctrf pochi-verifier requests pytest-xprocess && \
+    pip3 install --break-system-packages pytest-json-ctrf pochi-verifier requests pytest-xprocess portpicker && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

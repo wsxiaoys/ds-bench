@@ -12,6 +12,7 @@ RUN apt-get update -y && \
     pip3 install --break-system-packages \
         pytest-json-ctrf \
         pytest-xprocess \
+        portpicker \
         requests && \
     curl -LsSf https://astral.sh/uv/install.sh | sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv && \

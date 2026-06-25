@@ -15,6 +15,7 @@ RUN apt-get update -y && \
     pip3 install --break-system-packages \
         pytest-json-ctrf \
         pytest-xprocess \
+        portpicker \
         pochi-verifier \
         altair \
         vega_datasets \

@@ -4,7 +4,7 @@ RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         curl wget ca-certificates git python3 python3-pip python3-pytest bash ripgrep unzip && \
     ln -s /usr/bin/python3 /usr/bin/python && \
-    pip3 install --break-system-packages pytest-json-ctrf requests pytest-xprocess && \
+    pip3 install --break-system-packages pytest-json-ctrf requests pytest-xprocess portpicker && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -35,7 +35,7 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 # Container contents:
 #   - always required apt packages: curl wget ca-certificates git python3 python3-pip python3-pytest bash ripgrep, plus unzip for the PocketBase release archive
 #   - always required pip3 packages: pytest-json-ctrf
-#   - extra pip3 packages used by tests: requests, pytest-xprocess
+#   - extra pip3 packages used by tests: requests, pytest-xprocess, portpicker
 #   - /home/user/myproject/pocketbase: PocketBase v0.31.0 linux amd64 binary
 #   - /home/user/myproject/pb_data: pre-initialized data dir (auto-created when superuser was registered)
 #   - /home/user/myproject/pb_hooks, pb_migrations, pb_public: empty support directories ready for the agent's migration file

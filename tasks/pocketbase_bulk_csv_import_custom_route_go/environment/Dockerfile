@@ -20,7 +20,7 @@ RUN apt-get update -y && \
         ripgrep unzip build-essential && \
     ln -s /usr/bin/python3 /usr/bin/python && \
     pip3 install --break-system-packages \
-        pytest-json-ctrf requests pytest-xprocess && \
+        pytest-json-ctrf requests pytest-xprocess portpicker && \
     ARCH="$(dpkg --print-architecture)" && \
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
         -o /tmp/go.tar.gz && \

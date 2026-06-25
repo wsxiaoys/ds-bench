@@ -5,13 +5,13 @@ import socket
 import subprocess
 from typing import Any
 
+import portpicker
 import pytest
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/altair_project"
 CHART_HTML = os.path.join(PROJECT_DIR, "chart.html")
 BUILD_SCRIPT = os.path.join(PROJECT_DIR, "build_chart.py")
-SERVER_PORT = 8765
 
 
 # ---------------------------------------------------------------------------
@@ -205,10 +205,16 @@ def built_spec() -> dict[str, Any]:
 
 
 @pytest.fixture(scope="session")
-def static_server(xprocess):
+def server_port():
+    """Finds a free port on localhost."""
+    return portpicker.pick_unused_port()
+
+
+@pytest.fixture(scope="session")
+def static_server(xprocess, server_port):
     class Starter(ProcessStarter):
         name = "altair_chart_server"
-        args = ["python3", "-m", "http.server", str(SERVER_PORT)]
+        args = ["python3", "-m", "http.server", str(server_port)]
         env = os.environ.copy()
         popen_kwargs = {"cwd": PROJECT_DIR, "text": True}
         timeout = 60
@@ -216,11 +222,27 @@ def static_server(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", SERVER_PORT)) == 0
+                return s.connect_ex(("localhost", server_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
-    yield f"http://localhost:{SERVER_PORT}/chart.html"
     info = xprocess.getinfo(Starter.name)
+
+    def capture_logs(tag):
+        with open(info.logpath, "r") as f:
+            logs = f.read()
+            print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+            print(logs)
+            print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
+
+    yield f"http://localhost:{server_port}/chart.html"
+
+    capture_logs("TEARDOWN")
     info.terminate()
 
 

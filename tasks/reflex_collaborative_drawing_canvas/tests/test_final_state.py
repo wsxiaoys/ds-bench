@@ -8,6 +8,7 @@ use `subprocess`, the stdlib `sqlite3` module, and `requests`.
 
 import json
 import os
+import portpicker
 import re
 import socket
 import sqlite3
@@ -116,11 +117,8 @@ def _prepare_environment():
 
 @pytest.fixture(scope="session")
 def app_port():
-    """Finds and yields a free port on localhost."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))  # Bind to any available port
-        port = s.getsockname()[1]  # Get the assigned port
-        yield port
+    """Finds a free port on localhost."""
+    return portpicker.pick_unused_port()
 
 
 @pytest.fixture(scope="session")
@@ -157,14 +155,22 @@ def backend(xprocess, _prepare_environment, app_port):
             except Exception:
                 return False
 
-    xprocess.ensure(Starter.name, Starter)
+    info = xprocess.getinfo(Starter.name)
 
-    # print the logs after the service has started
-    with open(LOG_PATH, "r", errors="replace") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile after started =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile after started =============================")
+    def capture_logs(tag):
+        if os.path.exists(LOG_PATH):
+            with open(LOG_PATH, "r", errors="replace") as f:
+                logs = f.read()
+                print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+                print(logs)
+                print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
 
     # An extra safety wait for the background polling task to settle.
     assert _wait_for_backend(f"http://localhost:{app_port}/ping", total=60), (
@@ -173,14 +179,7 @@ def backend(xprocess, _prepare_environment, app_port):
 
     yield f"http://localhost:{app_port}"
 
-    # teardown: print the logs and terminate the service
-    with open(LOG_PATH, "r", errors="replace") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile when teardown =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile when teardown =============================")
-
-    info = xprocess.getinfo(Starter.name)
+    capture_logs("TEARDOWN")
     info.terminate()
 
 

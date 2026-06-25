@@ -5,10 +5,12 @@ import socket
 import sqlite3
 import subprocess
 import time
+import shutil
 from pathlib import Path
 
 import pytest
 import requests
+import portpicker
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
@@ -118,20 +120,14 @@ def _find_link_table(conn) -> str:
 
 @pytest.fixture(scope="session")
 def app_port():
-    """Finds and yields a free port on localhost for the frontend."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))  # Bind to any available port
-        port = s.getsockname()[1]  # Get the assigned port
-        yield port
+    """Finds a free port on localhost for the frontend."""
+    return portpicker.pick_unused_port()
 
 
 @pytest.fixture(scope="session")
 def backend_port():
-    """Finds and yields a free port on localhost for the backend."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))  # Bind to any available port
-        port = s.getsockname()[1]  # Get the assigned port
-        yield port
+    """Finds a free port on localhost for the backend."""
+    return portpicker.pick_unused_port()
 
 
 @pytest.fixture(scope="session")
@@ -163,7 +159,6 @@ def prepared_db():
 def start_app(prepared_db, xprocess, app_port, backend_port):
     if os.path.exists(REFLEX_LOG_PATH):
         os.remove(REFLEX_LOG_PATH)
-    log_fp = open(REFLEX_LOG_PATH, "w")
 
     class Starter(ProcessStarter):
         name = "reflex_server"
@@ -177,8 +172,6 @@ def start_app(prepared_db, xprocess, app_port, backend_port):
         popen_kwargs = {
             "cwd": PROJECT_DIR,
             "text": True,
-            "stdout": log_fp,
-            "stderr": subprocess.STDOUT,
         }
         timeout = 300
         terminate_on_interrupt = True
@@ -186,30 +179,31 @@ def start_app(prepared_db, xprocess, app_port, backend_port):
         def startup_check(self):
             return _port_open(app_port) and _port_open(backend_port)
 
-    pid, logpath = xprocess.ensure(Starter.name, Starter)
+    info = xprocess.getinfo(Starter.name)
 
-    # print the logs after the service has started
-    with open(logpath, "r") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile after started =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile after started =============================")
+    def capture_logs(tag):
+        if os.path.exists(info.logpath):
+            shutil.copy(info.logpath, REFLEX_LOG_PATH)
+            with open(info.logpath, "r", errors="replace") as f:
+                logs = f.read()
+                print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+                print(logs)
+                print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
 
     assert _wait_for_port(app_port, 60), "Frontend port did not become ready."
     assert _wait_for_port(backend_port, 60), "Backend port did not become ready."
 
     yield
 
-    # teardown: print the logs and terminate the service
-    with open(logpath, "r") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile when teardown =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile when teardown =============================")
-
-    info = xprocess.getinfo(Starter.name)
+    capture_logs("TEARDOWN")
     info.terminate()
-    log_fp.close()
 
 
 # ---------- schema tests ----------

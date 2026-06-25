@@ -7,6 +7,7 @@ import time
 
 import pytest
 import requests
+import portpicker
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myapp"
@@ -111,11 +112,8 @@ def test_capacitor_sync_succeeds():
 
 @pytest.fixture(scope="module")
 def app_port():
-    """Finds and yields a free port on localhost."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))  # Bind to any available port
-        port = s.getsockname()[1]  # Get the assigned port
-        yield port
+    """Finds a free port on localhost."""
+    return portpicker.pick_unused_port()
 
 
 @pytest.fixture(scope="module")
@@ -145,28 +143,28 @@ def start_app(xprocess, app_port):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 return s.connect_ex((PREVIEW_HOST, app_port)) == 0
 
-    pid, logpath = xprocess.ensure(Starter.name, Starter)
+    info = xprocess.getinfo(Starter.name)
 
-    # print the logs after the service has started
-    with open(logpath, "r") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile after started =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile after started =============================")
+    def capture_logs(tag):
+        with open(info.logpath, "r") as f:
+            logs = f.read()
+            print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+            print(logs)
+            print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
 
-    # Give Vite a brief moment to fully bind even after the port is open.
-    time.sleep(1.0)
+    started = False
+    try:
+        # ensure() starts the process and blocks until startup_check is True
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+        # Give Vite a brief moment to fully bind even after the port is open.
+        time.sleep(1.0)
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
 
     yield
 
-    # teardown: print the logs and terminate the service
-    with open(logpath, "r") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile when teardown =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile when teardown =============================")
-
-    info = xprocess.getinfo(Starter.name)
+    capture_logs("TEARDOWN")
     info.terminate()
 
 

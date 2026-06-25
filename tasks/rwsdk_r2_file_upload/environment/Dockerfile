@@ -9,7 +9,7 @@ RUN apt-get update -y && \
     ln -s /usr/bin/python3 /usr/bin/python && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs && \
-    pip3 install --break-system-packages pytest-json-ctrf pytest-xprocess requests && \
+    pip3 install --break-system-packages pytest-json-ctrf pytest-xprocess portpicker requests && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

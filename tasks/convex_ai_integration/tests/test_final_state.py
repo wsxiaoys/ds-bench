@@ -3,6 +3,7 @@ import subprocess
 import json
 import pytest
 import socket
+import portpicker
 from xprocess import ProcessStarter
 from pochi_verifier import PochiVerifier
 
@@ -14,17 +15,20 @@ def browser_verifier():
 
 @pytest.fixture(scope="session")
 def app_port():
-    """Finds and yields a free port on localhost."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))  # Bind to any available port
-        port = s.getsockname()[1]  # Get the assigned port
-        yield port
+    """Finds a free port on localhost."""
+    return portpicker.pick_unused_port()
 
 @pytest.fixture(scope="session")
 def start_app(xprocess, app_port):
+    """
+    Starts the npm service using xprocess. Confirms readiness via port check.
+    """
+
     class Starter(ProcessStarter):
         name = "start_app"
         args = ["npm", "run", "dev", "--", "--port", str(app_port)]
+        # CRITICAL: set `env` as a class attribute here, NEVER inside `popen_kwargs`.
+        # Otherwise, `Popen` raises `TypeError: got multiple values for keyword argument 'env'`.
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -33,29 +37,35 @@ def start_app(xprocess, app_port):
         timeout = 180
         terminate_on_interrupt = True
 
+        # Use startup_check to detect when startup is finished.
         def startup_check(self):
+            """
+            Custom check: returns True if the target port is accepting connections.
+            xprocess calls this repeatedly until it returns True or times out.
+            """
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 return s.connect_ex(("localhost", app_port)) == 0
 
-    pid, logpath = xprocess.ensure(Starter.name, Starter)
+    info = xprocess.getinfo(Starter.name)
 
-    # print the logs after the service has started
-    with open(logpath, "r") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile after started =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile after started =============================")
+    def capture_logs(tag):
+        with open(info.logpath, "r") as f:
+            logs = f.read()
+            print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+            print(logs)
+            print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        # ensure() starts the process and blocks until startup_check is True
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
 
     yield
 
-    # teardown: print the logs and terminate the service
-    with open(logpath, "r") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile when teardown =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile when teardown =============================")
-
-    info = xprocess.getinfo(Starter.name)
+    capture_logs("TEARDOWN")
     info.terminate()
 
 def test_convex_action_and_query():

@@ -17,6 +17,8 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 
 RUN agent-browser install || true
 
+RUN pip3 install --break-system-packages pytest-json-ctrf pytest-xprocess portpicker pochi-verifier
+
 RUN npm i -g @wasp.sh/wasp-cli@latest
 
 RUN mkdir -p /home/user && chmod 0755 /home/user

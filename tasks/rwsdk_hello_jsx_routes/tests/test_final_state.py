@@ -2,6 +2,7 @@ import json
 import os
 import socket
 
+import portpicker
 import pytest
 import requests
 from xprocess import ProcessStarter
@@ -11,11 +12,8 @@ PROJECT_DIR = "/home/user/myapp"
 
 @pytest.fixture(scope="session")
 def app_port():
-    """Finds and yields a free port on localhost."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))  # Bind to any available port
-        port = s.getsockname()[1]  # Get the assigned port
-        yield port
+    """Finds a free port on localhost."""
+    return portpicker.pick_unused_port()
 
 
 @pytest.fixture(scope="session")
@@ -32,25 +30,25 @@ def start_app(xprocess, app_port):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 return s.connect_ex(("127.0.0.1", app_port)) == 0
 
-    pid, logpath = xprocess.ensure(Starter.name, Starter)
+    info = xprocess.getinfo(Starter.name)
 
-    # print the logs after the service has started
-    with open(logpath, "r") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile after started =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile after started =============================")
+    def capture_logs(tag):
+        with open(info.logpath, "r") as f:
+            logs = f.read()
+            print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+            print(logs)
+            print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
 
     yield
 
-    # teardown: print the logs and terminate the service
-    with open(logpath, "r") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile when teardown =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile when teardown =============================")
-
-    info = xprocess.getinfo(Starter.name)
+    capture_logs("TEARDOWN")
     info.terminate()
 
 

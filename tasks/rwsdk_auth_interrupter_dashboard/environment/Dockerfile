@@ -18,7 +18,7 @@ RUN apt-get update -y && \
     curl -fsSL https://github.com/TabbyML/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}/install.sh | bash && ln -s /root/.pochi/bin/agent-browser /usr/local/bin/agent-browser && \
     agent-browser install && \
     pip3 install --break-system-packages \
-        pytest-json-ctrf pochi-verifier pytest-xprocess requests && \
+        pytest-json-ctrf pochi-verifier pytest-xprocess requests portpicker && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

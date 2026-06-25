@@ -18,7 +18,8 @@ RUN apt-get update -y && \
     pip3 install --break-system-packages \
         pytest-json-ctrf \
         requests \
-        pytest-xprocess && \
+        pytest-xprocess \
+        portpicker && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

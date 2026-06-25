@@ -7,7 +7,7 @@ RUN apt-get update -y && \
         curl wget ca-certificates git python3 python3-pip python3-pytest bash ripgrep && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    pip3 install --break-system-packages pytest-json-ctrf requests pytest-xprocess && \
+    pip3 install --break-system-packages pytest-json-ctrf requests pytest-xprocess portpicker && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -48,6 +48,6 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - always required apt packages: curl wget ca-certificates git python3 python3-pip python3-pytest bash ripgrep
 #   - always required pip3 packages: pytest-json-ctrf
 #   - Node.js v24 for the Express and Sequelize task environment
-#   - pip3 packages for testing: requests pytest-xprocess
+#   - pip3 packages for testing: requests pytest-xprocess portpicker
 #   - /home/user/myproject: directory for the project
 #   - /home/user/myproject/package.json: initial dependencies

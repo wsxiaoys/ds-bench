@@ -10,7 +10,7 @@ RUN apt-get update -y && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     curl -fsSL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh && \
-    pip3 install --break-system-packages pytest-json-ctrf requests pytest-xprocess && \
+    pip3 install --break-system-packages pytest-json-ctrf requests pytest-xprocess portpicker && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

@@ -3,6 +3,7 @@ import sqlite3
 import pytest
 import requests
 import socket
+import portpicker
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/project"
@@ -10,11 +11,8 @@ DB_PATH = os.path.join(PROJECT_DIR, "database.sqlite")
 
 @pytest.fixture(scope="session")
 def app_port():
-    """Finds and yields a free port on localhost."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))  # Bind to any available port
-        port = s.getsockname()[1]  # Get the assigned port
-        yield port
+    """Finds a free port on localhost."""
+    return portpicker.pick_unused_port()
 
 @pytest.fixture(scope="session")
 def app_server(xprocess, app_port):
@@ -33,25 +31,25 @@ def app_server(xprocess, app_port):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 return s.connect_ex(("localhost", app_port)) == 0
 
-    pid, logpath = xprocess.ensure(Starter.name, Starter)
+    info = xprocess.getinfo(Starter.name)
 
-    # print the logs after the service has started
-    with open(logpath, "r") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile after started =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile after started =============================")
+    def capture_logs(tag):
+        with open(info.logpath, "r") as f:
+            logs = f.read()
+            print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+            print(logs)
+            print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
 
     yield xprocess
 
-    # teardown: print the logs and terminate the service
-    with open(logpath, "r") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile when teardown =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile when teardown =============================")
-
-    info = xprocess.getinfo(Starter.name)
+    capture_logs("TEARDOWN")
     if info.isrunning():
         info.terminate()
 
@@ -112,14 +110,17 @@ def test_data_persistence(app_server, app_port):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 return s.connect_ex(("localhost", app_port)) == 0
                 
-    pid, logpath = app_server.ensure(Starter.name, Starter)
-
-    # print the logs after the service has started
-    with open(logpath, "r") as f:
-        logs = f.read()
-        print("=== Begin: Captured xprocess logfile after started =============================")
-        print(logs)
-        print("===== End: Captured xprocess logfile after started =============================")
+    started = False
+    try:
+        app_server.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        with open(info.logpath, "r") as f:
+            logs = f.read()
+            tag = "STARTED" if started else "FAILED"
+            print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+            print(logs)
+            print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
     
     # Verify data still exists
     try:
@@ -128,8 +129,8 @@ def test_data_persistence(app_server, app_port):
         users = response.json()
         assert any(u.get("username") == "alice" for u in users), "Data did not persist across restarts; 'alice' is missing."
     finally:
-        with open(logpath, "r") as f:
+        with open(info.logpath, "r") as f:
             logs = f.read()
-            print("=== Begin: Captured xprocess logfile when teardown =============================")
+            print(f"============================== [TEARDOWN: Begin] Captured {Starter.name} logfile ==============================")
             print(logs)
-            print("===== End: Captured xprocess logfile when teardown =============================")
+            print(f"============================== [TEARDOWN: End  ] Captured {Starter.name} logfile ==============================")

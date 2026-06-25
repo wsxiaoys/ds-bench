@@ -19,7 +19,7 @@ RUN apt-get update -y && \
         unzip jq psmisc lsof xz-utils && \
     ln -sf /usr/bin/python3 /usr/bin/python && \
     pip3 install --break-system-packages \
-        pytest-json-ctrf pytest-xprocess requests boto3 && \
+        pytest-json-ctrf pytest-xprocess portpicker requests boto3 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

@@ -8,7 +8,7 @@ RUN apt-get update -y && \
         curl wget ca-certificates git python3 python3-pip python3-pytest bash ripgrep \
         jq unzip xz-utils build-essential pkg-config && \
     ln -s /usr/bin/python3 /usr/bin/python && \
-    pip3 install --break-system-packages pytest-json-ctrf requests pytest-xprocess && \
+    pip3 install --break-system-packages pytest-json-ctrf requests pytest-xprocess portpicker && \
     curl -fsSL https://go.dev/dl/go1.22.5.linux-amd64.tar.gz | tar -C /usr/local -xz && \
     ln -sf /usr/local/go/bin/go /usr/local/bin/go && \
     ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt && \

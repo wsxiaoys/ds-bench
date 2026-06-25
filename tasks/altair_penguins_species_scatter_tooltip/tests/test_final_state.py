@@ -1,5 +1,6 @@
 import json
 import os
+import portpicker
 import re
 import socket
 import subprocess
@@ -13,7 +14,6 @@ from pochi_verifier import PochiVerifier
 PROJECT_DIR = "/home/user/myproject"
 CHART_HTML = os.path.join(PROJECT_DIR, "chart.html")
 BUILD_SCRIPT = os.path.join(PROJECT_DIR, "build_chart.py")
-PREVIEW_PORT = 8765
 
 EXPECTED_TOOLTIP_FIELDS = [
     "Species",
@@ -207,12 +207,18 @@ def test_interactive_interval_selection_bound_to_scales(vega_spec):
 
 
 @pytest.fixture(scope="session")
-def chart_preview_server(xprocess):
+def preview_port():
+    """Finds a free port on localhost."""
+    return portpicker.pick_unused_port()
+
+
+@pytest.fixture(scope="session")
+def chart_preview_server(xprocess, preview_port):
     """Serve the project directory over HTTP so a headless browser can load chart.html."""
 
     class Starter(ProcessStarter):
         name = "altair_chart_preview"
-        args = ["python3", "-m", "http.server", str(PREVIEW_PORT)]
+        args = ["python3", "-m", "http.server", str(preview_port)]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -223,11 +229,27 @@ def chart_preview_server(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", PREVIEW_PORT)) == 0
+                return s.connect_ex(("localhost", preview_port)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
-    yield f"http://localhost:{PREVIEW_PORT}/chart.html"
     info = xprocess.getinfo(Starter.name)
+
+    def capture_logs(tag):
+        with open(info.logpath, "r") as f:
+            logs = f.read()
+            print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+            print(logs)
+            print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
+
+    yield f"http://localhost:{preview_port}/chart.html"
+
+    capture_logs("TEARDOWN")
     info.terminate()
 
 
