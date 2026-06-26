@@ -25,11 +25,34 @@ def app_server(xprocess):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 return s.connect_ex(("localhost", 3000)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
-    yield xprocess
     info = xprocess.getinfo(Starter.name)
-    if info.isrunning():
-        info.terminate()
+    printed_log_lines = 0  # track how many lines have already been printed
+
+    def capture_logs(tag):
+        nonlocal printed_log_lines
+        with open(info.logpath, "r") as f:
+            all_lines = f.readlines()
+        new_lines = all_lines[printed_log_lines:]
+        skipped = printed_log_lines
+        printed_log_lines = len(all_lines)
+        print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+        if skipped > 0:
+            print(f"(skipped {skipped} already-printed lines)")
+        print("".join(new_lines))
+        print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        # ensure() starts the process and blocks until startup_check is True
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
+
+    yield xprocess
+    
+    capture_logs("TEARDOWN")
+    info.terminate()
 
 def test_sync_removed():
     index_js_path = os.path.join(PROJECT_DIR, "index.js")

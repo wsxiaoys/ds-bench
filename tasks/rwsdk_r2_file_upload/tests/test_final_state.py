@@ -83,7 +83,30 @@ def app_server(xprocess, reset_local_r2_state):
         def startup_check(self):
             return _wait_for_port("localhost", 5173, timeout=2.0)
 
-    xprocess.ensure(Starter.name, Starter)
+    info = xprocess.getinfo(Starter.name)
+    printed_log_lines = 0  # track how many lines have already been printed
+
+    def capture_logs(tag):
+        nonlocal printed_log_lines
+        with open(info.logpath, "r") as f:
+            all_lines = f.readlines()
+        new_lines = all_lines[printed_log_lines:]
+        skipped = printed_log_lines
+        printed_log_lines = len(all_lines)
+        print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+        if skipped > 0:
+            print(f"(skipped {skipped} already-printed lines)")
+        print("".join(new_lines))
+        print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        # ensure() starts the process and blocks until startup_check is True
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
+
 
     # Make sure the worker is actually serving HTTP, not just that the port is
     # open (Vite opens the port early but the worker may still be warming up).
@@ -93,7 +116,7 @@ def app_server(xprocess, reset_local_r2_state):
 
     yield BASE_URL
 
-    info = xprocess.getinfo(Starter.name)
+    capture_logs("TEARDOWN")
     info.terminate()
 
 
