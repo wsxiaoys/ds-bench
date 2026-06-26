@@ -43,9 +43,32 @@ def start_app(xprocess):
             except Exception:
                 return False
 
-    xprocess.ensure(Starter.name, Starter)
-    yield
     info = xprocess.getinfo(Starter.name)
+    printed_log_lines = 0  # track how many lines have already been printed
+
+    def capture_logs(tag):
+        nonlocal printed_log_lines
+        with open(info.logpath, "r") as f:
+            all_lines = f.readlines()
+        new_lines = all_lines[printed_log_lines:]
+        skipped = printed_log_lines
+        printed_log_lines = len(all_lines)
+        print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+        if skipped > 0:
+            print(f"(skipped {skipped} already-printed lines)")
+        print("".join(new_lines))
+        print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        # ensure() starts the process and blocks until startup_check is True
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
+
+    yield
+    capture_logs("TEARDOWN")
     info.terminate()
 
 
