@@ -217,14 +217,13 @@ class Pochi(BaseInstalledAgent):
                 environment,
                 command=(
                     "cat > /tmp/pochi_cmd.sh << 'CMD_EOF'\n"
+                    "set -o pipefail\n"
                     f"{pochi_command}\n"
                     "CMD_EOF\n"
                     "setsid --wait bash /tmp/pochi_cmd.sh &\n"
-                    "MAIN_PID=$!\n"
-                    "wait $MAIN_PID 2>/dev/null || true\n"
-                    "kill -TERM -- -$MAIN_PID 2>/dev/null || true\n"
-                    "sleep 2\n"
-                    "kill -9 -- -$MAIN_PID 2>/dev/null || true"
+                    "SETSID_PID=$!\n"
+                    "echo $SETSID_PID > /tmp/setsid_bash_pochi_cmd.pid\n"
+                    "wait $SETSID_PID 2>/dev/null"
                 ),
                 env=eval_env,
             )
@@ -233,7 +232,16 @@ class Pochi(BaseInstalledAgent):
             try:
                 await self.exec_as_agent(
                     environment,
-                    command="rm -f ~/.pochi/config.jsonc /tmp/pochi_cmd.sh",
+                    command=(
+                        "if [ -f /tmp/setsid_bash_pochi_cmd.pid ]; then\n"
+                        "SETSID_PID=$(cat /tmp/setsid_bash_pochi_cmd.pid)\n"
+                        # Kill the entire process group (using the negative PID syntax)
+                        "kill -TERM -- -$SETSID_PID 2>/dev/null || true\n"
+                        "sleep 2\n"
+                        "kill -9 -- -$SETSID_PID 2>/dev/null || true\n"
+                        "fi\n"
+                        "rm -f ~/.pochi/config.jsonc /tmp/pochi_cmd.sh /tmp/setsid_bash_pochi_cmd.pid"
+                    ),
                 )
             except Exception:
                 pass
