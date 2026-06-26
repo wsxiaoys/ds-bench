@@ -1,34 +1,32 @@
-import os
-import re
 import json
+import os
 import shlex
-import hashlib
-from packaging.version import Version
+from pathlib import PurePosixPath
 
-from harbor.models.agent.context import AgentContext
-from harbor.models.trial.paths import EnvironmentPaths
+from packaging.version import Version
+from pydantic import BaseModel
+
 from harbor.agents.installed.base import (
     BaseInstalledAgent,
     with_prompt_template,
 )
 from harbor.environments.base import BaseEnvironment
-from pydantic import BaseModel
-from pathlib import Path, PurePosixPath
-
+from harbor.models.agent.context import AgentContext
 from harbor.models.trajectories import (
-    Trajectory,
-    Step,
-    ToolCall,
+    Agent,
+    FinalMetrics,
     Observation,
     ObservationResult,
-    FinalMetrics,
-    Agent,
+    Step,
+    ToolCall,
+    Trajectory,
 )
 from harbor.models.trial.paths import EnvironmentPaths
 
 
 class InitialStateError(Exception):
     pass
+
 
 class NoApiKeyError(Exception):
     pass
@@ -51,7 +49,7 @@ class Pochi(BaseInstalledAgent):
         return PurePosixPath(EnvironmentPaths.agent_dir / "trajectory.json")
 
     def get_version_command(self) -> str | None:
-        return 'export POCHI_LOG=info pochi; pochi --version'
+        return "export POCHI_LOG=info pochi; pochi --version"
 
     def parse_version(self, stdout: str) -> str:
         return stdout.strip()
@@ -199,22 +197,34 @@ class Pochi(BaseInstalledAgent):
             else ""
         )
 
+        pochi_command = (
+            "pochi "
+            f"--model {model} "
+            "--max-steps 200 "
+            "--max-retries 10 "
+            "--blobs-dir /logs/agent/pochi/blobs "
+            "--experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl "
+            f"{strip_duplicates_flag}"
+            "> >(tee /logs/agent/pochi/stdout.txt) "
+            "2> >(tee /logs/agent/pochi/stderr.txt >&2) "
+            "<<'EOF'\n"
+            f"{instruction}\n"
+            "EOF"
+        )
+
         try:
             await self.exec_as_agent(
                 environment,
                 command=(
-                    "pochi "
-                    f"--model {model} "
-                    "--max-steps 200 "
-                    "--max-retries 10 "
-                    "--blobs-dir /logs/agent/pochi/blobs "
-                    "--experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl "
-                    f"{strip_duplicates_flag}"
-                    "> >(tee /logs/agent/pochi/stdout.txt) "
-                    "2> >(tee /logs/agent/pochi/stderr.txt >&2) "
-                    "<<'EOF'\n"
-                    f"{instruction}\n"
-                    "EOF"
+                    "cat > /tmp/pochi_cmd.sh << 'CMD_EOF'\n"
+                    f"{pochi_command}\n"
+                    "CMD_EOF\n"
+                    "setsid --wait bash /tmp/pochi_cmd.sh &\n"
+                    "MAIN_PID=$!\n"
+                    "wait $MAIN_PID 2>/dev/null || true\n"
+                    "kill -TERM -- -$MAIN_PID 2>/dev/null || true\n"
+                    "sleep 2\n"
+                    "kill -9 -- -$MAIN_PID 2>/dev/null || true"
                 ),
                 env=eval_env,
             )
@@ -223,7 +233,7 @@ class Pochi(BaseInstalledAgent):
             try:
                 await self.exec_as_agent(
                     environment,
-                    command="rm -f ~/.pochi/config.jsonc",
+                    command="rm -f ~/.pochi/config.jsonc /tmp/pochi_cmd.sh",
                 )
             except Exception:
                 pass
@@ -326,9 +336,9 @@ class Pochi(BaseInstalledAgent):
                                 source="agent",
                                 message=message_content,
                                 reasoning_content=reasoning_content,
-                                tool_calls=list(current_tools)
-                                if current_tools
-                                else None,
+                                tool_calls=(
+                                    list(current_tools) if current_tools else None
+                                ),
                                 observation=obs,
                                 model_name=self.model_name or "google/gemini-3-flash",
                             )

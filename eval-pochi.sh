@@ -25,6 +25,8 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
+export PYTHONPATH="$(dirname "$0"):${PYTHONPATH}"
+
 harbor run \
        --yes \
        --artifact /home/user \
