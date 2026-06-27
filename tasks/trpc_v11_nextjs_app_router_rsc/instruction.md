@@ -14,3 +14,4 @@ In tRPC v11, `createCallerFactory` replaces the old `createCaller` to execute pr
 1. Modify `src/server/caller.ts` to export a `caller` created using `createCallerFactory`.
 2. Update `src/app/page.tsx` to be an async Server Component, fetch data using the caller, and render it. Also, include `<ClientComponent />`.
 3. Update `src/app/ClientComponent.tsx` to use the tRPC React Query hook.
+4. Ensure the app can be built with `npm run build` and started with `npm start` on port 3000.
