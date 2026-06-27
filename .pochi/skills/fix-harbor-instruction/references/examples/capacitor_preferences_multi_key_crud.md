@@ -15,7 +15,7 @@ index ce3bc807b17..80f1ede87a3 100644
 -## Acceptance Criteria
 -- Project path: /home/user/myapp
 -- Start command: `npm run preview -- --host 0.0.0.0 --port 4173`
--- Port: 4173
+ - Port: 4173
 -- `npm run build` must complete without errors and produce a `dist/` directory containing `index.html`.
 -- `capacitor.config.ts` (or `capacitor.config.json`) must exist at the project root with `appName` equal to `KV Admin`, `appId` equal to `com.example.kvadmin`, and `webDir` equal to `dist`.
 -- `package.json` must list `@capacitor/core`, `@capacitor/cli`, and `@capacitor/preferences` as dependencies (any of `dependencies` or `devDependencies`). The installed major version of `@capacitor/preferences` must be `8`.

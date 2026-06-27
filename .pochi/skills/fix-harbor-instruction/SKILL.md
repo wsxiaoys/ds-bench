@@ -61,24 +61,25 @@ criteria and assertions.
 When every acceptance bullet is already implied by earlier text or simply
 mirrors the test assertions, delete the section entirely.
 
-**Example: `capacitor_preferences_multi_key_crud`** — see
-[`references/examples/capacitor_preferences_multi_key_crud.md`](references/examples/capacitor_preferences_multi_key_crud.md).
+**Example: `capacitor_push_notifications_android_fcm_v1_setup`** — see
+[`references/examples/capacitor_push_notifications_android_fcm_v1_setup.md`](references/examples/capacitor_push_notifications_android_fcm_v1_setup.md).
 
 ```diff
-- ## Acceptance Criteria
-- - Project path: /home/user/myapp
-- - Start command: `npm run preview -- --host 0.0.0.0 --port 4173`
-- - Port: 4173
-- - `npm run build` must complete without errors and produce a `dist/` directory containing `index.html`.
-- - `capacitor.config.ts` (or `capacitor.config.json`) must exist at the project root with `appName` equal to `KV Admin`, `appId` equal to `com.example.kvadmin`, and `webDir` equal to `dist`.
-- - `package.json` must list `@capacitor/core`, `@capacitor/cli`, and `@capacitor/preferences` as dependencies (any of `dependencies` or `devDependencies`). The installed major version of `@capacitor/preferences` must be `8`.
-- - `npx cap sync` executed after the production build must exit with status 0.
-- - The served page at `http://localhost:4173/` must contain elements with HTML ids `kv-key`, `kv-value`, `kv-set-btn`, `kv-remove-btn`, `kv-clear-btn`, and `kv-list`.
-- - On a fresh browser session (empty `localStorage`), `#kv-list` must initially contain zero `<li>` children.
-- - After entering a key in `#kv-key` and a value in `#kv-value` and clicking `#kv-set-btn`, a `<li data-key="<key>"><key>=<value></li>` element must appear inside `#kv-list`, and the value must be retrievable via `Preferences.get`.
-- - Stored entries must persist across full page reloads (the list rebuilds itself from Preferences on load).
-- - Clicking `#kv-remove-btn` while `#kv-key` holds a stored key must remove that key from `#kv-list` and from Preferences.
-- - Clicking `#kv-clear-btn` must remove every `<li>` from `#kv-list` and clear every entry from Preferences.
+-## Acceptance Criteria
+-- Project path: /home/user/myproject
+-- Ensure the real configuration changes are applied and the artifacts exist (do not delete the existing scaffolded files).
+-- Log file: /home/user/myproject/setup.log — must exist and contain lines matching the format `OK: <change>` that mention each of `google-services`, `firebase-messaging`, `google-services.json`, and `requestPermissions` at least once.
+-- `package.json` `dependencies` includes `@capacitor/push-notifications` with a version that satisfies `^8` (semver major 8).
+-- `android/build.gradle` contains a classpath entry for `com.google.gms:google-services:4.4.2`.
+-- `android/app/build.gradle` applies the `com.google.gms.google-services` plugin **and** declares an `implementation` dependency on `com.google.firebase:firebase-messaging`.
+-- `android/app/google-services.json` exists, parses as valid JSON, and the JSON contains a client whose `client_info.android_client_info.package_name` equals `com.example.myapp`.
+-- `src/push.ts` exists and:
+-  - imports `PushNotifications` from `@capacitor/push-notifications`,
+-  - exports a function named `initPush`,
+-  - registers listeners for the four event names listed above (string literals must appear in the file),
+-  - calls `requestPermissions()` before `register()`,
+-  - only calls `register()` inside a code path guarded by a check that the permission `receive` value is `'granted'`.
+-
 ```
 
 Every line above either appears earlier in the task body (project path,
