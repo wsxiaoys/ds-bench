@@ -6,39 +6,64 @@ description: |
 
 # Fix Harbor Task Instruction
 
-This skill guides you to fix an `instruction.md` file in a Harbor evaluation task by removing the "Acceptance Criteria" section. The goal is to prevent leaking too much information about the final tests (`tests/test_final_state.py`) to the agent, while ensuring the agent still has enough information to format its output correctly and pass the tests.
+This skill guides you to fix a Harbor task's `instruction.md` by removing the
+"Acceptance Criteria" section so it does not leak the assertions in
+`tests/test_final_state.py` to the solving agent — while still keeping any
+information the agent *must* know to produce a passing output (file paths,
+exact log formats, named exports, etc.).
 
 ## Workflow
 
-### Step 1: Analyze the Task Files
-1. Read the `instruction.md` file in the task directory.
-2. Read the `tests/test_final_state.py` file in the task directory.
-3. Understand the relationship between the acceptance criteria in `instruction.md` and the assertions in `test_final_state.py`.
+1. **Read the inputs.** Open `tasks/<task>/instruction.md` and
+   `tasks/<task>/tests/test_final_state.py`.
+2. **Classify each bullet under `## Acceptance Criteria`.** For each line, decide:
+   - **Drop** — already stated earlier in the instruction, or it merely
+     restates what `test_final_state.py` checks (e.g. "the verifier will
+     count children", "must contain a JSON array of strings"). Anything that
+     would let the agent reverse-engineer the test belongs in this bucket.
+   - **Retain** — the agent cannot pass the test without this fact, and it
+     is *not* mentioned anywhere else in the instruction. Typical examples:
+     a literal log-line format (`Sandbox ID: <id>`), the exact filename the
+     verifier imports (`solution.py` exporting `LoggedSearcher`), the
+     required output path (`/home/user/myproject/dist/main.js`).
+3. **Apply the edit.**
+   - Delete the entire `## Acceptance Criteria` header and its bullet list.
+   - Move retained bullets into a pre-existing section such as the task
+     description body or `## Implementation Hints`. Rewrite them as
+     guidance ("write the UUID on a single line with format
+     `Sandbox ID: <id>`") rather than as a checklist.
+4. **Sanity check.** Re-read the resulting instruction. It must still be
+   solvable: paths, commands, required exports, and output formats that
+   appear in the tests must still be discoverable from the instruction.
 
-### Step 2: Determine What to Retain
-Analyze the "Acceptance Criteria" section in `instruction.md`:
-- **Drop completely:** Any criteria that have been mentioned earlier in the instruction or are not tightly related to the final tests (e.g., project paths, standard commands, basic setup steps).
-- **Retain and Move:** Required information that the agent *must* know to pass the final test (e.g., specific output formats, file names, specific log messages, exact API requirements). Move these into other sections like "Implementation Hints" or the general task description.
+## Rules
 
-### Step 3: Apply the Fix
-Edit the `instruction.md` file to:
-1. Delete the "Acceptance Criteria" header and its contents.
-2. Insert any retained, required information into appropriate existing sections (like "Implementation Hints").
-3. Ensure the modified `instruction.md` is clear, concise, and does not leak the exact test assertions.
+- Only fix **one task** per invocation.
+- The decision to drop or retain must be justified by a corresponding line
+  in `test_final_state.py`. If a criterion is checked by the tests AND its
+  exact form (a literal string, a specific file path, a named symbol) is
+  not stated elsewhere in the instruction → retain it.
+- Never invent new information. Only rephrase what already existed in the
+  acceptance criteria.
+- Do not touch `tests/`, `solution/`, or any other files in the task
+  directory.
 
-## Important Notes
-- This skill should only focus on fixing **one task** at a time.
-- The changes to `instruction.md` MUST be based on the relationship between `instruction.md` and `test_final_state.py`.
+## Few-Shot Examples
 
-## Examples of Fixes
+The nine examples below are drawn from
+[PR #37](https://github.com/wsxiaoys/ds-bench/pull/37). Each linked file in
+`references/examples/` inlines both the full `instruction.md` diff and the
+full `tests/test_final_state.py` so you can study the exact mapping between
+criteria and assertions.
 
-Here are some examples of how to apply these fixes:
+### Pattern A — Drop the whole section
 
-### Example 1: Dropping Acceptance Criteria Totally
-If all the acceptance criteria content has been mentioned before or is not tightly related to the final tests, drop it totally.
-**Tasks like:** `capacitor_preferences_multi_key_crud`, `capacitor_push_notifications_android_fcm_v1_setup`, `lancedb_embedding_pca_projection_py`.
+When every acceptance bullet is already implied by earlier text or simply
+mirrors the test assertions, delete the section entirely.
 
-*Diff Example (capacitor_preferences_multi_key_crud):*
+**Example: `capacitor_preferences_multi_key_crud`** — see
+[`references/examples/capacitor_preferences_multi_key_crud.md`](references/examples/capacitor_preferences_multi_key_crud.md).
+
 ```diff
 - ## Acceptance Criteria
 - - Project path: /home/user/myapp
@@ -56,11 +81,26 @@ If all the acceptance criteria content has been mentioned before or is not tight
 - - Clicking `#kv-clear-btn` must remove every `<li>` from `#kv-list` and clear every entry from Preferences.
 ```
 
-### Example 2: Retaining Required Info
-If there is required info in the acceptance criteria that needs to be mentioned so the agent can pass the final test, retain it in other sections.
-**Tasks like:** `alchemyst_metadata_filter_search_ts`, `daytona_create_sandbox_ts`, `daytona_declarative_image_py`, `godot_enemy_stats_resource_spawner`, `godot_navigation_agent_2d_dynamic_obstacles`, `lancedb_query_logging_audit_table_py`.
+Every line above either appears earlier in the task body (project path,
+start command, port, the `kv-*` element ids inside the "Task" section) or
+restates what `tests/test_final_state.py` does (count `<li>` children,
+trigger clicks, assert `Preferences.get`).
 
-*Diff Example (daytona_create_sandbox_ts):*
+Other tasks that match this pattern (full inline diff + test in each file):
+
+- [`capacitor_push_notifications_android_fcm_v1_setup`](references/examples/capacitor_push_notifications_android_fcm_v1_setup.md)
+- [`lancedb_embedding_pca_projection_py`](references/examples/lancedb_embedding_pca_projection_py.md)
+- [`godot_navigation_agent_2d_dynamic_obstacles`](references/examples/godot_navigation_agent_2d_dynamic_obstacles.md)
+
+### Pattern B — Drop the section, but retain one or two bullets
+
+Most criteria still go, but one or two bullets convey information the agent
+cannot infer (log path, exact log-line format, the verifier's import line).
+Move those into an existing section before deleting the header.
+
+**Example: `daytona_create_sandbox_ts`** — see
+[`references/examples/daytona_create_sandbox_ts.md`](references/examples/daytona_create_sandbox_ts.md).
+
 ```diff
 @@ -10,7 +10,7 @@ In this task you will write a small Node.js script that uses the Daytona TypeScr
  - Authenticate using the `DAYTONA_API_KEY` environment variable (already present in the environment).
@@ -69,37 +109,79 @@ If there is required info in the acceptance criteria that needs to be mentioned 
 -- After the sandbox is created, write its UUID to `/home/user/myproject/output.log` on a single line.
 +- After the sandbox is created, write its UUID to `/home/user/myproject/output.log` on a single line with format: `Sandbox ID: <id>`.
  - After writing the log, delete the sandbox you just created so it does not consume quota.
- ## Implementation Hints
+
 @@ -19,12 +19,3 @@ In this task you will write a small Node.js script that uses the Daytona TypeScr
  - Use `daytona.create({ name, language: 'typescript', ... })` to create the sandbox. The returned object exposes the sandbox's `id`.
  - Use `daytona.delete(sandbox)` (not `remove`) to remove the sandbox at the end.
  - Drive the script with `node`. You may use TypeScript with `tsx`/`ts-node` or plain JavaScript — both are acceptable.
 -
---## Acceptance Criteria
--- - Project path: /home/user/myproject
--- - Log file: /home/user/myproject/output.log
--- - The sandbox is created on the real Daytona SaaS (`https://app.daytona.io/api`) via the `@daytonaio/sdk` TypeScript SDK.
--- - The sandbox `name` must equal `create-sandbox-ts-${run-id}`, where `run-id` is read from `/logs/artifacts/run-id`.
--- - `/home/user/myproject/output.log` must contain a single line matching the format: `Sandbox ID: <id>` where `<id>` is the UUID returned by the SDK for the created sandbox.
--- - After the script finishes, the created sandbox has been deleted via the SDK.
+-## Acceptance Criteria
+-- Project path: /home/user/myproject
+-- Log file: /home/user/myproject/output.log
+-- The sandbox is created on the real Daytona SaaS (`https://app.daytona.io/api`) via the `@daytonaio/sdk` TypeScript SDK.
+-- The sandbox `name` must equal `create-sandbox-ts-${run-id}`, where `run-id` is read from `/logs/artifacts/run-id`.
+-- `/home/user/myproject/output.log` must contain a single line matching the format: `Sandbox ID: <id>` where `<id>` is the UUID returned by the SDK for the created sandbox.
+-- After the script finishes, the created sandbox has been deleted via the SDK.
 ```
 
-*Diff Example (daytona_declarative_image_py):*
+Why retain only the format string? `test_final_state.py` does:
+
+```python
+SANDBOX_ID_REGEX = re.compile(r"^Sandbox ID:\s*(?P<id>[A-Za-z0-9-]+)\s*$", re.MULTILINE)
+```
+
+If the agent does not see `Sandbox ID: <id>` somewhere in the instruction
+it cannot produce a passing log. Everything else (project path, SaaS URL,
+sandbox name, deletion) is already in the body or "Implementation Hints",
+so it is dropped. The format requirement is folded into the existing body
+bullet about writing the UUID.
+
+**Example: `daytona_declarative_image_py`** — see
+[`references/examples/daytona_declarative_image_py.md`](references/examples/daytona_declarative_image_py.md).
+
 ```diff
 @@ -18,14 +18,6 @@ Daytona's Declarative Builder lets you define sandbox images programmatically us
  - `sandbox.process.code_run` returns an object whose `result` attribute contains the captured stdout from the executed Python snippet; parse the printed versions and write them in the required format on the host.
  - Make sure the sandbox is deleted at the end, even if it was successfully created.
  - Do not mock the Daytona service; interact with the real Daytona SaaS.
 -
---## Acceptance Criteria
--- Project path: /home/user/myproject
--- Log file: /home/user/myproject/output.log
--- - The sandbox created in Daytona must be named `decl-py-${run-id}`, where `run-id` is read from `/logs/artifacts/run-id`.
--- - The sandbox must be built from a declarative `Image` based on `debian_slim('3.12')` with `requests` and `pyyaml` installed via `pip_install`.
--- - The log file must contain exactly two lines (in any order) with the following formats:
---   - `requests: <version>` where `<version>` is the installed `requests` package version (a dotted version string such as `2.32.3`).
---   - `yaml: <version>` where `<version>` is the installed `PyYAML` runtime version reported by `yaml.__version__` (a dotted version string such as `6.0.2`).
--- - The sandbox `decl-py-${run-id}` must be deleted after the task completes.
+-## Acceptance Criteria
+ - Project path: /home/user/myproject
+ - Log file: /home/user/myproject/output.log
+-- The sandbox created in Daytona must be named `decl-py-${run-id}`, where `run-id` is read from `/logs/artifacts/run-id`.
+-- The sandbox must be built from a declarative `Image` based on `debian_slim('3.12')` with `requests` and `pyyaml` installed via `pip_install`.
+-- The log file must contain exactly two lines (in any order) with the following formats:
+-  - `requests: <version>` where `<version>` is the installed `requests` package version (a dotted version string such as `2.32.3`).
+-  - `yaml: <version>` where `<version>` is the installed `PyYAML` runtime version reported by `yaml.__version__` (a dotted version string such as `6.0.2`).
+-- The sandbox `decl-py-${run-id}` must be deleted after the task completes.
 -
 +- The log file must contain exactly two lines (in any order) of the form `requests: <version>` and `yaml: <version>`.
 ```
+
+The retained "project path", "log file", and "two lines of the form …"
+bullets are reattached to the *Implementation Hints* section. The two
+log-line formats are kept because `test_final_state.py` does literal
+regex matching on `requests:` and `yaml:` lines and the formats appear
+nowhere else.
+
+Other tasks that match this pattern:
+
+- [`alchemyst_metadata_filter_search_ts`](references/examples/alchemyst_metadata_filter_search_ts.md) — retain `dist/main.js` build path (tested explicitly).
+- [`godot_enemy_stats_resource_spawner`](references/examples/godot_enemy_stats_resource_spawner.md) — retain the "Required files" sub-list of `.gd`/`.tscn` paths and field signatures.
+- [`lancedb_query_logging_audit_table_py`](references/examples/lancedb_query_logging_audit_table_py.md) — retain the `solution.py` export path and the `LoggedSearcher` class contract.
+
+## Index of inlined examples
+
+Each file below contains the full diff applied to `instruction.md` *and*
+the full `tests/test_final_state.py` so you can audit the
+criterion-to-assertion mapping yourself:
+
+- [`alchemyst_metadata_filter_search_ts`](references/examples/alchemyst_metadata_filter_search_ts.md)
+- [`capacitor_preferences_multi_key_crud`](references/examples/capacitor_preferences_multi_key_crud.md)
+- [`capacitor_push_notifications_android_fcm_v1_setup`](references/examples/capacitor_push_notifications_android_fcm_v1_setup.md)
+- [`daytona_create_sandbox_ts`](references/examples/daytona_create_sandbox_ts.md)
+- [`daytona_declarative_image_py`](references/examples/daytona_declarative_image_py.md)
+- [`godot_enemy_stats_resource_spawner`](references/examples/godot_enemy_stats_resource_spawner.md)
+- [`godot_navigation_agent_2d_dynamic_obstacles`](references/examples/godot_navigation_agent_2d_dynamic_obstacles.md)
+- [`lancedb_embedding_pca_projection_py`](references/examples/lancedb_embedding_pca_projection_py.md)
+- [`lancedb_query_logging_audit_table_py`](references/examples/lancedb_query_logging_audit_table_py.md)
