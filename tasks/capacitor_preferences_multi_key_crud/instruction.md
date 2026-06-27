@@ -32,3 +32,4 @@ A minimal Vite TypeScript project has already been scaffolded for you at `/home/
 - The Preferences plugin transparently falls back to `localStorage` on the web target (it uses keys prefixed with `CapacitorStorage.`), so no native runtime is required for the web build used to verify the behavior.
 - Make sure the script that wires up the UI is loaded as an ES module so that imports from `@capacitor/preferences` succeed.
 - Re-render `#kv-list` from scratch each time (clear existing `<li>` children before appending new ones) so the list always reflects the current Preferences state.
+- Port: 4173
