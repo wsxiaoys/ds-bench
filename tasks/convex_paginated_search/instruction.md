@@ -28,10 +28,5 @@ In this task, you will implement a paginated full-text search query for a `messa
 - Use `ctx.db.query("messages").withSearchIndex("search_body", q => q.search("body", args.query).eq("channelId", args.channelId)).paginate(args.paginationOpts)` to execute the paginated search.
 - Use `ConvexHttpClient` from `"convex/browser"` in `test.js`.
 - Add a retry loop in `test.js` when searching, as it may take a few seconds for newly inserted documents to be indexed and returned by the search query.
-
-## Acceptance Criteria
-- Project path: /home/user/convex-search
-- Command: `node test.js --run-id <run-id>`
-- The command input argument format: `--run-id <run-id>`
-- The expected command output format: The stdout should print a JSON array containing 2 message objects representing the first page of search results.
+- The project must be located at `/home/user/convex-search`.
 

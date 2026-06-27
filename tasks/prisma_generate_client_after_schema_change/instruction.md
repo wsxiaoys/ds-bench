@@ -16,9 +16,4 @@ The project at `/home/user/myproject` already has a `User` model. Add a `Post` m
    - `author`: relation to `User` using `@relation(fields: [authorId], references: [id])`
 3. Also add a `posts Post[]` back-relation field to the existing `User` model.
 4. Run ONLY `npx prisma generate` — do NOT run `prisma migrate`.
-
-## Constraints
-- Project path: `/home/user/myproject`
-- Use SQLite datasource (already configured)
-- Run `npx prisma generate` only — no migration
-- Do not modify the datasource or generator blocks
+5. Do not modify the datasource or generator blocks.
