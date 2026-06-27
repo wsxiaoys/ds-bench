@@ -19,17 +19,6 @@ Build a US state-level choropleth visualization with Vega-Altair using TopoJSON 
 - Encode `tooltip` as a list of fields (e.g. `state` and `engineers`).
 - Apply the projection with `.project(type='albersUsa')` and set width/height via `.properties(width=700, height=400)`.
 - The HTML must contain the Vega-Lite spec embedded in a `<script type="application/json">` block and rendered via `vegaEmbed`.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Command: python3 build_chart.py
-- The command must produce `/home/user/myproject/chart.html` containing a renderable Vega-Lite specification.
-- The embedded Vega-Lite specification must:
-  - Have a `mark` of type `geoshape` (string `"geoshape"` or object with `type == "geoshape"`).
-  - Have a `data` block produced by `alt.topo_feature` whose `format.feature == "states"` and whose `url` ends with `us-10m.json`.
-  - Contain a `transform` entry with a `lookup` field equal to `"id"` and a `from` whose `key == "id"` and whose `fields` array contains `"engineers"`.
-  - Have an `encoding.color` whose `field == "engineers"` and whose `scale.scheme == "blues"`.
-  - Have an `encoding.tooltip` that is a list of field references including both `state` and `engineers`.
-  - Have `projection.type == "albersUsa"`, `width == 700`, and `height == 400`.
-- Browser verification: Loading `chart.html` in a browser must render the US map (including Alaska and Hawaii insets) with the states colored on a blue gradient, a visible color legend, and a working hover tooltip showing the state name and engineer count, with no JavaScript console errors.
+- Work within `/home/user/myproject` and name your script `build_chart.py`.
+- Save the resulting chart exactly to `chart.html` within the project directory.
 
