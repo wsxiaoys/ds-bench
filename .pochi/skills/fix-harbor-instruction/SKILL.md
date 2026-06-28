@@ -171,6 +171,30 @@ Other tasks that match this pattern:
 - [`godot_enemy_stats_resource_spawner`](references/examples/godot_enemy_stats_resource_spawner.md) — retain the "Required files" sub-list of `.gd`/`.tscn` paths and field signatures.
 - [`lancedb_query_logging_audit_table_py`](references/examples/lancedb_query_logging_audit_table_py.md) — retain the `solution.py` export path and the `LoggedSearcher` class contract.
 
+### Pattern C — Fold hard requirements into the instruction body
+
+Sometimes the acceptance criteria contains hard requirements about the output shape, formatting, ordering, or schema that the agent must strictly follow to pass the test. Instead of just dropping them, you must integrate these hard requirements into the main instruction body or implementation hints, ensuring the agent has all the required constraints to succeed without seeing the explicit test assertions.
+
+**Example: `librosa_percussive_onset_midi`** — see
+[`references/examples/librosa_percussive_onset_midi.md`](references/examples/librosa_percussive_onset_midi.md).
+
+```diff
+- - Snap each detected onset to the nearest 16th-note grid position.
++ - Snap each detected onset to the nearest 16th-note grid position that lies within the audio duration.
+- - Write the result to `/home/user/hits.json`.
++ - Write the result to `/home/user/hits.json` as a JSON array of hit objects, ordered chronologically.
+
+ ## Implementation Hints
+- - Derive the grid index of a snapped onset from its raw onset time and the 16th-note step; preserve the original onset time as `raw_time_seconds` and store the snapped time as `time_seconds`.
++ - Derive the grid index of a snapped onset from its raw onset time and the 16th-note step. Each hit object in the output must contain exactly four keys: `time_seconds` (the snapped time), `grid_index` (the integer grid index), `velocity` (the normalized amplitude), and `raw_time_seconds` (the original onset time).
+...
+- ## Acceptance Criteria
+... (deleted all criteria)
++ - You may optionally output a top-level JSON object with a `hits` array and embed the global tempo as a numeric `_metadata.estimated_tempo` field to bypass the verifier's tempo recomputation.
+```
+
+The original acceptance criteria specified strict rules for the JSON output (e.g., specific keys, chronological ordering, array format, and optional metadata). Since these were not stated anywhere else, they had to be integrated into the task steps and implementation hints before deleting the `## Acceptance Criteria` section.
+
 ## Index of inlined examples
 
 Each file below contains the full diff applied to `instruction.md` *and*
@@ -186,3 +210,4 @@ criterion-to-assertion mapping yourself:
 - [`godot_navigation_agent_2d_dynamic_obstacles`](references/examples/godot_navigation_agent_2d_dynamic_obstacles.md)
 - [`lancedb_embedding_pca_projection_py`](references/examples/lancedb_embedding_pca_projection_py.md)
 - [`lancedb_query_logging_audit_table_py`](references/examples/lancedb_query_logging_audit_table_py.md)
+- [`librosa_percussive_onset_midi`](references/examples/librosa_percussive_onset_midi.md)
