@@ -8,7 +8,7 @@ Build a drum-hit grid quantizer with `librosa`. The pipeline must isolate the pe
 - Separate the percussive waveform from the harmonic content with HPSS.
 - Detect onsets on the percussive component using an onset strength envelope and peak picking.
 - Recover a global tempo (BPM) from beat tracking on the percussive component and derive a 16th-note grid with spacing `60 / tempo / 4` seconds, starting at time 0.
-- Snap each detected onset to the nearest 16th-note grid position.
+- Snap each detected onset to the nearest 16th-note grid position that lies within the audio duration.
 - Estimate a per-hit velocity from the local onset envelope amplitude, normalized into `(0.0, 1.0]`.
 - Write the result to `/home/user/hits.json` as a JSON array of hit objects, ordered chronologically.
 
