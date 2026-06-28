@@ -16,7 +16,8 @@ Build an interactive Vega-Altair scatter plot of the classic iris dataset that u
 - Use `alt.when(...).then(...).otherwise(...)` to drive the `color` encoding:
   - When `datum.species` matches the parameter's value, color the point using the species nominal field (i.e. `species:N`).
   - Otherwise, color the point with the constant `lightgray`.
-- Save the resulting chart as a single self-contained HTML file to `/home/user/myproject/chart.html` using `chart.save(...)`.
+- Save the resulting chart as a single self-contained HTML file named `chart.html` in `/home/user/myproject` to `/home/user/myproject/chart.html` using `chart.save(...)`.
+- Name your script `build_chart.py` in `/home/user/myproject` so it can be run via `python3 build_chart.py`.
 
 ## Implementation Hints
 - Remember that URL-based data requires explicit type shorthands (e.g. `sepalLength:Q`, `species:N`).

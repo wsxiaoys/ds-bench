@@ -72,20 +72,6 @@ The launcher must exit with a non-zero status code and not print any further `<k
 - Do **not** touch `Gdx.gl*`; the headless backend has no GL context.
 - For locale-independent argument substitution stick to plain `{0}`, `{1}`, ... placeholders and pass the arguments as `String` values; this avoids locale-sensitive number/date formatting differences in `MessageFormat`.
 - `I18NBundle.createBundle` falls back to less-specific files automatically, so a French bundle missing the `gameName` key will read it from the base `Messages.properties` without any extra code.
-
-## Acceptance Criteria
-- Project path: `/home/user/gdx-game`.
-- After running `./gradlew --no-daemon --quiet installDist` from the project root, the launcher script `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game` must exist and be executable.
-- Command: `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game --input=<path>`
-  - `<path>` is the absolute path to a UTF-8 command file conforming to the format above.
-- Successful runs must:
-  - Print one `<key>=<value>` line per `GET`/`FORMAT` command, in the order the commands appear in the file.
-  - Print **nothing else** to stdout (no banner, prompt, debug log, or trailing summary).
-  - Exit with status `0`.
-- Runs containing a malformed command must:
-  - Print exactly one matching `Error: ...` line to **stderr**, using the prefixes documented above.
-  - Exit with a **non-zero** status code.
-  - Not emit any further `<key>=<value>` lines on stdout after the error.
+- Successful runs must exit with status `0` and print **nothing else** to stdout (no banners, prompts, debug logs, or trailing summaries) other than the requested `<key>=<value>` lines.
 - An empty command file (no non-blank, non-comment lines) must produce no stdout output and exit `0`.
-- The application must boot under `com.badlogic.gdx.backends.headless.HeadlessApplication` and load each bundle via `com.badlogic.gdx.utils.I18NBundle.createBundle(FileHandle, Locale)` against `Gdx.files.internal("i18n/Messages")`. (This is verified behaviourally through the locale fallback test, which depends on `I18NBundle`'s fallback rules to resolve `gameName` from the base bundle when the active locale is `fr` or `de`.)
 

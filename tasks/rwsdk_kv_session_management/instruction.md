@@ -6,78 +6,23 @@ You are extending a freshly scaffolded RedwoodSDK (`rwsdk`) project. Implement a
 The API must expose endpoints to create, read, delete, and count sessions. Session data lives in KV under the key prefix `sess:` and is automatically expired by KV's TTL feature.
 
 ## Requirements
-- The web app is a RedwoodSDK project served by `npm run dev` (Vite + Cloudflare workerd / miniflare).
+- The web app is a RedwoodSDK project located at `/home/user/myproject` and served by `npm run dev` on port 5173 (Vite + Cloudflare workerd / miniflare).
 - Configure a Cloudflare KV binding named `SESSIONS` in `wrangler.jsonc` so that it is available as `env.SESSIONS` (or via rwsdk's worker `env`) at runtime.
 - Implement the following JSON HTTP endpoints (all under `/api/sessions`):
-  - `POST /api/sessions` — creates a session.
-  - `GET /api/sessions/me` — reads the current session via the `sid` cookie.
-  - `DELETE /api/sessions/me` — deletes the current session.
-  - `GET /api/sessions/count` — returns the number of sessions currently stored in KV.
+  - `POST /api/sessions` — creates a session. Expects a JSON body `{"userId": string}`. Returns status `201` with JSON `{"sessionId": string, "expiresAt": number}` (where `expiresAt` is a Unix timestamp in seconds). Sets a `sid` cookie to the `sessionId` with `HttpOnly`, `Path=/`, and `Max-Age=3600`.
+  - `GET /api/sessions/me` — reads the current session via the `sid` cookie. Returns status `200` with JSON `{"userId": string, "createdAt": number, "expiresAt": number}`. If the `sid` cookie is missing, malformed, or its KV entry does not exist, returns status `401`.
+  - `DELETE /api/sessions/me` — deletes the current session. Returns status `204` with no body, and sets a `Set-Cookie` header to clear the `sid` cookie (`Max-Age=0`, `HttpOnly`, `Path=/`). Also removes the corresponding `sess:<sessionId>` key from KV.
+  - `GET /api/sessions/count` — returns the number of sessions currently stored in KV. Returns status `200` with JSON `{"count": number}`.
 - Session records must be stored in KV under keys of the form `sess:<sessionId>`. The value MUST be JSON with shape `{userId, createdAt, expiresAt}`.
 - Session ids must be random 32-character lowercase hex strings (i.e. 16 bytes of randomness, hex-encoded).
 - Sessions must expire after 3600 seconds. Use KV's `expirationTtl` (3600) on write so KV evicts expired entries automatically.
 
 ## Implementation Hints
-- Start from the existing scaffold at the project path below; the `rwsdk` dependency, Vite config, and `wrangler.jsonc` skeleton are already in place. You need to add the `SESSIONS` KV namespace binding to `wrangler.jsonc` (the local dev runtime does not require a real `id` — a placeholder string is sufficient for miniflare).
+- Start from the existing scaffold; the `rwsdk` dependency, Vite config, and `wrangler.jsonc` skeleton are already in place. You need to add the `SESSIONS` KV namespace binding to `wrangler.jsonc` (the local dev runtime does not require a real `id` — a placeholder string is sufficient for miniflare).
 - Read https://docs.rwsdk.com/llms-full.txt and the Cloudflare KV docs (https://developers.cloudflare.com/kv/api/) for the binding shape and the `get`, `put`, `delete`, and `list` methods.
 - Inside a RedwoodSDK route handler, the Cloudflare bindings are available via the worker `env` (e.g. `env.SESSIONS.put(...)`). You can use `route("/api/sessions", { post: handler })` or define a handler that switches on `request.method`.
 - Generate session ids with the Web Crypto API: `crypto.getRandomValues(new Uint8Array(16))` then hex-encode.
 - For cookie parsing, read the `Cookie` request header and parse out the `sid` value yourself — no extra library is required.
 - Use `SESSIONS.list({ prefix: "sess:" })` to enumerate live session keys for the count endpoint. Remember that `list()` may paginate via `cursor`/`list_complete`; iterate until `list_complete` is true so the count is accurate when there are many keys.
 - Set the response `Content-Type` header to `application/json` for all JSON responses.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Start command: npm run dev
-- Port: 5173
-- KV binding: A binding named `SESSIONS` is configured in `wrangler.jsonc` and is reachable from route handlers at runtime.
-- KV key naming: All session entries are stored under keys matching the pattern `sess:<sessionId>`.
-- Session id format: 32 lowercase hexadecimal characters (`^[0-9a-f]{32}$`).
-- Session TTL: 3600 seconds, enforced via KV `expirationTtl` on write.
-- API endpoints:
-  - `POST /api/sessions`
-    - Request: `Content-Type: application/json`, body `{"userId": string}`.
-    - Response status: `201`.
-    - Response `Content-Type: application/json`.
-    - Response body shape:
-      ```json
-      {
-        "sessionId": string,
-        "expiresAt": number
-      }
-      ```
-      `sessionId` MUST match `^[0-9a-f]{32}$`. `expiresAt` is a Unix timestamp in **seconds** approximately equal to `now + 3600` (within a 60-second tolerance).
-    - Response headers MUST include a `Set-Cookie` header that:
-      - Sets the cookie named `sid` to the same value as `sessionId`.
-      - Includes the `HttpOnly` attribute (case-insensitive).
-      - Includes a `Path=/` attribute.
-      - Includes `Max-Age=3600` (case-insensitive).
-  - `GET /api/sessions/me`
-    - When the request carries a valid `sid` cookie whose corresponding KV entry exists:
-      - Response status: `200`.
-      - Response `Content-Type: application/json`.
-      - Response body shape:
-        ```json
-        {
-          "userId": string,
-          "createdAt": number,
-          "expiresAt": number
-        }
-        ```
-        The `userId` MUST equal the one supplied when the session was created.
-    - When the `sid` cookie is missing, malformed, or its KV entry does not exist:
-      - Response status: `401`.
-  - `DELETE /api/sessions/me`
-    - On success (request carries a valid `sid` cookie): response status `204`, no body, and a `Set-Cookie` header that clears the `sid` cookie (`sid=` with `Max-Age=0`, plus `HttpOnly` and `Path=/`).
-    - After this call, the corresponding `sess:<sessionId>` key MUST be removed from KV.
-  - `GET /api/sessions/count`
-    - Response status: `200`.
-    - Response `Content-Type: application/json`.
-    - Response body shape:
-      ```json
-      {
-        "count": number
-      }
-      ```
-      where `count` is the total number of live keys in KV with the `sess:` prefix (use `SESSIONS.list({ prefix: "sess:" })`, iterating through all pages).
 

@@ -20,7 +20,3 @@ Add explicit M2M between `User` and `Project` via a `UserProject` join model tha
    - Query the user with `include: { userProjects: { include: { project: true } } }`
    - Write result to `/home/user/myproject/explicit_m2m_result.json`
 4. Run: `node explicit_m2m.js`
-
-## Constraints
-- Project path: `/home/user/myproject`
-- Output file: `/home/user/myproject/explicit_m2m_result.json`

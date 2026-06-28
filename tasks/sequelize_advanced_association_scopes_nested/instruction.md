@@ -16,21 +16,13 @@ A common challenge in Sequelize is correctly querying deeply nested associations
 - Write a Node.js script `query.js` that:
   1. Connects to a SQLite database (`database.sqlite`).
   2. Syncs the models.
-  3. Seeds a specific set of data (defined in Acceptance Criteria).
+  3. Seeds some sample data to demonstrate the nested associations and scopes.
   4. Performs a single query to find a company by name ('TechCorp'), eagerly loading its `divisions`, their `staff`, and the staff's `assignments` (which should automatically only include active projects due to the scope).
   5. Writes the query result as a JSON string to `output.json`.
 
 ## Implementation Hints
+- Project path: /home/user/myproject
 - Ensure you define the aliases (`as` option) in both the model associations and the `include` statements of the query.
 - Remember that when querying with aliases, the `include` array must specify the exact alias used in the association.
 - Scopes are defined in the model options and can be automatically applied if configured as a `defaultScope`, or applied manually using `.scope()`.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Ensure the script is executed and the artifacts exist.
-- Command: `node query.js`
-- Log file: /home/user/myproject/output.json
-- The script must create the database, seed the data, and output the JSON result.
-- The JSON output must match the structure of a company with its nested divisions, staff, and assignments.
-- Only active projects should be included in the assignments array.
 
