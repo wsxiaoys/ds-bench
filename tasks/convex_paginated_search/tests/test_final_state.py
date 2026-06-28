@@ -46,7 +46,7 @@ def test_deploy_and_run_script():
     assert len(output_json) == 2, f"Expected exactly 2 elements in the array, got {len(output_json)}."
 
     for item in output_json:
-        assert "channelId" in item, f"Missing 'channelId' field in item: {item}"
-        assert item["channelId"] == run_id, f"Expected channelId to be {run_id}, got {item['channelId']}"
+        assert "runId" in item, f"Missing 'runId' field in item: {item}"
+        assert item["runId"] == run_id, f"Expected runId to be {run_id}, got {item['runId']}"
         assert "body" in item, f"Missing 'body' field in item: {item}"
         assert "Hello" in item["body"], f"Expected 'Hello' in body, got {item['body']}"
