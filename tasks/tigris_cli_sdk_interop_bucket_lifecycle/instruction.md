@@ -60,18 +60,9 @@ You will:
    tigris ls "t3://${BUCKET}/" > /home/user/tigris-task/bucket-listing.txt
    ```
 
-## Constraints
-- Project path: `/home/user/tigris-task`
-- Source file: `/home/user/tigris-task/index.ts`
-- Listing file: `/home/user/tigris-task/bucket-listing.txt`
-- Bucket name MUST be `harbor-interop-${run_id}` (no other prefix or suffix), with `${run_id}` taken verbatim from `/logs/artifacts/run-id`. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
-- Snapshots MUST be enabled at creation (`--enable-snapshots` on `tigris buckets create`). They cannot be enabled on an existing bucket.
-- The bucket TTL MUST be exactly 7 days (`tigris buckets set-ttl <bucket> --days 7`).
-- The uploaded object body MUST be exactly `{"created_by":"cli","modified_by":"sdk","run":"<run_id>"}` (no extra whitespace, key ordering as written here), with `<run_id>` substituted.
-- The CLI is pre-authenticated via the AWS-compatible environment bridge in `/etc/profile.d/tigris-auth.sh`. From a login shell the CLI works directly; from a non-login shell, source that file first or pass `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION=auto` inline.
-- Use the Tigris CLI (`tigris`) for bucket creation, TTL configuration, and final listing. Use the `@tigrisdata/storage` SDK from TypeScript for the manifest upload. Do not mix or substitute these (no AWS CLI, no raw HTTP, no `tigris cp`/`tigris put` for the manifest upload, no SDK for bucket creation/TTL).
+## Implementation Hints
+- The Tigris CLI is pre-authenticated via the AWS-compatible environment bridge in `/etc/profile.d/tigris-auth.sh`. From a login shell the CLI works directly; from a non-login shell, source that file first or pass `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION=auto` inline.
 - Do not hardcode credentials.
-- Leave the bucket and `manifest.json` in place after completion — the verifier inspects them and then cleans up.
 
 ## Integrations
 - Tigris Object Storage (real `https://t3.storage.dev` endpoint via the Tigris CLI and `@tigrisdata/storage` SDK).
