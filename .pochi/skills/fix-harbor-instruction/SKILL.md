@@ -26,6 +26,8 @@ exact log formats, named exports, etc.).
      a literal log-line format (`Sandbox ID: <id>`), the exact filename the
      verifier imports (`solution.py` exporting `LoggedSearcher`), the
      required output path (`/home/user/myproject/dist/main.js`).
+     Any additional assumptions or special conventions found in the final tests
+     MUST be explicitly retained in the instruction.
 3. **Apply the edit.**
    - Delete the entire `## Acceptance Criteria` header and its bullet list.
    - Move retained bullets into a pre-existing section such as the task
@@ -43,6 +45,11 @@ exact log formats, named exports, etc.).
   in `test_final_state.py`. If a criterion is checked by the tests AND its
   exact form (a literal string, a specific file path, a named symbol) is
   not stated elsewhere in the instruction → retain it.
+- **CRITICAL**: If there are additional assumptions, special conventions,
+  hard requirements, or specific constraints in the final tests (`test_final_state.py`)
+  that are not obvious or not stated elsewhere,
+  they MUST be explicitly stated in the `instruction.md`
+  by retaining or rewriting the relevant content.
 - Never invent new information. Only rephrase what already existed in the
   acceptance criteria.
 - Do not touch `tests/`, `solution/`, or any other files in the task
