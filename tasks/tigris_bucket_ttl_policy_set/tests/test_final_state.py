@@ -108,75 +108,39 @@ def _flatten_for_search(obj):
 def test_bucket_ttl_is_seven_days():
     """Priority 1: confirm via Tigris CLI that the bucket's TTL is 7 days.
 
-    The Tigris CLI documents `tigris buckets set-ttl <name> --days 7` as the
+    The Tigris CLI documents `tigris buckets lifecycle create <name> --expire-days 7` as the
     canonical way to set a bucket's object-expiration TTL. The verifier
-    inspects the bucket configuration with `tigris buckets get --format json`
+    inspects the bucket configuration with `tigris buckets lifecycle list --json`
     and asserts that a TTL/expiration-related property reflects a 7-day
     window.
     """
     bucket_name = _bucket_name()
-    result = _run_tigris(["buckets", "get", bucket_name, "--format", "json"])
+    result = _run_tigris(["buckets", "lifecycle", "list", bucket_name, "--json"])
     assert result.returncode == 0, (
-        f"'tigris buckets get {bucket_name} --format json' failed: returncode="
+        f"'tigris buckets lifecycle list {bucket_name} --json' failed: returncode="
         f"{result.returncode}, stderr={result.stderr!r}"
     )
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         pytest.fail(
-            f"'tigris buckets get {bucket_name} --format json' returned invalid "
+            f"'tigris buckets lifecycle list {bucket_name} --json' returned invalid "
             f"JSON: {exc}. stdout={result.stdout!r}"
         )
 
-    # The CLI may emit either:
-    #   - a list of {"property": <label>, "value": <value>} rows, or
-    #   - a structured object with fields like "ttl"/"objectTtl"/"expiration".
-    # Accept either shape: search for any TTL/Expiration-related entry whose
-    # value contains "7" and "day".
-    ttl_keywords = ("ttl", "expir")
-    seven_day_pattern = re.compile(r"\b7\s*day", re.IGNORECASE)
-
-    # Shape 1: list of {property, value} rows.
     if isinstance(payload, list):
-        matched_value = None
-        for row in payload:
-            if not isinstance(row, dict):
-                continue
-            prop = str(row.get("property", "")).lower()
-            if any(kw in prop for kw in ttl_keywords):
-                matched_value = row.get("value")
-                if matched_value is not None and seven_day_pattern.search(str(matched_value)):
-                    return
-                # Also accept value being the integer 7 with property naming "days"
-                if "day" in prop and str(matched_value).strip() == "7":
+        for rule in payload:
+            if isinstance(rule, dict):
+                expiration = str(rule.get("expiration", "")).lower()
+                if expiration == "7d" or "7 day" in expiration:
                     return
         pytest.fail(
-            "Did not find a TTL/Expiration property reflecting a 7-day window "
-            f"in `tigris buckets get {bucket_name} --format json` output. "
-            f"Last TTL-related value seen: {matched_value!r}. Full payload: {payload!r}"
-        )
-
-    # Shape 2: structured object. Walk all keys looking for a TTL/Expiration
-    # field whose primitive value reflects 7 days.
-    if isinstance(payload, dict):
-        for key, value in _flatten_for_search(payload):
-            key_lower = key.lower()
-            if any(kw in key_lower for kw in ttl_keywords):
-                # Direct numeric "days" key
-                if "day" in key_lower and str(value).strip() == "7":
-                    return
-                if isinstance(value, str) and seven_day_pattern.search(value):
-                    return
-                # Numeric value where the key implies days
-                if isinstance(value, (int, float)) and "day" in key_lower and int(value) == 7:
-                    return
-        pytest.fail(
-            "Did not find a TTL/Expiration field reflecting a 7-day window "
-            f"in `tigris buckets get {bucket_name} --format json` output. "
+            "Did not find a lifecycle rule reflecting a 7-day expiration "
+            f"in `tigris buckets lifecycle list {bucket_name} --json` output. "
             f"Payload: {payload!r}"
         )
 
     pytest.fail(
-        f"Unexpected payload shape for `tigris buckets get {bucket_name} --format json`: "
+        f"Unexpected payload shape for `tigris buckets lifecycle list {bucket_name} --json`: "
         f"{type(payload).__name__}. Payload: {payload!r}"
     )
