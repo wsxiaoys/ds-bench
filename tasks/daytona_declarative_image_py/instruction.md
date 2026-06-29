@@ -18,14 +18,6 @@ Daytona's Declarative Builder lets you define sandbox images programmatically us
 - `sandbox.process.code_run` returns an object whose `result` attribute contains the captured stdout from the executed Python snippet; parse the printed versions and write them in the required format on the host.
 - Make sure the sandbox is deleted at the end, even if it was successfully created.
 - Do not mock the Daytona service; interact with the real Daytona SaaS.
-
-## Acceptance Criteria
 - Project path: /home/user/myproject
 - Log file: /home/user/myproject/output.log
-- The sandbox created in Daytona must be named `decl-py-${run-id}`, where `run-id` is read from `/logs/artifacts/run-id`.
-- The sandbox must be built from a declarative `Image` based on `debian_slim('3.12')` with `requests` and `pyyaml` installed via `pip_install`.
-- The log file must contain exactly two lines (in any order) with the following formats:
-  - `requests: <version>` where `<version>` is the installed `requests` package version (a dotted version string such as `2.32.3`).
-  - `yaml: <version>` where `<version>` is the installed `PyYAML` runtime version reported by `yaml.__version__` (a dotted version string such as `6.0.2`).
-- The sandbox `decl-py-${run-id}` must be deleted after the task completes.
-
+- The log file must contain exactly two lines (in any order) of the form `requests: <version>` and `yaml: <version>`.

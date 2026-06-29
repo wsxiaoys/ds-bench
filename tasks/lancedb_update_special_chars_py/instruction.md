@@ -19,22 +19,7 @@ Your job is to write a Python script that creates a small `notes` table, seeds i
   3. Set the `author` of the row where `id = 6` to the string `O'Brien`.
 - After all updates, read the rows with `id` in 1..8, sort them by `id` ascending, and write them to `/home/user/output/notes_after.json` as a JSON array of objects with keys `id`, `author`, `body` (no vector).
 
-## Implementation Hints
-- Use `lancedb.connect("/home/user/db")`.
-- Define the schema with `pyarrow` (`pa.schema([...])`) and `pa.list_(pa.float32(), 4)` for the vector column, then call `db.create_table("notes", data=..., schema=..., mode="overwrite")`.
-- Generate deterministic vectors with `numpy.random.default_rng(seed=...)`.
-- For each update, pass a Python dict to `values=`, e.g. `tbl.update(where="id = 2", values={"body": "I'm good"})`. Do **not** use `values_sql` — it requires SQL string escaping and is the cause of the apostrophe bug.
-- For the final read, you can use `tbl.search().where("id >= 1 AND id <= 8").limit(100).to_list()` or `tbl.to_pandas()` and then sort by `id` before serializing.
-- Make sure the output directory exists before writing (`os.makedirs("/home/user/output", exist_ok=True)`).
-
 ## Acceptance Criteria
-- Project path: /home/user
-- Ensure the script is executed and the output artifact exists.
-- Log/output file: /home/user/output/notes_after.json
-- The output file MUST be a JSON array of exactly 8 objects, each with keys `id` (int), `author` (string), and `body` (string), sorted by `id` ascending.
-- The row with `id = 2` MUST have `body` equal exactly to the 8-character string `I'm good`.
-- The row with `id = 4` MUST have `body` equal exactly to the 11-character string `It's a test`.
-- The row with `id = 6` MUST have `author` equal exactly to the 7-character string `O'Brien`.
-- The other rows (`id` in {1, 3, 5, 7, 8}) MUST retain their original seeded `author` and `body` values.
-- The LanceDB table `notes` at `/home/user/db` MUST also reflect these same three updates (the JSON output and the table must agree).
-
+- Run the script from `/home/user` so that the JSON artifact is produced at `/home/user/output/notes_after.json`.
+- The three specified updates must be reflected in both the JSON output and the persisted `notes` table at `/home/user/db`, and the two views must agree.
+- Rows that were not targeted by an update must keep the values they were seeded with.
