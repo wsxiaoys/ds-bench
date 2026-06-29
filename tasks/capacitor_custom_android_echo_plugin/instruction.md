@@ -23,18 +23,3 @@ Your job is to write a custom local Capacitor plugin (Java, inside the existing 
 - The web frontend already has `@capacitor/core` installed as an npm dependency; you do not need to install additional packages.
 - The Android SDK, JDK, and the Gradle wrapper are pre-installed and pre-warmed inside the project; running `./gradlew` from `/home/user/myapp/android` will compile the project. Use the `--offline` flag whenever possible to avoid re-downloading dependencies.
 
-## Acceptance Criteria
-- Project path: `/home/user/myapp`
-- The Android project at `/home/user/myapp/android` must build successfully via:
-  - `cd /home/user/myapp/android && ./gradlew :app:assembleDebug --offline`
-- A Java source file implementing the plugin must exist at:
-  - `/home/user/myapp/android/app/src/main/java/com/example/myapp/EchoPlugin.java`
-  - It must declare `package com.example.myapp;`.
-  - It must import `com.getcapacitor.Plugin`, `com.getcapacitor.PluginCall`, `com.getcapacitor.PluginMethod`, `com.getcapacitor.JSObject`, and `com.getcapacitor.annotation.CapacitorPlugin`.
-  - It must annotate the plugin class with `@CapacitorPlugin(name = "Echo")`.
-  - It must declare a class named `EchoPlugin` that `extends Plugin`.
-  - It must declare a single `@PluginMethod`-annotated method (with or without parentheses) named `echo` that takes a `PluginCall` argument, reads the `value` string with `call.getString("value")`, puts it into a `JSObject` under the key `"value"`, and calls `call.resolve(<that JSObject>)`.
-- `MainActivity` at `/home/user/myapp/android/app/src/main/java/com/example/myapp/MainActivity.java` must contain a `registerPlugin(EchoPlugin.class)` call inside `onCreate(Bundle savedInstanceState)`.
-- A TypeScript binding file must exist at `/home/user/myapp/src/echo.ts` that imports `registerPlugin` from `@capacitor/core`, registers a plugin under the exact string literal `"Echo"`, and provides a default export.
-- The compiled debug APK produced at `/home/user/myapp/android/app/build/outputs/apk/debug/app-debug.apk` must contain the `EchoPlugin` class in its DEX (verifiable by listing classes inside the APK).
-

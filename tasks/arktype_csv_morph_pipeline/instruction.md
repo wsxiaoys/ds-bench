@@ -20,17 +20,6 @@ Build a CSV-to-records ingestion pipeline using `arktype@2.2.0`. The pipeline mu
 - Use ArkType to validate every constraint that is part of the record shape (UUID, email, integer range, ISO date). Do not duplicate those constraints with hand-written `if` checks in TypeScript.
 - The CSV parsing step itself (splitting lines, splitting cells, checking the header and column counts) is the natural place for a user-defined morph that takes a `string` and produces an array of raw record-shaped objects which are then piped into record validation.
 - Reach for ArkType's built-in `string.*` keywords where appropriate; the docs at https://arktype.io/docs/primitives and https://arktype.io/docs/expressions cover the available primitives and the pipe operator.
-- The CLI should print error messages via `INVALID: <msg>` and JSON results via `VALID` followed by the serialized records. Always exit with code 0 so that downstream tooling can distinguish success from failure via stdout alone.
-- `tsx` is preinstalled and is the intended runtime. The `tsconfig.json` is already configured for `NodeNext`.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Command: `npx tsx cli.ts`
-- Input: a single raw CSV string supplied verbatim on stdin (it may contain trailing newlines).
-- Output (stdout):
-  - On success: the first non-empty line is exactly `VALID`; the second non-empty line is a JSON array of records. Each record has the shape `{"id": string, "age": number, "email": string, "signupAt": string}` where `signupAt` is serialized as an ISO-8601 string (the same value that `Date.prototype.toISOString()` would produce after the morph). The records must appear in the same order as the rows in the input CSV.
-  - On failure: a single non-empty line of the form `INVALID: <message>` where `<message>` is any non-empty diagnostic.
-- Exit code: `0` for both success and failure.
-- The TypeScript pipeline implementation must live at `/home/user/myproject/src/pipeline.ts`.
-- `arktype@2.2.0` and `tsx` are preinstalled. `tsconfig.json` is preconfigured with `module: NodeNext` and `moduleResolution: NodeNext`.
+- The CLI entrypoint must be `cli.ts` in the project root. It should print error messages via `INVALID: <msg>` on a single line. On success, it must print exactly `VALID` on the first line and the JSON array of serialized records on the second line. Always exit with code 0 so that downstream tooling can distinguish success from failure via stdout alone.
+- `tsx` is preinstalled and is the intended runtime. The `tsconfig.json` is already configured for `NodeNext`. The TypeScript pipeline implementation must live at `/home/user/myproject/src/pipeline.ts`.
 

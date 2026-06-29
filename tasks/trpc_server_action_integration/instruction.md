@@ -17,10 +17,4 @@ Integrate tRPC v11 with Next.js Server Actions to securely call backend procedur
 4. Export a server-side caller using `createCallerFactory`.
 5. Create a Server Action in `src/app/actions.ts` that imports the caller and executes `addMessage`.
 6. Update `src/app/page.tsx` to include a form that triggers the Server Action and displays the returned message.
-
-## Constraints
-- Project path: `/home/user/project`
-- Start command: `npm run dev`
-- Port: 3000
-- Must use `createCallerFactory` for the server-side caller.
-- Must use Next.js App Router.
+7. Ensure the app can be started with `npm run dev` and listens on port 3000.
