@@ -22,4 +22,4 @@ Build a richly layered Vega-Altair visualization of the Seattle weather dataset 
 - Use `selection_point(on='pointerover', nearest=True, encodings=['x'], empty=False)` and attach it via `add_params` to the layer(s) that drive the hover state; use `alt.when(...).then(...).otherwise(...)` (or `alt.condition`) to gate the tooltip text/rule opacity on the selection.
 - The dashed annotation rule must be drawn across the full x extent at the data value y = 0; remember that `alt.datum(0)` lets you encode a constant data value.
 - The HTML must contain rendered chart marks (the Vega-Lite spec embedded in a `<script type="application/json">` block and rendered via `vegaEmbed`).
-
+- Encode the zero-degree rule using alt.datum(0).

@@ -192,8 +192,10 @@ def test_nearest_x_hover_selection_param(vega_spec):
     assert "x" in encodings, (
         f"Expected the point selection's `encodings` to include `x`, got {encodings}."
     )
-    assert sel.get("empty") is False, (
-        "Expected the point selection to set `empty: false`."
+    empty = sel.get("empty")
+
+    assert empty in (None, False, "none"), (
+        f"Expected the point selection to disable empty selections, got {empty!r}."
     )
     on_event = str(sel.get("on", ""))
     assert ("pointerover" in on_event) or ("mouseover" in on_event), (

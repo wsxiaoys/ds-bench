@@ -20,4 +20,4 @@ Convex is a reactive backend-as-a-service. You need to build a Convex backend th
 - Use `npx convex deploy` to deploy the Convex functions to the cloud. The `CONVEX_DEPLOY_KEY` is provided in the environment.
 - In Convex actions, you can access environment variables using `process.env`. Make sure `OPENAI_API_KEY` is configured in your Convex deployment environment variables.
 - Use the `ctx.runMutation` method inside your action to call the mutation.
-
+- Port: 5173

@@ -18,4 +18,4 @@ Build a Godot 4 input remapping system: a baseline action set declared in `proje
   - Declares `@export var action_name: StringName`.
   - Displays the current binding using `InputEvent.as_text()`.
   - On press, enters a listening state and captures the next `InputEventKey`/`InputEventJoypadButton` via `_unhandled_input`, then calls `InputRemapper.rebind_action(action_name, event)`.
-
+- The project must load cleanly under `godot --headless --path /home/user/input_remap --quit` (exit code 0, no script parse errors).

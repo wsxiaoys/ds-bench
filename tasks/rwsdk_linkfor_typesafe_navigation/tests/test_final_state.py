@@ -4,6 +4,7 @@ import socket
 
 import pytest
 import requests
+from pochi_verifier import PochiVerifier
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myapp"
@@ -88,7 +89,16 @@ def test_about_link_back(start_app):
 
 @pytest.mark.parametrize("uid", ["42", "redwood"])
 def test_user_profile_route(start_app, uid):
-    r = requests.get(f"{BASE_URL}/users/{uid}", timeout=30)
-    assert r.status_code == 200
-    assert f"User profile: {uid}" in r.text, \
-        f"Expected 'User profile: {uid}' in /users/{uid} body."
+    reason = "The user profile page must display the user ID passed in the URL."
+    truth = (
+        f"Navigate to {BASE_URL}/users/{uid}. Verify the page contains the text "
+        f"'User profile: {uid}'."
+    )
+    verifier = PochiVerifier()
+    result = verifier.verify(
+        reason=reason,
+        truth=truth,
+        use_browser_agent=True,
+        trajectory_dir=f"/logs/verifier/pochi/test_user_profile_route_{uid}",
+    )
+    assert result.status == "pass", f"Browser verification failed: {result.reason}"
