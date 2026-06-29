@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 
@@ -17,8 +18,13 @@ def test_project_dir_exists():
 def test_schema_has_implicit_m2m():
     with open(SCHEMA_PATH) as f:
         content = f.read()
-    assert "tags Tag[]" in content, "Post must have implicit 'tags Tag[]' relation"
-    assert "posts Post[]" in content, "Tag must have implicit 'posts Post[]' relation"
+    assert re.search(r"\btags\s+Tag\[\]", content), (
+        "Post must have implicit 'tags Tag[]' relation"
+    )
+
+    assert re.search(r"\bposts\s+Post\[\]", content), (
+        "Tag must have implicit 'posts Post[]' relation"
+    )
 
 
 def test_schema_has_no_post_tag_model():
@@ -29,10 +35,22 @@ def test_schema_has_no_post_tag_model():
 
 def test_implicit_join_table_has_data():
     result = subprocess.run(
-        ["node", "-e",
-         "const { PrismaClient } = require('@prisma/client'); const p = new PrismaClient(); "
-         "p.$queryRaw`SELECT COUNT(*) as cnt FROM _PostToTag`.then(r => { console.log(JSON.stringify(r)); p.$disconnect(); })"],
-        capture_output=True, text=True, cwd=PROJECT_DIR,
+        [
+            "node",
+            "-e",
+            """
+    const { PrismaClient } = require('@prisma/client');
+    const p = new PrismaClient();
+
+    (async () => {
+    await p.$queryRaw`SELECT COUNT(*) as cnt FROM _PostToTag`;
+    await p.$disconnect();
+    })();
+    """,
+        ],
+        capture_output=True,
+        text=True,
+        cwd=PROJECT_DIR,
     )
     assert result.returncode == 0, (
         f"_PostToTag implicit join table must be queryable; stderr={result.stderr.strip()}"
