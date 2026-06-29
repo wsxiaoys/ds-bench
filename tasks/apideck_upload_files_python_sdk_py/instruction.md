@@ -17,4 +17,4 @@ Apideck Unify exposes a normalized File Storage API over 200+ connectors at `htt
 - The OneDrive connector is enabled in the dashboard; pass its service id when calling the File Storage upload method.
 - Resolve the configured drive (whose name is in `APIDECK_FILE_STORAGE_DRIVE_NAME`) before uploading so you can pass its drive id. The unified File Storage API exposes a `drives` resource that you can list to find the matching drive id by name.
 - For each upload, pass the file name, the parent folder id (`"root"`), the resolved drive id, and the raw bytes of the file. Capture the returned upload response and read the new file id from it.
-
+- After implementing the script, execute it successfully so that `/home/user/myproject/output.log` is produced with the required JSON object.

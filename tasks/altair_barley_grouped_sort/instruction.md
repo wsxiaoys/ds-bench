@@ -21,4 +21,4 @@ You are using Vega-Altair to explore the classic `data.barley` dataset (from `ve
 - For the overlay, derive the per-site mean inside the spec using `transform_aggregate` with a `mean(yield)` aggregation grouped by `site` (and `year`, since the layer is faceted on `year`).
 - Pass a title as an object with both `text` and `subtitle` so both lines render in the HTML output.
 - Persist the chart using Altair's HTML export so the result is a standalone page that can be opened in a browser.
-
+- Construct the chart directly from data.barley.url (or another named barley dataset reference) so the exported Vega-Lite spec retains an explicit barley dataset reference.
