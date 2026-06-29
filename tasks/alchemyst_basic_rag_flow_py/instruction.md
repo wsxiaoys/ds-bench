@@ -21,12 +21,3 @@ The Python SDK is published as `alchemystai` and is initialized with `AlchemystA
 - Print each retrieved chunk's `content` to stdout so it can be inspected by the verifier. If no contexts are returned, print a clear message.
 - Use `python3` (not `python`).
 
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Command: `python3 main.py --question "<text>"`
-- The CLI must accept the `--question <text>` argument (text may contain spaces and punctuation).
-- The CLI must ingest the refund policy document with a `file_name` metadata value whose suffix includes the `/logs/artifacts/run-id` value (for example `refunds-<run-id>.md`).
-- For a refund-related question the stdout MUST include the substring `30-day` (case-insensitive) drawn from the retrieved context chunk, demonstrating that the document content was actually retrieved from the Alchemyst context engine.
-- The CLI MUST exit with status code 0 on success.
-- The CLI MUST NOT hardcode the API key; it MUST read `ALCHEMYST_AI_API_KEY` from the environment.
-

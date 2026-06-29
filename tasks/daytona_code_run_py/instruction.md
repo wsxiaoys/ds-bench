@@ -20,12 +20,3 @@ In this task you will use the Daytona Python SDK to create a sandbox, run a smal
 - Use a `try/finally` (or equivalent) block so that the sandbox is deleted whether or not the code run succeeds.
 - The Daytona service is real; never mock the SDK or stub network calls.
 
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Log file: /home/user/myproject/output.log
-- Use the Daytona Python SDK (`daytona` package) to create and delete the sandbox.
-- The sandbox name must be `code-run-py-${run-id}` where `run-id` is read from `/logs/artifacts/run-id`.
-- The sandbox must execute the computation via `sandbox.process.code_run(...)` (a stateless Python code run inside the sandbox).
-- After the script completes, `/home/user/myproject/output.log` must exist and contain a line in the exact format `Result: <value>`, where `<value>` is the integer printed by the sandboxed snippet.
-- The Daytona sandbox created for this run must no longer exist after the script finishes.
-

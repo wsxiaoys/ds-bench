@@ -4,6 +4,8 @@
 Build a Reflex dashboard that simulates a real-time stock ticker for 5 well-known equity symbols. The price stream MUST be driven by a long-running `@rx.event(background=True)` handler that updates an in-memory price book every 500 ms using a small bounded random walk. The page must render a live table and expose Start / Stop controls. A second click on **Start** MUST NOT spawn a duplicate update loop. The task evaluates correct use of Reflex background events (with `async with self` state-mutation context), cached computed vars, and `api_transformer` for a control / observation REST surface.
 
 ## Requirements
+- Create the Reflex app in the directory `/home/user/ticker_app`.
+- The verification system runs the backend on port `8000` using the command `uv run reflex run --backend-only --backend-port 8000 --loglevel warning` and interacts only with port `8000` over HTTP using the REST endpoints. The Reflex frontend (Next.js) does not need to be running during verification.
 - Implement a Reflex app named `ticker_app` whose root page renders:
   - A table with one row per symbol containing columns: **Symbol**, **Price**, **Percent Change**.
   - A **Start** button and a **Stop** button.
@@ -37,27 +39,4 @@ Build a Reflex dashboard that simulates a real-time stock ticker for 5 well-know
 - The shared in-memory engine should expose: `start()` (idempotent), `stop()`, `snapshot()`, and a coroutine `tick_once()` (or an internal asyncio task). A clean way is to give the engine its own `asyncio.Task`, and have the Reflex background event also drive (or mirror) the same engine so the UI table updates live.
 - Computed vars are cached by default. Make sure the `percent_change` computed var actually re-runs when prices change by reading both `self.prices` and `self.seeds` inside its body.
 - Avoid storing non-serializable types in any State var that is not underscore-prefixed.
-
-## Acceptance Criteria
-- Project path: `/home/user/ticker_app`
-- Start command: `uv run reflex run --backend-only --backend-port 8000 --loglevel warning`
-- Backend port: `8000`
-- Verification interacts ONLY with the backend port `8000` over HTTP using the REST endpoints listed below. The Reflex frontend (Next.js) does NOT need to be running during verification.
-- The Reflex State class MUST define:
-  - At least one method decorated with `@rx.event(background=True)` that runs the 500 ms update loop.
-  - At least one method decorated with `@rx.var(cache=True)` that exposes per-symbol percent change.
-  - At least one backend-only var (name starts with `_`) used as the idempotency guard.
-- REST endpoints under `http://localhost:8000`:
-  - `POST /api/ticker/start` → `200` with JSON `{"running": true, "started": <bool>}`.
-  - `POST /api/ticker/stop` → `200` with JSON `{"running": false}`.
-  - `GET /api/ticker/snapshot` → `200` with JSON `{"running": <bool>, "update_count": <int>, "seeds": <object>, "prices": <object>, "percent_changes": <object>}`.
-  - `seeds`, `prices`, and `percent_changes` MUST contain exactly the keys `AAPL`, `GOOG`, `MSFT`, `AMZN`, `TSLA`.
-  - `seeds` MUST equal `{"AAPL": 150.0, "GOOG": 2800.0, "MSFT": 300.0, "AMZN": 3300.0, "TSLA": 700.0}`.
-- Behavioural acceptance:
-  1. After a single `POST /api/ticker/start`, polling `GET /api/ticker/snapshot` every 500 ms for 5 seconds MUST yield at least 5 distinct values of `update_count` (the ticker is producing updates).
-  2. Calling `POST /api/ticker/start` a second time while the ticker is already running MUST respond with `"started": false`, and the observed tick rate (delta `update_count` per second) MUST NOT roughly double — it MUST stay within a small factor (≤ 1.5×) of the rate observed after the first start.
-  3. After `POST /api/ticker/stop`, the `update_count` MUST stop advancing: two snapshots taken ≥ 2 seconds apart MUST return the same `update_count`, and `running` MUST be `false`.
-  4. For every snapshot, for every symbol `s`, the relation `percent_changes[s] == round((prices[s] - seeds[s]) / seeds[s] * 100.0, 4)` MUST hold within a small floating-point tolerance.
-  5. All prices MUST stay strictly positive across the entire test run.
-- The Reflex backend dev server MUST be terminated by the executor after verification (do not leave dangling processes).
 

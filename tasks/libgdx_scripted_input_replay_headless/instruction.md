@@ -10,8 +10,8 @@ In this task you will build a small libGDX 1.14.2 project around the **headless*
 - Implement a libGDX `ApplicationListener` (or `ApplicationAdapter`) that maintains a 2D integer walker position, starting at `(0, 0)`.
 - Implement a custom `MockInput` subclass that reads a keystroke sequence from a text file and dispatches exactly one `InputProcessor.keyDown(keycode)` event per render tick. After the file is exhausted, the application must call `Gdx.app.exit()` so the headless main loop terminates cleanly.
 - Drive position updates through libGDX's `InputProcessor` contract (i.e., the game must register an `InputProcessor` via `Gdx.input.setInputProcessor(...)`, and position updates happen inside that processor's callbacks).
-- Produce a runnable launcher (using the Gradle `application` plugin) at `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game` that accepts a `--input=<file>` argument and runs the simulation on a `HeadlessApplication`.
-- Print the final walker position to stdout in the format `Final position: (<x>, <y>)`.
+- Produce a runnable launcher (using the Gradle `application` plugin) at `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game` that accepts a `--input=<path>` argument and runs the simulation on a `HeadlessApplication`.
+- Print the final walker position to stdout in the format `Final position: (<x>, <y>)` and exit with status code `0` on successful runs.
 
 ### Input file format
 - UTF-8 text file.
@@ -19,6 +19,7 @@ In this task you will build a small libGDX 1.14.2 project around the **headless*
 - Blank lines are skipped (no tick is consumed).
 - Lines starting with `#` are treated as comments and skipped.
 - Allowed keystroke names: `UP`, `DOWN`, `LEFT`, `RIGHT`. Any other non-blank/non-comment token must cause the program to print `Error: unknown key <token>` to stderr and exit with a non-zero status code (do **not** print a `Final position:` line in that case).
+- Empty replay files (containing no non-blank, non-comment lines) are considered valid and must print `Final position: (0, 0)` and exit `0`.
 
 ### Movement semantics
 - `UP` increments y by 1.
@@ -35,19 +36,4 @@ In this task you will build a small libGDX 1.14.2 project around the **headless*
 - Consider using `HeadlessApplicationConfiguration.updatesPerSecond` to throttle the loop so the test does not spin the CPU.
 - The headless backend is sensitive to OpenGL calls — do **not** touch `Gdx.gl*` anywhere in your code.
 - Bootstrap the Gradle wrapper with `gradle wrapper --gradle-version 8.10 --distribution-type bin` so reproducible builds are possible from the project root.
-
-## Acceptance Criteria
-- Project path: `/home/user/gdx-game`.
-- After running `./gradlew --no-daemon --quiet installDist` from the project root, the launcher script `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game` must exist and be executable.
-- Command: `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game --input=<path>`
-- The command must accept the `--input=<path>` argument (equals form) where `<path>` is the absolute path to a keystroke replay file conforming to the format above.
-- Successful runs (every line parses as a valid key) must:
-  - Print exactly one line `Final position: (<x>, <y>)` to stdout (e.g., `Final position: (1, -2)`), where `<x>` and `<y>` are the final walker coordinates after processing every scripted keystroke.
-  - Exit with status code `0`.
-- Runs where any non-comment, non-blank line contains a token outside `{UP, DOWN, LEFT, RIGHT}` (case-insensitive) must:
-  - Print `Error: unknown key <token>` to stderr (substituting the offending raw token verbatim).
-  - Not print a `Final position:` line.
-  - Exit with a non-zero status code.
-- Empty replay files (no non-blank, non-comment lines) must print `Final position: (0, 0)` and exit `0`.
-- The application must use `com.badlogic.gdx.backends.headless.HeadlessApplication` to boot the listener, and the position must be updated from within an `InputProcessor.keyDown(int)` callback registered via `Gdx.input.setInputProcessor(...)`. (This is verified indirectly through the behavioural tests above and through a build that links against `gdx-backend-headless:1.14.2`.)
 

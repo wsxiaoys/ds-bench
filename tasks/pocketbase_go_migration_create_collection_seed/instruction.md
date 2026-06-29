@@ -4,6 +4,7 @@
 PocketBase can be extended using Go. When used as a Go framework, you can write custom migrations to manage your database schema and initial data programmatically. In this task, you will create a Go migration that creates a new collection and seeds it with initial data.
 
 ## Requirements
+- The project is located at `/home/user/myproject`.
 - Write a Go migration file (e.g., inside a `migrations` package) that will be executed when the PocketBase app starts.
 - The migration must create a new collection named `configs`.
 - The `configs` collection must have two fields: `key` (type: text, required: true) and `value` (type: text).
@@ -18,30 +19,5 @@ PocketBase can be extended using Go. When used as a Go framework, you can write 
 - Set `collection.ListRule` and `collection.ViewRule` to `types.Pointer("")` to make the collection publicly readable.
 - Save the collection using `app.Save(collection)`.
 - After saving the collection, create new records using `core.NewRecord(collection)`, populate their fields using `record.Set("key", ...)`, and save them using `app.Save(record)`.
-
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- Start command: `go run main.go serve --http=0.0.0.0:8090`
-- Port: 8090
-- API Endpoints:
-  - GET `/api/collections/configs/records`: Returns status 200 and a JSON response containing the `items` array with the seeded records.
-
-    ```json
-    // Response
-    {
-      "page": 1,
-      "perPage": 30,
-      "totalItems": 2,
-      "items": [
-        {
-          "key": "site_name",
-          "value": "My Site"
-        },
-        {
-          "key": "maintenance_mode",
-          "value": "false"
-        }
-      ]
-    }
-    ```
+- To run the PocketBase server locally, you can use the command `go run main.go serve --http=0.0.0.0:8090`.
 

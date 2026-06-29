@@ -19,12 +19,3 @@ In this task, you will write a Sequelize migration script to safely add a new co
 - Make sure to return a Promise or use `async/await` in your migration functions.
 - The migration should be placed in the `migrations` folder.
 
-## Acceptance Criteria
-- Project path: /home/user/project
-- Ensure the migration script is created and can be executed.
-- Executing `npx sequelize-cli db:migrate` must successfully apply the migration.
-- After migration, the `Users` table must have a `departmentId` column.
-- Existing user records must have their `departmentId` set to `1`.
-- The `departmentId` column must have a foreign key constraint referencing `Departments(id)`.
-- Executing `npx sequelize-cli db:migrate:undo` must successfully revert the migration, removing the column and constraint.
-

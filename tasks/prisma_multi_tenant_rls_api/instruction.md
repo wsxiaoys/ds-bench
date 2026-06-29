@@ -1,6 +1,6 @@
 # Multi Tenant Rls Api
 
-Build a multi-tenant REST API where each tenant's data is isolated using a `tenantId` header, enforced by a Prisma Client Extension.
+Build a multi-tenant REST API where each tenant's data is isolated using a `x-tenant-id` header, enforced by a Prisma Client Extension.
 
 Project at `/home/user/myproject`. Express and Prisma are pre-installed.
 

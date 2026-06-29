@@ -4,11 +4,11 @@
 Create an uptime monitor backend using Encore.ts. This application will use Encore's built-in PostgreSQL databases and Pub/Sub primitives to manage a list of websites, asynchronously check their status, and store the results. The application must be deployed to Encore Cloud.
 
 ## Requirements
-- Create an Encore.ts app named `uptime`.
+- Create an Encore.ts app named `uptime` at `/home/user/uptime`.
 - Implement a `monitor` service with the following endpoints:
-  - `POST /site`: Add a new website to monitor (fields: `url`).
-  - `GET /site`: List all monitored websites and their current status.
-  - `POST /check`: Manually trigger a check for all monitored websites.
+  - `POST /site`: Add a new website to monitor. It must accept JSON `{"url": string}` and return `{"id": number, "url": string, "is_up": boolean}`.
+  - `GET /site`: List all monitored websites and their current status. It must return `{"sites": [{"id": number, "url": string, "is_up": boolean}]}`.
+  - `POST /check`: Manually trigger a check for all monitored websites. It should trigger the Pub/Sub workflow and return status 200 (or 202) with an empty body or success message.
 - The application must use an Encore PostgreSQL database to store the sites (fields: `id` (integer/serial), `url` (text), `is_up` (boolean)).
 - When `POST /check` is called, it should fetch all sites from the database and publish a message for each site to an Encore Pub/Sub topic.
 - Implement a Pub/Sub subscriber that listens to the topic, performs an HTTP GET request to the site's `url`, and updates the `is_up` status in the database (true if status code is 200-299, false otherwise).
@@ -27,14 +27,4 @@ Create an uptime monitor backend using Encore.ts. This application will use Enco
   5. Get the app ID from the output or `encore.app` file.
   6. Add the Git remote: `git remote add encore encore://<app-id>`.
   7. Push to deploy: `git push encore`.
-
-## Acceptance Criteria
-- Project path: /home/user/uptime
-- The application must be deployed to Encore Cloud.
-- The verifier will test against the deployed endpoint: `https://staging-<app-id>.encr.app` (The app ID will be extracted from `/home/user/uptime/encore.app`).
-- API Endpoints:
-  - `POST /site`: Accepts JSON `{"url": string}` and returns `{"id": number, "url": string, "is_up": boolean}`.
-  - `GET /site`: Returns `{"sites": [{"id": number, "url": string, "is_up": boolean}]}`.
-  - `POST /check`: Triggers the Pub/Sub workflow and returns status 200 (or 202) with an empty body or success message.
-- The Pub/Sub subscriber must successfully update the `is_up` status in the database based on the HTTP response of the monitored URL.
 

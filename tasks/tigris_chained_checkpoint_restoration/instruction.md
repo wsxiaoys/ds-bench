@@ -21,7 +21,7 @@ Write a TypeScript script at `/home/user/chained-ckpt/index.ts` that performs th
    import { restore } from "@tigrisdata/agent-kit";
    const { data: restored } = await restore(bucketName, ckpt.snapshotId, { forkName: "rollback-recovery" });
    ```
-   Write the resulting recovery bucket name to `/home/user/chained-ckpt/recovery.json` as JSON in the exact shape `{"recoveryBucket": "<bucket-name>"}`.
+   Write the resulting recovery bucket name to `/home/user/chained-ckpt/recovery.json` as JSON in the exact shape `{"recoveryBucket": "<bucket-name>"}`. Note that the actual bucket name may include extra suffixes appended by the service, so you must read the real name from `restored.bucket`.
 5. **Tear down the recovery fork**: After writing `recovery.json`, delete the recovery fork bucket so it does not leak. You may use `removeBucket` from `@tigrisdata/storage`, the AWS S3 SDK, or shell out to `tigris buckets delete <name>` — whichever is convenient. Do NOT delete the source bucket, the original `v1.txt` object in the source bucket, or the snapshot.
 
 The script must exit with status 0 on success. Read credentials from the environment variables `TIGRIS_STORAGE_ACCESS_KEY_ID` and `TIGRIS_STORAGE_SECRET_ACCESS_KEY` (already set in the environment).
@@ -31,16 +31,6 @@ The script must exit with status 0 on success. Read credentials from the environ
 2. After your script is ready, run it with `npx tsx index.ts` from inside `/home/user/chained-ckpt`.
 3. Check `result.error` on every Agent Kit call — Agent Kit returns `TigrisResponse<T>` discriminated unions and never throws.
 4. The Tigris S3 endpoint is `https://t3.storage.dev`; the region for the AWS SDK should be set to `auto`.
-
-## Constraints
-- Project path: `/home/user/chained-ckpt`
-- Source bucket name: dynamically constructed as `harbor-awscli-${run_id}` (already exists with snapshots enabled)
-- Checkpoint name: `before-mutation`
-- Fork name passed to `restore`: `rollback-recovery` (the actual bucket name may include extra suffixes appended by the service — always read the real name from `restored.bucket`)
-- Output file: `/home/user/chained-ckpt/recovery.json` with shape `{"recoveryBucket": "<bucket>"}`
-- The recovery fork bucket MUST be deleted by the script before it exits.
-- The source bucket MUST remain in place, with `v1.txt` still containing `version=2` after the script finishes.
-- Do NOT delete the snapshot `before-mutation`.
 
 ## Integrations
 - Tigris (cloud object storage). Credentials are pre-provisioned in the environment via `TIGRIS_STORAGE_ACCESS_KEY_ID` and `TIGRIS_STORAGE_SECRET_ACCESS_KEY`.

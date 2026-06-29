@@ -10,20 +10,7 @@ Build a peak-tracking analysis on top of the time-frequency *reassigned* spectro
 - For each selected peak, report:
   - The **reassigned instantaneous frequency** in Hz (from the frequency output of the reassigned spectrogram).
   - The magnitude in **decibels (dB)**.
-- Write the result to `/home/user/peaks.json`.
-
-## Implementation Hints
-- Sanity-check the API signature and return tuple order against the librosa 0.11.0 documentation. The reassigned spectrogram returns three parallel arrays of shape `(1 + n_fft/2, n_frames)`.
-- The frequency and time arrays may contain `NaN` for bins whose power falls below the reassignment threshold; these must be excluded from peak selection rather than silently propagated.
-- Use a librosa helper to convert linear amplitude magnitudes to dB.
-- Pick an `n_fft` / `hop_length` combination that yields a deterministic frame count for a 22050 Hz, ~5 s input and record that frame count in the output.
-- The number of frames in your JSON output must match what librosa actually produces for the parameters you chose — do not pad, truncate, or invent frames.
-
-## Acceptance Criteria
-- Project path: /home/user
-- Ensure the analysis pipeline is executed and the output artifact exists.
-- Output file: `/home/user/peaks.json`
-- The file must be valid JSON. The top-level value must be a JSON **object** with the following schema:
+- Write the result to `/home/user/peaks.json`. The output file must be valid JSON matching the following schema:
 
   ```json
   {
@@ -44,11 +31,17 @@ Build a peak-tracking analysis on top of the time-frequency *reassigned* spectro
   }
   ```
 
-- `meta.n_frames` must equal `len(frames)` and must equal the number of STFT frames produced by the chosen `n_fft` / `hop_length`.
-- `frames` length equals `meta.n_frames`.
-- Each frame's `time` is a finite float in seconds, monotonically non-decreasing across frames, lying in `[0, audio_duration + 1e-2]`, with the last frame within `0.1` s of the audio duration.
-- Each frame's `peaks` array contains **exactly 5** entries.
-- Each peak: `freq_hz` is finite and in `(0.0, sr/2]`; `magnitude_db` is finite.
-- Within each frame, peaks are sorted by `magnitude_db` in **descending** order.
-- At least 50% of frames must contain at least one peak whose `freq_hz` is within ±10 Hz of one of the input tones at 220 Hz, 440 Hz, or 880 Hz.
+- Ensure that:
+  - `meta.n_frames` equals `len(frames)` and equals the number of STFT frames produced by the chosen `n_fft` / `hop_length`.
+  - `meta.sr` equals the sample rate of the input audio.
+  - Each frame's `time` is a finite float in seconds, monotonically non-decreasing across frames, lying in `[0, audio_duration + 1e-2]`, with the last frame within `0.1` s of the audio duration.
+  - Each frame's `peaks` array contains **exactly 5** entries, sorted by `magnitude_db` in **descending** order.
+  - Each peak's `freq_hz` is finite and in `(0.0, sr/2]`, and `magnitude_db` is finite.
+
+## Implementation Hints
+- Sanity-check the API signature and return tuple order against the librosa 0.11.0 documentation. The reassigned spectrogram returns three parallel arrays of shape `(1 + n_fft/2, n_frames)`.
+- The frequency and time arrays may contain `NaN` for bins whose power falls below the reassignment threshold; these must be excluded from peak selection rather than silently propagated.
+- Use a librosa helper to convert linear amplitude magnitudes to dB.
+- Pick an `n_fft` / `hop_length` combination that yields a deterministic frame count for a 22050 Hz, ~5 s input and record that frame count in the output.
+- The number of frames in your JSON output must match what librosa actually produces for the parameters you chose — do not pad, truncate, or invent frames.
 

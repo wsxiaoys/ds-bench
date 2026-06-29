@@ -5,9 +5,9 @@ Reflex apps are powered by a FastAPI backend, and Reflex exposes the `api_transf
 
 ## Requirements
 - Build a Reflex app under `/home/user/myapp` (named `myapp`) with the standard Reflex layout (`myapp/myapp.py`, `rxconfig.py`).
-- Inside the app module, create a `FastAPI` instance that exposes:
+- Inside the app module, create a `FastAPI` instance and register the following endpoints using decorators on that instance:
   - `POST /api/login` accepting a JSON body `{"username": str, "password": str}` and, on valid credentials, returning JSON `{"access_token": str}`.
-  - `GET /api/me` requiring a `Authorization: Bearer <token>` header, returning JSON `{"user": "admin"}` on a valid token.
+  - `GET /api/me` requiring an `Authorization: Bearer <token>` header, returning JSON `{"user": "admin"}` on a valid token. If the token is missing, invalid, or malformed, return HTTP 401 or 403.
 - The only valid credentials are username `admin` / password `secret`. Invalid credentials must return HTTP 401.
 - Sign / verify JWTs with the HS256 algorithm using PyJWT. The signing secret MUST be generated at application startup using a Python secure-random API (`secrets.token_urlsafe`, `secrets.token_hex`, or `os.urandom`). DO NOT read the secret from `os.environ` and DO NOT hardcode it as a literal constant.
 - Wire the FastAPI instance into Reflex with `app = rx.App(api_transformer=<fastapi_app>)`.
@@ -24,40 +24,4 @@ Reflex apps are powered by a FastAPI backend, and Reflex exposes the `api_transf
 - Initialize the Reflex project non-interactively with `uv run reflex init --template blank` (the project is already prepared during initial state, but you may re-run it).
 - Start the dev server with `uv run reflex run --loglevel debug`. The Reflex backend listens on port 8000; the frontend on port 3000.
 - Remember to kill any background Reflex/uv processes you start before the task ends.
-
-## Acceptance Criteria
-- Project path: /home/user/myapp
-- Start command: cd /home/user/myapp && uv run reflex run --loglevel debug
-- Port: 8000 (backend FastAPI/Reflex)
-- API Endpoints (mounted on the Reflex backend via `api_transformer`):
-  - POST `/api/login`:
-    ```json
-    // Request
-    {
-      "username": string,
-      "password": string
-    }
-    ```
-    ```json
-    // Response (200)
-    {
-      "access_token": string
-    }
-    ```
-    On invalid credentials, returns 401.
-  - GET `/api/me`:
-    - Requires header `Authorization: Bearer <token>`.
-    ```json
-    // Response (200)
-    {
-      "user": "admin"
-    }
-    ```
-    - Without a valid token, returns 401 or 403.
-- Source code constraints (statically checked):
-  - The Reflex app instantiation must use the `api_transformer` keyword argument and pass a `FastAPI` instance.
-  - The login and `me` endpoints must be registered with `@<fastapi_app>.post("/api/login")` and `@<fastapi_app>.get("/api/me")` decorators on the same FastAPI instance referenced by `api_transformer`.
-  - The JWT signing secret must be produced via `secrets.token_urlsafe`, `secrets.token_hex`, or `os.urandom`. The source must not call `os.environ.get`, `os.getenv`, or index `os.environ` to obtain that secret.
-  - At least one `rx.State` subclass must declare a backend-only var whose name is exactly `_current_user`.
-- After verification, kill all background servers (uv / reflex / node) started for testing.
 

@@ -17,11 +17,3 @@ Convex provides built-in file storage for large files like images, videos, and P
 - Use `ctx.storage.getUrl(storageId)` in your query to get the download URL for a file.
 - Use `npx convex deploy` to deploy your backend. It will automatically use the `CONVEX_DEPLOY_KEY` provided in the environment.
 
-## Acceptance Criteria
-- Project path: /home/user/project
-- Ensure the real deployment action is executed.
-- Use `npx convex deploy` to deploy the functions.
-- The backend must expose `api.files.generateUploadUrl` (mutation, no args, returns string).
-- The backend must expose `api.files.saveFile` (mutation, args: `storageId`, `title`, `runId`).
-- The backend must expose `api.files.listFiles` (query, args: `runId`, returns array of objects with `title` and `url`).
-

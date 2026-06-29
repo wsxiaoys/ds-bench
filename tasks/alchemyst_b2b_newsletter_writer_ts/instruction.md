@@ -29,8 +29,8 @@ This is a non-trivial integration task: the agent must wire together two externa
 - Implement a CLI entry point at `dist/main.js` that accepts a `--topic <string>` argument. When the program is invoked as `node dist/main.js --topic "AI agents"` it must:
   1. Seed the five articles above (it is safe and expected to call `v1.context.add` on every invocation as long as `file_name` values are run-id-namespaced).
   2. Query the Alchemyst context engine with `v1.context.search` using the provided topic.
-  3. Call the OpenAI Chat Completions API (model `gpt-4o-mini`) with a prompt that asks for a short B2B newsletter on the topic, grounded in the retrieved context. The prompt must instruct the model to produce Markdown containing at least three sections, each introduced by a Markdown heading (a line starting with `#`, `##`, or `###`).
-  4. Write the model's Markdown output to `output/newsletter.md` (relative to the project root). The directory must be created if it does not exist.
+  3. Call the OpenAI Chat Completions API (model `gpt-4o-mini`) with a prompt that asks for a short B2B newsletter on the topic, grounded in the retrieved context. The prompt must instruct the model to produce Markdown containing at least three sections, each introduced by a Markdown heading (a line starting with `#`, `##`, or `###`). For a run with `--topic "AI agents"`, the generated newsletter must mention at least two of the keywords seeded into the AI-agents article: `agent`, `autonomous`, `LLM`, `planning`, `tool` (matched case-insensitively as whole-word substrings).
+  4. Write the model's Markdown output to `/home/user/myproject/output/newsletter.md`. The directory must be created if it does not exist.
 - Make the command rerunnable: running it twice in the same environment must succeed without raising `409 Conflict` from the Alchemyst API.
 
 ## Implementation Hints
@@ -39,14 +39,4 @@ This is a non-trivial integration task: the agent must wire together two externa
 - Use `tsc` to compile sources from `src/` to `dist/`. A `npm run build` script that runs `tsc` is a convenient convention.
 - Concatenate the `content` fields of the contexts returned by `v1.context.search` into a single grounding block before passing it to OpenAI.
 - When constructing the system/user prompt for OpenAI, explicitly require Markdown output with at least three headings (e.g. `## Why it matters`, `## What's new`, `## What to do next`) and instruct the model to draw on the supplied context.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Command: `node dist/main.js --topic "<topic>"`
-- CLI argument format: `--topic <string>` (the topic is a free-form string).
-- After the command exits with status 0, the file `/home/user/myproject/output/newsletter.md` MUST exist.
-- `/home/user/myproject/output/newsletter.md` MUST contain at least three distinct Markdown headings (lines starting with `#`, `##`, or `###`).
-- For a run with `--topic "AI agents"`, the generated newsletter MUST mention at least two of the keywords seeded into the AI-agents article: `agent`, `autonomous`, `LLM`, `planning`, `tool` (matched case-insensitively as whole-word substrings).
-- All Alchemyst `v1.context.add` calls MUST set `metadata.file_name` to a value that includes the value of the `/logs/artifacts/run-id`, so reruns and concurrent runs do not collide.
-- The program MUST read `ALCHEMYST_AI_API_KEY` and `OPENAI_API_KEY` from environment variables. No mocking of either API is allowed.
 

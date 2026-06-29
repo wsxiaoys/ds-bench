@@ -16,32 +16,12 @@ Any variable that is missing or fails its constraint MUST cause the CLI to repor
 ## Implementation Hints
 - The validation logic MUST be driven by `arkenv` (do not call `arktype` directly to define the env schema). Combine `arkenv`'s built-in coercion with ArkType-style schema expressions.
 - The CLI MUST load the `.env` file located at `/home/user/myproject/.env` so that the values it defines become available to `arkenv`.
-- The CLI reads no stdin. It writes its outcome to stdout and always exits with status `0`.
-
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- Entrypoint: `/home/user/myproject/cli.ts`
-- Command (run from `/home/user/myproject`): `npx --no-install tsx cli.ts`
-- The CLI reads no stdin and accepts no CLI arguments.
-- The CLI MUST load environment values from `/home/user/myproject/.env`.
-- Output contract (stdout):
-  - On success, the first non-empty line MUST be exactly `VALID` and the next non-empty line MUST be a JSON object representing the validated env (with `PORT` as a number, `DATABASE_URL` as a string, `ALLOWED_ORIGINS` as an array of strings, and `LOG_LEVEL` as a string).
-  - On failure, stdout MUST contain exactly one non-empty line that starts with `INVALID:` followed by a space and an error description.
+- The CLI entrypoint MUST be `/home/user/myproject/cli.ts`.
+- The CLI reads no stdin and accepts no CLI arguments. It is run from `/home/user/myproject` using `npx --no-install tsx cli.ts`.
+- Output format requirements on stdout:
+  - On validation success, the first non-empty line MUST be exactly `VALID` and the next non-empty line MUST be a JSON object representing the validated env (with `PORT` as a number, `DATABASE_URL` as a string, `ALLOWED_ORIGINS` as an array of strings, and `LOG_LEVEL` as a string).
+  - On validation failure, stdout MUST contain exactly one non-empty line that starts with `INVALID:` followed by a space and an error description.
 - The process MUST exit with code `0` for both successful and failed validations (stdout decides the outcome). Stderr is ignored by the verifier.
-- Dependency pins (must be present in `/home/user/myproject/package.json`): `arktype@2.2.0` and `arkenv@0.12.1`.
-- TypeScript config: `/home/user/myproject/tsconfig.json` must keep `module` and `moduleResolution` set to `NodeNext` (preconfigured).
-
-## Test Criteria
-The verifier writes a fresh `.env` file to `/home/user/myproject/.env` for each case below and runs the CLI from `/home/user/myproject`. The verifier strips `PORT`, `DATABASE_URL`, `ALLOWED_ORIGINS`, and `LOG_LEVEL` from the inherited process environment before invoking the CLI so the only source of these variables is the `.env` file.
-
-1. A `.env` file with all four variables set to valid values MUST produce a stdout whose first non-empty line is `VALID`, whose second non-empty line is a JSON object satisfying the output contract above, and whose process exit code is `0`.
-2. A `.env` file whose `PORT` is below `1024` (e.g. `80`) MUST produce a stdout whose only non-empty line starts with `INVALID:` and an exit code of `0`.
-3. A `.env` file whose `PORT` is above `65535` (e.g. `70000`) MUST produce a stdout whose only non-empty line starts with `INVALID:` and an exit code of `0`.
-4. A `.env` file whose `PORT` is not an integer (e.g. `8080.5`) MUST produce a stdout whose only non-empty line starts with `INVALID:` and an exit code of `0`.
-5. A `.env` file whose `DATABASE_URL` is not a valid URL (e.g. `not-a-url`) MUST produce a stdout whose only non-empty line starts with `INVALID:` and an exit code of `0`.
-6. A `.env` file whose `ALLOWED_ORIGINS` contains a non-URL element (e.g. `https://a.example.com,bogus`) MUST produce a stdout whose only non-empty line starts with `INVALID:` and an exit code of `0`.
-7. A `.env` file whose `ALLOWED_ORIGINS` is an empty string MUST produce a stdout whose only non-empty line starts with `INVALID:` and an exit code of `0`.
-8. A `.env` file whose `LOG_LEVEL` is not one of `debug`, `info`, `warn`, `error` (e.g. `verbose`) MUST produce a stdout whose only non-empty line starts with `INVALID:` and an exit code of `0`.
-9. A `.env` file that omits any one of the four variables MUST produce a stdout whose only non-empty line starts with `INVALID:` and an exit code of `0`.
-10. `/home/user/myproject/package.json` MUST pin `arktype` to `2.2.0` and `arkenv` to `0.12.1` in `dependencies`.
+- Dependencies in `/home/user/myproject/package.json` MUST be pinned to `arktype@2.2.0` and `arkenv@0.12.1` in `dependencies`.
+- Keep `module` and `moduleResolution` set to `NodeNext` in `/home/user/myproject/tsconfig.json`.
 

@@ -30,14 +30,5 @@ Followed by one row per file found in `/home/user/test/`. Each `label` value mus
 - Use `librosa.load` to read each WAV. You may choose your own sample rate, but be consistent across train and test.
 - Compute each feature family with the requested librosa API, then aggregate along the time axis to produce a fixed-size vector regardless of clip length.
 - Train any `sklearn.linear_model.LogisticRegression` model on the training features, then predict on the test features.
-- The training set is small (a few files per class) but the snippets were chosen to be clearly separable by the requested features. You do not need cross-validation or hyper-parameter tuning to pass.
-
-## Acceptance Criteria
-- Project path: /home/user
-- Output file (must be created by you): /home/user/predictions.csv
-- The output is a CSV file whose first line is exactly `filename,label`.
-- There is exactly one row for every WAV file under /home/user/test/, identified by basename. No file under /home/user/test/ may be missing, and no extra files may appear.
-- Every `label` value is either `speech` or `music` (case-sensitive, no extra whitespace).
-- No `filename` value appears more than once.
-- Classification accuracy against the held-out ground truth is at least 80%.
+- The training set is small (a few files per class) but the snippets were chosen to be clearly separable by the requested features. You do not need cross-validation or hyper-parameter tuning to pass. A simple model should easily achieve at least 80% classification accuracy on the test set.
 

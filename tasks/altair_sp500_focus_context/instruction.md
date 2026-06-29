@@ -20,14 +20,3 @@ Build a declarative, fully interactive "Focus + Context" stock dashboard with ve
 - Composition uses the `&` operator (vertical concatenation). The chart's data source is the same URL for both panels.
 - After building the chart, persist it via `chart.save('chart.html')`.
 
-## Acceptance Criteria
-- Project path: /home/user/altair_project
-- Command: `python3 build_chart.py`
-- Running the command must (re)generate `/home/user/altair_project/chart.html` containing a fully self-contained Vega-Lite spec for an Altair chart that satisfies all of the following structural properties (verified against the embedded JSON spec):
-  - The top-level spec is a vertical concatenation (has a `vconcat` field with exactly two entries).
-  - Both `vconcat` entries reference an area mark (either `"mark": "area"` or `"mark": {"type": "area", ...}`), possibly inside a layer.
-  - The lower (second) `vconcat` entry declares a `selection_interval` parameter restricted to the x encoding, i.e. some parameter has `"select": {"type": "interval", "encodings": ["x"]}`.
-  - The upper (first) `vconcat` entry's x encoding scale references the same brush parameter name via its `domain` (e.g. `"scale": {"domain": {"param": "<brush_name>"}}`).
-  - The upper (first) `vconcat` entry contains a `rule` mark layered on top of the area, and that rule's surrounding spec includes either a `window` transform computing a `max` of `price` or an `aggregate` transform computing a `max` of `price`, together with a `filter` transform that references the brush parameter.
-- Browser verification: when the saved `chart.html` is rendered in a real browser via `pochi-verifier`, at least two `<path>` elements belonging to area mark groups must be present in the rendered SVG/canvas DOM and the lower panel must contain an interval selection rectangle element.
-

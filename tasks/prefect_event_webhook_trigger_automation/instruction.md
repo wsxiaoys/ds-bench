@@ -14,11 +14,3 @@ Prefect 3.0 supports event-driven automations. You can configure a deployment to
 1. Ensure the Prefect server is running locally on port 4200.
 2. In `/home/user/project/flow.py`, define the flow and use `from prefect.events import DeploymentEventTrigger` to configure the `triggers` parameter of `flow.serve()`.
 3. Serve the flow in a background process or another terminal session so it can listen for events.
-
-## Constraints
-- Project path: `/home/user/project`
-- Flow file: `/home/user/project/flow.py`
-- The flow name must be `webhook-flow`.
-- The deployment name must be exactly `event-deployment`.
-- The trigger must expect the event `custom.webhook.received`.
-- The trigger must match the resource `prefect.resource.id` to `my.webhook.resource`.

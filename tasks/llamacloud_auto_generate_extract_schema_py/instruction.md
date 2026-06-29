@@ -4,10 +4,17 @@
 LlamaCloud's **LlamaExtract** v2 SDK can synthesize a JSON Schema directly from a natural-language prompt via `client.extract.generate_schema(...)`. This is useful when you don't yet know the exact shape of the data you want to pull from a document. Once you have a generated schema, you can feed it straight into `client.extract.create(...)` to perform structured extraction. In this task you will combine both steps end-to-end against a real invoice PDF using the Python SDK (`llama-cloud>=2`).
 
 ## Requirements
-- Auto-generate a JSON Schema for invoice data using `client.extract.generate_schema` and save it to disk.
-- Use that generated schema to run a structured extraction on the provided invoice PDF and save the extracted JSON to disk.
-- Write a log file recording the generated schema's top-level field names and the extraction job ID.
-- Append the current `run-id` (from `/logs/artifacts/run-id`) to the uploaded file's `external_file_id` so concurrent runs don't collide.
+- All code and operations should be run in the project directory `/home/user/extract_task`. Do not mock any SDK calls; execute them against the real LlamaCloud API.
+- Use `/home/user/extract_task/data/invoice.pdf` as the input PDF.
+- Auto-generate a JSON Schema object for invoice data using `client.extract.generate_schema` and save it to `/home/user/extract_task/schema.json`.
+  - The schema must be a valid JSON Schema object with `"type": "object"` and a `"properties"` map containing at least 3 distinct properties.
+  - These properties must collectively cover standard invoice concepts: an invoice number or ID, a vendor or supplier/seller/merchant, and a total amount or summary/subtotal.
+- Use that generated schema to run a structured extraction on the input PDF and save the extracted JSON to `/home/user/extract_task/result.json` (as a valid JSON object with at least one populated field).
+- Upload the PDF file with an `external_file_id` that ends with `-<run-id>.pdf`, where `<run-id>` is read from `/logs/artifacts/run-id`.
+- Write a log file to `/home/user/extract_task/output.log` containing exactly three lines (in any order) with the following formats:
+  - `Schema fields: <comma-separated property names>` listing the top-level properties of the generated schema.
+  - `Job ID: <job_id>` where `<job_id>` is the LlamaCloud extract job ID.
+  - `Status: COMPLETED`
 
 ## Implementation Hints
 - The Python SDK (`llama-cloud>=2`) is already installed system-wide; import `LlamaCloud` from `llama_cloud` and authenticate via the `LLAMA_CLOUD_API_KEY` environment variable.
@@ -15,20 +22,4 @@ LlamaCloud's **LlamaExtract** v2 SDK can synthesize a JSON Schema directly from 
 - Pass both `prompt=` and `file_id=` to `client.extract.generate_schema(...)` so the generator can look at the sample document, then use `generated.parameters.data_schema` as the `data_schema` in the extraction configuration.
 - Use a single-document configuration (`extraction_target="per_doc"`, `tier="agentic"`) and poll until the job reaches a terminal state (`COMPLETED`, `FAILED`, or `CANCELLED`).
 - The extracted record is available on the completed job's `extract_result` attribute.
-
-## Acceptance Criteria
-- Project path: /home/user/extract_task
-- Ensure the script is actually executed against the real LlamaCloud API; do not mock any SDK calls.
-- Input PDF: /home/user/extract_task/data/invoice.pdf (provided)
-- Generated schema file: /home/user/extract_task/schema.json
-  - Valid JSON.
-  - Must be a JSON Schema object (contains `"type": "object"` and a `"properties"` map).
-  - Must include at least 3 distinct properties whose key names collectively reference invoice-style concepts (invoice number/id, vendor/supplier/seller, and total/amount/summary/subtotal).
-- Extraction result file: /home/user/extract_task/result.json
-  - Valid JSON object with at least one populated field.
-- Log file: /home/user/extract_task/output.log
-  - Contains a line exactly matching `Schema fields: <comma-separated property names>` listing the top-level properties of the generated schema.
-  - Contains a line exactly matching `Job ID: <job_id>` where `<job_id>` is the LlamaCloud extract job id (begins with `ej-`, `exj-`, or `ext-`).
-  - Contains a line exactly matching `Status: COMPLETED`.
-- The uploaded file's `external_file_id` must end with `-<run-id>.pdf`.
 

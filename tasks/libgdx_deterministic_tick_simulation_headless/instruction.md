@@ -7,6 +7,23 @@ libGDX ships a `gdx-backend-headless` module (`com.badlogicgames.gdx:gdx-backend
 - Create a Gradle (single-module) Java project at `/home/user/gdx-sim`.
 - Use libGDX `1.14.2` with the headless backend (`com.badlogicgames.gdx:gdx-backend-headless:1.14.2`) on top of `com.badlogicgames.gdx:gdx:1.14.2` and the `com.badlogicgames.gdx:gdx-platform:1.14.2:natives-desktop` natives classifier.
 - Implement an `ApplicationListener` (or `ApplicationAdapter`) whose `create()` reads a properties config file via `Gdx.files.absolute(...)`, whose `render()` advances exactly one simulation tick, and whose `dispose()` writes the final state to an output file.
+  - **Input format**: The configuration file is a standard Java properties file containing the following keys (all numeric except `ticks`):
+    - `ticks` (integer, >= 0): number of simulation ticks to run
+    - `dt` (double): fixed simulation time step in seconds
+    - `position_x` (double): initial X position
+    - `position_y` (double): initial Y position
+    - `velocity_x` (double): initial X velocity
+    - `velocity_y` (double): initial Y velocity
+    - `gravity_y` (double): constant Y acceleration applied every tick
+  - **Output format**: The output file must be created/overwritten by the program. It must use UTF-8 encoding with LF line endings, and contain one `key=value` per line in this exact order:
+    ```
+    final_x=<double formatted with %.6f>
+    final_y=<double formatted with %.6f>
+    final_vx=<double formatted with %.6f>
+    final_vy=<double formatted with %.6f>
+    ticks=<integer>
+    ```
+    Use `Locale.ROOT` (or equivalent) when formatting numbers so the decimal separator is always `.`.
 - Bootstrap the application from a `main` method that constructs a `HeadlessApplication` with a `HeadlessApplicationConfiguration`. After the simulation finishes, call `Gdx.app.exit()` and join the main loop thread so the JVM exits cleanly.
 - The simulation must be fully deterministic and independent of wall-clock time: use the `dt` value read from the config file, not `Gdx.graphics.getDeltaTime()`.
 - Make the program runnable through Gradle's `application` plugin so it can be launched with `./gradlew run --args="<config-path> <output-path>"`.
@@ -22,31 +39,5 @@ libGDX ships a `gdx-backend-headless` module (`com.badlogicgames.gdx:gdx-backend
   - `x  += vx * dt`
   - `y  += vy * dt`
   where `ax = 0` and `ay = gravity_y` are constants taken from the config.
-- Count the number of times `render()` has been invoked; after exactly `ticks` ticks call `Gdx.app.exit()`. Do not perform any additional integration steps after `ticks` ticks.
-
-## Acceptance Criteria
-- Project path: /home/user/gdx-sim
-- Command: `./gradlew --no-daemon run --args="<config-path> <output-path>"` from `/home/user/gdx-sim`
-- The command must terminate on its own (no manual kill) with exit code 0.
-- Input format (`<config-path>` is a Java properties file with these keys, all numeric except `ticks`):
-  - `ticks` (integer, >= 0): number of simulation ticks to run
-  - `dt` (double): fixed simulation time step in seconds
-  - `position_x` (double): initial X position
-  - `position_y` (double): initial Y position
-  - `velocity_x` (double): initial X velocity
-  - `velocity_y` (double): initial Y velocity
-  - `gravity_y` (double): constant Y acceleration applied every tick
-- Output format (`<output-path>` is created/overwritten by the program; UTF-8, LF line endings, one `key=value` per line, in this exact order):
-
-  ```
-  final_x=<double formatted with %.6f>
-  final_y=<double formatted with %.6f>
-  final_vx=<double formatted with %.6f>
-  final_vy=<double formatted with %.6f>
-  ticks=<integer>
-  ```
-  Use `Locale.ROOT` (or equivalent) when formatting numbers so the decimal separator is `.`.
-- Simulation semantics: Symplectic Euler integration where every tick updates velocity first, then position. After `ticks=N` ticks, the integration step must have been applied exactly `N` times.
-- `ticks=0` is a valid input and must produce the initial state unchanged in the output file.
-- Output file must be flushed and the JVM must terminate within 60 seconds for any input with `ticks <= 100000`.
+- Count the number of times `render()` has been invoked; after exactly `ticks` ticks call `Gdx.app.exit()`. Do not perform any additional integration steps after `ticks` ticks. Note that `ticks=0` is a valid input and must produce the initial state unchanged in the output file.
 

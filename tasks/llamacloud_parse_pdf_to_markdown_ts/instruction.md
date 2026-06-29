@@ -9,6 +9,8 @@ The sample PDF is already present in the environment at `/home/user/parse-task/s
 
 ## Requirements
 - Use the official TypeScript SDK `@llamaindex/llama-cloud` (v2.x). Do NOT use the deprecated `llama-cloud-services` package and do NOT call the REST API directly.
+- Declare `@llamaindex/llama-cloud` as a dependency in `/home/user/parse-task/package.json`.
+- Write your TypeScript source file at `/home/user/parse-task/parse.ts`.
 - Authenticate using the `LLAMA_CLOUD_API_KEY` environment variable (already set in the environment).
 - Upload `/home/user/parse-task/sample.pdf` to LlamaCloud with the correct purpose for a parse job.
 - Run a parse job with:
@@ -17,7 +19,11 @@ The sample PDF is already present in the environment at `/home/user/parse-task/s
   - `expand` requesting markdown output.
 - Use the SDK's synchronous helper that blocks until the job finishes — do not poll the REST API yourself.
 - Concatenate the markdown of every returned page into a single document, separated by a line containing exactly `---` between pages, and save it to `/home/user/parse-task/output/parsed.md`.
-- Append a human-readable log to `/home/user/parse-task/output/result.log` containing one entry per line in the exact formats listed in the acceptance criteria below.
+- Append a human-readable log to `/home/user/parse-task/output/result.log` containing the following entries (each on its own line, anywhere in the file):
+  - `File ID: <file_id>` (where `<file_id>` is the actual identifier returned by LlamaCloud)
+  - `Job ID: <job_id>` (where `<job_id>` is the actual completed parse job identifier returned by LlamaCloud, which must correspond to a real, completed parse job retrievable via `client.parsing.get(<job_id>)`)
+  - `Job Status: COMPLETED`
+  - `Page Count: <integer>` (the number of pages in the parsed document)
 - The script must exit with status 0 on success.
 
 ## Implementation Hints
@@ -27,18 +33,4 @@ The sample PDF is already present in the environment at `/home/user/parse-task/s
 - The result object exposes `result.job` (with at least `id` and `status`) and `result.markdown.pages` (an array of objects each containing `page_number` and `markdown`).
 - Use `tsx` to run TypeScript files without a separate compilation step (`npx tsx parse.ts`).
 - Create the `output/` directory if it does not already exist before writing files.
-
-## Acceptance Criteria
-- Project path: `/home/user/parse-task`
-- Ensure the real parse action is executed against the LlamaCloud API and the output artifacts exist.
-- The TypeScript source file must live at `/home/user/parse-task/parse.ts` (the verifier may re-run it).
-- Parsed markdown file: `/home/user/parse-task/output/parsed.md` — must be non-empty and contain at least some textual content from the source PDF.
-- Log file: `/home/user/parse-task/output/result.log` — must contain (each on its own line, anywhere in the file):
-  - `File ID: <file_id>`
-  - `Job ID: <job_id>`
-  - `Job Status: COMPLETED`
-  - `Page Count: <integer>`
-- The `<file_id>` and `<job_id>` values must be the actual identifiers returned by LlamaCloud (UUID-like strings) and the `<job_id>` must correspond to a real, completed parse job retrievable via `client.parsing.get(<job_id>)`.
-- The `tier` used for the parse job, as recorded on the job in LlamaCloud, must be `cost_effective`.
-- A `package.json` at `/home/user/parse-task/package.json` must list `@llamaindex/llama-cloud` as a dependency.
 

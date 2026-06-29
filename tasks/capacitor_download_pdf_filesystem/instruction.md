@@ -30,21 +30,5 @@ A minimal Vite + TypeScript project has already been scaffolded for you at `/hom
 - For binary data, the Filesystem API expects base64-encoded strings when no `encoding` is provided. You can convert an `ArrayBuffer` to base64 with the `FileReader` API (`readAsDataURL` and slice off the data-URL prefix) or with `btoa(String.fromCharCode(...new Uint8Array(...)))` for small files.
 - The Web Crypto API (`crypto.subtle.digest('SHA-256', buffer)`) is available in the preview environment and is the easiest way to compute a SHA-256 hex digest.
 - Make sure the script that wires up the button is loaded as an ES module so that the dynamic import of `@capacitor/filesystem` succeeds.
-
-## Acceptance Criteria
-- Project path: /home/user/myapp
-- Start command: `npm run preview -- --host 0.0.0.0 --port 4173`
-- Port: 4173
-- `npm run build` must complete without errors and produce a `dist/` directory containing both `index.html` and `sample.pdf`.
-- `capacitor.config.ts` (or `capacitor.config.json`) must exist at the project root with `appName` equal to `Filesystem Demo`, `appId` equal to `com.example.fsdemo`, and `webDir` equal to `dist`.
-- `package.json` must list `@capacitor/core`, `@capacitor/cli`, and `@capacitor/filesystem` as dependencies (any of `dependencies` or `devDependencies`).
-- `npx cap sync` executed after the production build must exit with status 0.
-- The served page at `http://localhost:4173/` must contain elements with the HTML ids `download-pdf`, `download-status`, `file-size`, and `file-sha256`.
-- On initial load, `#download-status` must contain the literal text `idle` and `#file-size` and `#file-sha256` must be empty.
-- Clicking `#download-pdf` must:
-    - First change `#download-status` to `downloading`.
-    - Then save the body of `/sample.pdf` through Capacitor Filesystem at `Directory.Documents/sample.pdf`.
-    - Then, by reading the persisted file back through Capacitor Filesystem, populate `#file-size` with the file's byte size as a decimal integer and `#file-sha256` with its lowercase hex SHA-256 digest.
-    - Finally update `#download-status` to `saved`.
-- After a full page reload, `#download-status` must reset to `idle`, `#file-size` and `#file-sha256` must be empty, but a subsequent click on `#download-pdf` must produce the same final values for `#file-size` and `#file-sha256` as before (i.e., the file remains retrievable from Capacitor Filesystem across reloads).
+- The project should be located at `/home/user/myapp` and the preview server can be started using the command `npm run preview -- --host 0.0.0.0 --port 4173`.
 

@@ -9,7 +9,8 @@ tRPC v11 introduces native support for streaming responses using `AsyncGenerator
 - Create a tRPC router with a `streamWords` public procedure that uses an `async function*` to yield the words "Hello", "streaming", "world" with a small delay (e.g., 100ms) between them.
 - Configure the tRPC client to use `httpBatchStreamLink`.
 - Create a Next.js client component at the root page (`app/page.tsx` or `src/app/page.tsx`) that calls `streamWords` and displays the words as they stream in, joined by a space.
-- The final displayed text should be "Hello streaming world".
+- The displayed text must be rendered inside an HTML element (such as a `div`) with `id="chat-output"`.
+- The final displayed text within this element should be exactly "Hello streaming world".
 
 ## Constraints
 - Project path: `/home/user/project`

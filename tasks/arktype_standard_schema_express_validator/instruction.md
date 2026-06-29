@@ -9,9 +9,9 @@ ArkType implements the [Standard Schema](https://standardschema.dev) specificati
   - A body schema for `POST /users` with `username` (alphanumeric, length 3..20), `email` (valid email), and an optional `age` (integer in [13, 120]).
   - A query schema for `GET /search` with `q` (string, length 1..100), `page` (integer >= 1), and `limit` (integer in [1, 50]). Because Express query values arrive as strings, the schema MUST coerce strings to numbers using ArkType morphs (a single declarative pipeline — no `JSON.parse`, `parseInt`, or other hand-written coercion).
 - Implement a reusable middleware factory `validate(source, schema)` where `source` is either `'body'` or `'query'`. It MUST:
-  - Drive validation exclusively through the Standard Schema interface (i.e. call the schema's `~standard.validate(...)` and inspect its `value` / `issues`).
+  - Drive validation exclusively through the Standard Schema interface (i.e. call the schema's `~standard.validate(...)` and inspect its `value` / `issues`). The implementation must literally reference the Standard Schema property `~standard` in its source code.
   - On success: replace `req[source]` with the validated/coerced value and call `next()`.
-  - On failure: respond with HTTP 400 and a JSON body containing an `issues` array.
+  - On failure: respond with HTTP 400 and a JSON body containing an `issues` array where each issue contains a string `message` field.
 - Wire both routes through `validate(...)`. On success:
   - `POST /users` responds `201` with a JSON body echoing the validated user.
   - `GET /search` responds `200` with a JSON body echoing the validated/coerced query (numeric `page` and `limit`).
@@ -21,29 +21,6 @@ ArkType implements the [Standard Schema](https://standardschema.dev) specificati
 - ArkType morphs (the `|>` / pipe operator) can be used to coerce a string into a number before applying further numeric constraints; consult https://arktype.io/docs/expressions for available expressions.
 - The middleware must remain schema-agnostic: it should work with any object that satisfies the Standard Schema interface, regardless of which library produced it.
 - Treat the schema's `validate` result as potentially asynchronous (it may return a Promise).
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Start command: `npx tsx server.ts`
-- Port: 3000
-- API Endpoints:
-  - `POST /users`
-    ```json
-    // Request body
-    { "username": string, "email": string, "age": number /* optional */ }
-    ```
-    ```json
-    // 201 Response
-    { "username": string, "email": string, "age": number /* if provided */ }
-    ```
-    On validation failure: status `400` with body `{ "issues": [ { "message": string, ... } , ... ] }`.
-  - `GET /search?q=...&page=...&limit=...`
-    ```json
-    // 200 Response
-    { "q": string, "page": number, "limit": number }
-    ```
-    `page` and `limit` MUST be numbers in the response (coerced from the incoming string query values).
-    On validation failure: status `400` with body `{ "issues": [ ... ] }`.
-- The middleware factory MUST be defined in source and its implementation MUST reference the Standard Schema property literally (the string `~standard` must appear in the middleware source).
 - `arktype@2.2.0`, `express`, and `tsx` are preinstalled in `/home/user/myproject`.
+- The Express server must listen on port 3000 and should be started using the command `npx tsx server.ts`.
 

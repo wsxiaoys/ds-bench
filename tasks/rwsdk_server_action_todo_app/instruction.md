@@ -10,12 +10,3 @@ A RedwoodSDK project is pre-installed at `/home/user/myapp`. Build a small Todo 
 - Implement a small API endpoint `GET /todos.json` returning JSON `{"todos": [{"id", "title"}, ...]}` (this is what the verifier uses to sanity-check state without scraping HTML).
 - Implement `POST /todos.reset` returning body `reset` after clearing the in-memory list (used by the verifier to start from a clean slate).
 
-## Acceptance Criteria
-- Project path: /home/user/myapp
-- Start command: npm run dev -- --host 0.0.0.0 --port 5173
-- Port: 5173
-- `GET /todos.json` → JSON `{"todos": [...]}` reflecting current state.
-- `POST /todos.reset` → body `reset`; afterwards `/todos.json` returns `{"todos": []}`.
-- `GET /todos` renders HTML containing the visible text `Add Todo` (the button label) and an `<input` whose `name="title"`.
-- Browser-driven verification: after navigating to http://localhost:5173/todos and submitting the form with `Buy milk`, the new todo appears in the list. After clicking the matching `Delete` button, the todo disappears.
-

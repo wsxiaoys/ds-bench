@@ -5,7 +5,7 @@
 
 ## Requirements
 - Create an Express server running on port 3000.
-- Set up a tRPC v11 router with at least one public procedure (e.g., a `hello` query that takes a `name` string input via `zod` and returns a greeting).
+- Set up a tRPC v11 router with a public `greeting` query that takes a `name` string input via `zod` and returns a greeting.
 - Serve the tRPC API at `/trpc`.
 - Integrate `trpc-panel` and serve it at the `/panel` endpoint.
 

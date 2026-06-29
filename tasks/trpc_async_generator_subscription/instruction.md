@@ -17,4 +17,4 @@ The server is already set up to serve subscriptions over HTTP using SSE, you jus
 
 ## Constraints
 - Project path: `/home/user/project`
-- Log file: `/home/user/project/output.log`
+- Log file: `/home/user/project/output.log` — must exist and contain the countdown numbers `3`, `2`, `1` in that order (each number on its own line).

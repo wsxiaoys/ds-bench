@@ -6,9 +6,10 @@ You are building the deterministic core of a tiny dungeon-crawler that runs enti
 libGDX is a Java game framework. The `gdx-backend-headless` module ships `HeadlessApplication`, `HeadlessFiles`, `MockGraphics`, `MockAudio`, and `MockInput` so the rest of the library works without OpenGL. You will rely on this backend together with `Gdx.files`, `Gdx.app`, an `ApplicationListener`, and a custom `MockInput` subclass.
 
 ## Requirements
-- Set up a multi-module Gradle project with at least:
+- Set up a multi-module Gradle project at `/home/user/turn-based-game` with at least:
   - a shared `core` module that contains the `ApplicationListener` (game logic) and the `MockInput` subclass,
   - a `headless` module whose `main(String[])` boots a `HeadlessApplication` and wires up command-file input.
+- The project must be runnable from the project root using `./gradlew --no-daemon -q :headless:run --args="--map=<MAP> --commands=<COMMANDS> --transcript=<TRANSCRIPT>"`.
 - Pin `gdxVersion = 1.14.2` and depend on `com.badlogicgames.gdx:gdx`, `com.badlogicgames.gdx:gdx-backend-headless`, and `com.badlogicgames.gdx:gdx-platform:...:natives-desktop`.
 - The headless launcher must accept three CLI arguments (any order):
   - `--map=<absolute_path>`
@@ -31,7 +32,7 @@ libGDX is a Java game framework. The `gdx-backend-headless` module ships `Headle
   - Any other non-empty, non-blank token is an *unknown* command. Trim each line; ignore blank lines and lines starting with `#`.
 - Movement that would leave the map (`x` outside `[0, WIDTH)` or `y` outside `[0, HEIGHT)`) is rejected: the player stays in place but the turn still counts.
 - A picked-up item is removed from the world; subsequent `PICK` calls on the same cell only succeed if another item was defined there.
-- The transcript file must be created (overwriting any pre-existing file) and contain one line per executed turn, terminated by a single `FINAL` line:
+- The transcript file must be created (overwriting any pre-existing file) and contain one line per executed turn, terminated by a single `FINAL` line. The file must use Unix LF line endings (not CRLF) and end with a trailing newline:
   - Per-turn format (no extra spaces, exact tokens):
     ```
     turn=<N> cmd=<RAW_COMMAND> pos=<X>,<Y> inv=<NAMES>
@@ -61,17 +62,4 @@ libGDX is a Java game framework. The `gdx-backend-headless` module ships `Headle
 - A simple way to advance one command per tick is to have the scripted `MockInput` expose a `tick()` method (or equivalent) and call it from the start of `ApplicationListener.render()` before reading `isKeyJustPressed`.
 - Remember to handle the `QUIT` command *after* writing its transcript line, so the FINAL line reflects the state at the moment of quitting.
 - `Gdx.files.absolute(path)` returns a `FileHandle` suitable for both reading and writing; for the transcript prefer a single `writeString(..., false)` call (or buffered append) so partial writes are not visible to the verifier.
-
-## Acceptance Criteria
-- Project path: `/home/user/turn-based-game`
-- Command: `./gradlew --no-daemon -q :headless:run --args="--map=<MAP> --commands=<COMMANDS> --transcript=<TRANSCRIPT>"` (run from the project root, with absolute paths for all three arguments)
-- Exit code: `0`
-- The transcript file at the supplied `--transcript` path must:
-  - exist after the command completes,
-  - contain exactly `T + 1` lines, where `T` is the number of executed turns,
-  - have one `turn=<N> cmd=<RAW> pos=<X>,<Y> inv=<NAMES>` line per turn in execution order,
-  - end with a single `FINAL pos=<X>,<Y> inv=<NAMES> turns=<T>` line,
-  - use exactly the field separators specified above (single spaces between fields, no trailing spaces, LF line endings).
-- The headless backend (`gdx-backend-headless`) must be on the runtime classpath of the `:headless` module.
-- The game's input must flow through a subclass of `com.badlogic.gdx.backends.headless.mock.input.MockInput`. (Verified indirectly via behavior: only the documented keycodes must drive state changes, while non-mapped commands must leave position and inventory unchanged.)
 

@@ -35,21 +35,5 @@ Do NOT delete the bucket or object after you finish — the verifier will perfor
 3. Run it with `python3 presign.py`.
 4. Run the unauthenticated curl in a subshell that has every Tigris/AWS credential variable unset, and save the body to `/home/user/tigris-task/downloaded.txt`.
 
-## Constraints
-- Project path: `/home/user/tigris-task`
-- Presigned URL file: `/home/user/tigris-task/presigned.url` (single line, no trailing newline).
-- Downloaded artifact: `/home/user/tigris-task/downloaded.txt` (bytes must equal exactly `shareable content`, 17 bytes, no newline).
-- Bucket name MUST be exactly `harbor-presign-${run_id}` where `${run_id}` is read from `/logs/artifacts/run-id`. Do NOT hardcode the suffix. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
-- Object key MUST be exactly `share/secret.txt`.
-- Object body MUST be exactly the 17 bytes `shareable content` (no newline, no quotes).
-- The presigned URL MUST:
-  - Be generated for the HTTP `GET` (`get_object`) operation.
-  - Expire in `300` seconds (i.e. pass `ExpiresIn=300` to `generate_presigned_url`).
-  - Point at the Tigris virtual-hosted-style hostname `t3.storage.dev`.
-  - Contain the SigV4 query parameter `X-Amz-Signature`.
-- The curl command MUST be invoked in a subshell where `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `TIGRIS_STORAGE_ACCESS_KEY_ID`, and `TIGRIS_STORAGE_SECRET_ACCESS_KEY` are unset — the only authorization on the wire must be the presigned-URL query string.
-- Do NOT hardcode credentials or the endpoint URL in the helper script — read them from the standard `AWS_*` environment variables that Harbor injects.
-- Do NOT delete the bucket or object after finishing; the verifier handles cleanup.
-
 ## Integrations
 - Tigris Object Storage. Harbor injects `TIGRIS_STORAGE_ACCESS_KEY_ID` / `TIGRIS_STORAGE_SECRET_ACCESS_KEY` / `TIGRIS_STORAGE_ENDPOINT` and the task runtime maps them onto the boto3-friendly `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3` (= `https://t3.storage.dev`), and `AWS_REGION=auto`.

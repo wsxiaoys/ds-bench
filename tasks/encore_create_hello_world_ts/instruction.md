@@ -8,7 +8,7 @@ Encore is a backend framework for building type-safe distributed systems. It aut
 - The application name should be `hello-${run-id}` where `${run-id}` is read from `/logs/artifacts/run-id`.
 - Implement a single REST API endpoint `GET /hello/:name` that returns `{ "message": "Hello <name>!" }`.
 - Deploy the application to Encore Cloud.
-- Write the deployed app's base URL to a log file after a successful deployment.
+- Write the deployed app's base URL to a log file after a successful deployment in the format: `Base URL: <url>`.
 
 ## Implementation Hints
 - Docker is NOT available in this environment. You CANNOT use `encore run` to test locally. You must deploy the app to Encore Cloud for testing.
@@ -18,20 +18,5 @@ Encore is a backend framework for building type-safe distributed systems. It aut
 - To deploy: initialize a git repository in the app directory, commit your code, add the Encore git remote (`git remote add encore encore://<app-id>`), and push (`git push encore`).
 - The deployment may take about 2 minutes.
 - Once deployed, the endpoint will be accessible at `https://staging-<app-id>.encr.app/`.
-- Write the base URL to `/home/user/myproject/output.log`.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Ensure the real deployment action is executed and the log artifact exists.
-- Log file: /home/user/myproject/output.log
-- The log file must contain the base URL in the format: `Base URL: https://staging-<app-id>.encr.app`.
-- API Endpoints:
-  - GET `/hello/:name`: Returns status 200 and a JSON object with a `message` field.
-
-    ```json
-    // Response
-    {
-      "message": "Hello <name>!"
-    }
-    ```
+- Write the base URL to `/home/user/myproject/output.log` in the format: `Base URL: <url>` (e.g., `Base URL: https://staging-<app-id>.encr.app`).
 

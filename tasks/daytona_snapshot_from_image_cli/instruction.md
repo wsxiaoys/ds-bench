@@ -9,21 +9,15 @@ In this task you will use the `daytona` CLI binary (already installed in the env
 - Authenticate the Daytona CLI against the live Daytona Cloud control plane using the API key from the `DAYTONA_API_KEY` environment variable.
 - Create a new snapshot whose name is derived from the current `run-id` to keep parallel runs isolated.
 - Use the public Docker Hub image `python:3.11-slim` as the snapshot's base image.
-- Capture the full snapshot listing as JSON to disk and write a one-line summary to a log file containing the newly created snapshot's ID.
+- Capture the full snapshot listing as JSON to `/home/user/myproject/snapshots.json`. This file must contain the JSON output of `daytona snapshot list --format json`, including the entry for the newly created snapshot.
+- Write a single-line summary to a log file at `/home/user/myproject/output.log` in the exact format:
+  `Snapshot: snap-<run-id> -> id <snapshot-id>`
+  where `<run-id>` is the `/logs/artifacts/run-id` value and `<snapshot-id>` is the snapshot ID returned by the Daytona API.
 
 ## Implementation Hints
 - Read the current `run-id` from `/logs/artifacts/run-id` and build the snapshot name as `snap-${run-id}`.
 - Use `daytona login --api-key "$DAYTONA_API_KEY"` to authenticate before any other CLI calls.
 - Use `daytona snapshot create <name> --image python:3.11-slim` to create the snapshot. The CLI blocks until the snapshot is validated.
 - Use `daytona snapshot list --format json` to obtain the machine-readable snapshot inventory, and `jq` to extract the `id` field for the entry whose `name` matches `snap-${run-id}`.
-- Write the snapshot listing JSON and the summary log file to the project directory.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Snapshots JSON file: /home/user/myproject/snapshots.json
-- Log file: /home/user/myproject/output.log
-- The snapshot must be named exactly `snap-${run-id}`, where `run-id` is the value of the `/logs/artifacts/run-id`.
-- The snapshot must be backed by the image `python:3.11-slim`.
-- `/home/user/myproject/snapshots.json` must contain the JSON output of `daytona snapshot list --format json`, and must include an entry whose `name` equals `snap-${run-id}`.
-- `/home/user/myproject/output.log` must contain a single line in the exact format `Snapshot: snap-<run-id> -> id <snapshot-id>`, where `<run-id>` is the `/logs/artifacts/run-id` value and `<snapshot-id>` is the `id` field reported by the Daytona API for that snapshot.
+- Write the snapshot listing JSON to `/home/user/myproject/snapshots.json` and the summary log file to `/home/user/myproject/output.log`.
 

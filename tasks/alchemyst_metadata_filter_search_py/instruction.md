@@ -21,12 +21,3 @@ The CLI uses the official Python SDK [`alchemystai`](https://pypi.org/project/al
 - Use `argparse` (or any standard CLI parser) to parse `--group`.
 - Use only the official Python SDK; do not call the REST API directly and do not mock the service.
 
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Command: `python3 main.py --group <group_name>`
-- Input argument: `--group <group_name>` where `<group_name>` is one of `support`, `billing`, `engineering`.
-- Output format: stdout must contain a single JSON array (parsable by `json.loads`) whose elements are the `file_name` values of the documents stored for the requested group. Order is not significant.
-- File names must be namespaced with the `/logs/artifacts/run-id` so the CLI is safe to rerun and safe to run concurrently.
-- The CLI must call the real Alchemyst AI API using the Python SDK (`alchemystai`); the `ALCHEMYST_AI_API_KEY` environment variable must be honored.
-- When filtering by one group, the returned `file_name` set must contain only the documents that were stored under that group and must not contain documents stored under the other two groups.
-

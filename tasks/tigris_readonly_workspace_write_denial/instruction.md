@@ -41,19 +41,8 @@ Because `createWorkspace` only mints a single scoped key per call and the docume
    ```
    The captured string MUST contain an access-denial indicator such as `AccessDenied`, `Forbidden`, `not allowed`, `permission`, or HTTP status `403`. If the underlying error has nested `cause`/`Code`/`$metadata.httpStatusCode` fields, include those in the log line so the verifier can detect the keyword.
 6. Run the program with `tsx run.ts`. It should exit 0 and leave both `/home/user/tigris-task/write-denial.log` and `/home/user/tigris-task/readback.txt` on disk.
-
-## Constraints
-- Project path: /home/user/tigris-task
-- Source file: /home/user/tigris-task/run.ts
-- Write-denial log: /home/user/tigris-task/write-denial.log (non-empty; must contain an access-denial keyword)
-- Read-back file: /home/user/tigris-task/readback.txt (must equal exactly `hello readonly`)
-- Editor workspace bucket: dynamically constructed as `harbor-ro-${run_id}` (with TTL 1 day, snapshots enabled, Editor scoped credentials). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
-- ReadOnly fork bucket: `harbor-ro-${run_id}-readonly-0` (created via `createForks` with `role: ReadOnly`, normalized)
-- Object key written by editor creds: `notes/welcome.txt` with body `hello readonly`
-- Object key whose write MUST be denied: `notes/forbidden.txt` (must NOT exist in the fork bucket after the run)
-- Do not hardcode credentials; admin credentials come from environment variables (`TIGRIS_STORAGE_ACCESS_KEY_ID`, `TIGRIS_STORAGE_SECRET_ACCESS_KEY`, `TIGRIS_STORAGE_ENDPOINT`). Scoped credentials are obtained from Agent Kit at runtime.
-- Real Tigris service only — no mocking.
-- Do NOT tear down the workspace or the fork; the verifier will tear them down.
+7. Do not hardcode credentials; admin credentials come from environment variables (`TIGRIS_STORAGE_ACCESS_KEY_ID`, `TIGRIS_STORAGE_SECRET_ACCESS_KEY`, `TIGRIS_STORAGE_ENDPOINT`). Scoped credentials are obtained from Agent Kit at runtime.
+8. Real Tigris service only — no mocking.
 
 ## Integrations
 - Tigris Data (real `https://t3.storage.dev` endpoint via `@tigrisdata/agent-kit` and `@tigrisdata/storage`).

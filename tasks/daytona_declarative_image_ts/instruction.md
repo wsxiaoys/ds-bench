@@ -25,13 +25,3 @@ Daytona's declarative builder lets you define a sandbox image programmatically w
 - Project must live under `/home/user/myproject` (use it as your working directory for the Node.js project: `package.json`, code, and `output.log`).
 - Read `run-id` from `/logs/artifacts/run-id` before creating the sandbox and use it as the sandbox name suffix to keep parallel runs isolated.
 
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Log file: /home/user/myproject/output.log
-- The sandbox is created from a declarative image built with `Image.debianSlim('3.12').pipInstall(['flask', 'click'])` using the `@daytonaio/sdk` TypeScript SDK.
-- The sandbox name is `decl-ts-<run-id>` where `/logs/artifacts/run-id` is read from the environment.
-- The log file `/home/user/myproject/output.log` must contain, on separate lines, the output of the in-sandbox Python command in the exact format:
-  - A line starting with `flask ` followed by a non-empty Flask version string.
-  - A line starting with `click ` followed by a non-empty Click version string.
-- The sandbox is deleted before the program exits successfully.
-
