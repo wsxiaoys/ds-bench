@@ -23,8 +23,3 @@ Implement an atomic checkout flow that deducts stock and creates an order in a s
    - Write to `/home/user/myproject/checkout_result.json`:
      `{ "finalStock": <stock>, "orderCount": <count>, "insufficientStockCaught": true }`
 3. Run: `node checkout.js`
-
-## Constraints
-- Project path: `/home/user/myproject`
-- Output file: `/home/user/myproject/checkout_result.json`
-- Product id=1 starts with `stock=10`

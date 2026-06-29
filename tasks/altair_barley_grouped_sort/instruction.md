@@ -11,7 +11,8 @@ You are using Vega-Altair to explore the classic `data.barley` dataset (from `ve
 - The chart is faceted by `year` so there is one panel per year present in the dataset.
 - Overlay a `mark_tick` (per facet) at the per-site mean yield across all varieties for that year, computed inside the spec with an aggregate transform (not pre-aggregated in pandas).
 - The chart carries a title with both a main `text` line and a `subtitle` line.
-- Save the final visualization as a self-contained interactive HTML file. The page must contain grouped bar marks across at least 2 year facets and tick (or rule) marks for the per-site means.
+- Write your python code in a script located at `/home/user/altair_task/build_chart.py`.
+- Save the final visualization as a self-contained interactive HTML file at `/home/user/altair_task/output/chart.html`. The page must contain grouped bar marks across at least 2 year facets and tick (or rule) marks for the per-site means.
 
 ## Implementation Hints
 - Load `data.barley` from `altair.datasets` (or `vega_datasets`) — do not download the file manually.
@@ -20,24 +21,4 @@ You are using Vega-Altair to explore the classic `data.barley` dataset (from `ve
 - For the overlay, derive the per-site mean inside the spec using `transform_aggregate` with a `mean(yield)` aggregation grouped by `site` (and `year`, since the layer is faceted on `year`).
 - Pass a title as an object with both `text` and `subtitle` so both lines render in the HTML output.
 - Persist the chart using Altair's HTML export so the result is a standalone page that can be opened in a browser.
-
-## Acceptance Criteria
-- Project path: `/home/user/altair_task`
-- Command: `python3 /home/user/altair_task/build_chart.py`
-- Running the command writes the rendered chart to `/home/user/altair_task/output/chart.html` (an Altair-exported HTML page that embeds a Vega-Lite JSON spec).
-- The embedded Vega-Lite spec must:
-  - Use the `barley` dataset (the `url` or named data reference resolves to a `barley` source).
-  - Be a faceted spec on field `year` (ordinal).
-  - Contain a layer whose mark is `bar` with:
-    - `x` encoding on field `site` (nominal) sorted by `{ field: 'yield', op: 'mean', order: 'descending' }`.
-    - `y` encoding on field `yield` (quantitative) with `aggregate: 'mean'`.
-    - `xOffset` encoding on field `variety` (nominal).
-    - `color` encoding on field `variety` (nominal) using scheme `tableau10`.
-  - Contain a sibling layer whose mark is `tick` (or `rule`) and that layer uses an `aggregate` transform with `op: 'mean'` on field `yield` grouped by `site` (and `year`).
-  - Have a `title` that is an object with both a non-empty `text` and a non-empty `subtitle`.
-- Browser verification (opening `chart.html` in a browser):
-  - The page renders an SVG/Canvas Vega-Lite visualization.
-  - At least two facet panels labeled by year are visible.
-  - Each facet contains multiple narrow grouped bars per site (i.e. multiple bar marks per x-category, not a single stacked bar).
-  - A short horizontal tick (or rule) mark appears on each site indicating the per-site mean yield.
 
