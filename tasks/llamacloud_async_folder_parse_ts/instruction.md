@@ -22,11 +22,3 @@ A starter project already exists at `/home/user/myproject` with three sample PDF
 - Read the run id from `/logs/artifacts/run-id` and use it in the `external_file_id` tag. Read the API key from `LLAMA_CLOUD_API_KEY` (the SDK does this automatically).
 - Make sure `./outputs/` exists before writing files.
 
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- Ensure the script is executed against the real LlamaCloud Parse API and that the artifacts exist on disk after execution.
-- Log file: `/home/user/myproject/output.log`
-- The directory `/home/user/myproject/outputs/` must contain one `.md` file per input PDF (matching the input basenames), and each `.md` file must be non-empty.
-- The log file must contain exactly one line per input PDF in the format `Parsed: <pdf_basename>.pdf | pages: <N>`, where `<N>` is a positive integer.
-- Each uploaded LlamaCloud file must carry an `external_file_id` that starts with the current `<run-id>-` prefix.
-

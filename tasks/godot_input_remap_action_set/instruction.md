@@ -17,13 +17,5 @@ Build a Godot 4 input remapping system: a baseline action set declared in `proje
 - `scenes/RemapButton.tscn` — a Control-derived root with an attached GDScript that:
   - Declares `@export var action_name: StringName`.
   - Displays the current binding using `InputEvent.as_text()`.
-  - On press, enters a listening state and captures the next `InputEventKey`/`InputEventJoypadButton`, then calls `InputRemapper.rebind_action(action_name, event)`.
-
-## Acceptance Criteria
-- The project must load cleanly under `godot --headless --path /home/user/input_remap --quit` (exit code 0, no script parse errors).
-- All six required actions must satisfy `InputMap.has_action(...)` after startup.
-- After `rebind_action(&"jump", InputEventKey{keycode=KEY_X})`, `InputMap.action_get_events(&"jump")` contains an `InputEventKey` with `keycode == KEY_X` and contains no `InputEventKey` with `keycode == KEY_SPACE`. The `action_rebound` signal fires with the matching action and event.
-- `save_to_file` then a different rebind then `load_from_file` restores the saved binding; `load_from_file` on a missing path returns `false`.
-- `reset_to_defaults` restores the original default for `jump` (Space).
-- `RemapButton.tscn` instantiated with `action_name = &"interact"` displays the current binding's `as_text()` and, after being triggered into listening mode and receiving an `InputEventKey` for `KEY_R` via `_unhandled_input`, causes `InputMap.action_get_events(&"interact")` to contain `InputEventKey{keycode=KEY_R}`.
+  - On press, enters a listening state and captures the next `InputEventKey`/`InputEventJoypadButton` via `_unhandled_input`, then calls `InputRemapper.rebind_action(action_name, event)`.
 

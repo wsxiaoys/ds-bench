@@ -7,69 +7,18 @@ A REST surface mounted on the Reflex FastAPI backend (via `api_transformer`) mus
 
 ## Requirements
 - Reflex app located at `/home/user/myproject` with an SQLite database `reflex.db` in the same directory.
-- A persisted `Stroke` table (an `rx.Model` with `table=True`) holding one drawn segment per row.
+- A persisted `Stroke` table (an `rx.Model` with `table=True`) holding one drawn segment per row. The table must have the columns: `id` (integer primary key), `x1` (real/float), `y1` (real/float), `x2` (real/float), `y2` (real/float), `color` (text), and `session_id` (text).
 - A reactive page state that exposes `strokes: list[Stroke]` synchronized to the browser.
 - A background task (`@rx.event(background=True)`) that refreshes the state from the DB approximately every 250 ms.
-- Two REST endpoints, mounted on the backend via `api_transformer`, that create and list strokes.
+- Two REST endpoints, mounted on the backend via `api_transformer`, that create and list strokes. They must be available on the backend port (8000):
+  - `POST /api/strokes`: Accepts a JSON body with `x1`, `y1`, `x2`, `y2` (numbers), `color`, and `session_id` (strings). Returns HTTP 201 with the created stroke object (including the generated integer `id`). This must insert exactly 1 row into the `stroke` table.
+  - `GET /api/strokes`: Returns HTTP 200 with a JSON array of all stroke objects in insertion order.
 - Index page (`/`) that renders an `<svg>` containing one `<line>` per stroke through `rx.foreach`.
 
 ## Implementation Hints
 - Use `uv` to manage the project: `uv init`, `uv add reflex`, `uv run reflex init --template blank`, `uv run reflex db init`, `uv run reflex db makemigrations --message ...`, `uv run reflex db migrate`.
 - Model state mutation inside background events with `async with self:` to avoid `ImmutableStateError`.
 - For SVG elements use `rx.el.svg`, `rx.el.svg.line`, etc.
-- The REST endpoints can be attached using `rx.App(api_transformer=fastapi_app)`. They run on the Reflex backend port.
+- The REST endpoints can be attached using `rx.App(api_transformer=fastapi_app)`. The application will be tested by running the backend only on port 8000 (`uv run reflex run --backend-only --backend-port 8000`). Ensure the default Reflex internal health endpoint `GET /ping` continues to return `"pong"`.
 - After the app is running, leave it running for verification, but **kill every background server you started** (including `reflex run`, `next dev`, anything bound to ports 8000/3000) before reporting completion.
-
-## Acceptance Criteria
-- Project path: `/home/user/myproject`.
-- Start command: `cd /home/user/myproject && uv run reflex run --backend-only --backend-port 8000 --loglevel info`.
-- Port: 8000 (backend only).
-- Database: `/home/user/myproject/reflex.db`, applied via `uv run reflex db migrate`.
-- Table `stroke` must exist with the columns (any order, any nullability that still allows inserts): `id` (integer primary key), `x1` (real/float), `y1` (real/float), `x2` (real/float), `y2` (real/float), `color` (text), `session_id` (text).
-- REST API (mounted on backend port 8000):
-  - `POST /api/strokes`
-    ```json
-    // Request body
-    {
-      "x1": number,
-      "y1": number,
-      "x2": number,
-      "y2": number,
-      "color": string,
-      "session_id": string
-    }
-    ```
-    ```json
-    // Response (HTTP 201)
-    {
-      "id": number,
-      "x1": number,
-      "y1": number,
-      "x2": number,
-      "y2": number,
-      "color": string,
-      "session_id": string
-    }
-    ```
-    Calling this endpoint must increase the row count of `stroke` by exactly 1.
-  - `GET /api/strokes`
-    ```json
-    // Response (HTTP 200) - array of stroke rows in insertion order
-    [
-      {
-        "id": number,
-        "x1": number,
-        "y1": number,
-        "x2": number,
-        "y2": number,
-        "color": string,
-        "session_id": string
-      }
-    ]
-    ```
-- Reflex internal health endpoint `GET /ping` must continue to return `"pong"` (used to detect that the backend is alive).
-- A background event handler decorated with `@rx.event(background=True)` must periodically (~every 250 ms) read the `stroke` table and update the reactive state. After the server has been running for at least 1.5 seconds while strokes are inserted, the backend log must contain no `ImmutableStateError` traceback.
-- The index page (`/`) must render an `<svg>` element that contains an `rx.foreach` over the polled stroke list, producing one `<line>` per stroke. The compiled frontend artifact must exist at `/home/user/myproject/.web/pages/index.js` (or `index.jsx`) and reference both an `svg` tag and a `line` tag.
-- No environment variables are required from the runner; all values used to seed strokes during verification are sent by the verifier.
-- After implementation, terminate every background process you started so that ports 8000 and 3000 are free.
 

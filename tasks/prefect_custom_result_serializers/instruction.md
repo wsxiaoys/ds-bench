@@ -17,8 +17,3 @@ You are building a Prefect 3.0 pipeline that handles sensitive data objects. You
    - Saves the results to the local directory `/home/user/myproject/results`.
 5. Define a Prefect flow named `process_sensitive_data` that calls the `generate_data` task and returns its output.
 6. Add an `if __name__ == "__main__":` block that executes the flow.
-
-## Constraints
-- Project path: `/home/user/myproject`
-- The results must be saved in `/home/user/myproject/results`.
-- The `flow.py` script must execute successfully without errors.

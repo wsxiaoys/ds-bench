@@ -10,11 +10,6 @@ Prefect Blocks are a primitive for configuring external systems and managing sec
 - In the same script or a separate script `/home/user/myproject/setup_block.py`, register the block type to the local Prefect instance, and save an instance of it named `my-db-config` with host `localhost`, port `5432`, and password `supersecret`.
 - Write a script `/home/user/myproject/load_block.py` that loads the `my-db-config` block and prints its host to standard output.
 
-## Constraints
-- Project path: /home/user/myproject
-- Log file: /home/user/myproject/output.log
-- Start command: `python setup_block.py` (or execute the file where you do the setup)
+## Implementation Hints
+- The project path is `/home/user/myproject`.
 - Ensure Prefect is installed and configured to use a local SQLite database (default behavior).
-
-## Integrations
-- None

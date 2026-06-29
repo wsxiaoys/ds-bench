@@ -19,12 +19,3 @@ Convex allows scheduling recurring functions using cron jobs. In this task, you 
 - You can use `ctx.db.query(tableName).filter(q => q.lt(q.field("expiresAt"), Date.now())).collect()` to find expired sessions, and then `ctx.db.delete(doc._id)` to delete them.
 - Do not create a strict `schema.ts` to avoid table name validation issues with dynamic table names.
 
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- Ensure the real deployment action is executed and the log artifact exists.
-- Log file: `/home/user/myproject/output.log`
-- The log file must contain the exact text `Deployment: success`.
-- A Convex mutation `sessions:cleanup` must be deployed.
-- A cron job named `cleanup-sessions-${run-id}` must be registered to run every 1 hour.
-- When the `sessions:cleanup` mutation is called, it must delete all documents in the `sessions_${run-id}` table where `expiresAt` < `Date.now()`.
-

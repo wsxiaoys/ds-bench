@@ -25,12 +25,5 @@ Tigris is a globally distributed, S3-compatible object storage service. Snapshot
    ```
 4. (Optional) Confirm it landed by running `tigris buckets list --format json` and looking for the new bucket name.
 
-## Constraints
-- Project path: `/home/user/tigris-task`
-- Do NOT hardcode credentials. Use only the env vars listed above.
-- Do NOT call `tigris login` — credentials are picked up from the environment automatically.
-- The bucket name MUST include the `run_id` suffix derived from `/logs/artifacts/run-id` so it is unique per run.
-- Snapshots MUST be enabled in the same `tigris buckets create` command (they cannot be enabled on an existing bucket).
-
 ## Integrations
 - Tigris (`https://t3.storage.dev`)
