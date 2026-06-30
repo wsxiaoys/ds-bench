@@ -20,10 +20,6 @@ Your job is to write a Python script that creates a small `notes` table, seeds i
 - After all updates, read the rows with `id` in 1..8, sort them by `id` ascending, and write them to `/home/user/output/notes_after.json` as a JSON array of objects with keys `id`, `author`, `body` (no vector).
 
 ## Implementation Hints
-- Use `lancedb.connect("/home/user/db")`.
-- Define the schema with `pyarrow` (`pa.schema([...])`) and `pa.list_(pa.float32(), 4)` for the vector column, then call `db.create_table("notes", data=..., schema=..., mode="overwrite")`.
-- Generate deterministic vectors with `numpy.random.default_rng(seed=...)`.
-- For each update, pass a Python dict to `values=`, e.g. `tbl.update(where="id = 2", values={"body": "I'm good"})`. Do **not** use `values_sql` — it requires SQL string escaping and is the cause of the apostrophe bug.
-- For the final read, you can use `tbl.search().where("id >= 1 AND id <= 8").limit(100).to_list()` or `tbl.to_pandas()` and then sort by `id` before serializing.
-- Make sure the output directory exists before writing (`os.makedirs("/home/user/output", exist_ok=True)`).
-
+- Run the script from `/home/user` so that the JSON artifact is produced at `/home/user/output/notes_after.json`.
+- The three specified updates must be reflected in both the JSON output and the persisted `notes` table at `/home/user/db`, and the two views must agree.
+- Rows that were not targeted by an update must keep the values they were seeded with.

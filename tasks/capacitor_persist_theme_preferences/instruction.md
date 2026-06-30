@@ -17,10 +17,6 @@ A minimal Vite TypeScript project has already been scaffolded for you at `/home/
 - Toggling the button must update the visible theme, persist the new value through the Preferences API, and continue to work correctly across full page reloads.
 - The production build must succeed and `npx cap sync` must run successfully against the produced web build.
 
-## Implementation Hints
-- Use `npx cap init` with positional `appName` and `appId` arguments and the `--web-dir` flag to avoid the interactive prompt.
-- Import `Preferences` from `@capacitor/preferences` in your TypeScript code; the API is `await Preferences.set({ key, value })` and `const { value } = await Preferences.get({ key })`.
-- Vite's default build output directory is `dist`, which must match `webDir` in `capacitor.config.ts` (or `.json`).
-- The Preferences plugin transparently falls back to `localStorage` on the web target, so no native runtime is required for the web build used to verify the behavior.
-- Make sure the script that wires up the toggle is loaded as an ES module so that the dynamic import of `@capacitor/preferences` succeeds.
-
+## Deliverable
+- Project path: `/home/user/myapp`
+- Port: `4173`
