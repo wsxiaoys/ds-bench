@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import subprocess
 
@@ -17,13 +18,18 @@ def test_schema_has_tag_model():
 def test_tag_model_has_posts_relation():
     with open(SCHEMA_PATH) as f:
         content = f.read()
-    assert "posts Post[]" in content, "Tag model must have 'posts Post[]' relation"
+    assert re.search(r"\bposts\s+Post\[\]", content), (
+        "Tag must have 'posts Post[]' relation"
+    )
 
 
 def test_post_model_has_tags_relation():
     with open(SCHEMA_PATH) as f:
         content = f.read()
-    assert "tags Tag[]" in content, "Post model must have 'tags Tag[]' relation"
+    assert re.search(r"\btags\s+Tag\[\]", content), (
+        "Post must have 'tags Tag[]' relation"
+    )
+
 
 
 def test_add_tags_migration_exists():
