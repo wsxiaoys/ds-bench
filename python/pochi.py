@@ -22,6 +22,7 @@ from harbor.models.trajectories import (
     Trajectory,
 )
 from harbor.models.trial.paths import EnvironmentPaths
+from harbor.utils.env import resolve_env_vars
 
 
 class InitialStateError(Exception):
@@ -176,6 +177,8 @@ class Pochi(BaseInstalledAgent):
             "POCHI_LOG": "debug",
             "POCHI_API_KEY": pochi_api_key,
         }
+        eval_env.update(resolve_env_vars(environment.task_env_config.env))
+
         try:
             await self.exec_as_agent(
                 environment,
