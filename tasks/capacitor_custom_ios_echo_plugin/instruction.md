@@ -6,19 +6,21 @@ A Capacitor v8 hybrid app is pre-scaffolded at `/home/user/myapp`. The native iO
 Because this benchmark runs on Linux, you will not be able to invoke `xcodebuild`. Instead, the verifier checks the Swift source files, the Xcode project membership in `project.pbxproj`, the JavaScript wrapper, and that `npx cap sync ios` still succeeds.
 
 ## Requirements
-- Implement a custom local Android Capacitor plugin written in Java inside the existing Android project (do **not** create a separate Capacitor plugin npm package).
-- The plugin must be exposed to JavaScript under the exact name `Echo`.
-- The plugin must declare a single method that is reachable from JavaScript:
-  - `echo(options)` — accepts a `value` string and resolves with `{ value: <same string> }` (i.e. the input value is round-tripped unchanged).
-- Register the plugin in the existing `MainActivity` so that it is loaded by the Capacitor bridge at startup.
-- Provide a TypeScript binding file at `/home/user/myapp/src/echo.ts` that uses `registerPlugin` from `@capacitor/core` to expose the plugin and exports the plugin object as the default export.
-- The complete Android project must compile successfully with the Gradle wrapper.
+- Implement a Swift Capacitor plugin called `EchoPlugin` at `/home/user/myapp/ios/App/App/EchoPlugin.swift` that conforms to both `CAPPlugin` and `CAPBridgedPlugin`.
+  - It must import `Capacitor` at the top of the file.
+  - It must be exposed to the Objective-C runtime with the class name `EchoPlugin` using `@objc(EchoPlugin)`.
+  - It must declare `public let identifier = "EchoPlugin"` and `public let jsName = "Echo"`.
+  - It must declare a `pluginMethods: [CAPPluginMethod]` array containing a `CAPPluginMethod(name: "echo", returnType: CAPPluginReturnPromise)` entry.
+  - It must implement `@objc func echo(_ call: CAPPluginCall)` that resolves the call with a dictionary echoing the `value` argument back under the key `"value"` (default to an empty string when missing).
+- Register the plugin instance with the Capacitor bridge by overriding `capacitorDidLoad()` in the existing `MyViewController.swift` and calling `bridge?.registerPluginInstance(EchoPlugin())`.
+- Add `EchoPlugin.swift` to the Xcode build target so it ends up in both `PBXFileReference` and `PBXSourcesBuildPhase` sections of `ios/App/App.xcodeproj/project.pbxproj`.
+- Create a TypeScript wrapper at `/home/user/myapp/src/echo.ts` that imports `registerPlugin` from `@capacitor/core` and registers the plugin under the exact name `"Echo"`.
+- After your changes, `npx cap sync ios` must still complete successfully from the project root.
 
 ## Implementation Hints
-- Refer to the official Capacitor v8 "Custom Native Android Code" guide. The plugin class must extend `com.getcapacitor.Plugin` and be annotated with `@CapacitorPlugin(name = "Echo")`. The exposed method must be annotated with `@PluginMethod`.
-- Use `PluginCall.getString("value")`, `JSObject`, and `call.resolve(...)` for argument parsing and result handling.
-- The plugin's Java package must match the application package (`com.example.myapp`); place the source under `android/app/src/main/java/com/example/myapp/` so the existing Gradle source set picks it up.
-- Register the plugin with `registerPlugin(EchoPlugin.class)` inside `MainActivity.onCreate(Bundle savedInstanceState)` before the call to `super.onCreate(savedInstanceState)`.
-- On the JavaScript side, the first argument to `registerPlugin` must match the `name` attribute of the `@CapacitorPlugin` annotation exactly (`"Echo"`).
-- The web frontend already has `@capacitor/core` installed as an npm dependency; you do not need to install additional packages.
-- The Android SDK, JDK, and the Gradle wrapper are pre-installed and pre-warmed inside the project; running `./gradlew` from `/home/user/myapp/android` will compile the project. Use the `--offline` flag whenever possible to avoid re-downloading dependencies.
+- Read the official Capacitor v8 "Custom Native iOS Code" guide. The modern v8 protocol is `CAPBridgedPlugin` (with `identifier`, `jsName`, and `pluginMethods` properties), used together with `CAPPlugin` as the base class.
+- The `@objc(EchoPlugin)` decorator is required for the Capacitor runtime to discover the plugin by name.
+- `bridge?.registerPluginInstance(...)` is called from `capacitorDidLoad()` inside the view controller that subclasses `CAPBridgeViewController` — that file already exists in the project.
+- Because Xcode is not available, you must edit `project.pbxproj` directly. Mirror the patterns used for existing Swift files (such as `MyViewController.swift`): add a `PBXFileReference`, a `PBXBuildFile`, an entry in the `App` group `PBXGroup` children, and an entry in the `Sources` `PBXSourcesBuildPhase`.
+- `pod` (CocoaPods) is not available in the Linux container; `npx cap sync ios` will skip the pod install step automatically and still exit 0.
+
