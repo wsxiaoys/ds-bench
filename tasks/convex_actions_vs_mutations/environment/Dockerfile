@@ -51,7 +51,7 @@ export const addTaskWithApi = mutation({
     // This fetch call will fail in a mutation!
     const response = await fetch("https://jsonplaceholder.typicode.com/todos/1");
     const data = await response.json();
-    
+
     const taskId = await ctx.db.insert("tasks", {
       title: data.title,
       isCompleted: false,
@@ -77,5 +77,8 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - Node.js v24 for running Convex CLI and SDK
 #   - /home/user/project: Convex project directory
 #   - /home/user/project/package.json: dependencies including convex
-#   - /home/user/project/convex/schema.ts: initial schema
-#   - /home/user/project/convex/tasks.ts: initial buggy mutation code
+#   - /home/user/project/convex/schema.ts: initial schema (baseline "tasks" table; the
+#     agent must refactor this into a run-scoped "tasks_<suffix>" table derived from
+#     /logs/artifacts/run-id to keep concurrent/repeated runs isolated)
+#   - /home/user/project/convex/tasks.ts: initial buggy mutation code (fetch inside a mutation)
+#   - /logs/artifacts/run-id (mounted by Harbor) supplies the per-run table-name suffix

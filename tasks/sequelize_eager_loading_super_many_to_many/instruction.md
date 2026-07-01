@@ -16,6 +16,8 @@ In Sequelize, a "Super Many-to-Many" relationship involves two primary models co
 - Output the fetched Student data as a JSON string to stdout.
 
 ## Implementation Hints
+- Project path: /home/user/myproject
+- Command: `node index.js`
 - Define the `Enrollment` model explicitly and use it in the `belongsToMany` calls for both `Student` and `Course`.
 - To make eager loading on the junction model work, you must define the One-to-Many associations between `Student` and `Enrollment`, and `Course` and `Enrollment` in addition to the Many-to-Many associations (this is the standard "Super Many-to-Many" setup in Sequelize).
 - Define `Enrollment.belongsTo(Semester)`.

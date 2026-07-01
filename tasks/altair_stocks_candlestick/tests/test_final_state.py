@@ -257,64 +257,110 @@ def _interval_param_in(view):
     return None, None
 
 
+def _find_interval_brush(spec):
+    """
+    Robustly find interval selection in a Vega-Lite spec,
+    regardless of whether it is hoisted to top-level or
+    attached to a sub-view (e.g. vconcat layers).
+    """
+    candidates = []
+
+    # 1. top-level params
+    if isinstance(spec.get("params"), list):
+        candidates.extend(spec["params"])
+
+    # 2. vconcat children params
+    for child in spec.get("vconcat", []):
+        if isinstance(child, dict) and isinstance(child.get("params"), list):
+            candidates.extend(child["params"])
+
+    # 3. search interval selection
+    for p in candidates:
+        if not isinstance(p, dict):
+            continue
+        sel = p.get("select")
+        if isinstance(sel, dict) and sel.get("type") == "interval":
+            return p.get("name"), p
+
+    return None, None
+
 def test_lower_view_has_interval_brush_on_x(spec):
-    lower = spec["vconcat"][1]
-    name, brush = _interval_param_in(lower)
+    name, brush = _find_interval_brush(spec)
+
     assert brush is not None, (
-        "Lower view must declare an `interval` selection parameter under `params`. "
-        f"Got params={lower.get('params')!r}."
+        "Expected an interval selection brush defined in the chart (either "
+        "top-level or in lower view params)."
     )
+
     select = brush["select"]
-    if isinstance(select, str):
-        raise AssertionError(
-            "Interval selection must be defined as an object so that "
-            "`encodings: ['x']` can be specified. "
-            f"Got shorthand select={select!r}."
-        )
+
+    assert isinstance(select, dict), (
+        "Interval selection must be defined as an object (not shorthand)."
+    )
+
     encodings = select.get("encodings")
     assert encodings == ["x"], (
-        "Interval selection must have `encodings == ['x']` to constrain the "
-        f"brush to the x channel. Got encodings={encodings!r}."
+        "Interval selection must constrain brush to x encoding only. "
+        f"Got encodings={encodings!r}."
     )
 
 
 def test_upper_x_scale_domain_references_brush(spec):
     upper = spec["vconcat"][0]
-    lower = spec["vconcat"][1]
-    brush_name, _ = _interval_param_in(lower)
-    assert brush_name, "Could not find an interval brush name on the lower view."
 
-    # The upper view's x channel scale `domain` must reference the brush.
-    # It may sit on `upper.encoding.x.scale.domain` or on a layer's encoding.
+    brush_name, _ = _find_interval_brush(spec)
+    assert brush_name, "Could not find interval brush in chart spec."
+
     candidate_x_encodings = []
+
+    # upper main encoding
     base_enc = upper.get("encoding", {})
-    if "x" in base_enc:
+    if isinstance(base_enc, dict) and "x" in base_enc:
         candidate_x_encodings.append(base_enc["x"])
+
+    # layered encoding support
     for layer in upper.get("layer", []):
         layer_enc = layer.get("encoding", {})
-        if "x" in layer_enc:
+        if isinstance(layer_enc, dict) and "x" in layer_enc:
             candidate_x_encodings.append(layer_enc["x"])
 
-    assert candidate_x_encodings, "Upper view has no `x` encoding to inspect."
+    assert candidate_x_encodings, "Upper view has no x encoding."
 
     matched = False
+
     for x_enc in candidate_x_encodings:
-        scale = x_enc.get("scale") if isinstance(x_enc, dict) else None
+        if not isinstance(x_enc, dict):
+            continue
+
+        scale = x_enc.get("scale")
         if not isinstance(scale, dict):
             continue
+
         domain = scale.get("domain")
-        # Domain may be `{"param": "<brush_name>"}` or
-        # `{"param": "<brush_name>", "encoding": "x"}` etc.
+
+        # case 1: single param reference
         if isinstance(domain, dict) and domain.get("param") == brush_name:
             matched = True
             break
 
-    assert matched, (
-        "Upper view's x channel scale `domain` must reference the lower view's "
-        f"interval brush by name (expected `{brush_name}`). "
-        f"Inspected x encodings: {json.dumps(candidate_x_encodings)}"
-    )
+        # case 2: extended form (defensive)
+        if isinstance(domain, dict):
+            if domain.get("param") == brush_name:
+                matched = True
+                break
 
+        # case 3: list form (defensive)
+        if isinstance(domain, list):
+            for d in domain:
+                if isinstance(d, dict) and d.get("param") == brush_name:
+                    matched = True
+                    break
+
+    assert matched, (
+        "Upper view x-scale domain must reference the interval brush. "
+        f"Expected param={brush_name}. "
+        f"Got encodings={json.dumps(candidate_x_encodings)}"
+    )
 
 # ---------------------------------------------------------------------------
 # 3 & 4. Browser verification

@@ -4,6 +4,7 @@ import socket
 
 import pytest
 import requests
+from pochi_verifier import PochiVerifier
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myapp"
@@ -78,7 +79,19 @@ def test_status_route(start_app):
 
 @pytest.mark.parametrize("name", ["world", "redwood"])
 def test_greet_route(start_app, name):
-    r = requests.get(f"{BASE_URL}/greet/{name}", timeout=30)
-    assert r.status_code == 200, f"GET /greet/{name} returned {r.status_code}: {r.text[:300]}"
-    assert f"Hello, {name}!" in r.text, \
-        f"Expected 'Hello, {name}!' in /greet/{name} HTML, got: {r.text[:500]}"
+    reason = (
+        "Verify the RedwoodSDK app renders a dynamic greeting page that interpolates the "
+        "URL path parameter into the visible page text."
+    )
+    truth = (
+        f"Navigate to {BASE_URL}/greet/{name}. "
+        f"Verify that the rendered page contains the visible text 'Hello, {name}!'."
+    )
+    verifier = PochiVerifier()
+    result = verifier.verify(
+        reason=reason,
+        truth=truth,
+        use_browser_agent=True,
+        trajectory_dir=f"/logs/verifier/pochi/test_greet_route_{name}",
+    )
+    assert result.status == "pass", f"Browser verification failed: {result.reason}"

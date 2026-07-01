@@ -12,7 +12,10 @@ The rendered chart must contain exactly three sub-views, composed in the layout 
   - x: `Horsepower` (quantitative)
   - y: `Miles_per_Gallon` (quantitative)
   - color: `Origin` (nominal)
-  - An interval brush selection over BOTH the x and y encoding channels, attached to this view via `add_params(...)`.
+  - Define a selection interval named `brush` using:
+    alt.selection_interval(encodings=['x', 'y'])
+  - The selection MUST explicitly include both encodings: 'x' and 'y' (do not rely on defaults).
+  - Attach it to View A using add_params(brush).
 - **View B — Horizontal bar chart (`mark_bar`)**
   - y: `Origin` (nominal)
   - x: `count()` aggregate (quantitative)
@@ -23,12 +26,19 @@ The rendered chart must contain exactly three sub-views, composed in the layout 
   - color: `count()` aggregate (quantitative)
   - Must be filtered by the brush defined in View A using `transform_filter(brush)`.
 
+
 Compose the three views as `(A | B) & C` using Altair's `|` and `&` operators (so the top-level Vega-Lite spec is a `vconcat` whose first row is an `hconcat` of A and B, and whose second row is C).
 
 ## Implementation Hints
 - Use `vega_datasets.data.cars` (or `data.cars.url`) as the input data.
 - Define one `selection_interval` (Altair 5+ API) and attach it with `add_params(...)` on View A; reuse the same selection inside `transform_filter(...)` on Views B and C so brushing in A cross-filters B and C.
-- For View C, use Altair's binning API on both encoding channels (e.g. `alt.X('Weight_in_lbs').bin()` and `alt.Y('Acceleration').bin()`).
 - Save the chart with `chart.save('/home/user/myproject/chart.html')` so that the resulting HTML embeds the full Vega-Lite spec.
 - Avoid hard-coding visual styling such as widths, fonts, color palettes, or titles — the verifier intentionally ignores these.
-
+- View A must use:
+  mark_point()
+  encoding.x.field = "Horsepower"
+  encoding.y.field = "Miles_per_Gallon"
+  encoding.color.field = "Origin"
+- View C MUST use explicit binning that produces Vega-Lite bin: true semantics:
+  alt.X("Weight_in_lbs", bin=True)
+  alt.Y("Acceleration", bin=True)

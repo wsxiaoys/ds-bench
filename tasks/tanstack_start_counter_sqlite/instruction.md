@@ -21,6 +21,7 @@ Build a full-stack counter application using **TanStack Start** (the React full-
 - The application must run as an HTTP server bound to the port given below.
 
 ## Implementation Hints
+- The project dir is `/home/user/myproject`.
 - Use the official TanStack CLI to bootstrap the project (for example `npx @tanstack/cli@latest create` or `npx create-tsrouter-app@latest`), then add the SQLite driver of your choice (`better-sqlite3` is a common pick for Node).
 - Initialize the database (create the table and seed the counter row if missing) on server boot, before the HTTP listener accepts connections, so the very first request already has a value to read.
 - Pick a single source of truth for the increment logic: a `createServerFn({ method: 'POST' })` handler that opens the SQLite connection, performs an atomic `UPDATE`, and returns the new value. The route loader and the REST endpoints should both delegate to this same server function (or its underlying helper).
