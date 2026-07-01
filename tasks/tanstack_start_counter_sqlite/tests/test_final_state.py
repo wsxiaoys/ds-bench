@@ -69,7 +69,10 @@ def _make_starter() -> type[ProcessStarter]:
     class Starter(ProcessStarter):
         name = "counter_app"
         args = cmd
-        env = env
+        env = os.environ.copy()
+        env.setdefault("PORT", str(PORT))
+        env.setdefault("HOST", "0.0.0.0")
+        env.setdefault("NODE_ENV", "production")
         popen_kwargs = {
             "cwd": PROJECT_DIR,
             "text": True,
