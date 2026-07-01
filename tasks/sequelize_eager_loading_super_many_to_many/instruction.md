@@ -21,4 +21,7 @@ In Sequelize, a "Super Many-to-Many" relationship involves two primary models co
 - Define the `Enrollment` model explicitly and use it in the `belongsToMany` calls for both `Student` and `Course`.
 - To make eager loading on the junction model work, you must define the One-to-Many associations between `Student` and `Enrollment`, and `Course` and `Enrollment` in addition to the Many-to-Many associations (this is the standard "Super Many-to-Many" setup in Sequelize).
 - Define `Enrollment.belongsTo(Semester)`.
-- When querying `Student.findOne()`, use nested `include` to fetch `Course`, and include the `Enrollment` model to fetch the `Semester`.
+- When querying Student.findOne(), use nested include:
+  - include Course
+  - include Enrollment under Course
+  - include Semester under Enrollment (nested include is required)
