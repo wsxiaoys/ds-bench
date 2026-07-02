@@ -4,9 +4,9 @@
 tRPC v11 introduced native support for Server-Sent Events (SSE) subscriptions, replacing the strict need for WebSockets. You will implement a simple SSE subscription using `httpSubscriptionLink` on the client and an async generator on the server.
 
 ## Requirements
-- A tRPC server using Express adapter.
+- A tRPC server using Express adapter, implemented in `/home/user/project/server.ts`.
 - A `countdown` subscription procedure that yields numbers from 5 down to 1, with a 100ms delay between each yield, and then returns.
-- A tRPC client using `@trpc/client` that connects to the server and listens to the `countdown` subscription.
+- A tRPC client using `@trpc/client` implemented in `/home/user/project/client.ts` that connects to the server and listens to the `countdown` subscription.
 - The client should collect the yielded numbers into an array and save them to a file `/home/user/project/output.json` as a JSON array (e.g., `[5, 4, 3, 2, 1]`) and exit the process.
 - You may need to ponyfill `EventSource` in the client since Node.js doesn't have it natively. You can use the `eventsource` package (already installed) and pass it to `httpSubscriptionLink({ url: '...', EventSource: require('eventsource') })`.
 
@@ -14,3 +14,5 @@ tRPC v11 introduced native support for Server-Sent Events (SSE) subscriptions, r
 - Project path: `/home/user/project`
 - Port: 3000
 - Log file: `/home/user/project/output.log`
+- The server entrypoint must be `/home/user/project/server.ts` and run using `npx tsx server.ts`.
+- The client entrypoint must be `/home/user/project/client.ts` and run using `npx tsx client.ts`.

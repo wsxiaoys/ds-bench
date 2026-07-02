@@ -6,7 +6,7 @@ Prefect allows you to orchestrate workflows and run them in various infrastructu
 ## Requirements
 - Start a local Prefect server.
 - Create a Docker work pool named `my-docker-pool`.
-- Create a Python file `/home/user/project/flow.py` containing a flow named `hello_docker_flow` that simply prints a message.
+- Create a Python file `/home/user/project/flow.py` containing a flow named `hello-docker-flow` (e.g., defined as a function `hello_docker_flow` which Prefect automatically registers as `hello-docker-flow`) that simply prints a message.
 - Deploy the flow to the `my-docker-pool` work pool with the deployment name `docker-deployment` and configure it to use the Docker image `my-prefect-image:latest`.
 
 ## Constraints

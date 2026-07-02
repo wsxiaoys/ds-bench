@@ -16,7 +16,12 @@ Convex is a reactive backend-as-a-service (BaaS) that provides a real-time datab
   - Add a new task (defaults to "todo" and sets the `runId`).
   - Update a task's status.
   - Delete a task.
-- Build a React UI to interact with these functions.
+- Build a React UI to interact with these functions. The UI must feature:
+  - A list displaying tasks for the current `runId`.
+  - A text input field and a submit button to add a new task.
+  - A toggle or button for each task to change its status between "todo" and "done".
+  - A delete button for each task.
+- Ensure the React application is configured to run on port 5173 using the start command `npm run dev`.
 - The UI MUST pass the `/logs/artifacts/run-id` to the backend functions to ensure data isolation.
 - Deploy the Convex backend using `npx convex deploy` (which uses the `CONVEX_DEPLOY_KEY` environment variable).
 
@@ -28,19 +33,4 @@ Convex is a reactive backend-as-a-service (BaaS) that provides a real-time datab
 - In your React app, wrap the root with `ConvexProvider` and pass a `ConvexReactClient` initialized with `import.meta.env.VITE_CONVEX_URL`.
 - Use Convex React hooks (`useQuery`, `useMutation`) in your components to read and write data.
 - Expose the `/logs/artifacts/run-id` to your Vite React app by prefixing it as `VITE_RUN_ID` in your `.env` or passing it during the build/dev process.
-
-## Acceptance Criteria
-- Project path: /home/user/my-app
-- Start command: npm run dev
-- Port: 5173
-- The Convex backend must be successfully deployed (schema and functions pushed to the cloud).
-- The React app should be running and accessible on port 5173.
-- UI features (Browser verification):
-  - The page displays a list of tasks for the current `runId`.
-  - There is a text input field and a submit button to add a new task.
-  - Each task has a toggle/button to change its status between "todo" and "done".
-  - Each task has a delete button.
-- Convex Backend features:
-  - The `tasks` table schema enforces `text` (string), `status` (union: "todo", "done"), and `runId` (string).
-  - The `tasks` table has an index `by_run_id_and_status` on `["runId", "status"]`.
 

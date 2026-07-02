@@ -26,11 +26,3 @@ The pipeline must work end-to-end against real services — no mocks of OpenAI o
 - To avoid collisions between concurrent runs, append the value of the `/logs/artifacts/run-id` to your table name (e.g. `pdf_chunks_<run-id>`). The verifier reads the same env var and opens the same table.
 - Make ingestion idempotent: when the script is re-run with the same `/logs/artifacts/run-id`, it should not error out and should leave the table queryable.
 
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- The candidate must provide `/home/user/myproject/solution.py` exposing a top-level callable `search(query: str, k: int) -> list[dict]`.
-- Ingestion entrypoint: running `python3 /home/user/myproject/ingest.py` (or an equivalent script chosen by the candidate) must produce a LanceDB table at `/home/user/myproject/lancedb/` whose name is `pdf_chunks_<run-id>` (where `<run-id>` is read from `/logs/artifacts/run-id`).
-- After ingestion, `search(query, k)` must return a Python list of length `k` (assuming the table has at least `k` rows), each item a dict with the keys `doc_id` (str), `page` (int), and `snippet` (str).
-- Result ordering: results must be ordered from most to least semantically relevant to the query.
-- No mocks: both ingestion and `search()` must call the real OpenAI Embeddings API and the real LanceDB.
-

@@ -25,3 +25,10 @@ RUN npm install -g @e2b/cli
 
 RUN useradd -m -s /bin/bash user
 WORKDIR /home/user
+
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

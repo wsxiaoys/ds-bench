@@ -4,44 +4,23 @@
 You are extending a freshly scaffolded RedwoodSDK (`rwsdk`) project. Build a session-based authentication flow that protects a `/dashboard` route using rwsdk's **interrupter** pattern (per-route middleware that may short-circuit a request with a `Response`). Unauthenticated visitors must be redirected to `/login`; authenticated visitors must see their username on the dashboard; a logout endpoint must clear the session.
 
 ## Requirements
-- The web app is a RedwoodSDK project served by `npm run dev` (Vite + Cloudflare workerd).
+- The web app is a RedwoodSDK project served by `npm run dev` on port 5173 (Vite + Cloudflare workerd).
 - Provide the following routes:
   - `GET /` — any public landing page.
-  - `GET /login` — renders an HTML form that POSTs `username` and `password` to `/login`.
-  - `POST /login` — accepts `application/x-www-form-urlencoded` body with fields `username` and `password`. On valid credentials, creates a session and redirects to `/dashboard`. On invalid credentials, re-renders the login page with an error message and status `401`.
-  - `GET /dashboard` — protected by an `isAuthenticated` interrupter. Authenticated users see a page containing their username. Unauthenticated users are redirected to `/login`.
-  - `POST /logout` — clears the session cookie and redirects to `/login`.
+  - `GET /login` — renders an HTML page (status 200) containing an HTML `<form>` with `method="post"` and two input elements named exactly `username` and `password`.
+  - `POST /login` — accepts `application/x-www-form-urlencoded` body with fields `username` and `password`. On valid credentials, creates a session and redirects to `/dashboard` (status 302). On invalid credentials, re-renders the login page with a human-readable error message (containing the word 'invalid', case-insensitive) and status `401`, and must NOT set a populated `session` cookie.
+  - `GET /dashboard` — protected by an `isAuthenticated` interrupter. Authenticated users see a page containing their username (e.g., 'demo'). Unauthenticated users are redirected (status 302) to `/login`.
+  - `POST /logout` — clears the session cookie and redirects (status 302) to `/login`.
 - Hardcode at least one demo credential pair in an in-memory or JSON user store. The pair `demo` / `pass` MUST be valid (the verifier signs in with it).
-- Use rwsdk's interrupter pattern from `rwsdk/router` / `rwsdk/worker` to gate `/dashboard`. The interrupter must be a function that inspects request/ctx and returns/throws a `Response` when not authenticated.
-- The session cookie value must be cryptographically signed (HMAC) so it cannot be forged. The signing secret must be read from the `/home/user/session_secret.txt` file.
+- Use rwsdk's interrupter pattern from `rwsdk/router` / `rwsdk/worker` to gate `/dashboard`. The interrupter function must live in the application source under `src/` and be passed into the route definition for `/dashboard` using the array form (e.g., `route('/dashboard', [isAuthenticated, dashboardHandler])`). The interrupter must inspect the request/ctx and return/throw a `Response` when not authenticated.
+- The session cookie must be named `session`. Set it on successful login via a `Set-Cookie` response header with `HttpOnly` and `Path=/` attributes. Clear it on logout by setting a `Set-Cookie` header with `Max-Age=0` (or equivalent past Expires, or an empty value).
+- The session cookie value must be cryptographically signed (HMAC) so it cannot be forged. The signing secret must be read from the `/home/user/session_secret.txt` file. A request to `GET /dashboard` carrying a `session` cookie whose value has been tampered with (any character flipped in the signature portion) must not be treated as authenticated — it must redirect (302) to `/login` just like a missing cookie.
 
 ## Implementation Hints
-- Start from the existing scaffold at the project path below; the `rwsdk` dependency and Vite config are already installed.
+- Start from the existing scaffold at the project path `/home/user/myproject`; the `rwsdk` dependency and Vite config are already installed.
 - Read https://docs.rwsdk.com/llms-full.txt or the Authentication / Routing sections of https://docs.rwsdk.com for `defineApp`, `route`, interrupters, and session handling patterns.
 - Interrupters are simply functions placed before the final handler in a `route(path, [interrupter, handler])` array.
 - You can implement signed cookies with the Web Crypto API (`crypto.subtle.sign` with HMAC-SHA256) — no extra npm package required.
 - Use `Response.redirect(url, 302)` or `new Response(null, { status: 302, headers: { Location: '/login', 'Set-Cookie': '...' } })` to redirect.
 - Keep the user store trivial (a constant object/array of `{ username, password }`). This is an evaluation app, not production.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Start command: npm run dev
-- Port: 5173
-- Demo credentials: username `demo`, password `pass` (the verifier uses these to log in).
-- Session cookie:
-  - Name: `session`
-  - Set on successful login via a `Set-Cookie` response header.
-  - Must include the `HttpOnly` attribute and a `Path=/` attribute.
-  - Cleared on logout by a `Set-Cookie: session=; ...; Max-Age=0` (or equivalent past-Expires) header.
-- Routes and behavior:
-  - `GET /dashboard` without a valid session cookie: responds with HTTP `302` and a `Location` header equal to `/login`.
-  - `GET /login`: responds with HTTP `200` and an HTML body that contains an HTML `<form>` with `method="post"` (or `POST`) and two inputs named exactly `username` and `password`.
-  - `POST /login` with form fields `username=demo&password=pass`: responds with HTTP `302`, a `Location` header equal to `/dashboard`, and a `Set-Cookie` header that sets the `session` cookie (HttpOnly).
-  - `POST /login` with wrong credentials (e.g. `username=demo&password=wrong`): responds with HTTP `401` and an HTML body that includes a human-readable error (e.g. text containing `invalid` case-insensitive). MUST NOT set a `session` cookie on this response.
-  - `GET /dashboard` with the valid session cookie obtained from a successful login: responds with HTTP `200` and an HTML body that contains the text `demo` (the logged-in username).
-  - `POST /logout` with a valid session cookie: responds with HTTP `302`, `Location: /login`, and a `Set-Cookie` header that clears the `session` cookie.
-  - `GET /dashboard` after the logout response is processed by a normal client: responds with HTTP `302` and `Location: /login`.
-- Signed-cookie integrity: A request to `GET /dashboard` carrying a `session` cookie whose value has been tampered with (any character flipped in the signature portion) MUST NOT be treated as authenticated — it must redirect (`302` to `/login`) just like a missing cookie.
-- Source code structure:
-  - The interrupter function (gating `/dashboard`) MUST live in the application source under `src/` and be passed into the route definition for `/dashboard`. The verifier will read `src/` to confirm the interrupter pattern is used.
 

@@ -4,7 +4,8 @@
 Create a basic CRUD task manager application using Next.js and Convex as the backend.
 
 ## Requirements
-- Initialize a Next.js application and set up Convex.
+- Initialize a Next.js application inside `/home/user/task-manager` and set up Convex.
+- The application must run on port `3000` using the start command `npm run dev`.
 - Define a Convex schema for a `tasks` table. Each task should have `text` (string), `isCompleted` (boolean), and `runId` (string).
 - To support parallel testing, every task in the database MUST include a `runId` field, populated from the `NEXT_PUBLIC_`/logs/artifacts/run-id`` environment variable (which you must pass from `/logs/artifacts/run-id`).
 - The UI must ONLY display tasks that match the current `runId`.
@@ -23,16 +24,4 @@ Create a basic CRUD task manager application using Next.js and Convex as the bac
 - Ensure you read `/logs/artifacts/run-id` and expose it to the frontend via `NEXT_PUBLIC_`/logs/artifacts/run-id`` so the client can filter and create tasks with the correct `runId`.
 - Pass `CONVEX_URL` to `NEXT_PUBLIC_CONVEX_URL` for the frontend.
 - Provide a form to add tasks, and buttons/checkboxes to toggle and delete them.
-- Add `data-testid` attributes to key elements (e.g., `task-input`, `add-button`, `task-item`, `toggle-button`, `delete-button`) to make browser verification easier.
-
-## Acceptance Criteria
-- Project path: /home/user/task-manager
-- Start command: npm run dev
-- Port: 3000
-- Web Features:
-  - The root page (`/`) should load successfully.
-  - Users can enter text into an input field (identified by `data-testid="task-input"`) and click a button (identified by `data-testid="add-button"`) to add a new task.
-  - The new task appears in the list (identified by `data-testid="task-item"`).
-  - Users can click a button or checkbox on a task (identified by `data-testid="toggle-button"`) to mark it as completed.
-  - Users can click a button on a task (identified by `data-testid="delete-button"`) to remove it from the list.
-  - Tasks created with a specific `runId` are not visible when the app is run with a different `runId`.
+- Add the following `data-testid` attributes to key elements: `task-input` (for the input field), `add-button` (for the submit/add button), `task-item` (for each task list item), `toggle-button` (for the checkbox or button to toggle status), and `delete-button` (for the button to delete a task) to make browser verification succeed.

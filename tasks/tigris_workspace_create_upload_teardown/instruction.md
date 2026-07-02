@@ -31,15 +31,5 @@ Tigris Agent Kit (`@tigrisdata/agent-kit`) provides a `createWorkspace` primitiv
 5. Do NOT call `teardownWorkspace` from `run.ts` — the verifier is responsible for tearing down the workspace after it inspects the result.
 6. Run with `tsx run.ts` and confirm it exits with code 0 and prints exactly one line: the scoped access key id (it should start with `tid_`).
 
-## Constraints
-- Project path: /home/user/tigris-task
-- Source file: /home/user/tigris-task/run.ts
-- Log file: /home/user/tigris-task/output.log (must contain the scoped access key id printed by the script)
-- Workspace name: `harbor-ws-${run_id}` where `${run_id}` is read from `/logs/artifacts/run-id`.
-- Object key: `state.json`
-- Object body: exact string `{"status":"ok","run":"${run_id}"}` (UTF-8, no trailing newline).
-- The upload MUST be performed using the scoped credentials returned by `createWorkspace`. Do not fall back to the root env-var credentials for the upload step.
-- Do not hardcode credentials anywhere; the root credentials are exposed via environment variables and consumed automatically by `@tigrisdata/agent-kit`.
-
 ## Integrations
 - Tigris Data (real `https://t3.storage.dev` endpoint via `@tigrisdata/agent-kit` and `@tigrisdata/storage`).

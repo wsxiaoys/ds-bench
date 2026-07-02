@@ -5,13 +5,16 @@ Build a server-rendered Todo application powered by RedwoodSDK (rwsdk). The page
 
 ## Requirements
 - The home route `/` renders the entire Todo UI on the server (no `useState` / client-side fetch / `useEffect` data fetching).
+  - The new-todo form must contain an `<input name="title" aria-label="New todo title">` and a submit `<button>` with text `Add`.
+  - Each rendered todo row must have its visible text in an element with `data-testid="todo-title"`. Completed todos must have an ancestor element with `data-done="true"`, while not-yet-completed ones have `data-done="false"`.
+  - The remaining count must be displayed in an element with `data-testid="remaining-count"`.
 - Provide three mutations, each wired to its own `<form action={...}>`:
-  - Add a new todo (text input + submit button).
-  - Toggle a todo's `done` state (checkbox that posts the form on change).
-  - Delete a todo (submit button).
+  - Add a new todo.
+  - Toggle a todo's `done` state: use a form containing `<input type="checkbox" name="done" aria-label="Toggle <title>">` (e.g., `Toggle Buy milk`) that submits on change.
+  - Delete a todo: use a form containing a submit `<button aria-label="Delete <title>">`.
 - Display the list of todos and the count of *remaining* (unchecked) todos.
-- Persist state in the Cloudflare KV binding `TODOS` (configured in `wrangler.jsonc`), keyed under the prefix `todo:` (one KV entry per todo).
-- Expose a read-only JSON endpoint `GET /api/todos` that returns all todos for inspection.
+- Persist state in the Cloudflare KV binding `TODOS` (configured in `wrangler.jsonc`), keyed under the prefix `todo:` (one KV entry per todo). The KV value must be a JSON object with the shape `{"id": string, "title": string, "done": boolean, "createdAt": number}`.
+- Expose a read-only JSON endpoint `GET /api/todos` that returns all todos for inspection. The response must be `{ "todos": [...], "remaining": number }` where `todos` are sorted by `createdAt` ascending and match the KV value shape.
 
 ## Implementation Hints
 - Read the official rwsdk docs on React Server Components and `serverAction`: https://docs.rwsdk.com/core/react-server-components
@@ -21,39 +24,4 @@ Build a server-rendered Todo application powered by RedwoodSDK (rwsdk). The page
 - Component files containing JSX that uses a server action via `<form action={...}>` must be marked with the `"use client"` directive (per the RSC docs). The action module itself should be `"use server"`.
 - Configure a local KV namespace in `wrangler.jsonc` with the binding `TODOS`. Miniflare will allocate a fresh KV store per container at startup.
 - Run the dev server with `npm run dev`. It must listen on port `5173` and be reachable on `0.0.0.0`.
-
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- Start command: `npm run dev -- --host 0.0.0.0 --port 5173`
-- Port: `5173`
-- Routes:
-  - `GET /` — renders the server-rendered Todo page (HTML).
-  - `POST /` (or the rwsdk-internal RSC action URL) — produced automatically by `<form action={serverAction}>`. The page re-renders with updated state.
-  - `GET /api/todos` — returns a JSON document for inspection.
-- HTML structure of `/` (used by browser-based verification):
-  - The new-todo form contains an `<input>` with `name="title"` and `aria-label="New todo title"`, and a submit `<button>` whose visible text contains `Add`.
-  - Each rendered todo row exposes:
-    - A toggle form containing a `<input type="checkbox" name="done">` whose `aria-label` is `Toggle <title>` (e.g., `Toggle Buy milk`). The form must submit on change (the executor may use a small `"use client"` wrapper to call `form.requestSubmit()` on change, or use a separate submit button labelled `Toggle`).
-    - A delete form containing a submit `<button>` whose `aria-label` is `Delete <title>`.
-    - The visible todo text in an element with `data-testid="todo-title"`. Completed todos must additionally have an ancestor element with attribute `data-done="true"`; not-yet-completed ones must have `data-done="false"`.
-  - An element with `data-testid="remaining-count"` whose text content is the integer number of todos whose `done` is `false`.
-- JSON endpoint `GET /api/todos` response (status `200`, content-type `application/json`):
-
-  ```json
-  {
-    "todos": [
-      {
-        "id": string,
-        "title": string,
-        "done": boolean,
-        "createdAt": number
-      }
-    ],
-    "remaining": number
-  }
-  ```
-  - `todos` is sorted by `createdAt` ascending.
-  - `remaining` equals the count of todos with `done === false`.
-- KV state shape: each todo is stored as a separate KV entry under key `todo:<id>` in the `TODOS` binding, with the JSON-encoded value `{"id": string, "title": string, "done": boolean, "createdAt": number}`. No other key prefix is used by the app.
-- `serverAction` must be imported from `rwsdk/worker` and used for all three mutations (add / toggle / delete).
 

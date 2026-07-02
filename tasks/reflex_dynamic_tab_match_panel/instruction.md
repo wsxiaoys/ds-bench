@@ -26,14 +26,3 @@ Your task is to build a small single-page Reflex application that demonstrates a
 - After you finish implementing, you can verify the rendered output by running `uv run reflex export --frontend-only --no-zip`, which compiles the static frontend bundle into the `.web/_static` directory.
 - IMPORTANT: If you start any background process such as `uv run reflex run`, you MUST terminate it before finishing the task (e.g., `pkill -f 'reflex run' || true`). Do not leave any Reflex dev/backend processes alive.
 
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- The project is a valid Reflex project managed by `uv` (a `pyproject.toml` and a `rxconfig.py` exist at the project root).
-- The Reflex application has a single page registered at the index route `/`.
-- The page source contains exactly three `rx.button(...)` elements with the literal labels `Profile`, `Settings`, `About`.
-- A `rx.State` subclass defines a string field `active_tab` with the default value `"profile"`.
-- The source code uses `rx.match(...)` referencing `active_tab` with three explicit case tuples for `"profile"`, `"settings"`, `"about"` (in any order) plus a default branch.
-- Each tab button's `on_click` handler sets `active_tab` to the lowercased tab label.
-- Running `uv run reflex export --frontend-only --no-zip` from the project root succeeds and produces a compiled frontend bundle under `.web/_static` that contains the literal strings `User Profile Page`, `Settings Page`, `About Page`, and `Unknown Tab`.
-- No Reflex background server processes are left running at the end of the task.
-

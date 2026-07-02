@@ -1,5 +1,3 @@
-# Metadata-Filtered Context Search with the Alchemyst TypeScript SDK
-
 ## Background
 Alchemyst AI is a Context Engine that lets you tag stored documents with `group_name` metadata so you can later run filtered semantic searches that only return chunks from the requested group(s). The TypeScript SDK has a well-known asymmetry that trips developers up: when storing a document you tag it with `group_name` (snake_case) inside `metadata`, but when searching you must filter with `groupName` (camelCase) inside `metadata`. Mixing these up silently returns the wrong (or no) results.
 

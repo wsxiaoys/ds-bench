@@ -21,3 +21,10 @@ RUN pip3 install e2b pytest
 # Setup user directory
 RUN mkdir -p /home/user
 WORKDIR /home/user
+
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

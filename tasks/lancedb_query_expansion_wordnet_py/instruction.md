@@ -23,12 +23,3 @@ The corpus is a fixed set of 100 short English documents that has been seeded in
 - The schema of the seeded table is `{ id: int64, content: string }`. Document IDs are integers `0..99`.
 - Lowercase the query before expansion. Do **not** add or remove any other words; the verifier compares behaviour against the plain `table.search(query, query_type="fts")` baseline.
 
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- Module: `/home/user/myproject/solution.py` exports `expanded_search(query: str, k: int = 10) -> list[int]`.
-- The function must read the LanceDB URI from `LANCEDB_URI` and the table name from `LANCEDB_TABLE` (both are set in the container environment).
-- A native FTS index (`use_tantivy=False`) must exist on the `content` column of the seeded table after the first invocation of `expanded_search`.
-- Return contract: a `list[int]` of length at most `k`, sorted by FTS score descending, containing document IDs drawn from the seeded table.
-- The function must materially expand the query: for the seeded corpus, the unexpanded baseline (`table.search(query, query_type="fts").limit(k).to_list()`) and `expanded_search(query, k)` must produce different result sets for at least one synonym-rich query (`car`).
-- No outbound network calls are needed at runtime; WordNet is fully available offline after the build-time download.
-

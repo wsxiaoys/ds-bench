@@ -12,3 +12,4 @@ You have a basic Node.js tRPC server and a client script at `/home/user/project`
 - Project path: `/home/user/project`
 - The server runs on port 3000.
 - The client script should output a successful response containing a Date object.
+- In `client.ts`, configure the `superjson` transformer inline directly inside the `httpBatchLink` initialization using the exact syntax `httpBatchLink({ ... })` (with no space between `httpBatchLink` and the opening parenthesis and brace `({`, and the `transformer` property must be placed directly inside this object). Do not leave the `transformer` property at the root of `createTRPCProxyClient`.

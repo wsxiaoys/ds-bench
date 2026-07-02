@@ -8,7 +8,7 @@ Structural segmentation of an audio recording can be performed by analyzing how 
 - Compute a frame-level spectral feature representation (MFCCs over time).
 - Build a self-similarity matrix from the feature sequence using a cosine metric.
 - Construct a Foote-style checkerboard kernel and convolve it along the diagonal of the SSM to obtain a one-dimensional novelty curve.
-- Pick peaks from the novelty curve to identify structural change-points.
+- Pick peaks from the novelty curve to identify structural change-points. At least two structural boundaries must be reported, corresponding to the major structural changes in the input audio (which has transition points around 5.0 and 10.0 seconds).
 - Convert each peak from a frame index to a timestamp in seconds.
 - Write the timestamps to `/home/user/boundaries.json` using the schema:
   ```json
@@ -24,13 +24,4 @@ Structural segmentation of an audio recording can be performed by analyzing how 
 - Slide the kernel along the diagonal of the SSM to produce the novelty curve; mind boundary effects.
 - Convert frame indices to time using `librosa.frames_to_time` with the same `sr` and `hop_length` used for the MFCCs.
 - Use any peak-picking strategy you like (e.g., `librosa.util.peak_pick` or `scipy.signal.find_peaks`); tune it to ignore trivial peaks near the very start and very end of the signal.
-
-## Acceptance Criteria
-- Project path: /home/user
-- Ensure the script is executed and the output artifact exists.
-- Output file: /home/user/boundaries.json
-- The file must be valid JSON containing an object with a `boundaries_sec` key.
-- `boundaries_sec` must be a list of numbers (in seconds), strictly increasing, with every value in the interval `[0, audio_duration]`.
-- At least two structural boundaries must be reported.
-- The detected boundaries must correspond to the major structural changes present in the input audio (verified against ground-truth change-points baked into the test environment).
 

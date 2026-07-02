@@ -10,7 +10,7 @@ Encore provides a built-in authentication system using the `//encore:authhandler
 - If the token is invalid or missing, the auth handler should return an error with the `Unauthenticated` error code.
 - In the `dashboard` package, create a protected API endpoint `GET /dashboard`.
 - The endpoint must require authentication.
-- The endpoint should read the authenticated user's ID and custom data from the context, and return a response message.
+- The endpoint should read the authenticated user's ID and custom data from the context, and return a JSON response with a `message` field containing exactly: `Hello user-123, you are an admin`.
 - Deploy the application to Encore Cloud.
 - Write the deployed app's App ID to a log file.
 
@@ -23,23 +23,8 @@ Encore provides a built-in authentication system using the `//encore:authhandler
   2. Add the Encore Git remote: `git remote add encore encore://<app-id>`.
   3. Commit your code and run `git push encore`.
 - The deployed endpoint will be available at `https://staging-<app-id>.encr.app/`.
-- Write the app ID to `/home/user/myproject/output.log`.
+- Write the app ID to `/home/user/myproject/output.log` in the format: `App ID: <app_id>`.
 - Define the auth handler in the `auth` package using the `//encore:authhandler` annotation. It should return `(auth.UID, *YourCustomData, error)`.
 - For the protected endpoint in the `dashboard` package, use the `//encore:api auth` annotation.
 - Inside the protected endpoint, use `auth.UserID()` and `auth.Data()` to access the authenticated user's ID and custom data.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Ensure the app is deployed to Encore Cloud and the log artifact exists.
-- Log file: /home/user/myproject/output.log
-- The log file must contain the App ID in the format: `App ID: <app_id>`.
-- The deployed API endpoint `GET https://staging-<app_id>.encr.app/dashboard` must require authentication.
-  - If no token or invalid token is provided, returns HTTP 401 Unauthorized.
-  - If the `Authorization` header is `Bearer secret-token`, it should return HTTP 200 OK.
-  - The successful JSON response must be exactly:
-    ```json
-    {
-      "message": "Hello user-123, you are an admin"
-    }
-    ```
 

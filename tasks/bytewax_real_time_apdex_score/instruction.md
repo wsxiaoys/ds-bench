@@ -19,19 +19,5 @@ Calculate the Application Performance Index (Apdex) score in real-time for diffe
 - Use Bytewax's windowing operators (e.g., `fold_window` or `collect_window`) to group and aggregate data by service and time window.
 - Configure an event clock to use the `timestamp` field from the input data.
 - Use a tumbling windower with a length of 10 seconds.
-- Ensure the dataflow can be executed directly as a Python script.
-
-## Acceptance Criteria
-- Project path: /home/user/bytewax-apdex
-- Command: `python apdex_flow.py`
-- The script must read from `input.jsonl` and write to `output.jsonl`.
-- Expected input format:
-  ```json
-  {"timestamp": "2023-10-01T10:00:00Z", "service": "auth", "response_time_ms": 200}
-  ```
-- Expected output format:
-  ```json
-  {"window_start": "2023-10-01T10:00:00Z", "service": "auth", "apdex_score": 1.0}
-  ```
-- The output must accurately reflect the Apdex score for each service within each 10-second window.
+- Create the Python script as `apdex_flow.py` in the `/home/user/bytewax-apdex` directory, so it can be executed directly as `python apdex_flow.py`.
 

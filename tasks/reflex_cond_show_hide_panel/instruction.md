@@ -14,19 +14,7 @@ Build a small Reflex application that demonstrates the most common conditional-r
 - Use `uv` to manage the Python environment and initialize the Reflex app non-interactively (`uv init`, `uv add reflex`, `uv run reflex init --template blank`).
 - Refer to the Reflex docs for [Conditional Rendering](https://reflex.dev/docs/components/conditional-rendering/), the [Switch component](https://reflex.dev/docs/library/forms/switch/), and [Computed Vars](https://reflex.dev/docs/vars/computed-vars/). Do not assume APIs you have not verified.
 - `rx.switch` emits a boolean through its `on_change` trigger; bind it to a setter that updates `show_panel`.
+- Declare the boolean state var on your state class with an explicit type annotation and default value: `show_panel: bool = False`.
 - Mark the computed var explicitly as cached (`@rx.var(cache=True)`) and have it return a `str`.
 - Stop any long-running development servers (e.g. `uv run reflex run`) that you started for manual testing before finishing the task. The verifier compiles the frontend with `uv run reflex export --frontend-only --no-zip` and inspects the source code; it does not require a running server.
-
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- Start command: `uv run reflex run --env prod`
-- Port: `3000`
-- Routes:
-  - `/`: renders the toggle control, the conditional panel, and the visibility label.
-- A boolean state var named `show_panel` exists and defaults to `False`.
-- A cached computed var named `visibility_label` exists on the same state class and returns `Visibility: shown` when `show_panel` is true and `Visibility: hidden` otherwise.
-- The `/` page uses `rx.cond` referencing the state's `show_panel` to conditionally render the panel containing the literal `Secret Panel Content`.
-- After running `uv run reflex export --frontend-only --no-zip` in the project directory, the compiled frontend output (the generated `.web/` directory or any zipped artifact) contains all three literals: `Secret Panel Content`, `Visibility: shown`, and `Visibility: hidden`.
-- No external environment variables are required to run the app or the tests.
-- Background servers: stop any dev server you started before submitting; the verifier compiles the frontend itself and does not rely on a running app.
 

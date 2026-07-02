@@ -39,15 +39,3 @@ An unknown command, a reference to an undefined polygon, or a malformed numeric 
 - Make sure your `run.sh` filters out Gradle's own logging (e.g. use `./gradlew -q` or capture only the launcher's stdout) so that the only lines emitted are the result lines defined above.
 - The headless launcher runs the `ApplicationListener` on its own thread; wait for the main loop to finish before exiting `main()` so all output is flushed.
 
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Command: `bash run.sh <input-script-path>`
-- Input argument format: `<input-script-path>` is the absolute path to a UTF-8 text file that conforms to the script language above.
-- The stdout must contain exactly one result line per non-empty, non-comment input line, in the order the commands appear.
-- All result lines must follow the exact formats listed in Requirements (including the literal command keyword in upper-case).
-- The program must exit with status code 0 for any well-formed script.
-- The implementation must use `com.badlogicgames.gdx:gdx-backend-headless:1.14.2` and `com.badlogicgames.gdx:gdx:1.14.2`, and must run under `HeadlessApplication`.
-- Floating-point output must use `Locale.ROOT` and `%.3f` (three fractional digits, `.` as the decimal separator).
-- `run.sh` must not print any output other than the program's stdout lines (Gradle banners, daemon notices, and progress logs must be suppressed).
-- The build must be reproducible offline once dependencies are resolved on the first run (subsequent invocations must not require network access).
-

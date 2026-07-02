@@ -10,7 +10,12 @@ A sample spreadsheet has been prepared at `/home/user/project/data/sales.xlsx`. 
 - Upload `data/sales.xlsx` using the Files API with the appropriate `purpose`.
 - Run a LlamaSheets job that requests additional metadata (worksheet titles/descriptions).
 - Wait for the job to finish, then for **each** detected region download the Parquet table data to `/home/user/project/output/region_<region_id>.parquet`.
-- Record a structured summary in `/home/user/project/output/sheets.log` so a reviewer can verify the run from the log alone.
+- Record a structured summary in `/home/user/project/output/sheets.log` so a reviewer can verify the run from the log alone. The log file must contain the following lines (in any order):
+  - `Job ID: <job_id>` — the non-empty LlamaSheets job identifier.
+  - `Job Status: SUCCESS`
+  - `Region Count: <n>` — the integer number of detected regions (must be `>= 1`).
+  - One line per region: `Region: <region_id> sheet=<sheet_name> location=<location>` where `<location>` is the Excel range (e.g., `A1:D6`).
+  - One line per region: `Parquet: /home/user/project/output/region_<region_id>.parquet`
 
 ## Implementation Hints
 - Instantiate the synchronous client with `from llama_cloud import LlamaCloud`. The constructor picks up `LLAMA_CLOUD_API_KEY` automatically.
@@ -18,17 +23,4 @@ A sample spreadsheet has been prepared at `/home/user/project/data/sales.xlsx`. 
 - The one-shot helper `client.beta.sheets.parse(file_id=..., config={"generate_additional_metadata": True})` creates the job, polls until completion, and returns the final job object (`id`, `status`, `regions`, `worksheet_metadata`, ...).
 - The Parquet download URL is fetched per region using `client.beta.sheets.get_result_table(region_type=region.region_type, spreadsheet_job_id=<job_id>, region_id=region.region_id)`; perform an HTTP GET on the returned `url` and stream the bytes to disk.
 - Make sure the output directory exists before writing files.
-
-## Acceptance Criteria
-- Project path: /home/user/project
-- Ensure the script is executed end-to-end against the real LlamaCloud API and that the log + Parquet artifacts exist.
-- Log file: /home/user/project/output/sheets.log
-- The log file MUST contain the following lines (in any order, one fact per line):
-  - `Job ID: <job_id>` — the LlamaSheets job identifier (a non-empty string).
-  - `Job Status: <status>` — must equal `SUCCESS`.
-  - `Region Count: <n>` — the integer number of detected regions (must be `>= 1`).
-  - One line per region in the form `Region: <region_id> sheet=<sheet_name> location=<location>` where `<location>` looks like an Excel range such as `A1:D6`.
-  - One line per region in the form `Parquet: /home/user/project/output/region_<region_id>.parquet` listing the artifact written for that region.
-- For every region listed in the log, the matching Parquet file MUST exist on disk at the stated path, be non-empty, and be a valid Parquet file readable by `pandas.read_parquet` / `pyarrow`.
-- At least one downloaded Parquet file MUST contain the numeric column values from the sales table (rows such as the per-month revenue figures) so that the extracted region clearly corresponds to the source data.
 

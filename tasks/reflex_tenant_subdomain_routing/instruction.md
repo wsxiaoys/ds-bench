@@ -23,23 +23,5 @@ Build a Reflex web application that exposes tenant-scoped pages under `/t/[tenan
 - Initialize the project non-interactively with `uv` and the Reflex `blank` template, then run `reflex db init`, `reflex db makemigrations`, and `reflex db migrate` to apply the schema. Use the default Reflex SQLite database under the project directory.
 - The middleware is plain FastAPI/Starlette; it only needs to read the same SQLite database that `rx.Model` writes to (no shared Reflex state).
 - Page on-load handlers may use `rx.session()` (synchronous) to look up tenants by slug.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Start command: `cd /home/user/myproject && uv run reflex run --env prod`
-- Ports:
-  - Frontend (Next.js, browser-facing): `3000`
-  - Backend (FastAPI / Reflex websocket): `8000`
-- The verifier starts its own server using the start command above. The agent MUST shut down any background processes it started for development or testing before finishing the task.
-- Browser-visible routes (port 3000):
-  - `http://localhost:3000/t/acme/dashboard` → page displays `Acme Corp` and `Dashboard` (no `Tenant Not Found`).
-  - `http://localhost:3000/t/globex/settings` → page displays `Globex Inc` and `Settings` (no `Tenant Not Found`).
-  - `http://localhost:3000/t/initech/dashboard` → page displays `Initech LLC` and `Dashboard`.
-  - `http://localhost:3000/t/no-such-tenant/dashboard` → page displays `Tenant Not Found` and does NOT display any of `Acme Corp`, `Globex Inc`, or `Initech LLC`.
-- Backend API endpoints (port 8000):
-  - `GET http://localhost:8000/api/me` with header `X-Tenant-Id: acme` → HTTP 200, JSON body `{"slug": "acme", "name": "Acme Corp"}`.
-  - `GET http://localhost:8000/api/me` with header `X-Tenant-Id: initech` → HTTP 200, JSON body `{"slug": "initech", "name": "Initech LLC"}`.
-  - `GET http://localhost:8000/api/me` with no `X-Tenant-Id` header → HTTP 403, JSON body `{"detail": "forbidden"}`.
-  - `GET http://localhost:8000/api/me` with header `X-Tenant-Id: not-a-tenant` → HTTP 403, JSON body `{"detail": "forbidden"}`.
-- Reflex's reserved backend route MUST keep working: `GET http://localhost:8000/ping` → HTTP 200 with body `"pong"`.
+- The application will be verified in production mode using `uv run reflex run --env prod`.
 

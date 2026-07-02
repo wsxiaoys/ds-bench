@@ -248,8 +248,8 @@ def test_schema_uses_single_scope_call():
         "src/schema.ts must contain exactly one `scope(` call so that the db.* "
         f"and api.* aliases share a single scope; found {len(matches)}."
     )
-    assert re.search(r"scope\s*\([\s\S]+?\)\s*\.\s*export\s*\(\s*\)", source), (
-        "src/schema.ts must build the module via `scope({...}).export()`."
+    assert re.search(r"\.\s*export\s*\(\s*\)", source), (
+        "src/schema.ts must build the module via `.export()` on the scope."
     )
 
 

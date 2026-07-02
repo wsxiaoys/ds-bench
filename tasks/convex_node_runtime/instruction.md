@@ -6,7 +6,7 @@ Convex provides V8 and Node.js runtimes. By default, queries and mutations run i
 ## Requirements
 - Initialize a Convex project in `/home/user/project`.
 - Create an Action named `generate` in `convex/hash.ts`.
-- The Action must accept a single string argument `text`.
+- The Action must accept an argument object with a `text` string property (i.e., `{ text: string }`).
 - The Action must compute the SHA-256 hash of the `text` using Node's `crypto` module and return it as a hex string.
 - Deploy the Convex project to the cloud.
 
@@ -14,10 +14,4 @@ Convex provides V8 and Node.js runtimes. By default, queries and mutations run i
 - Ensure you set `"use node";` at the top of your `convex/hash.ts` file.
 - Use `crypto.createHash('sha256').update(text).digest('hex')` to compute the hash.
 - Ensure you deploy the project using `npx convex deploy`.
-
-## Acceptance Criteria
-- Project path: `/home/user/project`
-- Ensure the real deployment action is executed.
-- The deployed Convex backend must expose an action `api.hash.generate` (or `hash:generate`).
-- The action must take an argument `{ text: string }` and return the SHA-256 hash in hex format.
 

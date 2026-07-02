@@ -29,18 +29,3 @@ Your job is to design and implement a custom local Capacitor plugin (Java, insid
 - The web frontend already has `@capacitor/core` installed as an npm dependency; you do not need to install additional packages.
 - The Android SDK, JDK 17, and the Gradle wrapper are pre-installed and pre-warmed inside the project; running `./gradlew` from `/home/user/myapp/android` will compile the project. Use the `--offline` flag whenever possible to avoid re-downloading dependencies.
 
-## Acceptance Criteria
-- Project path: `/home/user/myapp`
-- The Android project at `/home/user/myapp/android` must build successfully via:
-  - `cd /home/user/myapp/android && ./gradlew :app:assembleDebug --offline`
-- A Java source file implementing the plugin must exist under `/home/user/myapp/android/app/src/main/java/com/example/myapp/` (and must not be `MainActivity.java`). The file must:
-  - Declare `package com.example.myapp;`.
-  - Import `com.getcapacitor.Plugin`, `com.getcapacitor.PluginCall`, `com.getcapacitor.PluginMethod`, `com.getcapacitor.JSObject`, and `com.getcapacitor.annotation.CapacitorPlugin`.
-  - Annotate the plugin class with `@CapacitorPlugin(name = "DeviceSensor")`.
-  - Declare a class that `extends Plugin`.
-  - Declare two methods named `getReading` and `isAvailable`, both annotated with `@PluginMethod` (with or without parentheses).
-- `MainActivity` at `/home/user/myapp/android/app/src/main/java/com/example/myapp/MainActivity.java` must contain a `registerPlugin(<PluginClass>.class)` call referencing the plugin class above, placed inside `onCreate(Bundle savedInstanceState)`.
-- A TypeScript binding file must exist at `/home/user/myapp/src/device-sensor.ts` that imports `registerPlugin` from `@capacitor/core`, registers a plugin under the exact string literal `"DeviceSensor"`, and provides a default export.
-- The compiled debug APK produced at `/home/user/myapp/android/app/build/outputs/apk/debug/app-debug.apk` must contain the plugin class in its DEX (verifiable by listing classes inside the APK).
-- The behaviour of the plugin must be observable through the source code: for each supported sensor identifier, the resolved JSON payload must contain the exact value and unit listed in the Requirements section above. The verifier will check this by extracting all `JSObject.put` calls associated with the matching sensor branch and confirming the literal numeric values (`22.5`, `65.0`, `87.0`) and unit strings (`C`, `%`).
-

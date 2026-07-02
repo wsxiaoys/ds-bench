@@ -26,14 +26,6 @@ The indexer must work end-to-end against real services — no mocks of OpenAI, n
 - Use LanceDB's standard Python API (`lancedb.connect`, `create_table` / `open_table`, `table.search`) for storage and retrieval.
 - Persist the table under `/home/user/myproject/lancedb/` so the verifier can re-open the same connection.
 - To avoid collisions between concurrent runs, append the value of the `/logs/artifacts/run-id` to your table name (e.g. `docs_sections_<run-id>`). The verifier reads the same env var and opens the same table.
+- Running `python3 /home/user/myproject/indexer.py` (or whichever script you choose to drive ingestion) must execute the indexing process and produce/populate the LanceDB table.
 - Make indexing idempotent: when the script is re-run with the same `/logs/artifacts/run-id`, it should not error out and should leave the table queryable.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- The candidate must provide `/home/user/myproject/indexer.py` exposing a top-level callable `search(query: str, k: int) -> list[dict]`.
-- Indexing entrypoint: running `python3 /home/user/myproject/indexer.py` (or whichever script the candidate chooses to drive ingestion) must produce a LanceDB table at `/home/user/myproject/lancedb/` whose name is `docs_sections_<run-id>` (where `<run-id>` is read from `/logs/artifacts/run-id`).
-- The table schema must include at least the columns `repo_path`, `doc_title`, `section_title`, `content`, and `embedding`.
-- After indexing, `search(query, k)` must return a Python list of length `k` (assuming the table has at least `k` rows), each item a dict with the keys `repo_path` (str), `doc_title` (str), `section_title` (str), and `score` (float).
-- Result ordering: results must be ordered from most to least semantically relevant to the query.
-- No mocks: both indexing and `search()` must call the real OpenAI Embeddings API and the real LanceDB.
 

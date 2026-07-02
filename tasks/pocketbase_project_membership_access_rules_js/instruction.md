@@ -35,26 +35,5 @@ This exercises PocketBase's relational [API Rules](https://pocketbase.io/docs/ap
 - Rules left as `null` are locked to superusers only - that is what `guests are blocked` looks like by default. To allow non-superuser access you have to set a non-null string rule.
 - The migration must be idempotent enough that PocketBase's automatic application succeeds on a fresh `pb_data` (you do not need to handle re-runs - migrations are recorded in `_migrations` and skipped once applied).
 - You do NOT need to write any Go code, JSVM hooks, or client-side code. You also do not need to modify the existing `users` collection.
-
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- Start command: `./pocketbase serve --http=0.0.0.0:8090`
-- Port: 8090
-- A migration file with the extension `.js` exists under `/home/user/myproject/pb_migrations/`.
-- After the server has started, the PocketBase REST API exposes two new application collections (`projects` and `tasks`) with the schemas described in Requirements. Their fields can be inspected by an authenticated superuser via `GET /api/collections/{projects|tasks}`.
-- API endpoints exercised by verification (all under `http://127.0.0.1:8090`):
-  - `POST /api/collections/_superusers/auth-with-password` - used by the verifier to obtain a superuser token for seeding test data.
-  - `POST /api/collections/users/records` - used by the verifier to register regular users.
-  - `POST /api/collections/users/auth-with-password` - used by the verifier to obtain per-user tokens.
-  - `POST /api/collections/projects/records` - subject to the project rules above.
-  - `GET  /api/collections/projects/records` and `GET /api/collections/projects/records/{id}` - subject to the project rules above.
-  - `PATCH /api/collections/projects/records/{id}` and `DELETE /api/collections/projects/records/{id}` - subject to the project rules above.
-  - `POST /api/collections/tasks/records` - subject to the task rules above.
-  - `GET /api/collections/tasks/records` and `GET /api/collections/tasks/records/{id}` - subject to the task rules above.
-  - `PATCH /api/collections/tasks/records/{id}` and `DELETE /api/collections/tasks/records/{id}` - subject to the task rules above.
-- Externally observable access behaviour:
-  - An authenticated user that is in a project's `members` list can list/view that project and any task whose `project` references it, and can create/update/delete tasks of that project.
-  - An authenticated user that is NOT in a project's `members` list cannot see that project or any of its tasks (the project does not appear in their list response and direct `GET .../records/{id}` returns 404), and cannot create/update/delete tasks for that project (request is rejected with 400 or 404).
-  - Guest (no `Authorization` header) requests to either collection's list/create endpoints return a non-2xx response or an empty result set, and direct view/update/delete by id returns a non-2xx response.
-  - Superusers (using their auth token) can still list and view every record on both collections.
+- To start the PocketBase server from the project directory (`/home/user/myproject`), bind it to all interfaces on port 8090 using: `./pocketbase serve --http=0.0.0.0:8090`.
 

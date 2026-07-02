@@ -4,7 +4,7 @@
 You have an existing simple Go application built with the Gin framework. To simplify infrastructure management, you need to migrate this application to the Encore backend framework and deploy it to Encore Cloud.
 
 ## Requirements
-- Initialize an Encore app using Go in the project directory.
+- Initialize an Encore app using Go in the project directory (`/home/user/myproject`).
 - Use the app name `ginmigrate-${run-id}` to ensure uniqueness.
 - Implement the following API endpoints using Encore's declarative approach (migrated from the original Gin app):
   - `GET /hello/:name`: Returns a JSON object with a `message` field containing `Hello, <name>!`.
@@ -22,11 +22,4 @@ You have an existing simple Go application built with the Gin framework. To simp
   3. Initialize the Encore app: `encore app init ginmigrate-${run-id} --lang go`.
   4. Add the Encore Git remote: `git remote add encore encore://<app-id>` (extract `<app-id>` from `encore.app`).
   5. Commit your code and push to the Encore remote: `git add -A . && git commit -m 'Deploy' && git push encore`.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Ensure the app is deployed to Encore Cloud.
-- The app ID must be readable from `/home/user/myproject/encore.app`.
-- The deployed endpoint `https://staging-<app-id>.encr.app/hello/:name` must return HTTP 200 and JSON `{"message": "Hello, <name>!"}`.
-- The deployed endpoint `https://staging-<app-id>.encr.app/ping` must return HTTP 200 and JSON `{"message": "pong"}`.
 

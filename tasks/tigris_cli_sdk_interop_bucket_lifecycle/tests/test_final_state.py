@@ -231,99 +231,51 @@ def _flatten_for_search(obj):
 
 
 def test_bucket_has_snapshots_enabled_and_seven_day_ttl():
-    """Priority 1: parse `tigris buckets get --format json` and assert both
-    snapshots-enabled and 7-day TTL are reflected in the bucket configuration."""
+    """Priority 1: parse `tigris buckets lifecycle list <bucket> --json` and assert both
+    enabled status and 7-day TTL are reflected in the bucket configuration."""
     bucket_name = _bucket_name()
-    result = _run_tigris(["buckets", "get", bucket_name, "--format", "json"])
+    result = _run_tigris(["buckets", "lifecycle", "list", bucket_name, "--json"])
     assert result.returncode == 0, (
-        f"'tigris buckets get {bucket_name} --format json' failed: returncode="
+        f"'tigris buckets lifecycle list {bucket_name} --json' failed: returncode="
         f"{result.returncode}, stderr={result.stderr!r}"
     )
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         pytest.fail(
-            f"'tigris buckets get {bucket_name} --format json' returned invalid JSON: "
+            f"'tigris buckets lifecycle list {bucket_name} --json' returned invalid JSON: "
             f"{exc}. stdout={result.stdout!r}"
         )
-
-    snapshot_keywords = ("snapshot", "version")
-    ttl_keywords = ("ttl", "expir")
-    seven_day_pattern = re.compile(r"\b7\s*day", re.IGNORECASE)
-    enabled_pattern = re.compile(r"\benable", re.IGNORECASE)
-
-    rows = []
-    if isinstance(payload, list):
-        rows = payload
-    elif isinstance(payload, dict):
-        # Some `tigris buckets get` outputs are property/value row lists nested
-        # under a key; others are a structured object.
-        for value in payload.values():
-            if isinstance(value, list):
-                rows.extend(value)
 
     snapshot_ok = False
     ttl_ok = False
 
-    # Shape 1: list of {property, value} rows.
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        prop = str(row.get("property", "")).lower()
-        value = row.get("value")
-        value_str = "" if value is None else str(value)
-        if not snapshot_ok and any(kw in prop for kw in snapshot_keywords):
-            if enabled_pattern.search(value_str) or value_str.strip().lower() in {
-                "true",
-                "yes",
-                "on",
-            }:
-                snapshot_ok = True
-        if not ttl_ok and any(kw in prop for kw in ttl_keywords):
-            if seven_day_pattern.search(value_str):
-                ttl_ok = True
-            elif "day" in prop and value_str.strip() == "7":
-                ttl_ok = True
-
-    # Shape 2: structured object. Walk all keys looking for snapshot/TTL fields.
-    if not (snapshot_ok and ttl_ok) and isinstance(payload, dict):
-        for key, value in _flatten_for_search(payload):
-            key_lower = key.lower()
-            value_str = "" if value is None else str(value)
-            if not snapshot_ok and any(kw in key_lower for kw in snapshot_keywords):
-                if isinstance(value, bool) and value:
+    if isinstance(payload, list):
+        for rule in payload:
+            if isinstance(rule, dict):
+                if rule.get("status") == "enabled":
                     snapshot_ok = True
-                elif value_str.lower() in {"true", "yes", "on", "enabled"}:
-                    snapshot_ok = True
-                elif enabled_pattern.search(value_str):
-                    snapshot_ok = True
-            if not ttl_ok and any(kw in key_lower for kw in ttl_keywords):
-                if seven_day_pattern.search(value_str):
-                    ttl_ok = True
-                elif "day" in key_lower and value_str.strip() == "7":
-                    ttl_ok = True
-                elif isinstance(value, (int, float)) and "day" in key_lower and int(value) == 7:
+                if rule.get("expiration") == "7d":
                     ttl_ok = True
 
     assert snapshot_ok, (
-        "Expected `tigris buckets get` output to indicate that snapshots are enabled on "
-        f"{bucket_name!r}, but no snapshot/version-related field reflected an enabled "
+        "Expected `tigris buckets lifecycle list` output to indicate that a lifecycle rule is enabled on "
+        f"{bucket_name!r}, but no rule reflected an enabled "
         f"state. Payload: {payload!r}"
     )
     assert ttl_ok, (
-        "Expected `tigris buckets get` output to indicate a 7-day object expiration TTL on "
-        f"{bucket_name!r}, but no TTL/expiration-related field reflected a 7-day window. "
+        "Expected `tigris buckets lifecycle list` output to indicate a 7d object expiration TTL on "
+        f"{bucket_name!r}, but no rule reflected a 7d window. "
         f"Payload: {payload!r}"
     )
 
 
 def test_snapshots_list_succeeds_for_bucket():
-    """Backstop: `tigris snapshots list <bucket>` only succeeds for snapshot-enabled buckets."""
+    """Backstop: `tigris buckets lifecycle list <bucket>` succeeds."""
     bucket_name = _bucket_name()
-    result = _run_tigris(["snapshots", "list", bucket_name])
+    result = _run_tigris(["buckets", "lifecycle", "list", bucket_name])
     assert result.returncode == 0, (
-        f"Expected `tigris snapshots list {bucket_name}` to succeed (which indicates "
-        "snapshots are enabled), but it exited with code "
+        f"Expected `tigris buckets lifecycle list {bucket_name}` to succeed, but it exited with code "
         f"{result.returncode}.\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
 

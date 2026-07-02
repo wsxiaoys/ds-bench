@@ -16,7 +16,7 @@ A minimal Vite + TypeScript project has already been scaffolded for you at `/hom
     - `listPhotos(): Promise<string[]>` — return the current JSON-decoded array of stored photo paths from Preferences. If the key has never been written, resolve with an empty array `[]`.
     - `deletePhoto(path: string): Promise<void>` — remove the file from `Directory.Data` via `Filesystem.deleteFile`, then update the Preferences index so the deleted path is no longer present. The two side effects MUST both occur; if the file does not exist the index must still be updated.
 - The index MUST be stored in `@capacitor/preferences` under the key `photo_index`, and the stored value MUST be a JSON-serialized array of strings (e.g. `"[\"photos/2026-01-02T03:04:05.678Z.jpeg\"]"`). The order of the array MUST reflect insertion order.
-- The served `index.html` must contain a single visible button with the HTML id `capture-btn` that, when clicked, calls `window.gallery.capturePhoto()` and updates a status element with the HTML id `capture-status` (text content `idle`, `capturing`, `saved`, or `error: <message>`). The remaining `listPhotos` / `deletePhoto` behaviour is exercised programmatically by tests via `window.gallery.*`.
+- The served `index.html` must contain elements with the HTML ids `capture-btn` and `capture-status`. The button `#capture-btn`, when clicked, must call `window.gallery.capturePhoto()` and update the status element `#capture-status`. On initial load (before any capture has been attempted), `#capture-status` must contain the literal text `idle`. During capture, it should update to `capturing`, and once successfully saved, it must transition to `saved` (or `error: <message>` on failure). The remaining `listPhotos` / `deletePhoto` behaviour is exercised programmatically by tests via `window.gallery.*`.
 - `npx cap sync` must run successfully against the produced web build (no native platforms need to be added).
 
 ## Implementation Hints
@@ -28,25 +28,4 @@ A minimal Vite + TypeScript project has already been scaffolded for you at `/hom
 - The Preferences plugin stores raw strings: serialize the index with `JSON.stringify` on write and `JSON.parse` on read. Treat a missing key (`value === null`) as an empty array.
 - Expose the gallery module on `window` from your entry point (for example in `src/main.ts`) so the verifier can drive it via `window.gallery.capturePhoto()`, `window.gallery.listPhotos()`, and `window.gallery.deletePhoto(path)`.
 - Make sure the module is loaded as an ES module so that the dynamic imports of the Capacitor plugins succeed.
-
-## Acceptance Criteria
-- Project path: /home/user/myapp
-- Start command: `npm run preview -- --host 0.0.0.0 --port 4173`
-- Port: 4173
-- `npm run build` must complete without errors and produce a `dist/` directory containing `index.html`.
-- `capacitor.config.ts` (or `capacitor.config.json`) must exist at the project root with `appName` equal to `Photo Gallery`, `appId` equal to `com.example.photogallery`, and `webDir` equal to `dist`.
-- `package.json` must list `@capacitor/core`, `@capacitor/cli`, `@capacitor/camera`, `@capacitor/filesystem`, and `@capacitor/preferences` as dependencies (any of `dependencies` or `devDependencies`). The installed version of `@capacitor/camera` must be 8.1.0 or newer.
-- `npx cap sync` executed after the production build must exit with status 0.
-- The served page at `http://localhost:4173/` must contain elements with the HTML ids `capture-btn` and `capture-status`. On initial load (before any capture has been attempted), `#capture-status` must contain the literal text `idle`.
-- `window.gallery.capturePhoto`, `window.gallery.listPhotos`, and `window.gallery.deletePhoto` must all be defined as async functions on the served page.
-- Calling (or clicking through to) `window.gallery.capturePhoto()` after the file picker provides a JPEG must:
-    - Resolve with a string of the form `photos/<isoTimestamp>.jpeg`, where `<isoTimestamp>` is the value of an ISO-8601 timestamp produced by `new Date().toISOString()` (e.g. `photos/2026-01-02T03:04:05.678Z.jpeg`).
-    - Cause `Filesystem.readFile({ path: <returned_path>, directory: Directory.Data })` to succeed and return base64 data whose decoded bytes equal the bytes that were fed to the file picker.
-    - Append the returned path to the JSON array stored in `@capacitor/preferences` under the key `photo_index`.
-    - Transition `#capture-status` to `saved` (when triggered via the button).
-- `window.gallery.listPhotos()` must return an array of strings equal to the current JSON-decoded `photo_index` value (or `[]` if the key is unset), and the order MUST reflect insertion order.
-- After a full page reload, `window.gallery.listPhotos()` must still return the previously captured paths (i.e. state persists across reloads through Capacitor Preferences and Filesystem).
-- `window.gallery.deletePhoto(path)` must:
-    - Cause `Filesystem.readFile({ path, directory: Directory.Data })` to subsequently fail.
-    - Remove `path` from the `photo_index` array stored in Preferences (the remaining entries must keep their relative order).
 

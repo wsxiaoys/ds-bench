@@ -27,20 +27,10 @@ A sample invoice has already been placed at `/home/user/project/invoice.pdf` for
 ## Implementation Hints
 - Install the latest v2 SDK: `npm install @llamaindex/llama-cloud zod`.
 - Run the script with `npx tsx <file>.ts` (no separate build step needed).
+- Create your TypeScript source file (with a `.ts` extension) directly under `/home/user/project`. Ensure the file contains references to `@llamaindex/llama-cloud`, `zod`, `LlamaCloud`, `extract`, and the input file `invoice.pdf`.
 - The SDK reads `LLAMA_CLOUD_API_KEY` from the environment automatically; you do not need to hard-code the key.
 - The Extract v2 SDK signature is `client.extract.create({ file_input, configuration: { data_schema, extraction_target, tier } })`. Note the **flattened** `configuration` field — there is no `extract_options` wrapper in v2.
 - Use Zod (≥ v4) and `z.toJSONSchema(schema)` to turn your Zod schema into a JSON Schema object that the API accepts as `data_schema`.
 - The `extract_result` returned by the SDK is already parsed JSON — write it through `JSON.stringify(result, null, 2)`.
 - Make the script idempotent: re-running it should overwrite `output.json` and `output.log`.
-
-## Acceptance Criteria
-- Project path: /home/user/project
-- Ensure the script is actually executed against the real LlamaCloud API and the resulting artifacts exist on disk before completing the task.
-- Output files:
-  - `/home/user/project/output.json` — a JSON document whose top-level object contains the keys `invoice_number`, `invoice_date`, `vendor_name`, `total_amount`, and `line_items` (an array).
-  - `/home/user/project/output.log` — must contain at least one line matching the format `Extracted Invoice: <invoice_number> | Vendor: <vendor_name> | Total: <total_amount>`.
-- Dependencies:
-  - `@llamaindex/llama-cloud` is installed in `/home/user/project/node_modules` (the legacy `llama-cloud-services` package must NOT be installed).
-  - `zod` is installed in `/home/user/project/node_modules`.
-- The TypeScript source file the agent creates must live under `/home/user/project` with a `.ts` extension and must reference `@llamaindex/llama-cloud`, `zod`, `LlamaCloud`, `extract`, and `invoice.pdf`.
 

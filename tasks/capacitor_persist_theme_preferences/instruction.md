@@ -9,15 +9,14 @@ A minimal Vite TypeScript project has already been scaffolded for you at `/home/
 - Integrate Capacitor v8 into the existing Vite project. The Capacitor app must be configured with:
     - App name: `Theme Demo`
     - Application/package id: `com.example.themedemo`
-    - Web assets directory aligned with Vite's build output.
-- Install and use the `@capacitor/preferences` plugin (version compatible with Capacitor v8) for persistence. The persisted theme must be stored under the Preferences key `user_theme` with value `"light"` or `"dark"`.
-- Implement a UI in `index.html` that includes a single visible toggle button with the HTML id `theme-toggle` that switches between `light` and `dark` themes.
-- The active theme must be reflected on the `<body>` element by toggling a single CSS class named `dark` (present when dark mode is on, absent when light mode is on).
+    - Web assets directory aligned with Vite's build output (`dist`).
+- Install and use the `@capacitor/preferences` plugin (version compatible with Capacitor v8) for persistence.
+- Implement a UI in `index.html` that includes a button users can click to toggle between `light` and `dark` themes. The button must have the HTML id `theme-toggle`.
+- Persist the currently selected theme under the Preferences key `user_theme` (value `"light"` or `"dark"`).
 - On every page load, read the saved theme from Capacitor Preferences and apply it before the user interacts. If no value has been stored yet, default to `light`.
 - Toggling the button must update the visible theme, persist the new value through the Preferences API, and continue to work correctly across full page reloads.
 - The production build must succeed and `npx cap sync` must run successfully against the produced web build.
 
 ## Deliverable
 - Project path: `/home/user/myapp`
-- Start command: `npm run preview -- --host 0.0.0.0 --port 4173`
 - Port: `4173`

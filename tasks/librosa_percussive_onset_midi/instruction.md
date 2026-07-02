@@ -8,38 +8,16 @@ Build a drum-hit grid quantizer with `librosa`. The pipeline must isolate the pe
 - Separate the percussive waveform from the harmonic content with HPSS.
 - Detect onsets on the percussive component using an onset strength envelope and peak picking.
 - Recover a global tempo (BPM) from beat tracking on the percussive component and derive a 16th-note grid with spacing `60 / tempo / 4` seconds, starting at time 0.
-- Snap each detected onset to the nearest 16th-note grid position.
+- Snap each detected onset to the nearest 16th-note grid position that lies within the audio duration.
 - Estimate a per-hit velocity from the local onset envelope amplitude, normalized into `(0.0, 1.0]`.
-- Write the result to `/home/user/hits.json`.
+- Write the result to `/home/user/hits.json` as a JSON array of hit objects, ordered chronologically.
 
 ## Implementation Hints
 - Use HPSS on the loaded waveform to isolate a percussive-only signal before any onset or beat analysis; both detection and tempo estimation must run on that signal, not on the original mix.
 - Reuse a single `hop_length` for the onset envelope, peak picking, beat tracking, and frame-to-time conversion so onset frame indices and times are consistent.
 - Choose peak-picking parameters that yield at least 5 well-separated hits for a ~12s drum loop near 120 BPM.
-- Derive the grid index of a snapped onset from its raw onset time and the 16th-note step; preserve the original onset time as `raw_time_seconds` and store the snapped time as `time_seconds`.
+- Derive the grid index of a snapped onset from its raw onset time and the 16th-note step. Each hit object in the output must contain exactly four keys: `time_seconds` (the snapped time), `grid_index` (the integer grid index), `velocity` (the normalized amplitude), and `raw_time_seconds` (the original onset time).
 - Sample the onset strength envelope at (or near) each detected onset frame for the per-hit amplitude and rescale across the set of detected hits so the maximum velocity lands at `1.0` while strictly positive minima remain strictly above `0.0`.
 - Verify all signatures against the librosa 0.11.0 documentation; the onset, beat, and frame conversion APIs are keyword-only.
-
-## Acceptance Criteria
-- Project path: /home/user
-- Ensure the quantization pipeline is executed and the output artifact exists.
-- Output file: `/home/user/hits.json`
-- The output file must be a JSON array. Each element must be an object with the following schema:
-
-  ```json
-  {
-    "time_seconds": number,
-    "grid_index": integer,
-    "velocity": number,
-    "raw_time_seconds": number
-  }
-  ```
-
-  - The array must contain at least 5 hits.
-  - `time_seconds` and `raw_time_seconds` are floats in `[0, audio_duration + 1e-3]` seconds.
-  - `grid_index` is a non-negative integer.
-  - `velocity` is a float in `(0.0, 1.0]`.
-- Hits must be ordered so that `time_seconds` is non-decreasing across the array and `grid_index` is non-decreasing across the array.
-- For every hit, `|time_seconds - raw_time_seconds| <= (60.0 / estimated_tempo / 4) / 2 + 1e-3`, where `estimated_tempo` is the global tempo (BPM) returned by beat tracking on the percussive component.
-- `estimated_tempo` must fall within `[40, 240]` BPM. The estimated tempo may be embedded as a numeric `_metadata.estimated_tempo` field inside `/home/user/hits.json`; otherwise the verifier will recompute the tempo by replaying the documented librosa pipeline (HPSS on the loaded waveform, onset strength on the percussive component, `librosa.beat.beat_track` on that envelope) against `/home/user/input.wav`.
+- You may optionally output a top-level JSON object with a `hits` array and embed the global tempo as a numeric `_metadata.estimated_tempo` field to bypass the verifier's tempo recomputation.
 

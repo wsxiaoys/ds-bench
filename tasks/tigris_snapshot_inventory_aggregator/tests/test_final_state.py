@@ -37,15 +37,15 @@ def _other_buckets():
         f"harbor-other-{run_id}-z",
     ]
 
-def _expected_counts():
-    prefix = _prefix()
-    return {
-        f"{prefix}a": 2,
-        f"{prefix}b": 1,
-        f"{prefix}c": 3,
-    }
 
-EXPECTED_TOTAL = 6
+def _extract_list(payload):
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        return payload.get("snapshots") or payload.get("items") or []
+    return []
+
+
 EXPECTED_BUCKET_COUNT = 3
 
 
@@ -96,23 +96,25 @@ def _list_snapshot_versions(bucket):
             f"'tigris snapshots list {bucket} --format json' did not emit "
             f"valid JSON: {exc!s}; stdout={result.stdout!r}"
         )
-    snaps = payload.get("snapshots") if isinstance(payload, dict) else None
+
+    snaps = _extract_list(payload)
     assert isinstance(snaps, list), (
-        f"Expected a 'snapshots' list in the CLI output for bucket "
-        f"{bucket}, got: {payload!r}"
+        f"Expected snapshots/items list in CLI output for bucket {bucket}, "
+        f"got: {payload!r}"
     )
-    versions = []
-    for entry in snaps:
-        assert isinstance(entry, dict), (
-            f"Snapshot entry must be an object, got: {entry!r}"
-        )
-        version = entry.get("version")
-        assert isinstance(version, str) and version, (
-            f"Snapshot entry for bucket {bucket} must have a non-empty "
-            f"string 'version'. Got: {entry!r}"
-        )
-        versions.append(version)
-    return set(versions)
+
+    return {
+        str(s["version"])
+        for s in snaps
+        if isinstance(s, dict) and s.get("version")
+    }
+
+
+def _expected_inventory_truth():
+    return {
+        bucket: _list_snapshot_versions(bucket)
+        for bucket in _bench_buckets()
+    }
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -146,6 +148,10 @@ def test_node_script_runs_and_prints_summary():
     assert os.path.isfile(INDEX_JS), (
         f"Expected user-authored script at {INDEX_JS}; run cannot proceed."
     )
+
+    truth = _expected_inventory_truth()
+    expected_total = sum(len(v) for v in truth.values())
+
     result = subprocess.run(
         ["node", "index.js"],
         capture_output=True,
@@ -158,10 +164,11 @@ def test_node_script_runs_and_prints_summary():
         f"'node index.js' failed with returncode {result.returncode}. "
         f"stdout={result.stdout!r}, stderr={result.stderr!r}"
     )
-    expected = f"{EXPECTED_BUCKET_COUNT} buckets, {EXPECTED_TOTAL} snapshots"
-    assert expected in result.stdout, (
-        f"Expected stdout of 'node index.js' to contain {expected!r}, "
-        f"but it did not. Full stdout: {result.stdout!r}"
+
+    expected = f"{EXPECTED_BUCKET_COUNT} buckets, {expected_total} snapshots"
+    assert result.stdout.strip() == expected, (
+        f"Expected stdout of 'node index.js' to be exactly {expected!r}, "
+        f"but got: {result.stdout!r}"
     )
 
 
@@ -172,61 +179,67 @@ def test_inventory_file_exists_after_run():
 
 
 def test_inventory_file_has_correct_keys_and_counts():
-    """The aggregated inventory must list exactly the three harbor-inv-*
-    buckets with the expected snapshot counts."""
     with open(INVENTORY_FILE) as f:
         try:
             inventory = json.load(f)
         except json.JSONDecodeError as exc:
-            pytest.fail(
-                f"{INVENTORY_FILE} is not valid JSON: {exc!s}."
-            )
+            pytest.fail(f"{INVENTORY_FILE} is not valid JSON: {exc!s}.")
+
     assert isinstance(inventory, dict), (
         f"{INVENTORY_FILE} must be a JSON object keyed by bucket name. "
         f"Got: {type(inventory).__name__}"
     )
+
+    truth = _expected_inventory_truth()
+
     actual_keys = set(inventory.keys())
-    expected_counts = _expected_counts()
-    expected_keys = set(expected_counts.keys())
+    expected_keys = set(truth.keys())
     assert actual_keys == expected_keys, (
         f"{INVENTORY_FILE} must have exactly the keys {sorted(expected_keys)}, "
-        f"but it has {sorted(actual_keys)}. Distractor buckets (harbor-other-*) "
-        "must be filtered out."
+        f"but it has {sorted(actual_keys)}. Distractor buckets must be filtered out."
     )
-    total = 0
-    for bucket, expected_count in expected_counts.items():
+
+    for bucket, expected_versions in truth.items():
         value = inventory[bucket]
+
         assert isinstance(value, list), (
             f"inventory.json[{bucket!r}] must be a list of snapshot version "
             f"strings, got: {type(value).__name__}"
         )
+
         for v in value:
             assert isinstance(v, str) and v, (
                 f"Each snapshot version under inventory.json[{bucket!r}] "
                 f"must be a non-empty string, got: {v!r}"
             )
-        assert len(value) == expected_count, (
-            f"inventory.json[{bucket!r}] must list {expected_count} "
+
+        assert len(value) == len(expected_versions), (
+            f"inventory.json[{bucket!r}] must list {len(expected_versions)} "
             f"snapshot version(s); got {len(value)}: {value!r}"
         )
-        total += len(value)
-    assert total == EXPECTED_TOTAL, (
-        f"Total number of snapshot version IDs across inventory.json must "
-        f"be {EXPECTED_TOTAL}; got {total}."
-    )
 
 
 def test_inventory_versions_match_cli_truth():
-    """Priority 1: For every harbor-inv-* bucket, the snapshot version IDs
-    recorded in inventory.json must equal the version IDs reported by the
-    live Tigris CLI for that bucket."""
     with open(INVENTORY_FILE) as f:
         inventory = json.load(f)
-    for bucket in _expected_counts():
+
+    truth = _expected_inventory_truth()
+
+    for bucket, expected_versions in truth.items():
         recorded = set(inventory.get(bucket) or [])
-        truth = _list_snapshot_versions(bucket)
-        assert recorded == truth, (
+        assert recorded == expected_versions, (
             f"Snapshot version IDs in inventory.json[{bucket!r}] do not "
             f"match the live Tigris CLI output. inventory.json reports "
-            f"{sorted(recorded)}; tigris CLI reports {sorted(truth)}."
+            f"{sorted(recorded)}; tigris CLI reports {sorted(expected_versions)}."
+        )
+
+
+def test_inventory_versions_are_sorted_oldest_first():
+    with open(INVENTORY_FILE) as f:
+        inventory = json.load(f)
+
+    for bucket, versions in inventory.items():
+        assert versions == sorted(versions), (
+            f"Snapshot versions for {bucket!r} must be sorted ascending; "
+            f"got {versions!r}."
         )

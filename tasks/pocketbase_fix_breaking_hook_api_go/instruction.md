@@ -19,10 +19,3 @@ You have a custom Go backend embedding PocketBase. The project was recently upgr
 - Handlers must return `e.Next()` to continue the middleware chain.
 - Use `e.BadRequestError("Title cannot be empty", nil)` for validation errors instead of standard `fmt.Errorf`.
 
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Start command: go run main.go serve --http="0.0.0.0:8090"
-- Port: 8090
-- API Endpoints:
-  - POST `/api/collections/posts/records`: Accepts a JSON body with a `title` and creates a record with an auto-generated `slug`. Returns 200 OK.
-

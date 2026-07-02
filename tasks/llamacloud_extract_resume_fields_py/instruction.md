@@ -24,12 +24,3 @@ A single-page resume PDF has been prepared for you at `/home/user/myproject/resu
 - The `extract_result` is already a JSON-serializable dict — `json.dump(job.extract_result, fp, indent=2)` is sufficient.
 - Read `/logs/artifacts/run-id` with `os.environ["`/logs/artifacts/run-id`"]` so that the `external_file_id` is `harbor-resume-<run-id>` (e.g., `harbor-resume-zrabc123`).
 
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- Ensure the script is executed and the output artifacts exist (no mocking — a real LlamaCloud extract job must run).
-- Script path: `/home/user/myproject/extract_resume.py`
-- Output JSON: `/home/user/myproject/output.json` — a JSON object containing the keys `name` (string), `email` (string), and `skills` (array of strings).
-- Log file: `/home/user/myproject/output.log` — contains exactly one line in the format `Job ID: <job_id>` where `<job_id>` is the id of the Extract job created via the v2 SDK.
-- The uploaded file's `external_file_id` must equal `harbor-resume-${run-id}` where `${run-id}` is the value of the `/logs/artifacts/run-id`.
-- The Extract job id recorded in `output.log` must correspond to a real LlamaCloud Extract job whose status is `COMPLETED`.
-

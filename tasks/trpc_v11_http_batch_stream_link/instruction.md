@@ -15,8 +15,7 @@ tRPC v11 introduced `httpBatchStreamLink` and native `AsyncGenerator` support fo
 2. Install `@trpc/server@next`, `@trpc/client@next`, `zod`, and `typescript`.
 3. Create `server.ts`:
    - Use `initTRPC.create()`.
-   - Define `chatStream` as a `publicProcedure.query` (or `subscription` if appropriate, but `query` works for `AsyncGenerator` streaming in v11 or `subscription` with `httpBatchStreamLink`). Wait, the plan says `AsyncGenerator` Subscriptions: `sub: publicProcedure.subscription(async function* () { yield { status: 'starting' }; })`.
-   - Actually, let's use `publicProcedure.subscription` with `httpBatchStreamLink` or `httpSubscriptionLink`? The plan says: `httpBatchStreamLink` enables streaming responses. `AsyncGenerator` Subscriptions use `subscription`. Wait, `httpBatchStreamLink` is for streaming query/mutation responses. Let's use `publicProcedure.query` returning an async generator. 
+   - Define `chatStream` as a `publicProcedure.query` returning an async generator that yields `"hello"`, `"world"`, and `"!"`. 
 4. Create `client.ts` that uses `createTRPCClient` with `httpBatchStreamLink` and calls the endpoint.
 
 ## Constraints

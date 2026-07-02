@@ -35,17 +35,3 @@
 - For pagination, prefer following `meta.cursors.next` (the SDK exposes `.next()` on list responses that uses that cursor under the hood). Each call must pass `limit=2`.
 - Suggested references: [Issue Tracking API reference](https://developers.apideck.com/apis/issue-tracking/reference), [List Tickets](https://developers.apideck.com/md/apis/issue-tracking/reference/tickets/collectionTicketsAll.md), [Create Ticket](https://developers.apideck.com/md/apis/issue-tracking/reference/tickets/collectionTicketsAdd.md), [Python SDK guide](https://developers.apideck.com/sdks/python.md), [Unified Rate Limits / pagination notes](https://developers.apideck.com/guides/unified-rate-limits.md).
 
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Ensure the seeding and pagination actions are executed against the real Apideck Issue Tracking API and the artifact exists.
-- Log/artifact file: /home/user/myproject/tickets.json (JSON only; the file must be valid JSON and must parse with `json.loads`).
-- The JSON object at `/home/user/myproject/tickets.json` must contain top-level keys `run_id`, `collection_id`, `page_count`, and `tickets`.
-  - `run_id` must equal the value from `/logs/artifacts/run-id`.
-  - `collection_id` must equal the value of `APIDECK_ISSUE_TRACKING_COLLECTION_ID`.
-  - `page_count` must be a positive integer.
-  - `tickets` must be an array of exactly 5 objects with the keys `index`, `id`, and `subject`, sorted by `index` ascending from 1 to 5.
-- Each `subject` value in the JSON must exactly match the corresponding seeded subject (`Pagination demo {index} - <run-id>`).
-- The 5 ticket IDs in the JSON must be retrievable from the Apideck Issue Tracking API (via `Get Ticket`) and their subjects on the server must match what is recorded locally.
-- The 5 ticket IDs must also be discoverable by paginating `List Tickets` for the same collection (limit-agnostic verification on the verifier side).
-- Any persisted solution file under `/home/user/myproject` that performs Apideck calls must use the `apideck-unify` Python SDK (`import apideck_unify` or `from apideck_unify import Apideck`); no persisted file may shell out to `curl` or use `requests`/`httpx` against `*.apideck.com` to perform the seeding or listing.
-

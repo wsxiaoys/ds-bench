@@ -16,8 +16,3 @@ The database has 20 pre-seeded users (id 1–20). Write a script that demonstrat
      { "page1": [...], "page2": [...] }
      ```
 2. Run: `node paginate.js`
-
-## Constraints
-- Project path: `/home/user/myproject`
-- Output file: `/home/user/myproject/paginate_result.json`
-- Users are pre-seeded with ids 1–20 and emails `user1@example.com` through `user20@example.com`

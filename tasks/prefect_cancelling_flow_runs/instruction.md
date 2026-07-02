@@ -6,8 +6,7 @@ Prefect flow runs can be monitored and managed using the Prefect CLI. Sometimes 
 ## Requirements
 - Start the provided flow script `/home/user/project/flow.py` in the background.
 - Find the running flow run for the `infinite_loop_flow` flow.
-- Cancel the flow run using the Prefect CLI.
+- Cancel the flow run using the Prefect CLI (not by killing the python process directly).
 
-## Constraints
-- Project path: `/home/user/project`
-- The flow must be cancelled via the Prefect CLI, not by killing the python process directly.
+## Implementation Hints
+- The project path is `/home/user/project`.

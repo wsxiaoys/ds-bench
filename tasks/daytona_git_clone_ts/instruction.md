@@ -10,7 +10,9 @@ Daytona provides a Toolbox `git` module accessible through its SDKs that lets yo
   2. Use `sandbox.git.clone(...)` to clone `https://github.com/octocat/Spoon-Knife` into the absolute path `/home/daytona/spoon-knife` inside the sandbox.
   3. Call `sandbox.git.status(...)` against the cloned path and obtain the current branch name.
   4. Use `sandbox.process.executeCommand("ls /home/daytona/spoon-knife")` to list the files at the root of the cloned repository.
-  5. Write the branch name and the file list to the log file on the host machine (the machine running the Node.js program), in the exact format described in the Acceptance Criteria.
+  5. Write the branch name and the file list to the log file at `/home/user/myproject/output.log` on the host machine (the machine running the Node.js program). The log file must contain exactly two lines in any order:
+     - `Branch: <branch_name>` (where `<branch_name>` is the branch name obtained from `sandbox.git.status(...)`)
+     - `Files: <comma-separated names>` (where the list includes every entry returned by `ls`, separated by `, ` or `,`, in any order)
   6. Delete the sandbox before exiting (regardless of success or failure of intermediate steps where possible).
 - Use the real Daytona service; do not mock the SDK or any of its calls.
 - Authenticate using the `DAYTONA_API_KEY` environment variable.
@@ -23,14 +25,4 @@ Daytona provides a Toolbox `git` module accessible through its SDKs that lets yo
 - `sandbox.process.executeCommand(...)` returns an object whose `result` field contains the stdout text; split it on whitespace/newlines to get the file names.
 - Build the file list value as the comma-separated names that appear in `ls` output (trimmed, ignoring empty entries); order does not matter.
 - Use `try/finally` (or equivalent) so that the sandbox is deleted even when an error occurs.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Log file: /home/user/myproject/output.log
-- The TypeScript program creates a sandbox named `git-ts-${run-id}` where `run-id` is read from `/logs/artifacts/run-id`.
-- The repository `https://github.com/octocat/Spoon-Knife` is cloned into `/home/daytona/spoon-knife` inside the sandbox using `sandbox.git.clone`.
-- The log file `/home/user/myproject/output.log` contains exactly two informational lines, in any order:
-  - A line of the form `Branch: <branch_name>` produced from `sandbox.git.status(...)`.
-  - A line of the form `Files: <comma-separated names>` produced from `sandbox.process.executeCommand("ls /home/daytona/spoon-knife")`. The list must include every entry returned by `ls`, separated by `, ` (comma followed by a space) or `,` (comma only). Order is not significant.
-- After the program finishes, the sandbox named `git-ts-${run-id}` no longer exists in the Daytona account.
 

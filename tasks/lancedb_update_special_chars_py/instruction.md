@@ -19,7 +19,7 @@ Your job is to write a Python script that creates a small `notes` table, seeds i
   3. Set the `author` of the row where `id = 6` to the string `O'Brien`.
 - After all updates, read the rows with `id` in 1..8, sort them by `id` ascending, and write them to `/home/user/output/notes_after.json` as a JSON array of objects with keys `id`, `author`, `body` (no vector).
 
-## Acceptance Criteria
+## Implementation Hints
 - Run the script from `/home/user` so that the JSON artifact is produced at `/home/user/output/notes_after.json`.
 - The three specified updates must be reflected in both the JSON output and the persisted `notes` table at `/home/user/db`, and the two views must agree.
 - Rows that were not targeted by an update must keep the values they were seeded with.

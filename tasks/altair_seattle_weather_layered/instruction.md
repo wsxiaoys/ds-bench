@@ -11,9 +11,10 @@ Build a richly layered Vega-Altair visualization of the Seattle weather dataset 
   3. A `mark_bar` showing daily `precipitation` on a secondary y axis, resolved with an independent y scale so it does not share the temperature scale.
   4. A dashed `mark_rule` annotation at y = 0 degrees C, spanning the full x range, with `strokeDash=[4, 4]`.
   5. A nearest-x hover interaction (via `selection_point` with `nearest=True`, `encodings=['x']`, `on='pointerover'`, `empty=False`) that drives a vertical `mark_rule` and a `mark_text` tooltip displaying the date, mean temperature, and precipitation for the hovered date.
-- Save the resulting chart as a single self-contained HTML file using `chart.save(...)`.
+- Save the resulting chart as a single self-contained HTML file to `/home/user/myproject/chart.html` using `chart.save(...)`.
 
 ## Implementation Hints
+- Write your solution in `/home/user/myproject/build_chart.py` so it can be executed via `python3 build_chart.py`.
 - Build a shared base `alt.Chart(data.seattle_weather.url)` and create per-layer marks/encodings off it; remember that URL-based data requires explicit type shorthands (e.g. `date:T`, `temp_min:Q`).
 - For the area layer, use `y` and `y2` to encode the range between `temp_min` and `temp_max`.
 - Use `transform_calculate` to define the mean temperature field used by both the line and the tooltip text.
@@ -21,16 +22,4 @@ Build a richly layered Vega-Altair visualization of the Seattle weather dataset 
 - Use `selection_point(on='pointerover', nearest=True, encodings=['x'], empty=False)` and attach it via `add_params` to the layer(s) that drive the hover state; use `alt.when(...).then(...).otherwise(...)` (or `alt.condition`) to gate the tooltip text/rule opacity on the selection.
 - The dashed annotation rule must be drawn across the full x extent at the data value y = 0; remember that `alt.datum(0)` lets you encode a constant data value.
 - The HTML must contain rendered chart marks (the Vega-Lite spec embedded in a `<script type="application/json">` block and rendered via `vegaEmbed`).
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Command: python3 build_chart.py
-- The command must produce `/home/user/myproject/chart.html` containing a renderable Vega-Lite specification.
-- The embedded Vega-Lite specification must:
-  - Be a layered chart with at least 5 layers.
-  - Include layer marks of types `area` (with both `y` and `y2` encodings), `line`, `bar`, `rule` (at least one rule with `y=0`), and `text`.
-  - Define at least one `transform` of type `calculate` that computes a mean temperature field from `temp_min` and `temp_max`.
-  - Set `resolve.scale.y` to `"independent"`.
-  - Define exactly one point selection parameter with `nearest: true` and an `on` event containing `pointerover` (or `mouseover`) and `empty: false`.
-- Browser verification: Loading `chart.html` in a browser must render the chart (no script errors); the rendered HTML/SVG must include visible `area`, `line`, `bar`, `rule`, and `text` marks.
-
+- Encode the zero-degree rule using alt.datum(0).

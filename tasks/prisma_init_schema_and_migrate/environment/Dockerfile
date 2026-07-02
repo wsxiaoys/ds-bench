@@ -40,3 +40,10 @@ RUN sed -i 's|provider *= *"prisma-client"|provider = "prisma-client-js"|' prism
 
 # Ensure DATABASE_URL points to the SQLite file
 RUN echo 'DATABASE_URL="file:./dev.db"' > .env
+
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

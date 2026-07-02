@@ -11,19 +11,12 @@ Convex provides strong runtime validation using a code-first schema. This ensure
   - `price` (number)
   - `inStock` (boolean)
 - Create a mutation named `create` in `convex/products_<suffix>.ts` that takes `name`, `price`, and `inStock` as arguments and inserts a new document into the `products_<suffix>` table.
-- Deploy the project to the Convex cloud using the deployment key.
+- Deploy the project to the Convex cloud using the deployment key and save the deployment output to `/home/user/project/deploy.log`.
 
 ## Implementation Hints
 - Read the `/logs/artifacts/run-id` to determine the table and file names.
 - Use `defineSchema` and `defineTable` from `convex/server` to define the schema in `convex/schema.ts`.
 - Use `v.string()`, `v.number()`, and `v.boolean()` from `convex/values` for field types.
 - Ensure the mutation arguments are also validated using the same `v` validators.
-- Use `npx convex deploy` to push your code and schema to the cloud. The CLI will automatically use the `CONVEX_DEPLOY_KEY` environment variable.
-
-## Acceptance Criteria
-- Project path: /home/user/project
-- Ensure the real deployment action is executed and the Convex cloud is updated.
-- Log file: /home/user/project/deploy.log
-- The log file must exist and contain the deployment output.
-- The `products_<suffix>:create` mutation must be available in the Convex cloud and enforce strict schema validation on the `products_<suffix>` table.
+- Use `npx convex deploy` to push your code and schema to the cloud. The CLI will automatically use the `CONVEX_DEPLOY_KEY` environment variable. Make sure to redirect the deployment output to `/home/user/project/deploy.log`.
 

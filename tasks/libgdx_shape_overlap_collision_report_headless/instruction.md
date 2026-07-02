@@ -10,7 +10,7 @@ In this task you will build a small libGDX 1.14.2 project around the **headless*
 - Implement a libGDX `ApplicationListener` (or `ApplicationAdapter`) that runs under `com.badlogic.gdx.backends.headless.HeadlessApplication`.
 - Inside the listener's `create()` callback (or driven from `render()` on the very first tick) load the shape definition file via `Gdx.files.absolute(<path>)`, parse it, compute every overlapping pair using libGDX's math primitives, write the report file, and call `Gdx.app.exit()` so the headless main loop terminates cleanly.
 - Pairwise overlap detection MUST use the libGDX classes `com.badlogic.gdx.math.Rectangle`, `com.badlogic.gdx.math.Circle`, and `com.badlogic.gdx.math.Intersector` (specifically `Rectangle.overlaps(Rectangle)`, `Circle.overlaps(Circle)`, and `Intersector.overlaps(Circle, Rectangle)`). Do **NOT** re-implement the geometry checks by hand.
-- Produce a runnable launcher (via the Gradle `application` plugin) at `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game` that accepts two arguments: `--shapes=<input_path>` and `--output=<output_path>`, both absolute paths.
+- Produce a runnable launcher (via the Gradle `application` plugin) at `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game` that accepts two arguments using the exact equals form: `--shapes=<input_path>` and `--output=<output_path>`, both absolute paths.
 
 ### Input file format
 - UTF-8 text file.
@@ -46,22 +46,4 @@ In this task you will build a small libGDX 1.14.2 project around the **headless*
 - Bootstrap the Gradle wrapper with `gradle wrapper --gradle-version 8.10 --distribution-type bin` so reproducible builds are possible from the project root.
 - libGDX's geometry classes live in `com.badlogic.gdx.math`. `Rectangle` is constructed as `new Rectangle(x, y, width, height)`, `Circle` as `new Circle(x, y, radius)`. The mixed circle-vs-rectangle overlap check is provided by `Intersector.overlaps(Circle, Rectangle)`.
 - Report parse/validation errors via stderr (`System.err.println(...)` or `Gdx.app.error(...)` plus a non-zero exit code from the launcher's `main`). Successful runs must exit with status code `0`.
-
-## Acceptance Criteria
-- Project path: `/home/user/gdx-game`.
-- After running `./gradlew --no-daemon --quiet installDist` from the project root, the launcher script `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game` must exist and be executable.
-- Command: `/home/user/gdx-game/build/install/gdx-game/bin/gdx-game --shapes=<input_path> --output=<output_path>`
-- The command must accept the `--shapes=<path>` and `--output=<path>` arguments (equals form) where both paths are absolute.
-- Successful runs (every line parses and every ID is unique) must:
-  - Create or overwrite the file at `<output_path>` with the format described above.
-  - Exit with status code `0`.
-  - Produce no `Error:` line on stderr.
-- Runs where the input contains a malformed shape line must:
-  - Print `Error: invalid shape line: <line>` to stderr (substituting the offending raw line verbatim).
-  - Exit with a non-zero status code.
-  - Not create or overwrite `<output_path>` with a successful report.
-- Runs where the input contains a duplicate ID must:
-  - Print `Error: duplicate id <id>` to stderr (substituting the offending ID verbatim).
-  - Exit with a non-zero status code.
-- The application must use `com.badlogic.gdx.backends.headless.HeadlessApplication` to boot the listener; pairwise overlap detection must use libGDX's `Rectangle.overlaps`, `Circle.overlaps`, and `Intersector.overlaps(Circle, Rectangle)`. (This is verified indirectly through the behavioural tests and through a build that links against `gdx-backend-headless:1.14.2`.)
 
