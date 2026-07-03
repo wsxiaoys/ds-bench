@@ -813,24 +813,36 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 											{renderSortIcon("taskName")}
 										</div>
 									</th>
-									{activeCombos.map((combo, index) => (
-										<th
-											key={combo}
-											className={cn(
-												"relative min-w-30 px-3 py-3 text-left after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] sm:px-6 md:min-w-37.5",
-												index === activeCombos.length - 1 && "after:hidden",
-											)}
-										>
-											<div className="flex flex-col items-start">
-												<span
-													className="max-w-25 truncate font-medium text-foreground md:max-w-32.5"
-													title={combo.split(" (")[0]}
-												>
-													{combo.split(" (")[0]}
-												</span>
-											</div>
-										</th>
-									))}
+									{activeCombos.map((combo, index) => {
+										const [model, agentStr] = combo.split(" (");
+										const agent = agentStr ? agentStr.slice(0, -1) : "";
+										return (
+											<th
+												key={combo}
+												className={cn(
+													"relative min-w-30 px-3 py-3 text-left after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] sm:px-6 md:min-w-37.5",
+													index === activeCombos.length - 1 && "after:hidden",
+												)}
+											>
+												<div className="flex flex-col items-start">
+													<span
+														className="max-w-25 truncate font-medium text-foreground md:max-w-32.5"
+														title={model}
+													>
+														{model}
+													</span>
+													{agent && (
+														<span
+															className="max-w-25 truncate text-xs text-muted-foreground md:max-w-32.5"
+															title={agent}
+														>
+															{agent}
+														</span>
+													)}
+												</div>
+											</th>
+										);
+									})}
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-border/30">
