@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+import json
+import numpy as np
+import librosa
+
+INPUT_PATH = '/home/user/input.wav'
+OUTPUT_PATH = '/home/user/hits.json'
+HOP_LENGTH = 512
+
+# 1. Load
+y, sr = librosa.load(INPUT_PATH, sr=None)
+duration = float(librosa.get_duration(y=y, sr=sr))
+print(f"Sample rate: {sr}, Duration: {duration:.4f}s, Samples: {len(y)}")
+
+# 2. HPSS to isolate percussive
+y_perc, _ = librosa.effects.hpss(y)
+
+# 3. Onset strength envelope on percussive (same hop_length throughout)
+onset_env = librosa.onset.onset_strength(y=y_perc, sr=sr, hop_length=HOP_LENGTH)
+print(f"Onset envelope length: {len(onset_env)}")
+
+# 4. Detect onsets (frame indices) using peak picking on the envelope
+onset_frames = librosa.onset.onset_detect(
+    onset_envelope=onset_env,
+    sr=sr,
+    hop_length=HOP_LENGTH,
+    units='frames',
+    backtrack=False,
+)
+print(f"Number of detected onsets: {len(onset_frames)}")
+
+# 5. Beat tracking on percussive to recover global tempo
+tempo, _ = librosa.beat.beat_track(
+    y=y_perc,
+    sr=sr,
+    hop_length=HOP_LENGTH,
+    units='frames',
+)
+tempo = float(np.asarray(tempo).item())
+print(f"Estimated tempo: {tempo:.4f} BPM")
+
+# 6. 16th-note grid starting at time 0
+step = 60.0 / tempo / 4.0
+max_idx = int(np.floor(duration / step))
+print(f"16th-note step: {step:.6f}s, grid indices 0..{max_idx}")
+
+# 7. Convert onset frames to raw times
+raw_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=HOP_LENGTH)
+
+# 8. Snap each onset to nearest grid position within [0, duration]
+hits = []
+for frame, raw_t in zip(onset_frames, raw_times):
+    idx = int(round(float(raw_t) / step))
+    if idx < 0:
+        idx = 0
+    if idx > max_idx:
+        idx = max_idx
+    snapped_t = float(idx * step)
+    f = int(frame)
+    if 0 <= f < len(onset_env):
+        amp = float(onset_env[f])
+    elif f >= len(onset_env) and len(onset_env) > 0:
+        amp = float(onset_env[-1])
+    else:
+        amp = 0.0
+    hits.append({
+        'time_seconds': snapped_t,
+        'grid_index': idx,
+        'velocity': amp,
+        'raw_time_seconds': float(raw_t),
+    })
+
+# 9. Normalize velocities to (0, 1] - max == 1, min strictly > 0
+amps = np.array([h['velocity'] for h in hits], dtype=np.float64)
+if len(amps) > 0:
+    max_amp = float(amps.max())
+    if max_amp > 0:
+        amps = amps / max_amp
+    # Defensive: ensure strictly positive (percussive onsets should be > 0)
+    zero_mask = amps <= 0
+    if zero_mask.any():
+        nonzero = amps[~zero_mask]
+        fallback = float(nonzero.min()) * 0.5 if nonzero.size > 0 else 1e-6
+        amps = np.where(zero_mask, fallback, amps)
+
+for h, a in zip(hits, amps):
+    h['velocity'] = float(a)
+
+# 10. Order chronologically by snapped time (stable)
+hits.sort(key=lambda h: (h['time_seconds'], h['raw_time_seconds']))
+
+# 11. Write JSON array
+with open(OUTPUT_PATH, 'w') as f:
+    json.dump(hits, f, indent=2)
+
+print(f"Wrote {len(hits)} hits to {OUTPUT_PATH}")
+if hits:
+    vmin = min(h['velocity'] for h in hits)
+    vmax = max(h['velocity'] for h in hits)
+    print(f"Velocity range: [{vmin:.6f}, {vmax:.6f}]")
+    print(f"Time range: [{hits[0]['time_seconds']:.4f}, {hits[-1]['time_seconds']:.4f}]")

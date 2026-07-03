@@ -1,0 +1,152 @@
+New Terminal Output:
+
+root@55cf0794-ef98-48e6-978d-a1ed5ad4212e:/home/user/myproject# cat > /home/user/myproject/index.js << 'EOF'
+> const express = require('express');
+> const cookieParser = require('cookie-parser');
+> const PocketBase = require('pocketbase');
+>
+> const app = express();
+> const PORT = 3000;
+> const PB_URL = 'http://127.0.0.1:8090';
+>
+> app.use(cookieParser());
+> app.use(express.json());
+>
+> // Middleware to synchronize PocketBase auth state via cookies
+> app.use((req, res, next) => {
+>     const pb = new PocketBase(PB_URL);
+>
+>     // Load the initial auth state from the request's cookie header
+>     try {
+>         pb.authStore.loadFromCookie(req.headers.cookie || '');
+>     } catch (_) {
+>         pb.authStore.clear();
+>     }
+>
+>     // Attach the pb instance to the request for use in route handlers
+>     req.pb = pb;
+>
+>     // Refresh the auth state asynchronously
+>     (async () => {
+>         try {
+>             if (pb.authStore.isValid) {
+>                 await pb.collection('users').authRefresh();
+>             }
+>         } catch (_) {
+>             pb.authStore.clear();
+>         }
+>
+>         // Export the (possibly updated) auth state as a cookie and set in response
+>         try {
+>             const cookie = pb.authStore.exportToCookie();
+>             if (cookie) {
+>                 // append so we don't overwrite other Set-Cookie headers
+>                 res.append('Set-Cookie', cookie);
+>             }
+>         } catch (_) {}
+>
+>         // Mark that the auth sync has completed for this request
+>         req._authSynced = true;
+>     })();
+>
+>     next();
+> });
+>
+> // Protected route GET /profile
+> app.get('/profile', async (req, res) => {
+>     // Wait until the auth sync middleware has finished writing the cookie
+>     while (!req._authSynced) {
+>         await new Promise((resolve) => setTimeout(resolve, 5));
+>     }
+>
+>     const pb = req.pb;
+>
+>     if (pb.authStore.isValid && pb.authStore.record) {
+>         return res.status(200).json({
+>             id: pb.authStore.record.id,
+>             email: pb.authStore.record.email,
+>         });
+>     }
+>
+>     return res.status(401).json({ error: 'Unauthorized' });
+> });
+>
+> app.listen(PORT, () => {
+>     console.log(`Server running on http://127.0.0.1:${PORT}`);
+> });
+> EOF
+root@55cf0794-ef98-48e6-978d-a1ed5ad4212e:/home/user/myproject# cat /home/user/myproject/index.js
+const express = require('express');
+const cookieParser = require('cookie-parser');
+const PocketBase = require('pocketbase');
+
+const app = express();
+const PORT = 3000;
+const PB_URL = 'http://127.0.0.1:8090';
+
+app.use(cookieParser());
+app.use(express.json());
+
+// Middleware to synchronize PocketBase auth state via cookies
+app.use((req, res, next) => {
+    const pb = new PocketBase(PB_URL);
+
+    // Load the initial auth state from the request's cookie header
+    try {
+        pb.authStore.loadFromCookie(req.headers.cookie || '');
+    } catch (_) {
+        pb.authStore.clear();
+    }
+
+    // Attach the pb instance to the request for use in route handlers
+    req.pb = pb;
+
+    // Refresh the auth state asynchronously
+    (async () => {
+        try {
+            if (pb.authStore.isValid) {
+                await pb.collection('users').authRefresh();
+            }
+        } catch (_) {
+            pb.authStore.clear();
+        }
+
+        // Export the (possibly updated) auth state as a cookie and set in response
+        try {
+            const cookie = pb.authStore.exportToCookie();
+            if (cookie) {
+                // append so we don't overwrite other Set-Cookie headers
+                res.append('Set-Cookie', cookie);
+            }
+        } catch (_) {}
+
+        // Mark that the auth sync has completed for this request
+        req._authSynced = true;
+    })();
+
+    next();
+});
+
+// Protected route GET /profile
+app.get('/profile', async (req, res) => {
+    // Wait until the auth sync middleware has finished writing the cookie
+    while (!req._authSynced) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    const pb = req.pb;
+
+    if (pb.authStore.isValid && pb.authStore.record) {
+        return res.status(200).json({
+            id: pb.authStore.record.id,
+            email: pb.authStore.record.email,
+        });
+    }
+
+    return res.status(401).json({ error: 'Unauthorized' });
+});
+
+app.listen(PORT, () => {
+    console.log(`Server running on http://127.0.0.1:${PORT}`);
+});
+root@55cf0794-ef98-48e6-978d-a1ed5ad4212e:/home/user/myproject#

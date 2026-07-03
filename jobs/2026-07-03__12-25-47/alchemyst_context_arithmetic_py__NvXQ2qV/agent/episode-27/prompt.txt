@@ -1,0 +1,272 @@
+New Terminal Output:
+
+root@6b01557b-c6e9-4e80-b541-3d00ef310b8b:~# curl -s https://getalchemystai.com/docs/getting-started/quickstart.md 2>&1 | grep -B 2 -A 60 'group_name'
+## Advanced: Organize with Metadata
+
+Use `group_name` to filter searches by category:
+
+<CodeGroup>
+  ```typescript TypeScript theme={null}
+  // Store with groups
+  await client.v1.context.add({
+    documents: [{
+      content: "Refund policy: We offer a 30-day money back guarantee...",
+      metadata: {
+        file_name: "refund-policy.md",
+        group_name: ["customer-support", "policies"]  // ← For storage
+      }
+    }],
+    context_type: 'resource',
+    source: 'documentation',
+    scope: 'internal'
+  });
+
+  // Search within specific groups
+  const { contexts } = await client.v1.context.search({
+    query: "refund policy",
+    scope: 'internal',
+    metadata: {
+      groupName: ['customer-support']  // ← For search (note: camelCase)
+    }
+  });
+
+  console.log(`Found ${contexts?.length} results in customer-support`);
+  ```
+
+  ```python Python theme={null}
+  # Store with groups
+  client.v1.context.add(
+      documents=[{
+          "content": "Refund policy: We offer a 30-day money back guarantee...",
+          "metadata": {
+              "file_name": "refund-policy.md",
+              "group_name": ["customer-support", "policies"]  # ← For storage
+          }
+      }],
+      context_type="resource",
+      source="documentation",
+      scope="internal"
+  )
+
+  # Search within specific groups
+  result = client.v1.context.search(
+      query="refund policy",
+      scope="internal",
+      metadata={
+          "group_name": ["customer-support"]  # ← For search (note: snake_case)
+      }
+  )
+
+  print(f"Found {len(result.contexts or [])} results in customer-support")
+  ```
+</CodeGroup>
+
+<Note>
+  **Naming difference:** Storage uses `group_name` (snake\_case in metadata) but TypeScript search uses `groupName` (camelCase). Python uses `group_name` consis
+tently. Both refer to the same field - this is due to API design conventions.
+</Note>
+
+### Why use groups?
+
+| Benefit                 | Description                                             |
+| ----------------------- | ------------------------------------------------------- |
+| **Faster searches**     | Smaller search space = lower latency                    |
+| **More relevant**       | Only search customer-support docs, not engineering docs |
+| **Better organization** | Hierarchical structure like folders                     |
+| **Access control**      | Filter by team, project, or user permissions            |
+
+**Example hierarchy:**
+
+```typescript theme={null}
+group_name: ["company", "customer-support", "policies"]
+group_name: ["company", "engineering", "api-docs"]
+group_name: ["company", "hr", "employee-handbook"]
+```
+
+Learn more: [Context Arithmetic](/advanced/context-arithmetic)
+
+***
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No results from search">
+    **Error symptoms:**
+
+    * `contexts?.length` returns 0
+    * Empty array in search results
+
+    **Common causes:**
+
+    1. `similarity_threshold` is too high
+    2. Document wasn't stored successfully
+    3. `scope` mismatch between add and search
+
+    **Fixes:**
+
+    **Step 1: Lower the threshold:**
+
+    ```typescript theme={null}
+    similarity_threshold: 0.5  // Instead of 0.9
+    ```
+
+    **Step 2: Verify documents were stored:**
+
+    ```typescript theme={null}
+    const stored = await client.v1.context.view();
+    console.log("Total documents:", stored.length);
+    console.log("Documents:", stored);
+    ```
+
+    **Expected output:**
+
+    ```
+    Total documents: 1
+    Documents: [{ id: "doc_123", content: "Our refund policy...", ... }]
+    ```
+
+    **Step 3: Check scope matches:**
+
+    ```typescript theme={null}
+    // Both must use the same scope
+    await client.v1.context.add({ scope: 'internal', ... });
+    await client.v1.context.search({ scope: 'internal', ... });  // ✅ Match
+    ```
+  </Accordion>
+
+  <Accordion title="Too many irrelevant results">
+    **Error symptoms:**
+
+    * Getting documents that don't match the query
+    * Too many results to process efficiently
+
+    **Common causes:**
+--
+        content: "...",
+        metadata: {
+          group_name: ["support", "refunds"],  // More specific
+          category: "policies",
+          department: "customer-service"
+        }
+      }]
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Document already exists error">
+    **Error message:**
+
+    ```json theme={null}
+    {
+      "error": "Document with file_name 'policy.md' already exists",
+      "code": "CONFLICT",
+      "status": 409
+    }
+    ```
+
+    **Cause:** Trying to add a document with duplicate `file_name` in metadata.
+
+    **Fixes:**
+
+    **Step 1: Delete old version first:**
+
+    ```typescript theme={null}
+    // Delete by file name
+    await client.v1.context.delete({
+      metadata: { fileName: "policy.md" }
+    });
+
+    // Then add new version
+    await client.v1.context.add({
+      documents: [{
+        content: "Updated content...",
+        metadata: { file_name: "policy.md" }
+      }]
+    });
+    ```
+
+    **Step 2: Use versioned names:**
+
+    ```typescript theme={null}
+    file_name: "policy-v2.md"  // or "policy-2024-02-01.md"
+    ```
+
+    **Step 3: Use unique identifiers:**
+
+    ```typescript theme={null}
+    file_name: `policy-${Date.now()}.md`  // Timestamp
+    // or
+    file_name: `policy-${uuid()}.md`       // UUID
+    ```
+  </Accordion>
+
+  <Accordion title="API authentication errors">
+    **Error message:**
+
+    ```json theme={null}
+    {
+--
+    metadata: {
+      file_name: "refund-policy-2024-02.md",
+      group_name: ["customer-support", "policies"],
+      department: "support",
+      last_updated: "2024-02-01"
+    }
+  }]
+});
+
+// ❌ Bad - minimal metadata, hard to search
+await client.v1.context.add({
+  documents: [{
+    content: "..."
+  }]
+});
+```
+
+### Chunk Size Considerations
+
+* **Small documents** (under 1000 words): Add as-is
+* **Medium documents** (1000-5000 words): Let Alchemyst REDACTED-chunk
+* **Large documents** (over 5000 words): Consider splitting by section
+
+```typescript theme={null}
+// For large documents, split manually for better control
+const sections = [
+  { title: "Introduction", content: "..." },
+  { title: "Features", content: "..." },
+  { title: "Pricing", content: "..." }
+];
+
+const docs = sections.map(section => ({
+  content: section.content,
+  metadata: {
+    file_name: "product-docs.md",
+    section: section.title
+  }
+}));
+
+await client.v1.context.add({ documents: docs });
+```
+
+### Search Optimization
+
+```typescript theme={null}
+// ✅ Good - specific query with filtering
+const { contexts } = await client.v1.context.search({
+  query: "How to request a refund for damaged items",
+  scope: 'internal',
+  similarity_threshold: 0.7,
+  metadata: {
+    groupName: ['customer-support', 'refunds']
+  }
+});
+
+// ❌ Bad - too broad, no filtering
+const { contexts } = await client.v1.context.search({
+  query: "help",
+  scope: 'internal'
+});
+```
+
+### Error Handling
+root@6b01557b-c6e9-4e80-b541-3d00ef310b8b:~#

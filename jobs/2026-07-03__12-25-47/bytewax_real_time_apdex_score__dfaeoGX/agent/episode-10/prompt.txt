@@ -1,0 +1,137 @@
+New Terminal Output:
+
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex# python3 -c "import bytewax.inputs; help(bytewax.inputs.DynamicSource)" 2>&1 | head -50
+Help on class DynamicSource in module bytewax.inputs:
+
+class DynamicSource(Source)
+ |  An input source where all workers can read distinct items.
+ |
+ |  Does not support storing any resume state. Thus these kind of
+ |  sources only naively can support at-most-once processing.
+ |
+ |  The source must somehow support supplying disjoint data for each
+ |  worker. If you re-read the same items on multiple workers, the
+ |  dataflow will process these as duplicate items.
+ |
+ |  Method resolution order:
+ |      DynamicSource
+ |      Source
+ |      abc.ABC
+ |      typing.Generic
+ |      builtins.object
+ |
+ |  Methods defined here:
+ |
+ |  build(self, step_id: str, worker_index: int, worker_count: int) -> bytewax.inputs.StatelessSourcePartition[~X]
+ |      Build an input source for a worker.
+ |
+ |      Will be called once on each worker.
+ |
+ |      :arg step_id: The step_id of the input operator.
+ |
+ |      :arg worker_index: Index of this worker. Workers are zero-indexed.
+ |
+ |      :arg worker_count: Total number of workers.
+ |
+ |      :returns: The built partition.
+ |
+ |  ----------------------------------------------------------------------
+ |  Data and other attributes defined here:
+ |
+ |  __abstractmethods__ = frozenset({'build'})
+ |
+ |  __orig_bases__ = (bytewax.inputs.Source[~X],)
+ |
+ |  __parameters__ = (~X,)
+ |
+ |  ----------------------------------------------------------------------
+ |  Data descriptors inherited from Source:
+ |
+ |  __dict__
+ |      dictionary for instance variables
+ |
+ |  __weakref__
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex# python3 -c "import bytewax.testing; print(dir(bytewax.testing))"
+['AbortExecution', 'Any', 'Dict', 'DynamicSink', 'FixedPartitionedSource', 'Iterable', 'Iterator', 'List', 'Optional', 'StatefulSourcePartition', 'StatelessSink
+Partition', 'TestingSink', 'TestingSource', 'TimeTestingGetter', 'Union', 'X', '_EnvDefault', '_IterSourcePartition', '_ListSinkPartition', '__all__', '__builti
+ns__', '__cached__', '__doc__', '__file__', '__loader__', '__name__', '__package__', '__spec__', '_create_arg_parser', '_create_wait_and_check', '_parse_args',
+'_testing_cli_main', '_unparse_args', 'asyncio', 'cluster_main', 'dataclass', 'datetime', 'ffwd_iter', 'islice', 'override', 'poll_next_batch', 'run_main', 'sys
+', 'timedelta', 'timezone']
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex# python3 -c "from bytewax.testing import TestingSource; import inspect; print(inspect.getsour
+ce(TestingSource))"
+class TestingSource(FixedPartitionedSource[X, int]):
+    """Produce input from a Python iterable.
+
+    You only want to use this for unit testing.
+
+    The iterable must be identical on all workers.
+
+    There is no parallelism; only one worker will actually consume the
+    iterable.
+
+    Be careful using a generator as the iterable; if you fail and
+    attempt to resume the dataflow without rebuilding it, the
+    half-consumed generator will be re-used on recovery and early
+    input will be lost so resume will see the correct data.
+
+    """
+
+    __test__ = False
+
+    @dataclass
+    class EOF:
+        """Signal the input to EOF.
+
+        The next execution will continue from the item after this.
+
+        """
+
+        pass
+
+    # TODO: Find a way to use ABORT in a multi-worker scenario.
+    # Something like a back channel that one has aborted.
+    @dataclass
+    class ABORT:
+        """Abort the execution when the input processes this item.
+
+        The next execution will resume from some item befor this one.
+
+        Each abort will only trigger once. They'll be skipped on
+        resume executions.
+
+        You cannot use this in multi-worker executions because the
+        other workers don't know when to stop.
+
+        """
+
+        _triggered: bool = False
+
+    @dataclass
+    class PAUSE:
+        """Signal this input to not emit items for a duration."""
+
+        for_duration: timedelta
+
+    def __init__(self, ib: Iterable[Union[X, EOF, ABORT, PAUSE]], batch_size: int = 1):
+        """Init.
+
+        :arg ib: Iterable for input.
+
+        :arg batch_size: Number of items from the iterable to emit in
+            each batch. Defaults to 1.
+
+        """
+        self._ib = ib
+        self._batch_size = batch_size
+
+    @override
+    def list_parts(self):
+        return ["iterable"]
+
+    @override
+    def build_part(
+        self, step_id: str, for_part: str, resume_state: Optional[int]
+    ) -> _IterSourcePartition[X]:
+        return _IterSourcePartition(self._ib, self._batch_size, resume_state)
+
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex#

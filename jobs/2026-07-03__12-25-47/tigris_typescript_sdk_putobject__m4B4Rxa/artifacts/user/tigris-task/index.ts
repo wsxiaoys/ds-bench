@@ -1,0 +1,69 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { createBucket, put, list } from "@tigrisdata/storage";
+
+async function main() {
+  // 1. Read run id
+  const rawRunId = await readFile("/logs/artifacts/run-id", "utf-8");
+  const runId = rawRunId.trim();
+
+  // 2. Build normalized bucket name
+  // S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens.
+  const normalized = runId.toLowerCase().replace(/[^a-z0-9.\-]/g, "-");
+  const bucketName = `harbor-tssdk-${normalized}`;
+
+  console.log(`Using bucket: ${bucketName}`);
+
+  // 3. Create bucket (ignore if it already exists)
+  const createResult = await createBucket(bucketName);
+  if (createResult.error) {
+    const msg = String(createResult.error.message ?? createResult.error).toLowerCase();
+    const alreadyExists =
+      msg.includes("already exists") ||
+      msg.includes("already") ||
+      msg.includes("bucketname") && msg.includes("exist");
+    if (!alreadyExists) {
+      console.error("createBucket failed:", createResult.error);
+      process.exit(1);
+    } else {
+      console.log("Bucket already exists, continuing.");
+    }
+  } else {
+    console.log("Bucket created.");
+  }
+
+  // 4. Upload three objects
+  const objects = [
+    { key: "inbox/msg-1.json", body: '{"id": 1}' },
+    { key: "inbox/msg-2.json", body: '{"id": 2}' },
+    { key: "inbox/msg-3.json", body: '{"id": 3}' },
+  ];
+
+  for (const obj of objects) {
+    const result = await put(obj.key, obj.body, {
+      config: { bucket: bucketName },
+      contentType: "application/json",
+    });
+    if (result.error) {
+      console.error(`put(${obj.key}) failed:`, result.error);
+      process.exit(1);
+    }
+    console.log(`Uploaded ${obj.key}`);
+  }
+
+  // 5. List with prefix "inbox/" and write names to listing.txt
+  const listResult = await list({ prefix: "inbox/", config: { bucket: bucketName } });
+  if (listResult.error) {
+    console.error("list failed:", listResult.error);
+    process.exit(1);
+  }
+
+  const items = listResult.data?.items ?? [];
+  const names = items.map((it) => it.name).join("\n");
+  await writeFile("/home/user/tigris-task/listing.txt", names + "\n", "utf-8");
+  console.log(`Wrote ${items.length} names to listing.txt`);
+}
+
+main().catch((err) => {
+  console.error("Unhandled error:", err);
+  process.exit(1);
+});

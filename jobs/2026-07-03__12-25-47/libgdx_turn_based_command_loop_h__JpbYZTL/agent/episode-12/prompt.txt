@@ -1,0 +1,249 @@
+New Terminal Output:
+
+root@2abd3574-07d2-4bc1-8b41-883a9b637e92:/home/user/turn-based-game# cat > /home/user/turn-based-game/core/src/main/java/game/TurnBasedGame.java << 'EOF'
+> package game;
+>
+> import com.badlogic.gdx.ApplicationListener;
+> import com.badlogic.gdx.Gdx;
+> import com.badlogic.gdx.Input;
+> import com.badlogic.gdx.files.FileHandle;
+>
+> import java.io.BufferedWriter;
+> import java.io.IOException;
+> import java.io.OutputStreamWriter;
+> import java.io.PrintStream;
+> import java.nio.charset.StandardCharsets;
+> import java.util.ArrayList;
+> import java.util.List;
+>
+> /**
+>  * Turn-based dungeon crawler core. Drives one turn per render tick, consuming a single
+>  * command from the scripted input, mutating the world, and appending a line to the transcript.
+>  */
+> public class TurnBasedGame implements ApplicationListener {
+>
+>     private FileHandle mapHandle;
+>     private FileHandle transcriptHandle;
+>     private ScriptedMockInput scriptedInput;
+>
+>     // World state
+>     private int width;
+>     private int height;
+>     private int playerX;
+>     private int playerY;
+>     private final List<Item> items = new ArrayList<Item>();
+>     private final List<String> inventory = new ArrayList<String>();
+>
+>     // Loop state
+>     private int turn = 0;
+>     private boolean shouldExit = false;
+>     private boolean firstTick = true;
+>
+>     public TurnBasedGame(FileHandle mapHandle,
+>                          FileHandle transcriptHandle,
+>                          ScriptedMockInput scriptedInput) {
+>         this.mapHandle = mapHandle;
+>         this.transcriptHandle = transcriptHandle;
+>         this.scriptedInput = scriptedInput;
+>     }
+>
+>     @Override
+>     public void create() {
+>         loadMap(mapHandle);
+>     }
+>
+>     /** Loads the map file using libGDX FileHandle parsing. */
+>     private void loadMap(FileHandle handle) {
+>         String content = handle.readString("UTF-8");
+>         List<String> tokens = new ArrayList<String>();
+>         for (String line : content.split("\n")) {
+>             // Strip comments; ignore blank lines; keep tokens inside useful lines.
+>             int hashIdx = line.indexOf('#');
+>             if (hashIdx >= 0) line = line.substring(0, hashIdx);
+>             line = line.trim();
+>             if (line.isEmpty()) continue;
+>             for (String tok : line.split("\\s+")) {
+>                 if (!tok.isEmpty()) tokens.add(tok);
+>             }
+>         }
+>         if (tokens.size() < 4) {
+>             throw new IllegalArgumentException("Map file too small: " + tokens.size() + " tokens");
+>         }
+>         int idx = 0;
+>         width = parseInt(tokens.get(idx++));
+>         height = parseInt(tokens.get(idx++));
+>         playerX = parseInt(tokens.get(idx++));
+>         playerY = parseInt(tokens.get(idx++));
+>         int itemCount = parseInt(tokens.get(idx++));
+>         items.clear();
+>         for (int i = 0; i < itemCount; i++) {
+>             if (idx + 2 >= tokens.size()) break;
+>             int ix = parseInt(tokens.get(idx++));
+>             int iy = parseInt(tokens.get(idx++));
+>             String name = tokens.get(idx++);
+>             items.add(new Item(ix, iy, name));
+>         }
+>     }
+>
+>     private static int parseInt(String s) {
+>         try { return Integer.parseInt(s); }
+>         catch (NumberFormatException nfe) {
+>             throw new IllegalArgumentException("Not an integer: '" + s + "'", nfe);
+>         }
+>     }
+>
+>     @Override
+>     public void render() {
+>         // Drive the scripted input on every tick.
+>         scriptedInput.tick();
+>
+>         if (firstTick) {
+>             firstTick = false;
+>             // Wait until the first real command before writing any turn lines.
+>             if (!scriptedInput.hasCommand()) {
+>                 // No commands at all: write FINAL and exit.
+>                 finish();
+>                 return;
+>             }
+>         }
+>
+>         if (!scriptedInput.hasCommand()) {
+>             finish();
+>             return;
+>         }
+>
+>         String raw = scriptedInput.getCurrentCommand();
+>         turn++;
+>         applyCommand(raw);
+>         writeTurnLine(raw);
+>
+>         if (shouldExit || raw.equals("QUIT")) {
+>             finish();
+>             return;
+>         }
+>         // Loop ends when command file is exhausted: scriptedInput.hasCommand() is false next tick.
+>     }
+>
+>     /** Mutate world state based on the raw command and current input key state. */
+>     private void applyCommand(String raw) {
+>         // First handle the known movement and action keys via MockInput.
+>         if (Gdx.input.isKeyJustPressed(Input.Keys.UP)) {
+>             tryMove(0, 1);
+>             return;
+>         }
+>         if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
+>             tryMove(0, -1);
+>             return;
+>         }
+>         if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT)) {
+>             tryMove(1, 0);
+>             return;
+>         }
+>         if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT)) {
+>             tryMove(-1, 0);
+>             return;
+>         }
+>         if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
+>             pickUp();
+>             return;
+>         }
+>         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+>             shouldExit = true;
+>             return;
+>         }
+>         // Unknown command: no state change.
+>     }
+>
+>     private void tryMove(int dx, int dy) {
+>         int nx = playerX + dx;
+>         int ny = playerY + dy;
+>         if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+>             // Rejected: stay in place.
+>             return;
+>         }
+>         playerX = nx;
+>         playerY = ny;
+>     }
+>
+>     /** Pick the earliest-defined item at the current cell; remove from world; add to inventory. */
+>     private void pickUp() {
+>         for (int i = 0; i < items.size(); i++) {
+>             Item it = items.get(i);
+>             if (it.x == playerX && it.y == playerY) {
+>                 inventory.add(it.name);
+>                 items.remove(i);
+>                 return;
+>             }
+>         }
+>         // No item here: no-op.
+>     }
+>
+>     /** Append a turn line to the transcript using FileHandle.appendString. */
+>     private void writeTurnLine(String raw) {
+>         StringBuilder sb = new StringBuilder(32);
+>         sb.append("turn=").append(turn)
+>           .append(" cmd=").append(raw)
+>           .append(" pos=").append(playerX).append(',').append(playerY)
+>           .append(" inv=");
+>         for (int i = 0; i < inventory.size(); i++) {
+>             if (i > 0) sb.append(',');
+>             sb.append(inventory.get(i));
+>         }
+>         sb.append('\n');
+>         appendToTranscript(sb.toString());
+>     }
+>
+>     /** Append the FINAL line and call {@link Gdx#app#exit()}. */
+>     private void finish() {
+>         StringBuilder sb = new StringBuilder(32);
+>         sb.append("FINAL pos=").append(playerX).append(',').append(playerY).append(" inv=");
+>         for (int i = 0; i < inventory.size(); i++) {
+>             if (i > 0) sb.append(',');
+>             sb.append(inventory.get(i));
+>         }
+>         sb.append(" turns=").append(turn).append('\n');
+>         appendToTranscript(sb.toString());
+>         // Allow the next render tick to actually exit the headless loop cleanly.
+>         Gdx.app.exit();
+>     }
+>
+>     /**
+>      * All transcript appends use libGDX FileHandle so the file is flushed via the
+>      * Gdx.files subsystem. We accumulate into a single string and write atomically at the end.
+>      */
+>     private final StringBuilder transcriptBuf = new StringBuilder();
+>
+>     private void appendToTranscript(String line) {
+>         transcriptBuf.append(line);
+>     }
+>
+>     /** Called when the application is exiting so the final state is flushed. */
+>     @Override
+>     public void dispose() {
+>         // Write the transcript in one shot to avoid partial writes being visible.
+>         transcriptHandle.writeString(transcriptBuf.toString(), false, "UTF-8");
+>     }
+>
+>     @Override
+>     public void pause() { }
+>
+>     @Override
+>     public void resize(int width, int height) { }
+>
+>     @Override
+>     public void resume() { }
+>
+>     /** A world item with absolute coordinates (lower-left origin). */
+>     private static final class Item {
+>         final int x;
+>         final int y;
+>         final String name;
+>         Item(int x, int y, String name) {
+>             this.x = x;
+>             this.y = y;
+>             this.name = name;
+>         }
+>     }
+> }
+> EOF
+root@2abd3574-07d2-4bc1-8b41-883a9b637e92:/home/user/turn-based-game#

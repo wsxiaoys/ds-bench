@@ -1,0 +1,102 @@
+New Terminal Output:
+
+root@9b52c3d6-12b0-4f75-a43c-30b78228fa01:/tmp# cat > /tmp/test_gallery.py << 'EOF'
+> import asyncio
+> from playwright.async_api import async_playwright
+> import base64
+> import os
+> import re
+>
+> # A minimal valid JPEG (1x1 white pixel)
+> JPEG_B64 = (
+>     "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB"
+>     "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB/9sAQwEBAQEBAQEBAQEBAQEB"
+>     "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB/8AA"
+>     "QECAwQFBgcICQoL/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9o"
+>     "ADAMBAAIRAxEAPwBVAAH//9k="
+> )
+>
+> def make_jpeg():
+>     # Fix padding
+>     b64 = JPEG_B64 + "=" * (-len(JPEG_B64) % 4)
+>     jpeg_bytes = base64.b64decode(b64)
+>     path = '/tmp/test.jpg'
+>     with open(path, 'wb') as f:
+>         f.write(jpeg_bytes)
+>     return path
+>
+> async def main():
+>     jpeg_path = make_jpeg()
+>     print(f"Created test JPEG: {jpeg_path}, size: {os.path.getsize(jpeg_path)} bytes")
+>
+>     async with async_playwright() as p:
+>         browser = await p.chromium.launch(headless=True, args=['--no-sandbox'])
+>         context = await browser.new_context()
+>         page = await context.new_page()
+>
+>         page.on('console', lambda msg: print(f"[console.{msg.type}]: {msg.text}"))
+>         page.on('pageerror', lambda err: print(f"[pageerror]: {err}"))
+>
+>         await page.goto('http://127.0.0.1:4173/')
+>         await page.wait_for_load_state('networkidle')
+>
+>         has_gallery = await page.evaluate("typeof window.gallery")
+>         print(f"typeof window.gallery: {has_gallery}")
+>         assert has_gallery == 'object', f"Expected 'object', got '{has_gallery}'"
+>
+>         status = await page.text_content('#capture-status')
+>         print(f"Initial status: '{status}'")
+>         assert status == 'idle', f"Expected 'idle', got '{status}'"
+>
+>         photos = await page.evaluate("window.gallery.listPhotos()")
+>         print(f"Initial photos: {photos}")
+>         assert photos == [], f"Expected [], got {photos}"
+>
+>         async with page.expect_file_chooser() as fc_info:
+>             click_task = asyncio.create_task(page.click('#capture-btn'))
+>         file_chooser = await fc_info.value
+>         await file_chooser.set_files(jpeg_path)
+>         await click_task
+>
+>         await page.wait_for_function(
+>             "() => document.getElementById('capture-status').textContent === 'saved'",
+>             timeout=15000
+>         )
+>         status = await page.text_content('#capture-status')
+>         print(f"Status after capture: '{status}'")
+>
+>         photos = await page.evaluate("window.gallery.listPhotos()")
+>         print(f"Photos after capture: {photos}")
+>         assert len(photos) == 1, f"Expected 1 photo, got {len(photos)}"
+>         assert photos[0].startswith('photos/') and photos[0].endswith('.jpeg'), f"Bad path: {photos[0]}"
+>
+>         m = re.search(r'photos/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\.jpeg', photos[0])
+>         assert m, f"Path doesn't match expected format: {photos[0]}"
+>         print(f"Timestamp in path: {m.group(1)}")
+>
+>         path = photos[0]
+>         await page.evaluate(f"window.gallery.deletePhoto({path!r})")
+>         photos_after = await page.evaluate("window.gallery.listPhotos()")
+>         print(f"Photos after delete: {photos_after}")
+>         assert len(photos_after) == 0, f"Expected 0 photos after delete, got {len(photos_after)}"
+>
+>         print("\n=== ALL TESTS PASSED ===")
+>         await browser.close()
+>
+> asyncio.run(main())
+> EOF
+root@9b52c3d6-12b0-4f75-a43c-30b78228fa01:/tmp# python3 test_gallery.py
+Created test JPEG: /tmp/test.jpg, size: 247 bytes
+typeof window.gallery: object
+Initial status: 'idle'
+Initial photos: []
+[console.error]: Unable to load PWA Element 'pwa-camera-modal'. See the docs: https://capacitorjs.com/docs/web/pwa-elements.
+[console.warning]: Failed to get image resolution: InvalidStateError: The source image could not be decoded.
+[console.log]: Saved photo at photos/2026-07-03T13:30:51.207Z.jpeg
+Status after capture: 'saved'
+Photos after capture: ['photos/2026-07-03T13:30:51.207Z.jpeg']
+Timestamp in path: 2026-07-03T13:30:51.207Z
+Photos after delete: []
+
+=== ALL TESTS PASSED ===
+root@9b52c3d6-12b0-4f75-a43c-30b78228fa01:/tmp#

@@ -1,0 +1,97 @@
+New Terminal Output:
+
+root@7f555f06-22fe-4fd0-95e4-d30ab2919f63:/home/user/bytewax_recovery# cat > /home/user/bytewax_recovery/dataflow.py << 'PYEOF'
+> """Bytewax dataflow that maintains running maximum per key with recovery."""
+>
+> import os
+> import sys
+> from pathlib import Path
+> from typing import List, Optional
+>
+> from bytewax.connectors.files import FileSink
+> from bytewax.dataflow import Dataflow
+> from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
+> from bytewax.operators import key_on, stateful_map, output
+>
+>
+> class _CsvPartition(StatefulSourcePartition[dict, int]):
+>     def __init__(self, path: Path, resume_state: Optional[int]):
+>         self._path = path
+>         self._f = open(path, "rt", newline="")
+>         import csv
+>
+>         self._reader = csv.DictReader(self._f)
+>         self._consumed = 0
+>         if resume_state is not None:
+>             # Skip already-consumed rows. DictReader does not support direct
+>             # seek by line number cleanly, so re-read and skip.
+>             for _ in range(resume_state):
+>                 try:
+>                     next(self._reader)
+>                 except StopIteration:
+>                     break
+>                 self._consumed += 1
+>
+>     def next_batch(self) -> List[dict]:
+>         batch = []
+>         try:
+>             while True:
+>                 row = next(self._reader)
+>                 batch.append(row)
+>         except StopIteration:
+>             pass
+>         self._consumed += len(batch)
+>         return batch
+>
+>     def snapshot(self) -> int:
+>         return self._consumed
+>
+>     def close(self) -> None:
+>         try:
+>             self._f.close()
+>         except Exception:
+>             pass
+>
+>
+> class CsvSource(FixedPartitionedSource[dict, int]):
+>     """A simple CSV source that allows the path to differ across resumes.
+>
+>     The partition key includes the file path so that a different input file
+>     on resume is treated as a fresh partition (no stale resume_state is
+>     applied).
+>     """
+>
+>     def __init__(self, path):
+>         self._path = Path(path)
+>
+>     def list_parts(self):
+>         if self._path.exists():
+>             return [str(self._path)]
+>         return []
+>
+>     def build_part(self, step_id: str, for_part: str, resume_state: Optional[int]):
+>         return _CsvPartition(Path(for_part), resume_state)
+>
+>
+> def _running_max(state, item):
+>     value = int(item["value"])
+>     if state is None:
+>         new_state = value
+>     else:
+>         new_state = state if state >= value else value
+>     return (new_state, new_state)
+>
+>
+> def build_flow(input_file: str, output_file: str) -> Dataflow:
+>     flow = Dataflow("running_max_recovery")
+>     inp = CsvSource(input_file)
+>     s = key_on("key", flow, inp, lambda item: item["key"])
+>     s = stateful_map("running_max", s, _running_max)
+>
+>     formatted = s.map(lambda kv: f"{kv[0]},{kv[1]}")
+>     output("output", formatted, FileSink(Path(output_file)))
+>     return flow
+> PYEOF
+root@7f555f06-22fe-4fd0-95e4-d30ab2919f63:/home/user/bytewax_recovery# ls /home/user/bytewax_recovery/
+dataflow.py
+root@7f555f06-22fe-4fd0-95e4-d30ab2919f63:/home/user/bytewax_recovery#

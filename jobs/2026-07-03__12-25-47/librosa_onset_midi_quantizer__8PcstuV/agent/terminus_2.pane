@@ -1,0 +1,662 @@
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# clear
+[?2004l[H[J[3J[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# ls -la /home/user/
+[?2004ltotal 252
+drwxr-xr-x 1 root root     31 Jul  3 14:32 [0m[01;34m.[0m
+drwxr-xr-x 1 root root     26 Jul  3 14:32 [01;34m..[0m
+-rw-r--r-- 1 root root 255824 Jul  3 14:32 [00;36minput.wav[0m
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# python3 -c 'import librosa; print(librosa.__version__)'
+[?2004l0.11.0
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# mkdir -p /home/user && cat > /home/user/transcribe.py << 'PYEOF'
+[?2004l[?2004h> import json
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> import librosa
+[?2004l[?2004h> 
+[?2004l[?2004h> # Load audio
+[?2004l[?2004h> y, sr = librosa.load('/home/user/input.wav', sr=None)
+[?2004l[?2004h> duration = float(librosa.get_duration(y=y, sr=sr))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Detect onsets with backtrack=True
+[?2004l[?2004h> onset_frames = librosa.onset.onset_detect(y=y, sr=sr, backtrack=True)
+[?2004l[?2004h> onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Deduplicate (keep first of equal times)
+[?2004l[?2004h> if len(onset_times) > 0:
+[?2004l[?2004h>     unique = [onset_times[0]]
+[?2004l[?2004h>     for t in onset_times[1:]:
+[?2004l[?2004h>         if t > unique[-1] + 1e-6:
+[?2004l[?2004h>             unique.append(t)
+[?2004l[?2004h>     onset_times = np.array(unique)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Build segment boundaries: each onset to next onset (or end)
+[?2004l[?2004h> boundaries = list(onset_times) + [duration]
+[?2004l[?2004h> 
+[?2004l[?2004h> # Pre-compute RMS across the whole file
+[?2004l[?2004h> hop_length = 512
+[?2004l[?2004h> rms_all = librosa.feature.rms(y=y, hop_length=hop_length)[0]
+[?2004l[?2004h> rms_times = librosa.frames_to_time(np.arange(len(rms_all)), sr=sr, hop_length=hop_length)
+[?2004l[?2004h> 
+[?2004l[?2004h> fmin_hz = librosa.note_to_hz('C2')
+[?2004l[?2004h> fmax_hz = librosa.note_to_hz('C7')
+[?2004l[?2004h> 
+[?2004l[?2004h> raw_notes = []
+[?2004l[?2004h> for i in range(len(onset_times)):
+[?2004l[?2004h>     start = float(onset_times[i])
+[?2004l[?2004h>     end = float(boundaries[i + 1])
+[?2004l[?2004h>     if end <= start:
+[?2004l[?2004h>         # Ensure strict increase
+[?2004l[?2004h>         end = start + 1.0 / sr
+[?2004l[?2004h> 
+[?2004l[?2004h>     start_sample = int(start * sr)
+[?2004l[?2004h>     end_sample = max(end_sample if False else int(end * sr), start_sample + 1)
+[?2004l[?2004h>     y_seg = y[start_sample:end_sample]
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Estimate pitch with pyin
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         f0, voiced_flag, voiced_prob = librosa.pyin(
+[?2004l[?2004h>             y_seg, fmin=fmin_hz, fmax=fmax_hz, sr=sr
+[?2004l[?2004h>         )
+[?2004l[?2004h>     except Exception:
+[?2004l[?2004h>         f0 = np.array([np.nan])
+[?2004l[?2004h> 
+[?2004l[?2004h>     voiced_f0 = f0[~np.isnan(f0)]
+[?2004l[?2004h>     if len(voiced_f0) == 0:
+[?2004l[?2004h>         continue
+[?2004l[?2004h> 
+[?2004l[?2004h>     pitch_hz = float(np.median(voiced_f0))
+[?2004l[?2004h>     pitch_midi_f = float(librosa.hz_to_midi(pitch_hz))
+[?2004l[?2004h>     pitch_midi = int(round(pitch_midi_f))
+[?2004l[?2004h>     pitch_midi = max(0, min(127, pitch_midi))
+[?2004l[?2004h> 
+[?2004l[?2004h>     # RMS for this segment
+[?2004l[?2004h>     start_frame = int(np.searchsorted(rms_times, start))
+[?2004l[?2004h>     end_frame = int(np.searchsorted(rms_times, end))
+[?2004l[?2004h>     end_frame = max(end_frame, start_frame + 1)
+[?2004l[?2004h>     seg_rms = rms_all[start_frame:end_frame]
+[?2004l[?2004h>     if len(seg_rms) == 0:
+[?2004l[?2004h>         seg_rms = np.array([0.0])
+[?2004l[?2004h>     rms_val = float(np.mean(seg_rms))
+[?2004l[?2004h> 
+[?2004l[?2004h>     raw_notes.append({
+[?2004l[?2004h>         'onset_sec': start,
+[?2004l[?2004h>         'offset_sec': end,
+[?2004l[?2004h>         'pitch_midi': pitch_midi,
+[?2004l[?2004h>         'rms': rms_val,
+[?2004l[?2004h>     })
+[?2004l[?2004h> 
+[?2004l[?2004h> # Compute velocity from RMS values mapped to [1, 127]
+[?2004l[?2004h> if len(raw_notes) > 0:
+[?2004l[?2004h>     rms_vals = np.array([n['rms'] for n in raw_notes])
+[?2004l[?2004h>     rmin = float(rms_vals.min())
+[?2004l[?2004h>     rmax = float(rms_vals.max())
+[?2004l[?2004h>     for n in raw_notes:
+[?2004l[?2004h>         if rmax > rmin:
+[?2004l[?2004h>             v = 1 + int(round((n['rms'] - rmin) / (rmax - rmin) * 126))
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             v = 100
+[?2004l[?2004h>         n['velocity'] = max(1, min(127, v))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Clamp offset_sec to <= duration + 0.1
+[?2004l[?2004h> max_offset = duration + 0.1
+[?2004l[?2004h> for n in raw_notes:
+[?2004l[?2004h>     if n['offset_sec'] > max_offset:
+[?2004l[?2004h>         n['offset_sec'] = max_offset
+[?2004l[?2004h>     # Ensure strict > onset
+[?2004l[?2004h>     if n['offset_sec'] <= n['onset_sec']:
+[?2004l[?2004h>         n['offset_sec'] = n['onset_sec'] + 1.0 / sr
+[?2004l[?2004h> 
+[?2004l[?2004h> # Build final notes
+[?2004l[?2004h> final_notes = [
+[?2004l[?2004h>     {
+[?2004l[?2004h>         'onset_sec': float(n['onset_sec']),
+[?2004l[?2004h>         'offset_sec': float(n['offset_sec']),
+[?2004l[?2004h>         'pitch_midi': int(n['pitch_midi']),
+[?2004l[?2004h>         'velocity': int(n['velocity']),
+[?2004l[?2004h>     }
+[?2004l[?2004h>     for n in raw_notes
+[?2004l[?2004h> ]
+[?2004l[?2004h> 
+[?2004l[?2004h> # Sort by onset
+[?2004l[?2004h> final_notes.sort(key=lambda x: x['onset_sec'])
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('/home/user/notes.json', 'w') as f:
+[?2004l[?2004h>     json.dump(final_notes, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Wrote {len(final_notes)} notes to /home/user/notes.json")
+[?2004l[?2004h> for n in final_notes[:5]:
+[?2004l[?2004h>     print(n)
+[?2004l[?2004h> PYEOF
+[?2004l[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# python3 /home/user/transcribe.py
+[?2004lWrote 11 notes to /home/user/notes.json
+{'onset_sec': 0.046439909297052155, 'offset_sec': 0.9287981859410431, 'pitch_midi': 60, 'velocity': 126}
+{'onset_sec': 0.9287981859410431, 'offset_sec': 1.0216780045351475, 'pitch_midi': 60, 'velocity': 77}
+{'onset_sec': 1.18421768707483, 'offset_sec': 2.136235827664399, 'pitch_midi': 64, 'velocity': 120}
+{'onset_sec': 2.136235827664399, 'offset_sec': 2.391655328798186, 'pitch_midi': 64, 'velocity': 1}
+{'onset_sec': 2.391655328798186, 'offset_sec': 3.297233560090703, 'pitch_midi': 67, 'velocity': 121}
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# cat /home/user/notes.json
+[?2004l[
+  {
+    "onset_sec": 0.046439909297052155,
+    "offset_sec": 0.9287981859410431,
+    "pitch_midi": 60,
+    "velocity": 126
+  },
+  {
+    "onset_sec": 0.9287981859410431,
+    "offset_sec": 1.0216780045351475,
+    "pitch_midi": 60,
+    "velocity": 77
+  },
+  {
+    "onset_sec": 1.18421768707483,
+    "offset_sec": 2.136235827664399,
+    "pitch_midi": 64,
+    "velocity": 120
+  },
+  {
+    "onset_sec": 2.136235827664399,
+    "offset_sec": 2.391655328798186,
+    "pitch_midi": 64,
+    "velocity": 1
+  },
+  {
+    "onset_sec": 2.391655328798186,
+    "offset_sec": 3.297233560090703,
+    "pitch_midi": 67,
+    "velocity": 121
+  },
+  {
+    "onset_sec": 3.297233560090703,
+    "offset_sec": 3.599092970521542,
+    "pitch_midi": 67,
+    "velocity": 17
+  },
+  {
+    "onset_sec": 3.599092970521542,
+    "offset_sec": 3.6687528344671203,
+    "pitch_midi": 72,
+    "velocity": 59
+  },
+  {
+    "onset_sec": 3.6687528344671203,
+    "offset_sec": 4.551111111111111,
+    "pitch_midi": 72,
+    "velocity": 127
+  },
+  {
+    "onset_sec": 4.551111111111111,
+    "offset_sec": 4.620770975056689,
+    "pitch_midi": 72,
+    "velocity": 65
+  },
+  {
+    "onset_sec": 4.783310657596372,
+    "offset_sec": 5.712108843537415,
+    "pitch_midi": 67,
+    "velocity": 120
+  },
+  {
+    "onset_sec": 5.712108843537415,
+    "offset_sec": 5.8,
+    "pitch_midi": 67,
+    "velocity": 96
+  }
+][?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# python3 -c "import librosa; y, sr = librosa.load('/home/user/input.wav', sr=None); print('duration:', librosa.get_duration(y=y, sr=sr), 'sr:', sr)"
+[?2004lduration: 5.8 sr: 22050
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# cat > /home/user/transcribe.py << 'PYEOF'
+[?2004l[?2004h> import json
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> import librosa
+[?2004l[?2004h> 
+[?2004l[?2004h> # Load audio
+[?2004l[?2004h> y, sr = librosa.load('/home/user/input.wav', sr=None)
+[?2004l[?2004h> duration = float(librosa.get_duration(y=y, sr=sr))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Detect onsets with backtrack=True
+[?2004l[?2004h> onset_frames = librosa.onset.onset_detect(y=y, sr=sr, backtrack=True)
+[?2004l[?2004h> onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Deduplicate: keep first of any close onsets (within 100ms)
+[?2004l[?2004h> MIN_GAP = 0.1
+[?2004l[?2004h> if len(onset_times) > 0:
+[?2004l[?2004h>     unique = [float(onset_times[0])]
+[?2004l[?2004h>     for t in onset_times[1:]:
+[?2004l[?2004h>         t = float(t)
+[?2004l[?2004h>         if t - unique[-1] > MIN_GAP:
+[?2004l[?2004h>             unique.append(t)
+[?2004l[?2004h>     onset_times = np.array(unique)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Build segment boundaries: each onset to next onset (or end)
+[?2004l[?2004h> boundaries = list(onset_times) + [duration]
+[?2004l[?2004h> 
+[?2004l[?2004h> # Pre-compute RMS across the whole file
+[?2004l[?2004h> hop_length = 512
+[?2004l[?2004h> rms_all = librosa.feature.rms(y=y, hop_length=hop_length)[0]
+[?2004l[?2004h> rms_times = librosa.frames_to_time(np.arange(len(rms_all)), sr=sr, hop_length=hop_length)
+[?2004l[?2004h> 
+[?2004l[?2004h> fmin_hz = librosa.note_to_hz('C2')
+[?2004l[?2004h> fmax_hz = librosa.note_to_hz('C7')
+[?2004l[?2004h> 
+[?2004l[?2004h> raw_notes = []
+[?2004l[?2004h> for i in range(len(onset_times)):
+[?2004l[?2004h>     start = float(onset_times[i])
+[?2004l[?2004h>     end = float(boundaries[i + 1])
+[?2004l[?2004h>     if end <= start:
+[?2004l[?2004h>         end = start + 1.0 / sr
+[?2004l[?2004h> 
+[?2004l[?2004h>     start_sample = int(start * sr)
+[?2004l[?2004h>     end_sample = int(end * sr)
+[?2004l[?2004h>     if end_sample <= start_sample:
+[?2004l[?2004h>         end_sample = start_sample + 1
+[?2004l[?2004h>     y_seg = y[start_sample:end_sample]
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Estimate pitch with pyin
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         f0, voiced_flag, voiced_prob = librosa.pyin(
+[?2004l[?2004h>             y_seg, fmin=fmin_hz, fmax=fmax_hz, sr=sr
+[?2004l[?2004h>         )
+[?2004l[?2004h>     except Exception:
+[?2004l[?2004h>         f0 = np.array([np.nan])
+[?2004l[?2004h> 
+[?2004l[?2004h>     voiced_f0 = f0[~np.isnan(f0)]
+[?2004l[?2004h>     if len(voiced_f0) == 0:
+[?2004l[?2004h>         # Use a fallback: estimate pitch from REDACTEDcorrelation or skip
+[?2004l[?2004h>         continue
+[?2004l[?2004h> 
+[?2004l[?2004h>     pitch_hz = float(np.median(voiced_f0))
+[?2004l[?2004h>     pitch_midi_f = float(librosa.hz_to_midi(pitch_hz))
+[?2004l[?2004h>     pitch_midi = int(round(pitch_midi_f))
+[?2004l[?2004h>     pitch_midi = max(0, min(127, pitch_midi))
+[?2004l[?2004h> 
+[?2004l[?2004h>     # RMS for this segment
+[?2004l[?2004h>     start_frame = int(np.searchsorted(rms_times, start))
+[?2004l[?2004h>     end_frame = int(np.searchsorted(rms_times, end))
+[?2004l[?2004h>     end_frame = max(end_frame, start_frame + 1)
+[?2004l[?2004h>     seg_rms = rms_all[start_frame:end_frame]
+[?2004l[?2004h>     if len(seg_rms) == 0:
+[?2004l[?2004h>         seg_rms = np.array([0.0])
+[?2004l[?2004h>     rms_val = float(np.mean(seg_rms))
+[?2004l[?2004h> 
+[?2004l[?2004h>     raw_notes.append({
+[?2004l[?2004h>         'onset_sec': start,
+[?2004l[?2004h>         'offset_sec': end,
+[?2004l[?2004h>         'pitch_midi': pitch_midi,
+[?2004l[?2004h>         'rms': rms_val,
+[?2004l[?2004h>     })
+[?2004l[?2004h> 
+[?2004l[?2004h> # Compute velocity from RMS values mapped to [1, 127]
+[?2004l[?2004h> if len(raw_notes) > 0:
+[?2004l[?2004h>     rms_vals = np.array([n['rms'] for n in raw_notes])
+[?2004l[?2004h>     rmin = float(rms_vals.min())
+[?2004l[?2004h>     rmax = float(rms_vals.max())
+[?2004l[?2004h>     for n in raw_notes:
+[?2004l[?2004h>         if rmax > rmin:
+[?2004l[?2004h>             v = 1 + int(round((n['rms'] - rmin) / (rmax - rmin) * 126))
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             v = 100
+[?2004l[?2004h>         n['velocity'] = max(1, min(127, v))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Clamp offset_sec to <= duration + 0.1
+[?2004l[?2004h> max_offset = duration + 0.1
+[?2004l[?2004h> for n in raw_notes:
+[?2004l[?2004h>     if n['offset_sec'] > max_offset:
+[?2004l[?2004h>         n['offset_sec'] = max_offset
+[?2004l[?2004h>     if n['offset_sec'] <= n['onset_sec']:
+[?2004l[?2004h>         n['offset_sec'] = n['onset_sec'] + 1.0 / sr
+[?2004l[?2004h> 
+[?2004l[?2004h> final_notes = [
+[?2004l[?2004h>     {
+[?2004l[?2004h>         'onset_sec': float(n['onset_sec']),
+[?2004l[?2004h>         'offset_sec': float(n['offset_sec']),
+[?2004l[?2004h>         'pitch_midi': int(n['pitch_midi']),
+[?2004l[?2004h>         'velocity': int(n['velocity']),
+[?2004l[?2004h>     }
+[?2004l[?2004h>     for n in raw_notes
+[?2004l[?2004h> ]
+[?2004l[?2004h> 
+[?2004l[?2004h> final_notes.sort(key=lambda x: x['onset_sec'])
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('/home/user/notes.json', 'w') as f:
+[?2004l[?2004h>     json.dump(final_notes, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Wrote {len(final_notes)} notes to /home/user/notes.json")
+[?2004l[?2004h> for n in final_notes:
+[?2004l[?2004h>     print(n)
+[?2004l[?2004h> PYEOF
+[?2004l[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# python3 /home/user/transcribe.py
+[?2004lWrote 10 notes to /home/user/notes.json
+{'onset_sec': 0.046439909297052155, 'offset_sec': 0.9287981859410431, 'pitch_midi': 60, 'velocity': 127}
+{'onset_sec': 0.9287981859410431, 'offset_sec': 1.18421768707483, 'pitch_midi': 60, 'velocity': 11}
+{'onset_sec': 1.18421768707483, 'offset_sec': 2.136235827664399, 'pitch_midi': 64, 'velocity': 121}
+{'onset_sec': 2.136235827664399, 'offset_sec': 2.391655328798186, 'pitch_midi': 64, 'velocity': 7}
+{'onset_sec': 2.391655328798186, 'offset_sec': 3.297233560090703, 'pitch_midi': 67, 'velocity': 122}
+{'onset_sec': 3.297233560090703, 'offset_sec': 3.599092970521542, 'pitch_midi': 67, 'velocity': 23}
+{'onset_sec': 3.599092970521542, 'offset_sec': 4.551111111111111, 'pitch_midi': 72, 'velocity': 123}
+{'onset_sec': 4.551111111111111, 'offset_sec': 4.783310657596372, 'pitch_midi': 72, 'velocity': 1}
+{'onset_sec': 4.783310657596372, 'offset_sec': 5.712108843537415, 'pitch_midi': 67, 'velocity': 121}
+{'onset_sec': 5.712108843537415, 'offset_sec': 5.8, 'pitch_midi': 67, 'velocity': 98}
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# sed -i 's/MIN_GAP = 0.1/MIN_GAP = 0.4/' /home/user/transcribe.py
+[?2004l[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# python3 /home/user/transcribe.py
+[?2004lWrote 6 notes to /home/user/notes.json
+{'onset_sec': 0.046439909297052155, 'offset_sec': 0.9287981859410431, 'pitch_midi': 60, 'velocity': 127}
+{'onset_sec': 0.9287981859410431, 'offset_sec': 2.136235827664399, 'pitch_midi': 64, 'velocity': 6}
+{'onset_sec': 2.136235827664399, 'offset_sec': 3.297233560090703, 'pitch_midi': 67, 'velocity': 1}
+{'onset_sec': 3.297233560090703, 'offset_sec': 4.551111111111111, 'pitch_midi': 72, 'velocity': 10}
+{'onset_sec': 4.551111111111111, 'offset_sec': 5.712108843537415, 'pitch_midi': 67, 'velocity': 1}
+{'onset_sec': 5.712108843537415, 'offset_sec': 5.8, 'pitch_midi': 67, 'velocity': 7}
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# cat > /home/user/transcribe.py << 'PYEOF'
+[?2004l[?2004h> import json
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> import librosa
+[?2004l[?2004h> 
+[?2004l[?2004h> # Load audio
+[?2004l[?2004h> y, sr = librosa.load('/home/user/input.wav', sr=None)
+[?2004l[?2004h> duration = float(librosa.get_duration(y=y, sr=sr))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Detect onsets with backtrack=True
+[?2004l[?2004h> onset_frames = librosa.onset.onset_detect(y=y, sr=sr, backtrack=True)
+[?2004l[?2004h> onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Sort and dedupe (keep first of exact duplicates)
+[?2004l[?2004h> onset_times = np.sort(np.unique(np.round(onset_times, 6)))
+[?2004l[?2004h> 
+[?2004l[?2004h> fmin_hz = librosa.note_to_hz('C2')
+[?2004l[?2004h> fmax_hz = librosa.note_to_hz('C7')
+[?2004l[?2004h> 
+[?2004l[?2004h> # First pass: estimate pitch for each segment between onsets
+[?2004l[?2004h> # We need pitches BEFORE filtering, so we can filter on pitch equality
+[?2004l[?2004h> def estimate_pitch(y_seg, sr, fmin, fmax):
+[?2004l[?2004h>     if len(y_seg) < int(0.05 * sr):
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         f0, _, _ = librosa.pyin(y_seg, fmin=fmin, fmax=fmax, sr=sr)
+[?2004l[?2004h>     except Exception:
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     voiced = f0[~np.isnan(f0)]
+[?2004l[?2004h>     if len(voiced) == 0:
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     hz = float(np.median(voiced))
+[?2004l[?2004h>     midi = int(round(float(librosa.hz_to_midi(hz))))
+[?2004l[?2004h>     return max(0, min(127, midi))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Build candidate onsets with their pitches
+[?2004l[?2004h> # For each onset i, the segment is from onset[i] to onset[i+1] (or end)
+[?2004l[?2004h> candidates = []
+[?2004l[?2004h> for i in range(len(onset_times)):
+[?2004l[?2004h>     start = float(onset_times[i])
+[?2004l[?2004h>     end = float(onset_times[i + 1]) if i + 1 < len(onset_times) else duration
+[?2004l[?2004h>     if end <= start:
+[?2004l[?2004h>         end = start + 1.0 / sr
+[?2004l[?2004h>     s = int(start * sr)
+[?2004l[?2004h>     e = max(int(end * sr), s + 1)
+[?2004l[?2004h>     y_seg = y[s:e]
+[?2004l[?2004h>     pitch = estimate_pitch(y_seg, sr, fmin_hz, fmax_hz)
+[?2004l[?2004h>     candidates.append({'time': start, 'end': end, 'pitch': pitch})
+[?2004l[?2004h> 
+[?2004l[?2004h> # Now filter: remove onsets whose pitch equals the previous onset's pitch
+[?2004l[?2004h> # (these are false duplicates)
+[?2004l[?2004h> filtered = []
+[?2004l[?2004h> for c in candidates:
+[?2004l[?2004h>     if c['pitch'] is None:
+[?2004l[?2004h>         filtered.append(c)
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     if filtered and filtered[-1]['pitch'] == c['pitch']:
+[?2004l[?2004h>         # Update the end of the previous note to this onset's time
+[?2004l[?2004h>         filtered[-1]['end'] = c['time']
+[?2004l[?2004h>         # Skip this candidate
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     filtered.append(c)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Build final note list with proper boundaries
+[?2004l[?2004h> onset_times_final = [c['time'] for c in filtered]
+[?2004l[?2004h> ends_final = [c['end'] for c in filtered]
+[?2004l[?2004h> 
+[?2004l[?2004h> # Pre-compute RMS
+[?2004l[?2004h> hop_length = 512
+[?2004l[?2004h> rms_all = librosa.feature.rms(y=y, hop_length=hop_length)[0]
+[?2004l[?2004h> rms_times = librosa.frames_to_time(np.arange(len(rms_all)), sr=sr, hop_length=hop_length)
+[?2004l[?2004h> 
+[?2004l[?2004h> raw_notes = []
+[?2004l[?2004h> for i, c in enumerate(filtered):
+[?2004l[?2004h>     start = c['time']
+[?2004l[?2004h>     end = c['end']
+[?2004l[?2004h>     if end <= start:
+[?2004l[?2004h>         end = start + 1.0 / sr
+[?2004l[?2004h>     pitch = c['pitch']
+[?2004l[?2004h>     if pitch is None:
+[?2004l[?2004h>         continue
+[?2004l[?2004h> 
+[?2004l[?2004h>     # RMS for this segment
+[?2004l[?2004h>     start_frame = int(np.searchsorted(rms_times, start))
+[?2004l[?2004h>     end_frame = int(np.searchsorted(rms_times, end))
+[?2004l[?2004h>     end_frame = max(end_frame, start_frame + 1)
+[?2004l[?2004h>     seg_rms = rms_all[start_frame:end_frame]
+[?2004l[?2004h>     if len(seg_rms) == 0:
+[?2004l[?2004h>         seg_rms = np.array([0.0])
+[?2004l[?2004h>     rms_val = float(np.mean(seg_rms))
+[?2004l[?2004h> 
+[?2004l[?2004h>     raw_notes.append({
+[?2004l[?2004h>         'onset_sec': start,
+[?2004l[?2004h>         'offset_sec': end,
+[?2004l[?2004h>         'pitch_midi': pitch,
+[?2004l[?2004h>         'rms': rms_val,
+[?2004l[?2004h>     })
+[?2004l[?2004h> 
+[?2004l[?2004h> # Velocity from RMS
+[?2004l[?2004h> if len(raw_notes) > 0:
+[?2004l[?2004h>     rms_vals = np.array([n['rms'] for n in raw_notes])
+[?2004l[?2004h>     rmin = float(rms_vals.min())
+[?2004l[?2004h>     rmax = float(rms_vals.max())
+[?2004l[?2004h>     for n in raw_notes:
+[?2004l[?2004h>         if rmax > rmin:
+[?2004l[?2004h>             v = 1 + int(round((n['rms'] - rmin) / (rmax - rmin) * 126))
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             v = 100
+[?2004l[?2004h>         n['velocity'] = max(1, min(127, v))
+[?2004l[?2004h> 
+[?2004l[?2004h> max_offset = duration + 0.1
+[?2004l[?2004h> for n in raw_notes:
+[?2004l[?2004h>     if n['offset_sec'] > max_offset:
+[?2004l[?2004h>         n['offset_sec'] = max_offset
+[?2004l[?2004h>     if n['offset_sec'] <= n['onset_sec']:
+[?2004l[?2004h>         n['offset_sec'] = n['onset_sec'] + 1.0 / sr
+[?2004l[?2004h> 
+[?2004l[?2004h> final_notes = [
+[?2004l[?2004h>     {
+[?2004l[?2004h>         'onset_sec': float(n['onset_sec']),
+[?2004l[?2004h>         'offset_sec': float(n['offset_sec']),
+[?2004l[?2004h>         'pitch_midi': int(n['pitch_midi']),
+[?2004l[?2004h>         'velocity': int(n['velocity']),
+[?2004l[?2004h>     }
+[?2004l[?2004h>     for n in raw_notes
+[?2004l[?2004h> ]
+[?2004l[?2004h> 
+[?2004l[?2004h> final_notes.sort(key=lambda x: x['onset_sec'])
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('/home/user/notes.json', 'w') as f:
+[?2004l[?2004h>     json.dump(final_notes, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Wrote {len(final_notes)} notes to /home/user/notes.json")
+[?2004l[?2004h> for n in final_notes:
+[?2004l[?2004h>     print(n)
+[?2004l[?2004h> PYEOF
+[?2004l[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# python3 /home/user/transcribe.py
+[?2004lWrote 5 notes to /home/user/notes.json
+{'onset_sec': 0.04644, 'offset_sec': 0.928798, 'pitch_midi': 60, 'velocity': 127}
+{'onset_sec': 1.184218, 'offset_sec': 2.136236, 'pitch_midi': 64, 'velocity': 39}
+{'onset_sec': 2.391655, 'offset_sec': 3.297234, 'pitch_midi': 67, 'velocity': 1}
+{'onset_sec': 3.599093, 'offset_sec': 4.551111, 'pitch_midi': 72, 'velocity': 72}
+{'onset_sec': 4.783311, 'offset_sec': 5.712109, 'pitch_midi': 67, 'velocity': 42}
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# cat > /home/user/transcribe.py << 'PYEOF'
+[?2004l[?2004h> import json
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> import librosa
+[?2004l[?2004h> 
+[?2004l[?2004h> # Load audio
+[?2004l[?2004h> y, sr = librosa.load('/home/user/input.wav', sr=None)
+[?2004l[?2004h> duration = float(librosa.get_duration(y=y, sr=sr))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Detect onsets with backtrack=True
+[?2004l[?2004h> onset_frames = librosa.onset.onset_detect(y=y, sr=sr, backtrack=True)
+[?2004l[?2004h> onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Sort and dedupe (keep first of exact duplicates)
+[?2004l[?2004h> onset_times = np.sort(np.unique(np.round(onset_times, 6)))
+[?2004l[?2004h> 
+[?2004l[?2004h> fmin_hz = librosa.note_to_hz('C2')
+[?2004l[?2004h> fmax_hz = librosa.note_to_hz('C7')
+[?2004l[?2004h> 
+[?2004l[?2004h> # First pass: estimate pitch for each segment between onsets
+[?2004l[?2004h> def estimate_pitch(y_seg, sr, fmin, fmax):
+[?2004l[?2004h>     if len(y_seg) < int(0.05 * sr):
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         f0, _, _ = librosa.pyin(y_seg, fmin=fmin, fmax=fmax, sr=sr)
+[?2004l[?2004h>     except Exception:
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     voiced = f0[~np.isnan(f0)]
+[?2004l[?2004h>     if len(voiced) == 0:
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     hz = float(np.median(voiced))
+[?2004l[?2004h>     midi = int(round(float(librosa.hz_to_midi(hz))))
+[?2004l[?2004h>     return max(0, min(127, midi))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Build candidate onsets with their pitches
+[?2004l[?2004h> candidates = []
+[?2004l[?2004h> for i in range(len(onset_times)):
+[?2004l[?2004h>     start = float(onset_times[i])
+[?2004l[?2004h>     end = float(onset_times[i + 1]) if i + 1 < len(onset_times) else duration
+[?2004l[?2004h>     if end <= start:
+[?2004l[?2004h>         end = start + 1.0 / sr
+[?2004l[?2004h>     s = int(start * sr)
+[?2004l[?2004h>     e = max(int(end * sr), s + 1)
+[?2004l[?2004h>     y_seg = y[s:e]
+[?2004l[?2004h>     pitch = estimate_pitch(y_seg, sr, fmin_hz, fmax_hz)
+[?2004l[?2004h>     candidates.append({'time': start, 'end': end, 'pitch': pitch})
+[?2004l[?2004h> 
+[?2004l[?2004h> # Filter: remove onsets whose pitch equals the previous kept onset's pitch
+[?2004l[?2004h> # These are false duplicates from the onset detector
+[?2004l[?2004h> filtered = []
+[?2004l[?2004h> for c in candidates:
+[?2004l[?2004h>     if c['pitch'] is None:
+[?2004l[?2004h>         filtered.append(c)
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     if filtered and filtered[-1]['pitch'] == c['pitch']:
+[?2004l[?2004h>         # False duplicate - skip it
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     filtered.append(c)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Now compute final boundaries: each note ends at the next kept onset (or end of audio)
+[?2004l[?2004h> # Then re-estimate pitch using the full segment
+[?2004l[?2004h> raw_notes = []
+[?2004l[?2004h> for i, c in enumerate(filtered):
+[?2004l[?2004h>     start = c['time']
+[?2004l[?2004h>     end = float(filtered[i + 1]['time']) if i + 1 < len(filtered) else duration
+[?2004l[?2004h>     if end <= start:
+[?2004l[?2004h>         end = start + 1.0 / sr
+[?2004l[?2004h>     s = int(start * sr)
+[?2004l[?2004h>     e = max(int(end * sr), s + 1)
+[?2004l[?2004h>     y_seg = y[s:e]
+[?2004l[?2004h>     pitch = estimate_pitch(y_seg, sr, fmin_hz, fmax_hz)
+[?2004l[?2004h>     if pitch is None:
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     raw_notes.append({
+[?2004l[?2004h>         'onset_sec': start,
+[?2004l[?2004h>         'offset_sec': end,
+[?2004l[?2004h>         'pitch_midi': pitch,
+[?2004l[?2004h>     })
+[?2004l[?2004h> 
+[?2004l[?2004h> # Pre-compute RMS
+[?2004l[?2004h> hop_length = 512
+[?2004l[?2004h> rms_all = librosa.feature.rms(y=y, hop_length=hop_length)[0]
+[?2004l[?2004h> rms_times = librosa.frames_to_time(np.arange(len(rms_all)), sr=sr, hop_length=hop_length)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Compute RMS for each note
+[?2004l[?2004h> for n in raw_notes:
+[?2004l[?2004h>     start_frame = int(np.searchsorted(rms_times, n['onset_sec']))
+[?2004l[?2004h>     end_frame = int(np.searchsorted(rms_times, n['offset_sec']))
+[?2004l[?2004h>     end_frame = max(end_frame, start_frame + 1)
+[?2004l[?2004h>     seg_rms = rms_all[start_frame:end_frame]
+[?2004l[?2004h>     if len(seg_rms) == 0:
+[?2004l[?2004h>         seg_rms = np.array([0.0])
+[?2004l[?2004h>     n['rms'] = float(np.mean(seg_rms))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Velocity from RMS
+[?2004l[?2004h> if len(raw_notes) > 0:
+[?2004l[?2004h>     rms_vals = np.array([n['rms'] for n in raw_notes])
+[?2004l[?2004h>     rmin = float(rms_vals.min())
+[?2004l[?2004h>     rmax = float(rms_vals.max())
+[?2004l[?2004h>     for n in raw_notes:
+[?2004l[?2004h>         if rmax > rmin:
+[?2004l[?2004h>             v = 1 + int(round((n['rms'] - rmin) / (rmax - rmin) * 126))
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             v = 100
+[?2004l[?2004h>         n['velocity'] = max(1, min(127, v))
+[?2004l[?2004h> 
+[?2004l[?2004h> max_offset = duration + 0.1
+[?2004l[?2004h> for n in raw_notes:
+[?2004l[?2004h>     if n['offset_sec'] > max_offset:
+[?2004l[?2004h>         n['offset_sec'] = max_offset
+[?2004l[?2004h>     if n['offset_sec'] <= n['onset_sec']:
+[?2004l[?2004h>         n['offset_sec'] = n['onset_sec'] + 1.0 / sr
+[?2004l[?2004h> 
+[?2004l[?2004h> final_notes = [
+[?2004l[?2004h>     {
+[?2004l[?2004h>         'onset_sec': float(n['onset_sec']),
+[?2004l[?2004h>         'offset_sec': float(n['offset_sec']),
+[?2004l[?2004h>         'pitch_midi': int(n['pitch_midi']),
+[?2004l[?2004h>         'velocity': int(n['velocity']),
+[?2004l[?2004h>     }
+[?2004l[?2004h>     for n in raw_notes
+[?2004l[?2004h> ]
+[?2004l[?2004h> 
+[?2004l[?2004h> final_notes.sort(key=lambda x: x['onset_sec'])
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('/home/user/notes.json', 'w') as f:
+[?2004l[?2004h>     json.dump(final_notes, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Wrote {len(final_notes)} notes to /home/user/notes.json")
+[?2004l[?2004h> for n in final_notes:
+[?2004l[?2004h>     print(n)
+[?2004l[?2004h> PYEOF
+[?2004l[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# python3 /home/user/transcribe.py
+[?2004lWrote 5 notes to /home/user/notes.json
+{'onset_sec': 0.04644, 'offset_sec': 1.021678, 'pitch_midi': 60, 'velocity': 127}
+{'onset_sec': 1.184218, 'offset_sec': 2.391655, 'pitch_midi': 64, 'velocity': 16}
+{'onset_sec': 2.391655, 'offset_sec': 3.599093, 'pitch_midi': 67, 'velocity': 1}
+{'onset_sec': 3.599093, 'offset_sec': 4.620771, 'pitch_midi': 72, 'velocity': 105}
+{'onset_sec': 4.783311, 'offset_sec': 5.8, 'pitch_midi': 67, 'velocity': 119}
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# python3 -c "
+[?2004l[?2004h> import json
+[?2004l[?2004h> with open('/home/user/notes.json') as f:
+[?2004l[?2004h>     notes = json.load(f)
+[?2004l[?2004h> print('Number of notes:', len(notes))
+[?2004l[?2004h> print('Keys check:')
+[?2004l[?2004h> required = {'onset_sec', 'offset_sec', 'pitch_midi', 'velocity'}
+[?2004l[?2004h> for n in notes:
+[?2004l[?2004h>     assert set(n.keys()) == required, f'Wrong keys: {n.keys()}'
+[?2004l[?2004h>     assert isinstance(n['onset_sec'], float), f'onset_sec not float: {n[\"onset_sec\"]}'
+[?2004l[?2004h>     assert isinstance(n['offset_sec'], float), f'offset_sec not float'
+[?2004l[?2004h>     assert isinstance(n['pitch_midi'], int), f'pitch_midi not int: {n[\"pitch_midi\"]}'
+[?2004l[?2004h>     assert isinstance(n['velocity'], int), f'velocity not int'
+[?2004l[?2004h>     assert 0 <= n['pitch_midi'] <= 127, f'pitch out of range'
+[?2004l[?2004h>     assert 1 <= n['velocity'] <= 127, f'velocity out of range'
+[?2004l[?2004h>     assert n['offset_sec'] > n['onset_sec'], f'offset <= onset'
+[?2004l[?2004h>     assert n['offset_sec'] <= 5.9, f'offset too large'
+[?2004l[?2004h> print('All checks passed!')
+[?2004l[?2004h> for n in notes:
+[?2004l[?2004h>     print(n)
+[?2004l[?2004h> "
+[?2004lNumber of notes: 5
+Keys check:
+All checks passed!
+{'onset_sec': 0.04644, 'offset_sec': 1.021678, 'pitch_midi': 60, 'velocity': 127}
+{'onset_sec': 1.184218, 'offset_sec': 2.391655, 'pitch_midi': 64, 'velocity': 16}
+{'onset_sec': 2.391655, 'offset_sec': 3.599093, 'pitch_midi': 67, 'velocity': 1}
+{'onset_sec': 3.599093, 'offset_sec': 4.620771, 'pitch_midi': 72, 'velocity': 105}
+{'onset_sec': 4.783311, 'offset_sec': 5.8, 'pitch_midi': 67, 'velocity': 119}
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# ls -la /home/user/notes.json
+[?2004l-rw-r--r-- 1 root root 523 Jul  3 14:38 /home/user/notes.json
+[?2004hroot@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# 

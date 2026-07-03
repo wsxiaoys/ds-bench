@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# deploy.sh - Deploy the Reflex app to Reflex Cloud non-interactively.
+
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$PROJECT_DIR"
+
+# Required env vars
+: "${REFLEX_CLOUD_TOKEN:?REFLEX_CLOUD_TOKEN must be set}"
+: "${REFLEX_CLOUD_PROJECT_ID:?REFLEX_CLOUD_PROJECT_ID must be set}"
+
+# Generate a unique app name with a random suffix.
+RANDOM_SUFFIX="$(python3 -c 'import secrets; print(secrets.token_hex(4))')"
+APP_NAME="myproject-${RANDOM_SUFFIX}"
+
+LOG_FILE="$PROJECT_DIR/deploy.log"
+
+echo "Deploying app: $APP_NAME" >&2
+
+# Run the deploy non-interactively against Reflex Cloud.
+uv run reflex deploy \
+    --no-interactive \
+    --token "$REFLEX_CLOUD_TOKEN" \
+    --project "$REFLEX_CLOUD_PROJECT_ID" \
+    --app-name "$APP_NAME"
+
+# Record the deployed app name.
+echo "Deployed app: $APP_NAME" > "$LOG_FILE"
+
+# Clean up any Reflex background processes that may have been started.
+pkill -f "reflex run" 2>/dev/null || true
+pkill -f "next dev" 2>/dev/null || true
+pkill -f "next-server" 2>/dev/null || true
+fuser -k 3000/tcp 2>/dev/null || true
+fuser -k 8000/tcp 2>/dev/null || true
+
+exit 0

@@ -1,0 +1,59 @@
+import type { RequestInfo } from 'rwsdk/router';
+import { buildClearSessionCookie } from '@/app/auth/session';
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderDashboard(username: string): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 640px; margin: 4rem REDACTED; padding: 0 1rem; }
+      h1 { font-size: 1.6rem; margin-bottom: 0.5rem; }
+      p { color: #333; }
+      .user { font-weight: 600; }
+      form { margin-top: 1.5rem; }
+      button { padding: 0.5rem 1rem; font-size: 1rem; background: #d9534f; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+      button:hover { background: #b52a26; }
+    </style>
+  </head>
+  <body>
+    <h1>Dashboard</h1>
+    <p>Welcome, <span class="user">${escapeHtml(username)}</span>!</p>
+    <p>You are signed in.</p>
+    <form method="post" action="/logout">
+      <button type="submit">Sign out</button>
+    </form>
+  </body>
+</html>`;
+}
+
+// Handler that runs AFTER the isAuthenticated interrupter.
+// The interrupter sets ctx.username before this runs.
+export const dashboardHandler = (requestInfo: RequestInfo): Response => {
+  const username = (requestInfo.ctx as { username?: string }).username ?? '';
+  return new Response(renderDashboard(username), {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+};
+
+export const logoutHandler = (): Response => {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: '/login',
+      'Set-Cookie': buildClearSessionCookie(),
+    },
+  });
+};

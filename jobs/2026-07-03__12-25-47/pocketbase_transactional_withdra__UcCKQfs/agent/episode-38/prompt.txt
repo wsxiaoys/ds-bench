@@ -1,0 +1,125 @@
+New Terminal Output:
+
+root@55045151-16e7-43aa-99ff-9ea571f30b2b:/home/user/myproject# sed -n '280,400p' /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/apis/record_crud.go
+                        if err != nil {
+                                return e.BadRequestError("Failed to create record", fmt.Errorf("dummy DBExport error: %w", err))
+                        }
+
+                        dummyParams := make(dbx.Params, len(dummyExport))
+                        selects := make([]string, 0, len(dummyExport))
+                        var param string
+                        for k, v := range dummyExport {
+                                k = inflector.Columnify(k) // columnify is just as extra measure in case of custom fields
+                                param = "__pb_create__" + k
+                                dummyParams[param] = v
+                                selects = append(selects, "{:"+param+"} AS [["+k+"]]")
+                        }
+
+                        // shallow clone the current collection
+                        dummyCollection := *collection
+                        dummyCollection.Id += dummyRandomPart
+                        dummyCollection.Name += inflector.Columnify(dummyRandomPart)
+
+                        withFrom := fmt.Sprintf("WITH {{%s}} as (SELECT %s)", dummyCollection.Name, strings.Join(selects, ","))
+
+                        // check non-empty create rule
+                        if *dummyCollection.CreateRule != "" {
+                                ruleQuery := e.App.ConcurrentDB().Select("(1)").PreFragment(withFrom).From(dummyCollection.Name).AndBind(dummyParams)
+
+                                resolver := core.NewRecordFieldResolver(e.App, &dummyCollection, requestInfo, true)
+
+                                expr, err := search.FilterData(*dummyCollection.CreateRule).BuildExpr(resolver)
+                                if err != nil {
+                                        return e.BadRequestError("Failed to create record", fmt.Errorf("create rule build expression failure: %w", err))
+                                }
+                                ruleQuery.AndWhere(expr)
+
+                                resolver.UpdateQuery(ruleQuery)
+
+                                var exists int
+                                err = ruleQuery.Limit(1).Row(&exists)
+                                if err != nil || exists == 0 {
+                                        return e.BadRequestError("Failed to create record", fmt.Errorf("create rule failure: %w", err))
+                                }
+                        }
+
+                        // check for manage rule access
+                        manageRuleQuery := e.App.ConcurrentDB().Select("(1)").PreFragment(withFrom).From(dummyCollection.Name).AndBind(dummyParams)
+                        if !form.HasManageAccess() &&
+                                hasAuthManageAccess(e.App, requestInfo, &dummyCollection, manageRuleQuery) {
+                                form.GrantManagerAccess()
+                        }
+                }
+
+                var isOptFinalizerCalled bool
+
+                event := new(core.RecordRequestEvent)
+                event.RequestEvent = e
+                event.Collection = collection
+                event.Record = record
+
+                hookErr := e.App.OnRecordCreateRequest().Trigger(event, func(e *core.RecordRequestEvent) error {
+                        form.SetApp(e.App)
+                        form.SetRecord(e.Record)
+
+                        err := form.Submit()
+                        if err != nil {
+                                return firstApiError(err, e.BadRequestError("Failed to create record", err))
+                        }
+
+                        err = EnrichRecord(e.RequestEvent, e.Record)
+                        if err != nil {
+                                return firstApiError(err, e.InternalServerError("Failed to enrich record", err))
+                        }
+
+                        err = execAfterSuccessTx(responseWriteAfterTx, e.App, func() error {
+                                return e.JSON(http.StatusOK, e.Record)
+                        })
+                        if err != nil {
+                                return err
+                        }
+
+                        if optFinalizer != nil {
+                                isOptFinalizerCalled = true
+                                err = optFinalizer(e.Record)
+                                if err != nil {
+                                        return firstApiError(err, e.InternalServerError("", err))
+                                }
+                        }
+
+                        return nil
+                })
+                if hookErr != nil {
+                        return hookErr
+                }
+
+                // e.g. in case the regular hook chain was stopped and the finalizer cannot be executed as part of the last e.Next() task
+                if !isOptFinalizerCalled && optFinalizer != nil {
+                        if err := optFinalizer(event.Record); err != nil {
+                                return firstApiError(err, e.InternalServerError("", err))
+                        }
+                }
+
+                return nil
+        }
+}
+
+func recordUpdate(responseWriteAfterTx bool, optFinalizer func(data any) error) func(e *core.RequestEvent) error {
+        return func(e *core.RequestEvent) error {
+                collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+                if err != nil || collection == nil {
+                        return e.NotFoundError("Missing collection context.", err)
+                }
+
+                if collection.IsView() {
+                        return e.BadRequestError("Unsupported collection type.", nil)
+                }
+
+                err = checkCollectionRateLimit(e, collection, "update")
+                if err != nil {
+                        return err
+                }
+
+                recordId := e.Request.PathValue("id")
+                if recordId == "" {
+root@55045151-16e7-43aa-99ff-9ea571f30b2b:/home/user/myproject#

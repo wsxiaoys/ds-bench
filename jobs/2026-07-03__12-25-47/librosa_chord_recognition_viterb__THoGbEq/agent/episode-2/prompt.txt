@@ -1,0 +1,127 @@
+New Terminal Output:
+
+root@b906fcfb-0ff7-4930-9b1f-2f78bcd673cb:~# cat > /tmp/chord_recognition.py << 'EOF'
+> import json
+> import numpy as np
+> import librosa
+>
+> # Load audio
+> y, sr = librosa.load('/home/user/input.wav', sr=None)
+> duration = librosa.get_duration(y=y, sr=sr)
+> print(f"Audio: sr={sr}, duration={duration}s, samples={len(y)}")
+>
+> # Compute chroma
+> hop_length = 512
+> chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=hop_length)
+> print(f"Chroma shape: {chroma.shape}")
+>
+> # 12 pitch class names
+> pitch_classes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+>
+> # Major and minor chord templates (relative weights for root, third, fifth)
+> # Major: 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0 (root, major 3rd, perfect 5th)
+> # Minor: 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0 (root, minor 3rd, perfect 5th)
+>
+> major_template = np.array([1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0], dtype=float)
+> minor_template = np.array([1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0], dtype=float)
+>
+> def shift_template(template, root_idx):
+>     """Rotate template so root is at index root_idx."""
+>     return np.roll(template, root_idx)
+>
+> # Build 24 chord templates
+> chord_templates = []
+> chord_labels = []
+> for i, pc in enumerate(pitch_classes):
+>     chord_templates.append(shift_template(major_template, i))
+>     chord_labels.append(f"{pc}:maj")
+> for i, pc in enumerate(pitch_classes):
+>     chord_templates.append(shift_template(minor_template, i))
+>     chord_labels.append(f"{pc}:min")
+>
+> templates = np.array(chord_templates)  # (24, 12)
+> print(f"Templates shape: {templates.shape}")
+>
+> # Normalize templates to be probability distributions
+> templates = templates / templates.sum(axis=1, keepdims=True)
+>
+> # Compute likelihoods: for each frame, dot product of chroma with each template
+> # Then normalize to be valid probabilities per frame
+> # likelihoods shape: (24, n_frames)
+> log_likelihoods = templates @ chroma  # (24, n_frames)
+> print(f"Log likelihoods shape: {log_likelihoods.shape}")
+>
+> # Make sure they're non-negative (add small offset if needed)
+> # Then normalize to sum to 1 per frame
+> likelihoods = log_likelihoods
+> # Normalize per frame so each frame's likelihoods sum to 1
+> likelihoods = likelihoods / (likelihoods.sum(axis=0, keepdims=True) + 1e-12)
+>
+> # Build transition matrix: 24x24 with self-bias
+> n_states = 24
+> self_prob = 0.9
+> other_prob = (1.0 - self_prob) / (n_states - 1)
+> trans = np.full((n_states, n_states), other_prob)
+> np.fill_diagonal(trans, self_prob)
+> print(f"Transition matrix row sums: {trans.sum(axis=1)[:3]}")
+>
+> # Viterbi decode
+> states = librosa.sequence.viterbi(likelihoods, trans)
+> print(f"Decoded states shape: {states.shape}, unique: {len(np.unique(states))}")
+>
+> # Convert frame indices to times
+> times = librosa.frames_to_time(np.arange(len(states)), sr=sr, hop_length=hop_length)
+> print(f"Times range: [{times[0]}, {times[-1]}]")
+>
+> # Merge consecutive same-state frames into segments
+> segments = []
+> if len(states) > 0:
+>     current_state = states[0]
+>     seg_start = times[0]
+>     for i in range(1, len(states)):
+>         if states[i] != current_state:
+>             seg_end = times[i]
+>             segments.append({
+>                 'start': float(seg_start),
+>                 'end': float(seg_end),
+>                 'chord': chord_labels[current_state]
+>             })
+>             current_state = states[i]
+>             seg_start = times[i]
+>     # Final segment
+>     seg_end = times[-1]
+>     segments.append({
+>         'start': float(seg_start),
+>         'end': float(seg_end),
+>         'chord': chord_labels[current_state]
+>     })
+>
+> # Clamp the final segment end to the audio duration so segments cover full track
+> if segments:
+>     segments[-1]['end'] = float(duration)
+>     # Make sure no gaps/overlaps
+>     for i in range(1, len(segments)):
+>         segments[i]['start'] = segments[i-1]['end']
+>     # Ensure first segment starts at 0
+>     segments[0]['start'] = 0.0
+>     # Filter out segments with duration <= 0.1s
+>     segments = [s for s in segments if (s['end'] - s['start']) > 0.1]
+>
+> print(f"Number of segments: {len(segments)}")
+> print(f"Distinct chord labels: {sorted(set(s['chord'] for s in segments))}")
+> for s in segments:
+>     print(s)
+>
+> # Write JSON
+> with open('/home/user/chords.json', 'w') as f:
+>     json.dump(segments, f, indent=2)
+>
+> print("Wrote /home/user/chords.json")
+> EOF
+root@b906fcfb-0ff7-4930-9b1f-2f78bcd673cb:~# python3 /tmp/chord_recognition.py
+Audio: sr=22050, duration=119.87591836734694s, samples=2643264
+Chroma shape: (12, 5163)
+Templates shape: (24, 12)
+Log likelihoods shape: (24, 5163)
+Transition matrix row sums: [1. 1. 1.]
+

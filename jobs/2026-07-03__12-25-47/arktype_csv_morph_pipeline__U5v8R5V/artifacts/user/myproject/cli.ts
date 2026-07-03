@@ -1,0 +1,62 @@
+import { runPipeline, type UserRecord } from './src/pipeline.js'
+
+/**
+ * Read the entire raw CSV payload from stdin verbatim.
+ *
+ * No trimming or normalization is applied before the bytes are forwarded to
+ * the ArkType pipeline; the pipeline is responsible for any validation or
+ * transformation.
+ */
+const readStdin = async (): Promise<string> => {
+    const chunks: Buffer[] = []
+    for await (const chunk of process.stdin) {
+        chunks.push(chunk as Buffer)
+    }
+    return Buffer.concat(chunks).toString('utf8')
+}
+
+/**
+ * JSON-serialize a validated user record array, preserving the `Date`
+ * instances produced by the `signupAt` morph.
+ *
+ * `JSON.stringify` natively formats `Date` values as ISO-8601 strings, which
+ * matches the input format and keeps the output reproducible.
+ */
+const serializeRecords = (records: UserRecord[]): string =>
+    JSON.stringify(records)
+
+const main = async (): Promise<void> => {
+    const csv = await readStdin()
+
+    let outcome: ReturnType<typeof runPipeline>
+    try {
+        outcome = runPipeline(csv)
+    } catch (err) {
+        // The user-defined CSV-parsing morph throws `Error` instances with
+        // descriptive messages; surface them through the same `INVALID:`
+        // channel as ArkType-originated errors.
+        const message = err instanceof Error ? err.message : String(err)
+        console.log(`INVALID: ${message}`)
+        process.exit(0)
+        return
+    }
+
+    if (!outcome.ok) {
+        console.log(`INVALID: ${outcome.error}`)
+        process.exit(0)
+        return
+    }
+
+    console.log('VALID')
+    console.log(serializeRecords(outcome.records))
+    process.exit(0)
+}
+
+main().catch((err: unknown) => {
+    // Last-resort safety net: any unexpected throw becomes a single-line
+    // `INVALID:` message and the process still exits with code 0 so that
+    // downstream tooling can rely on stdout alone to detect failure.
+    const message = err instanceof Error ? err.message : String(err)
+    console.log(`INVALID: ${message}`)
+    process.exit(0)
+})

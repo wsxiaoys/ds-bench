@@ -1,0 +1,54 @@
+import json
+from e2b import Sandbox
+
+# 1. Create a new E2B sandbox
+sandbox = Sandbox.create()
+
+# 2. Save the created sandbox ID to a local file
+with open('/home/user/e2b_task_info.json', 'w') as f:
+    json.dump({'sandbox_id': sandbox.sandbox_id}, f)
+
+# 3. Create the bash script at /home/user/task.sh inside the sandbox
+script_content = """#!/bin/bash
+echo 'Initializing...'
+sleep 1
+echo 'Running background job...'
+sleep 1
+echo 'Job complete.'
+"""
+sandbox.files.write('/home/user/task.sh', script_content)
+
+# 4. Make the script executable
+sandbox.commands.run('chmod +x /home/user/task.sh')
+
+# 5. Run the script as a background command using the E2B SDK
+handle = sandbox.commands.run('/home/user/task.sh', background=True)
+
+# 6. Monitor / wait for the background command to finish, capturing its stdout
+captured_stdout_chunks = []
+
+
+def on_stdout(chunk: str):
+    captured_stdout_chunks.append(chunk)
+    print(f'[stdout] {chunk}', end='', flush=True)
+
+
+def on_stderr(chunk: str):
+    print(f'[stderr] {chunk}', end='', flush=True)
+
+
+result = handle.wait(on_stdout=on_stdout, on_stderr=on_stderr)
+
+# 7. Write the captured stdout to /home/user/captured_stdout.txt inside the sandbox
+captured_stdout = ''.join(captured_stdout_chunks)
+# If wait() already consumed everything into result.stdout, use that as a fallback
+if not captured_stdout:
+    captured_stdout = result.stdout
+
+sandbox.files.write('/home/user/captured_stdout.txt', captured_stdout)
+
+print('Captured stdout:')
+print(captured_stdout)
+print(f'Sandbox ID: {sandbox.sandbox_id}')
+
+# 8. Do NOT close/kill the sandbox - leave it running for verification.

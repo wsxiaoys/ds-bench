@@ -1,0 +1,873 @@
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# clear
+[?2004l[H[J[3J[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# ls -la /home/user/
+[?2004ltotal 1424
+drwxr-xr-x 1 root root      31 Jul  3 13:06 [0m[01;34m.[0m
+drwxr-xr-x 1 root root      26 Jul  3 13:06 [01;34m..[0m
+-rw-r--r-- 1 root root 1455344 Jul  3 13:06 [00;36minput.wav[0m
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import librosa; print(librosa.__version__)"
+[?2004l0.11.0
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import scipy, sklearn, numpy; print(scipy.__version__, sklearn.__version__, numpy.__version__)"
+[?2004l1.18.0 1.9.0 2.4.6
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import librosa, numpy as np; y, sr = librosa.load('/home/user/input.wav', sr=22050, mono=True); print('sr:', sr, 'duration:', len(y)/sr, 'min:', y.min(), 'max:', y.max())"
+[?2004lsr: 22050 duration: 33.0 min: -0.8479004 max: 0.8499756
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# cat > /home/user/segment.py << 'PYEOF'
+[?2004l[?2004h> import json
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> import librosa
+[?2004l[?2004h> from sklearn.cluster import AgglomerativeClustering
+[?2004l[?2004h> 
+[?2004ld[?2004h> AUDIO_PATH = '/home/user/input.wav'
+[?2004l[?2004h> OUT_PATH = '/home/user/segments.json'
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Load audio ---
+[?2004l[?2004h> y, sr = librosa.load(AUDIO_PATH, sr=22050, mono=True)
+[?2004l[?2004h> duration = float(len(y) / sr)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Beat tracking ---
+[?2004l[?2004h> tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+[?2004l[?2004h> beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+[?2004l[?2004h> print(f'tempo={tempo} n_beats={len(beat_frames)} duration={duration}')
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Tonal feature (chroma_cqt) ---
+[?2004l[?2004h> chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+[?2004l[?2004h> # Beat-synchronous aggregation
+[?2004l[?2004h> chroma_sync = librosa.util.sync(chroma, beat_frames, aggregate=np.median)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Recurrence / self-similarity ---
+[?2004l[?2004h> # Use a wider context to capture structure
+[?2004l[?2004h> R = librosa.segment.recurrence_matrix(
+[?2004l[?2004h>     chroma_sync,
+[?2004l[?2004h>     mode='affinity',
+[?2004l[?2004h>     metric='cosine',
+[?2004l[?2004h>     sparse=False,
+[?2004l[?2004h> )
+[?2004l[?2004h> # Enhance diagonals
+[?2004leg[?2004h> R_path = librosa.segment.path_enhance(R, n_segments=int(np.ceil(len(beat_frames) / 7.0)))
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Sequential / local affinity ---
+[?2004l[?2004h> # Local affinity: penalize distance to diagonal
+[?2004l[?2004h> n = chroma_sync.shape[1]
+[?2004leg)
+[?2004h> seq = np.zeros((n, n), dtype=np.float64)
+[?2004ln[?2004h> band = 7  # half-bandwidth
+[?2004l[?2004h> for i in range(n):
+[?2004ln[?2004h>     lo = max(0, i - band)
+[?2004l[?2004h>     hi = min(n, i + band + 1)
+[?2004l[?2004h>     d = np.abs(np.arange(lo, hi) - i)
+[?2004l[?2004h>     seq[i, lo:hi] = np.exp(-(d ** 2) / (2.0 * (band / 2.0) ** 2))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Combine repetition (path-enhanced) with sequential affinity
+[?2004l[?2004h> alpha = 0.5
+[?2004l[?2004h> A = alpha * R_path + (1.0 - alpha) * seq
+[?2004l[?2004h> np.fill_diagonal(A, 1.0)
+[?2004l[?2004h> # Symmetrize
+[?2004l[?2004h> A = 0.5 * (A + A.T)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Symmetric normalized graph Laplacian ---
+[?2004l[?2004h> deg = A.sum(axis=1)
+[?2004l[?2004h> with np.errstate(divide='ignore'):
+[?2004l[?2004h>     d_inv_sqrt = np.where(deg > 0, 1.0 / np.sqrt(deg), 0.0)
+[?2004l[?2004h> D_inv_sqrt = np.diag(d_inv_sqrt)
+[?2004l[?2004h> L = np.eye(n) - D_inv_sqrt @ A @ D_inv_sqrt
+[?2004l[?2004h> 
+[?2004l[?2004h> # Bottom K eigenvectors (smallest eigenvalues)
+[?2004l[?2004h> K = 5
+[?2004l[?2004h> eigvals, eigvecs = np.linalg.eigh(L)
+[?2004l[?2004h> idx_sort = np.argsort(eigvals)
+[?2004l[?2004h> eigvals = eigvals[idx_sort]
+[?2004l[?2004h> eigvecs = eigvecs[:, idx_sort]
+[?2004l[?2004h> # Skip the first trivial eigenvector (eigval ~ 0)
+[?2004l[?2004h> emb = eigvecs[:, 1:K+1]
+[?2004l[?2004h> # Row-normalize embedding
+[?2004l[?2004h> row_norm = np.linalg.norm(emb, axis=1, keepdims=True)
+[?2004l[?2004h> row_norm = np.where(row_norm > 0, row_norm, 1.0)
+[?2004l[?2004h> emb_norm = emb / row_norm
+[?2004l[?2004h> 
+[?2004lN[?2004h> # --- Agglomerative clustering ---
+[?2004l[?2004h> # Choose number of clusters. We want at least 3 segments and reuse of labels.
+[?2004l[?2004h> # Use librosa.segment.agglomerative on the chroma_sync directly with cosine
+[?2004l[?2004h> # to get a hierarchical segmentation that often yields A/B/A patterns.
+[?2004l[?2004h> # That function returns boundary frame indices.
+[?2004l[?2004h> boundary_frames = librosa.segment.agglomerative(chroma_sync, n_clusters=3)
+[?2004l[?2004h> # This gives frame indices of segment boundaries (not including last frame).
+[?2004l[?2004h> print('boundary_frames:', boundary_frames)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Convert boundary frames to beat indices
+[?2004l[?2004h> # boundary_frames are frame indices into chroma_sync (== beat indices)
+[?2004l[?2004h> beats_per_segment = []
+[?2004l[?2004h> prev = 0
+[?2004l[?2004h> for bf in boundary_frames:
+[?2004l[?2004h>     beats_per_segment.append((prev, int(bf)))
+[?2004l[?2004h>     prev = int(bf)
+[?2004l[?2004h> beats_per_segment.append((prev, n))
+[?2004l[?2004h> print('beats_per_segment:', beats_per_segment)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Now, assign a label to each segment such that segments with similar
+[?2004l[?2004h> # chroma content reuse labels (A/B/A pattern).
+[?2004l[?2004h> # Compute mean chroma per segment and cluster these mean vectors.
+[?2004l[?2004h> seg_means = []
+[?2004l[?2004h> for (s, e) in beats_per_segment:
+[?2004l[?2004h>     if e > s:
+[?2004l[?2004h>         seg_means.append(chroma_sync[:, s:e].mean(axis=1))
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         seg_means.append(chroma_sync[:, s])
+[?2004l[?2004h> seg_means = np.stack(seg_means, axis=0)
+[?2004l[?2004h> # Cluster segment means into a small number of label types
+[?2004l[?2004h> n_label_types = min(3, len(seg_means))
+[?2004l[?2004h> seg_labels = AgglomerativeClustering(
+[?2004l[?2004h>     n_clusters=n_label_types, metric='cosine', linkage='average'
+[?2004l[?2004h> ).fit_predict(seg_means)
+[?2004l[?2004h> # Map numeric labels to uppercase letters in order of first appearance
+[?2004l[?2004h> letters = []
+[?2004l[?2004h> seen = {}
+[?2004l[?2004h> for lab in seg_labels:
+[?2004l[?2004h>     if lab not in seen:
+[?2004l[?2004h>         seen[lab] = chr(ord('A') + len(seen))
+[?2004l[?2004h>     letters.append(seen[lab])
+[?2004l[?2004h> print('seg_labels (raw):', seg_labels, 'letters:', letters)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Build time intervals from beat indices ---
+[?2004l[?2004h> # Use beat_times (in seconds). For each beat-range, start = beat_times[s]
+[?2004l[?2004h> # and end = beat_times[e-1] + beat_duration. Actually let's use the audio
+[?2004l[?2004h> # time grid from frames_to_time on beat_frames: but for end we want the
+[?2004l[?2004h> # next beat time (or audio duration for last segment).
+[?2004l[?2004h> segments = []
+[?2004l[?2004h> for (s, e), lab in zip(beats_per_segment, letters):
+[?2004l[?2004h>     if e > s:
+[?2004l[?2004h>         t_start = float(beat_times[s])
+[?2004l[?2004h>         if e < n:
+[?2004l[?2004h>             t_end = float(beat_times[e])
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             t_end = duration
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     segments.append({'start': t_start, 'end': t_end, 'label': lab})
+[?2004l[?2004h> 
+[?2004l[?2004h> # Ensure first segment starts within 0.3s of 0 and last segment ends within 0.5s of duration
+[?2004l[?2004h> segments[0]['start'] = 0.0
+[?2004l[?2004h> segments[-1]['end'] = duration
+[?2004l[?2004h> 
+[?2004l[?2004h> # Merge adjacent segments with same label
+[?2004l[?2004h> merged = []
+[?2004l[?2004h> for seg in segments:
+[?2004l[?2004h>     if merged and merged[-1]['label'] == seg['label']:
+[?2004l[?2004h>         merged[-1]['end'] = seg['end']
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         merged.append(dict(seg))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Drop any segment shorter than 0.5s; if dropped, merge with neighbor
+[?2004l[?2004h> final = []
+[?2004l[?2004h> for seg in merged:
+[?2004l[?2004h>     dur = seg['end'] - seg['start']
+[?2004l[?2004h>     if dur <= 0.5:
+[?2004l[?2004h>         if final:
+[?2004l[?2004h>             final[-1]['end'] = seg['end']
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             seg['start'] = 0.0
+[?2004l[?2004h>             final.append(seg)
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         final.append(seg)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Ensure gaps between adjacent segments <= 0.3s and overlaps <= 0.05s.
+[?2004l[?2004h> # Bridge small gaps by snapping boundaries.
+[?2004l[?2004h> for i in range(1, len(final)):
+[?2004l[?2004h>     gap = final[i]['start'] - final[i-1]['end']
+[?2004l[?2004h>     if gap > 0.3:
+[?2004l[?2004h>         # Move boundary halfway
+[?2004l[?2004h>         mid = (final[i-1]['end'] + final[i]['start']) / 2.0
+[?2004l[?2004h>         final[i-1]['end'] = mid
+[?2004l[?2004h>         final[i]['start'] = mid
+[?2004l[?2004h>     elif gap < -0.05:
+[?2004l[?2004h>         # Overlap too big: shift boundary
+[?2004l[?2004h>         mid = (final[i-1]['end'] + final[i]['start']) / 2.0
+[?2004l[?2004h>         final[i-1]['end'] = mid
+[?2004l[?2004h>         final[i]['start'] = mid
+[?2004l[?2004h> 
+[?2004l[?2004h> # Recheck min duration
+[?2004l[?2004h> final = [s for s in final if (s['end'] - s['start']) > 0.5]
+[?2004l[?2004h> # Reassign labels in order of appearance (so we always have A,B,... contiguous)
+[?2004l[?2004h> renamed = []
+[?2004l[?2004h> label_map = {}
+[?2004l[?2004h> for s in final:
+[?2004l[?2004h>     if s['label'] not in label_map:
+[?2004l[?2004h>         label_map[s['label']] = chr(ord('A') + len(label_map))
+[?2004l[?2004h>     renamed.append({'start': float(s['start']), 'end': float(s['end']), 'label': label_map[s['label']]})
+[?2004l[?2004h> 
+[?2004l[?2004h> # Sort by start
+[?2004l[?2004h> renamed.sort(key=lambda x: x['start'])
+[?2004l[?2004h> 
+[?2004l[?2004h> print('FINAL SEGMENTS:')
+[?2004l[?2004h> for s in renamed:
+[?2004l[?2004h>     print(f"  {s['start']:.3f} -> {s['end']:.3f}  {s['label']}  (dur={s['end']-s['start']:.3f})")
+[?2004l[?2004h> 
+[?2004l[?2004h> with open(OUT_PATH, 'w') as f:
+[?2004l[?2004h>     json.dump(renamed, f, indent=2)
+[?2004l[?2004h> print('Wrote', OUT_PATH)
+[?2004l[?2004h> PYEOF
+[?2004l[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# echo "wrote script"
+[?2004lwrote script
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# wc -l /home/user/segment.py && python3 -c "import ast; ast.parse(open('/home/user/segment.py').read()); print('syntax OK')"
+[?2004l191 /home/user/segment.py
+syntax OK
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 /home/user/segment.py
+[?2004ltempo=0.0 n_beats=0 duration=33.0
+Traceback (most recent call last):
+  File "/home/user/segment.py", line 25, in <module>
+    R = librosa.segment.recurrence_matrix(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/librosa/segment.py", line 589, in recurrence_matrix
+    data = data.reshape((t, -1), order="F")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: cannot reshape array of size 0 into shape (0,newaxis)
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import librosa, inspect; print(inspect.signature(librosa.beat.beat_track))"
+[?2004l(*, y: Optional[numpy.ndarray] = None, sr: float = 22050, onset_envelope: Optional[numpy.ndarray] = None, hop_length: int = 512, start_bpm: float = 120.0, tightness: float = 100, trim: bool = True, bpm: Union[bool, numpy.bool, int, ForwardRef('np.integer[Any]'), float, ForwardRef('np.floating[Any]'), numpy.ndarray, NoneType] = None, prior: Optional[scipy.stats._distn_infrastructure.rv_continuous] = None, units: str = 'frames', sparse: bool = True) -> Tuple[Union[bool, numpy.bool, int, ForwardRef('np.integer[Any]'), float, ForwardRef('np.floating[Any]'), numpy.ndarray], numpy.ndarray]
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 << 'EOF'
+[?2004l[?2004h> import librosa, numpy as np
+[?2004l[?2004h> y, sr = librosa.load('/home/user/input.wav', sr=22050, mono=True)
+[?2004l[?2004h> print('y shape:', y.shape, 'sr:', sr)
+[?2004l[?2004h> tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
+[?2004l[?2004h> print('tempo type:', type(tempo), 'tempo:', tempo, 'beats len:', len(beats))
+[?2004l[?2004h> # Try with start_bpm
+[?2004l[?2004h> for sbpm in [60, 90, 120, 150]:
+[?2004l[?2004h>     t2, b2 = librosa.beat.beat_track(y=y, sr=sr, start_bpm=sbpm)
+[?2004l[?2004h>     print(f'start_bpm={sbpm}: tempo={t2}, beats={len(b2)}')
+[?2004l[?2004h> EOF
+[?2004ly shape: (727650,) sr: 22050
+tempo type: <class 'float'> tempo: 0.0 beats len: 0
+start_bpm=60: tempo=0.0, beats=0
+start_bpm=90: tempo=0.0, beats=0
+start_bpm=120: tempo=0.0, beats=0
+start_bpm=150: tempo=0.0, beats=0
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 << 'EOF'
+[?2004l[?2004h> import librosa, numpy as np
+[?2004l[?2004h> y, sr = librosa.load('/home/user/input.wav', sr=22050, mono=True)
+[?2004l[?2004h> print('y non-zero:', np.count_nonzero(y), '/', len(y))
+[?2004l[?2004h> print('RMS:', np.sqrt(np.mean(y**2)))
+[?2004l[?2004h> print('max abs:', np.max(np.abs(y)))
+[?2004l[?2004h> # Onset envelope
+[?2004l[?2004h> oe = librosa.onset.onset_strength(y=y, sr=sr)
+[?2004l[?2004h> print('onset envelope shape:', oe.shape, 'min:', oe.min(), 'max:', oe.max(), 'mean:', oe.mean())
+[?2004l[?2004h> # Try with sparse=False
+[?2004l[?2004h> import inspect
+[?2004l[?2004h> print('beat_track defaults...')
+[?2004l[?2004h> t, b = librosa.beat.beat_track(y=y, sr=sr, sparse=False)
+[?2004l[?2004h> print('sparse=False:', t, len(b))
+[?2004l[?2004h> EOF
+[?2004ly non-zero: 727589 / 727650
+RMS: 0.23274207
+max abs: 0.8499756
+onset envelope shape: (1422,) min: 0.0 max: 2.2281244 mean: 0.09386675
+beat_track defaults...
+sparse=False: 0.0 1422
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 << 'EOF'
+[?2004l[?2004h> import librosa, numpy as np
+[?2004l[?2004h> y, sr = librosa.load('/home/user/input.wav', sr=22050, mono=True)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Pass onset_envelope explicitly
+[?2004l[?2004h> oe = librosa.onset.onset_strength(y=y, sr=sr, hop_length=512)
+[?2004l[?2004h> print('oe shape:', oe.shape)
+[?2004l[?2004h> for tight in [50, 100, 200, 400]:
+[?2004l[?2004h>     t, b = librosa.beat.beat_track(onset_envelope=oe, sr=sr, hop_length=512, tightness=tight)
+[?2004l[?2004h>     print(f'tightness={tight}: tempo={t}, beats={len(b)}')
+[?2004l[?2004h> 
+[?2004l[?2004h> # Maybe the issue is librosa 0.11.0 has a bug. Try with looser settings.
+[?2004l[?2004h> t, b = librosa.beat.beat_track(onset_envelope=oe, sr=sr, hop_length=512, tightness=200, start_bpm=120.0)
+[?2004l[?2004h> print('explicit:', t, len(b), b[:10] if len(b)>0 else 'empty')
+[?2004l[?2004h> EOF
+[?2004loe shape: (1422,)
+tightness=50: tempo=[89.10290948], beats=50
+tightness=100: tempo=[89.10290948], beats=50
+tightness=200: tempo=[89.10290948], beats=49
+tightness=400: tempo=[89.10290948], beats=49
+explicit: [89.10290948] 49 [  3  31  59  87 116 145 174 203 232 261]
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# sed -i 's|tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)|onset_env = librosa.onset.onset_strength(y=y, sr=sr)\ntempo, beat_frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)|' /home/user/segment.py
+[?2004l[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import ast; ast.parse(open('/home/user/segment.py').read()); print('syntax OK')"
+[?2004lsyntax OK
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 /home/user/segment.py
+[?2004ltempo=[89.10290948] n_beats=50 duration=33.0
+Traceback (most recent call last):
+  File "/home/user/segment.py", line 33, in <module>
+    R_path = librosa.segment.path_enhance(R, n_segments=int(np.ceil(len(beat_frames) / 7.0)))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: path_enhance() missing 1 required positional argument: 'n'
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import librosa, inspect; print(inspect.signature(librosa.segment.path_enhance))"
+[?2004l(R: numpy.ndarray, n: int, *, window: Union[str, Tuple[Any, ...], float, Callable[[int], numpy.ndarray], ArrayLike] = 'hann', max_ratio: float = 2.0, min_ratio: Optional[float] = None, n_filters: int = 7, zero_mean: bool = False, clip: bool = True, **kwargs: Any) -> numpy.ndarray
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import librosa, inspect; print(inspect.signature(librosa.segment.recurrence_matrix))"
+[?2004l(data: numpy.ndarray, *, k: Optional[int] = None, width: int = 1, metric: str = 'euclidean', sym: bool = False, sparse: bool = False, mode: str = 'connectivity', bandwidth: Union[numpy.ndarray, bool, numpy.bool, int, ForwardRef('np.integer[Any]'), float, ForwardRef('np.floating[Any]'), str, NoneType] = None, self: bool = False, axis: int = -1, full: bool = False) -> Union[numpy.ndarray, scipy.sparse._csc.csc_matrix]
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import librosa, inspect; print(inspect.signature(librosa.segment.agglomerative))"
+[?2004l(data: numpy.ndarray, k: int, *, clusterer: Optional[sklearn.cluster._agglomerative.AgglomerativeClustering] = None, axis: int = -1) -> numpy.ndarray
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import librosa, inspect; print(inspect.signature(librosa.util.sync))"
+[?2004l(data: 'np.ndarray', idx: 'Union[Sequence[int], Sequence[slice]]', *, aggregate: 'Optional[Callable[..., Any]]' = None, pad: 'bool' = True, axis: 'int' = -1) -> 'np.ndarray'
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# sed -i 's|R_path = librosa.segment.path_enhance(R, n_segments=int(np.ceil(len(beat_frames) / 7.0)))|n_seg = max(2, int(np.ceil(len(beat_frames) / 7.0)))\nR_path = librosa.segment.path_enhance(R, n_seg)|' /home/user/segment.py
+[?2004l[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# sed -i 's|boundary_frames = librosa.segment.agglomerative(chroma_sync, n_clusters=3)|boundary_frames = librosa.segment.agglomerative(chroma_sync, 3)|' /home/user/segment.py
+[?2004l[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import ast; ast.parse(open('/home/user/segment.py').read()); print('syntax OK')"
+[?2004lsyntax OK
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 /home/user/segment.py
+[?2004ltempo=[89.10290948] n_beats=50 duration=33.0
+boundary_frames: [ 0 17 34]
+beats_per_segment: [(0, 0), (0, 17), (17, 34), (34, 51)]
+seg_labels (raw): [2 0 1 0] letters: ['A', 'B', 'C', 'B']
+FINAL SEGMENTS:
+  0.000 -> 11.680  A  (dur=11.680)
+  11.680 -> 22.663  B  (dur=10.983)
+  22.663 -> 33.000  A  (dur=10.337)
+Wrote /home/user/segments.json
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# cat /home/user/segments.json
+[?2004l[
+  {
+    "start": 0.0,
+    "end": 11.679637188208616,
+    "label": "A"
+  },
+  {
+    "start": 11.679637188208616,
+    "end": 22.66267573696145,
+    "label": "B"
+  },
+  {
+    "start": 22.66267573696145,
+    "end": 33.0,
+    "label": "A"
+  }
+][?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 << 'EOF'
+[?2004l[?2004h> import json
+[?2004l[?2004h> with open('/home/user/segments.json') as f:
+[?2004l[?2004h>     segs = json.load(f)
+[?2004l[?2004h> print('count:', len(segs))
+[?2004l[?2004h> labels = [s['label'] for s in segs]
+[?2004l[?2004h> print('labels:', labels)
+[?2004l[?2004h> print('distinct labels:', set(labels))
+[?2004l[?2004h> print('label reuse count:', {l: labels.count(l) for l in set(labels)})
+[?2004l[?2004h> # Check constraints
+[?2004l[?2004h> assert segs[0]['start'] < 0.3, f"first start too late: {segs[0]['start']}"
+[?2004l[?2004h> assert abs(segs[-1]['end'] - 33.0) < 0.5, f"last end too far from duration: {segs[-1]['end']}"
+[?2004l[?2004h> for i, s in enumerate(segs):
+[?2004l[?2004h>     assert s['start'] < s['end'], f"seg {i}: start >= end"
+[?2004l[?2004h>     assert s['end'] - s['start'] > 0.5, f"seg {i}: too short"
+[?2004l[?2004h>     import re
+[?2004l[?2004h>     assert re.match(r'^[A-Z]$', s['label']), f"seg {i}: bad label"
+[?2004l[?2004h>     if i > 0:
+[?2004l[?2004h>         gap = s['start'] - segs[i-1]['end']
+[?2004l[?2004h>         assert gap <= 0.3, f"gap too large at {i}: {gap}"
+[?2004l[?2004h>         assert gap >= -0.05, f"overlap too large at {i}: {gap}"
+[?2004l[?2004h> assert len(segs) >= 3, "need at least 3 segments"
+[?2004l[?2004h> assert len(set(labels)) >= 2, "need at least 2 distinct labels"
+[?2004l[?2004h> assert max(labels.count(l) for l in set(labels)) >= 2, "need at least one reused label"
+[?2004l[?2004h> print('ALL CHECKS PASSED')
+[?2004l[?2004h> EOF
+[?2004lcount: 3
+labels: ['A', 'B', 'A']
+distinct labels: {'B', 'A'}
+label reuse count: {'B': 1, 'A': 2}
+ALL CHECKS PASSED
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# sed -i 's|boundary_frames = librosa.segment.agglomerative(chroma_sync, 3)|boundary_frames = librosa.segment.agglomerative(emb_norm, 3)|' /home/user/segment.py
+[?2004l[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import ast; ast.parse(open('/home/user/segment.py').read()); print('syntax OK')"
+[?2004lsyntax OK
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 /home/user/segment.py
+[?2004ltempo=[89.10290948] n_beats=50 duration=33.0
+boundary_frames: [0 1 4]
+beats_per_segment: [(0, 0), (0, 1), (1, 4), (4, 51)]
+seg_labels (raw): [0 0 2 1] letters: ['A', 'A', 'B', 'C']
+FINAL SEGMENTS:
+  0.000 -> 0.720  A  (dur=0.720)
+  0.720 -> 2.694  B  (dur=1.974)
+  2.694 -> 33.000  C  (dur=30.306)
+Wrote /home/user/segments.json
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# cat > /home/user/segment.py << 'PYEOF'
+[?2004l[?2004h> import json
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> import librosa
+[?2004l[?2004h> from sklearn.cluster import AgglomerativeClustering
+[?2004l[?2004h> 
+[?2004l[?2004h> AUDIO_PATH = '/home/user/input.wav'
+[?2004l[?2004h> OUT_PATH = '/home/user/segments.json'
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Load audio ---
+[?2004l= {}
+for (s, e, lab) in runs:
+    if lab not in seen:
+        seen[lab] = chr(ord([?2004h> y, sr = librosa.load(AUDIO_PATH, sr=22050, mono=True)
+[?2004l[?2004h> duration = float(len(y) / sr)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Beat tracking ---
+[?2004l[?2004h> onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+[?2004l[?2004h> tempo, beat_frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
+[?2004l[?2004h> beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+[?2004l[?2004h> print(f'tempo={tempo} n_beats={len(beat_frames)} duration={duration}')
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Tonal feature (chroma_cqt) ---
+[?2004l[?2004h> chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+[?2004l[?2004h> # Beat-synchronous aggregation
+[?2004l[?2004h> chroma_sync = librosa.util.sync(chroma, beat_frames, aggregate=np.median)
+[?2004l[?2004h> 
+[?2004li[?2004h> # --- Recurrence / self-similarity ---
+[?2004l[?2004h> R = librosa.segment.recurrence_matrix(
+[?2004l[?2004h>     chroma_sync,
+[?2004l[?2004h>     mode='affinity',
+[?2004l[?2004h>     metric='cosine',
+[?2004l[?2004h>     sparse=False,
+[?2004l[?2004h> )
+[?2004l[?2004h> n = chroma_sync.shape[1]
+[?2004l[?2004h> n_seg_path = max(2, int(np.ceil(n / 7.0)))
+[?2004l[?2004h> R_path = librosa.segment.path_enhance(R, n_seg_path)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Sequential / local affinity ---
+[?2004l[?2004h> seq = np.zeros((n, n), dtype=np.float64)
+[?2004l[?2004h> band = 7
+[?2004l[?2004h> for i in range(n):
+[?2004l[?2004h>     lo = max(0, i - band)
+[?2004l=[?2004h>     hi = min(n, i + band + 1)
+[?2004l[?2004h>     d = np.abs(np.arange(lo, hi) - i)
+[?2004l[?2004h>     seq[i, lo:hi] = np.exp(-(d ** 2) / (2.0 * (band / 2.0) ** 2))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Combine repetition (path-enhanced) with sequential affinity
+[?2004l[?2004h> alpha = 0.5
+[?2004l[?2004h> A = alpha * R_path + (1.0 - alpha) * seq
+[?2004l[?2004h> np.fill_diagonal(A, 1.0)
+[?2004l[?2004h> A = 0.5 * (A + A.T)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Symmetric normalized graph Laplacian ---
+[?2004l[?2004h> deg = A.sum(axis=1)
+[?2004l[?2004h> with np.errstate(divide='ignore'):
+[?2004l[?2004h>     d_inv_sqrt = np.where(deg > 0, 1.0 / np.sqrt(deg), 0.0)
+[?2004l[?2004h> D_inv_sqrt = np.diag(d_inv_sqrt)
+[?2004l[?2004h> L = np.eye(n) - D_inv_sqrt @ A @ D_inv_sqrt
+[?2004l[?2004h> 
+[?2004ls[?2004h> # Bottom K eigenvectors (smallest eigenvalues), skip first trivial
+[?2004l[?2004h> K = 5
+[?2004l[?2004h> eigvals, eigvecs = np.linalg.eigh(L)
+[?2004l[?2004h> idx_sort = np.argsort(eigvals)
+[?2004l[?2004h> eigvals = eigvals[idx_sort]
+[?2004l[?2004h> eigvecs = eigvecs[:, idx_sort]
+[?2004l[?2004h> emb = eigvecs[:, 1:K+1]
+[?2004l[?2004h> row_norm = np.linalg.norm(emb, axis=1, keepdims=True)
+[?2004l[?2004h> row_norm = np.where(row_norm > 0, row_norm, 1.0)
+[?2004l[?2004h> emb_norm = emb / row_norm
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Cluster per-beat embeddings ---
+[?2004l[?2004h> # Use agglomerative clustering on the embedding to get section labels per beat
+[?2004l[?2004h> n_label_types = 3
+[?2004l[?2004h> per_beat_labels = AgglomerativeClustering(
+[?2004l[?2004h>     n_clusters=n_label_types, metric='euclidean', linkage='average'
+[?2004l[?2004h> ).fit_predict(emb_norm)
+[?2004l[?2004h> print('per_beat_labels (first 30):', per_beat_labels[:30])
+[?2004l[?2004h> print('label counts:', np.bincount(per_beat_labels))
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Derive contiguous segments from runs of same label ---
+[?2004l[?2004h> runs = []
+[?2004l[?2004h> i = 0
+[?2004l[?2004h> while i < n:
+[?2004l[?2004h>     j = i
+[?2004l[?2004h>     while j < n and per_beat_labels[j] == per_beat_labels[i]:
+[?2004l[?2004h>         j += 1
+[?2004l[?2004h>     runs.append((i, j, per_beat_labels[i]))
+[?2004l[?2004h>     i = j
+[?2004l[?2004h> print('initial runs:', runs)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Merge tiny runs (< 3 beats) into neighbor with most similar mean chroma
+[?2004l[?2004h> while True:
+[?2004l[?2004h>     merged = False
+[?2004l[?2004h>     for k in range(len(runs)):
+[?2004l[?2004h>         s, e, lab = runs[k]
+[?2004l[?2004h>         if (e - s) < 3 and len(runs) > 1:
+[?2004l[?2004h>             # find best neighbor to merge with
+[?2004l[?2004h>             this_mean = chroma_sync[:, s:e].mean(axis=1)
+[?2004l[?2004h>             best = -1
+[?2004l[?2004h>             best_sim = -np.inf
+[?2004l[?2004h>             for kk in [k-1, k+1]:
+[?2004l[?2004h>                 if 0 <= kk < len(runs):
+[?2004l[?2004h>                     ns, ne, nlab = runs[kk]
+[?2004l[?2004h>                     nm = chroma_sync[:, ns:ne].mean(axis=1)
+[?2004l[?2004h>                     sim = float(np.dot(this_mean, nm) / (np.linalg.norm(this_mean) * np.linalg.norm(nm) + 1e-12))
+[?2004l[?2004h>                     if sim > best_sim:
+[?2004l[?2004h>                         best_sim = sim
+[?2004l[?2004h>                         best = kk
+[?2004l[?2004h>             if best == k - 1:
+[?2004l[?2004h>                 # merge into previous
+[?2004l[?2004h>                 ps, pe, plab = runs[k-1]
+[?2004l[?2004h>                 runs[k-1] = (ps, e, plab)
+[?2004l[?2004h>                 del runs[k]
+[?2004l[?2004h>             elif best == k + 1:
+[?2004l[?2004h>                 # merge into next
+[?2004l[?2004h>                 ns, ne, nlab = runs[k+1]
+[?2004l[?2004h>                 runs[k] = (s, ne, nlab)
+[?2004l[?2004h>                 del runs[k+1]
+[?2004l[?2004h>             else:
+[?2004l[?2004h>                 # fallback: merge into previous
+[?2004l[?2004h>                 ps, pe, plab = runs[k-1]
+[?2004l[?2004h>                 runs[k-1] = (ps, e, plab)
+[?2004l[?2004h>                 del runs[k]
+[?2004l[?2004h>             merged = True
+[?2004l[?2004h>             break
+[?2004l[?2004h>     if not merged:
+[?2004l[?2004h>         break
+[?2004l[?2004h> print('after tiny merge:', runs)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Map numeric labels to uppercase letters in order of first appearance
+[?2004l[?2004h> letters_per_run = []
+[?2004l[?2004h> seen = {}
+[?2004l[?2004h> for (s, e, lab) in runs:
+[?2004l[?2004h>     if lab not in seen:
+[?2004l[?2004h>         seen[lab] = chr(ord('A') + len(seen))
+[?2004l[?2004h>     letters_per_run.append(seen[lab])
+[?2004l[?2004h> print('letters:', letters_per_run)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Build time intervals ---
+[?2004l[?2004h> segments = []
+[?2004l[?2004h> for (s, e, lab), letter in zip(runs, letters_per_run):
+[?2004l[?2004h>     if e > s:
+[?2004l[?2004h>         t_start = float(beat_times[s])
+[?2004l[?2004h>         if e < n:
+[?2004l[?2004h>             t_end = float(beat_times[e])
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             t_end = duration
+[?2004l[?2004h>         segments.append({'start': t_start, 'end': t_end, 'label': letter})
+[?2004l[?2004h> 
+[?2004l[?2004h> # Snap first start to 0 and last end to duration
+[?2004l[?2004h> segments[0]['start'] = 0.0
+[?2004l[?2004h> segments[-1]['end'] = duration
+[?2004l[?2004h> 
+[?2004l[?2004h> # Merge adjacent segments with same label
+[?2004l[?2004h> merged = []
+[?2004l[?2004h> for seg in segments:
+[?2004l[?2004h>     if merged and merged[-1]['label'] == seg['label']:
+[?2004l[?2004h>         merged[-1]['end'] = seg['end']
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         merged.append(dict(seg))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Drop / merge segments shorter than 0.5s
+[?2004l[?2004h> final = []
+[?2004l[?2004h> for seg in merged:
+[?2004l[?2004h>     dur = seg['end'] - seg['start']
+[?2004l[?2004h>     if dur <= 0.5:
+[?2004l[?2004h>         if final:
+[?2004l[?2004h>             final[-1]['end'] = seg['end']
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             seg['start'] = 0.0
+[?2004l[?2004h>             final.append(seg)
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         final.append(seg)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Bridge large gaps / overlaps
+[?2004l[?2004h> for i in range(1, len(final)):
+[?2004l[?2004h>     gap = final[i]['start'] - final[i-1]['end']
+[?2004l[?2004h>     if gap > 0.3:
+[?2004l[?2004h>         mid = (final[i-1]['end'] + final[i]['start']) / 2.0
+[?2004l[?2004h>         final[i-1]['end'] = mid
+[?2004l[?2004h>         final[i]['start'] = mid
+[?2004l[?2004h>     elif gap < -0.05:
+[?2004l[?2004h>         mid = (final[i-1]['end'] + final[i]['start']) / 2.0
+[?2004l[?2004h>         final[i-1]['end'] = mid
+[?2004l[?2004h>         final[i]['start'] = mid
+[?2004l[?2004h> 
+[?2004l[?2004h> # Recheck min duration
+[?2004l[?2004h> final = [s for s in final if (s['end'] - s['start']) > 0.5]
+[?2004l[?2004h> 
+[?2004l[?2004h> # Reassign labels in order of appearance
+[?2004l[?2004h> renamed = []
+[?2004l[?2004h> label_map = {}
+[?2004l[?2004h> for s in final:
+[?2004l[?2004h>     if s['label'] not in label_map:
+[?2004l[?2004h>         label_map[s['label']] = chr(ord('A') + len(label_map))
+[?2004l[?2004h>     renamed.append({'start': float(s['start']), 'end': float(s['end']), 'label': label_map[s['label']]})
+[?2004l[?2004h> 
+[?2004l[?2004h> renamed.sort(key=lambda x: x['start'])
+[?2004l[?2004h> 
+[?2004l[?2004h> print('FINAL SEGMENTS:')
+[?2004l[?2004h> for s in renamed:
+[?2004l[?2004h>     print(f"  {s['start']:.3f} -> {s['end']:.3f}  {s['label']}  (dur={s['end']-s['start']:.3f})")
+[?2004l[?2004h> 
+[?2004l[?2004h> with open(OUT_PATH, 'w') as f:
+[?2004l[?2004h>     json.dump(renamed, f, indent=2)
+[?2004l[?2004h> print('Wrote', OUT_PATH)
+[?2004l[?2004h> PYEOF
+[?2004l[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# echo done
+[?2004ldone
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 -c "import ast; ast.parse(open('/home/user/segment.py').read()); print('syntax OK')"
+[?2004lsyntax OK
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 /home/user/segment.py
+[?2004ltempo=[89.10290948] n_beats=50 duration=33.0
+per_beat_labels (first 30): [1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 2 2]
+label counts: [19 18 14]
+initial runs: [(0, 18, np.int64(1)), (18, 32, np.int64(2)), (32, 51, np.int64(0))]
+after tiny merge: [(0, 18, np.int64(1)), (18, 32, np.int64(2)), (32, 51, np.int64(0))]
+letters: ['A', 'B', 'C']
+FINAL SEGMENTS:
+  0.000 -> 12.330  A  (dur=12.330)
+  12.330 -> 21.478  B  (dur=9.149)
+  21.478 -> 33.000  C  (dur=11.522)
+Wrote /home/user/segments.json
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# cat > /home/user/segment.py << 'PYEOF'
+[?2004l[?2004h> import json
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> import librosa
+[?2004l[?2004h> from sklearn.cluster import AgglomerativeClustering
+[?2004l[?2004h> 
+[?2004l[?2004h> AUDIO_PATH = '/home/user/input.wav'
+[?2004l[?2004h> OUT_PATH = '/home/user/segments.json'
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Load audio ---
+[?2004l[?2004h> y, sr = librosa.load(AUDIO_PATH, sr=22050, mono=True)
+[?2004l[?2004h> duration = float(len(y) / sr)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Beat tracking ---
+[?2004l[?2004h> onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+[?2004l[?2004h> tempo, beat_frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
+[?2004l[?2004h> beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+[?2004l[?2004h> print(f'tempo={tempo} n_beats={len(beat_frames)} duration={duration}')
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Tonal feature (chroma_cqt) ---
+[?2004l[?2004h> chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+[?2004l[?2004h> chroma_sync = librosa.util.sync(chroma, beat_frames, aggregate=np.median)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Recurrence matrix + path enhancement ---
+[?2004l[?2004h> R = librosa.segment.recurrence_matrix(
+[?2004l[?2004h>     chroma_sync, mode='affinity', metric='cosine', sparse=False,
+[?2004l[?2004h> )
+[?2004l[?2004h> n = chroma_sync.shape[1]
+[?2004l[?2004h> n_seg_path = max(2, int(np.ceil(n / 7.0)))
+[?2004l[?2004h> R_path = librosa.segment.path_enhance(R, n_seg_path)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Sequential affinity ---
+[?2004l[?2004h> seq = np.zeros((n, n), dtype=np.float64)
+[?2004l[?2004h> band = 7
+[?2004l[?2004h> for i in range(n):
+[?2004l[?2004h>     lo = max(0, i - band)
+[?2004l[?2004h>     hi = min(n, i + band + 1)
+[?2004l[?2004h>     d = np.abs(np.arange(lo, hi) - i)
+[?2004l[?2004h>     seq[i, lo:hi] = np.exp(-(d ** 2) / (2.0 * (band / 2.0) ** 2))
+[?2004l[?2004h> 
+[?2004l.[?2004h> alpha = 0.5
+[?2004l[?2004h> A = alpha * R_path + (1.0 - alpha) * seq
+[?2004l[?2004h> np.fill_diagonal(A, 1.0)
+[?2004l[?2004h> A = 0.5 * (A + A.T)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Symmetric normalized graph Laplacian ---
+[?2004l[?2004h> deg = A.sum(axis=1)
+[?2004l[?2004h> with np.errstate(divide='ignore'):
+[?2004l[?2004h>     d_inv_sqrt = np.where(deg > 0, 1.0 / np.sqrt(deg), 0.0)
+[?2004l[?2004h> D_inv_sqrt = np.diag(d_inv_sqrt)
+[?2004l[?2004h> L = np.eye(n) - D_inv_sqrt @ A @ D_inv_sqrt
+[?2004l[?2004h> 
+[?2004l[?2004h> K = 5
+[?2004l[?2004h> eigvals, eigvecs = np.linalg.eigh(L)
+[?2004l[?2004h> idx_sort = np.argsort(eigvals)
+[?2004l[?2004h> eigvals = eigvals[idx_sort]
+[?2004l[?2004h> eigvecs = eigvecs[:, idx_sort]
+[?2004l[?2004h> emb = eigvecs[:, 1:K+1]
+[?2004l[?2004h> row_norm = np.linalg.norm(emb, axis=1, keepdims=True)
+[?2004l[?2004h> row_norm = np.where(row_norm > 0, row_norm, 1.0)
+[?2004l[?2004h> emb_norm = emb / row_norm
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Cluster per-beat embeddings ---
+[?2004l[?2004h> n_label_types = 3
+[?2004l[?2004h> per_beat_labels = AgglomerativeClustering(
+[?2004l[?2004h>     n_clusters=n_label_types, metric='euclidean', linkage='average'
+[?2004l[?2004h> ).fit_predict(emb_norm)
+[?2004l[?2004h> print('label counts:', np.bincount(per_beat_labels))
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Derive contiguous runs ---
+[?2004l[?2004h> runs = []
+[?2004l[?2004h> i = 0
+[?2004l[?2004h> while i < n:
+[?2004l[?2004h>     j = i
+[?2004l[?2004h>     while j < n and per_beat_labels[j] == per_beat_labels[i]:
+[?2004l[?2004h>         j += 1
+[?2004l[?2004h>     runs.append((i, j, int(per_beat_labels[i])))
+[?2004l[?2004h>     i = j
+[?2004l[?2004h> print('initial runs:', runs)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Merge tiny runs (< 3 beats) into neighbor with most similar mean chroma
+[?2004l[?2004h> while True:
+[?2004l[?2004h>     merged = False
+[?2004l[?2004h>     for k in range(len(runs)):
+[?2004l[?2004h>         s, e, lab = runs[k]
+[?2004l[?2004h>         if (e - s) < 3 and len(runs) > 1:
+[?2004l[?2004h>             this_mean = chroma_sync[:, s:e].mean(axis=1)
+[?2004l[?2004h>             best = -1
+[?2004l[?2004h>             best_sim = -np.inf
+[?2004l[?2004h>             for kk in [k-1, k+1]:
+[?2004l[?2004h>                 if 0 <= kk < len(runs):
+[?2004l[?2004h>                     ns, ne, nlab = runs[kk]
+[?2004l[?2004h>                     nm = chroma_sync[:, ns:ne].mean(axis=1)
+[?2004l[?2004h>                     sim = float(np.dot(this_mean, nm) / (np.linalg.norm(this_mean) * np.linalg.norm(nm) + 1e-12))
+[?2004l[?2004h>                     if sim > best_sim:
+[?2004l[?2004h>                         best_sim = sim
+[?2004l[?2004h>                         best = kk
+[?2004l[?2004h>             if best == k - 1:
+[?2004l[?2004h>                 ps, pe, plab = runs[k-1]
+[?2004l[?2004h>                 runs[k-1] = (ps, e, int(plab))
+[?2004l[?2004h>                 del runs[k]
+[?2004l[?2004h>             elif best == k + 1:
+[?2004l[?2004h>                 ns, ne, nlab = runs[k+1]
+[?2004l[?2004h>                 runs[k] = (s, ne, int(nlab))
+[?2004l[?2004h>                 del runs[k+1]
+[?2004l[?2004h>             else:
+[?2004l[?2004h>                 ps, pe, plab = runs[k-1]
+[?2004l[?2004h>                 runs[k-1] = (ps, e, int(plab))
+[?2004l[?2004h>                 del runs[k]
+[?2004l[?2004h>             merged = True
+[?2004l[?2004h>             break
+[?2004l[?2004h>     if not merged:
+[?2004l[?2004h>         break
+[?2004l[?2004h> print('after tiny merge:', runs)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Reassign labels so that runs with similar chroma content share the same letter ---
+[?2004l[?2004h> # Compute mean chroma per run
+[?2004l[?2004h> run_means = np.stack([chroma_sync[:, s:e].mean(axis=1) for (s, e, lab) in runs], axis=0)
+[?2004l[?2004h> # Normalize
+[?2004l[?2004h> rm_norms = np.linalg.norm(run_means, axis=1, keepdims=True)
+[?2004l[?2004h> rm_norms = np.where(rm_norms > 0, rm_norms, 1.0)
+[?2004l[?2004h> run_means_n = run_means / rm_norms
+[?2004l[?2004h> # Compute pairwise cosine similarity
+[?2004l[?2004h> sim_matrix = run_means_n @ run_means_n.T
+[?2004l[?2004h> # Cluster the runs themselves into label types based on chroma similarity
+[?2004l[?2004h> nr = len(runs)
+[?2004l[?2004h> if nr >= 2:
+[?2004l[?2004h>     # Use a threshold: merge runs with cosine sim > threshold
+[?2004l[?2004h>     # First, greedily assign letters
+[?2004l[?2004h>     letters = [None] * nr
+[?2004l[?2004h>     next_letter_idx = 0
+[?2004l[?2004h>     for k in range(nr):
+[?2004l[?2004h>         if letters[k] is not None:
+[?2004l[?2004h>             continue
+[?2004l[?2004h>         cur_letter = chr(ord('A') + next_letter_idx)
+[?2004l[?2004h>         next_letter_idx += 1
+[?2004l[?2004h>         letters[k] = cur_letter
+[?2004l[?2004h>         for kk in range(k+1, nr):
+[?2004l[?2004h>             if letters[kk] is None and sim_matrix[k, kk] > 0.85:
+[?2004l[?2004h>                 letters[kk] = cur_letter
+[?2004l[?2004h> else:
+[?2004l[?2004h>     letters = ['A'] * nr
+[?2004l[?2004h> print('letters per run:', letters)
+[?2004l[?2004h> 
+[?2004l[?2004h> # --- Build time intervals ---
+[?2004l[?2004h> segments = []
+[?2004l[?2004h> for (s, e, lab), letter in zip(runs, letters):
+[?2004l[?2004h>     if e > s:
+[?2004l[?2004h>         t_start = float(beat_times[s])
+[?2004l[?2004h>         if e < n:
+[?2004l[?2004h>             t_end = float(beat_times[e])
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             t_end = duration
+[?2004l[?2004h>         segments.append({'start': t_start, 'end': t_end, 'label': letter})
+[?2004l[?2004h> 
+[?2004l[?2004h> segments[0]['start'] = 0.0
+[?2004l[?2004h> segments[-1]['end'] = duration
+[?2004l[?2004h> 
+[?2004l[?2004h> # Merge adjacent segments with same label
+[?2004l[?2004h> merged = []
+[?2004l[?2004h> for seg in segments:
+[?2004l[?2004h>     if merged and merged[-1]['label'] == seg['label']:
+[?2004l[?2004h>         merged[-1]['end'] = seg['end']
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         merged.append(dict(seg))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Drop / merge segments shorter than 0.5s
+[?2004l[?2004h> final = []
+[?2004l[?2004h> for seg in merged:
+[?2004l[?2004h>     dur = seg['end'] - seg['start']
+[?2004l[?2004h>     if dur <= 0.5:
+[?2004l[?2004h>         if final:
+[?2004l[?2004h>             final[-1]['end'] = seg['end']
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             seg['start'] = 0.0
+[?2004l[?2004h>             final.append(seg)
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         final.append(seg)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Bridge large gaps / overlaps
+[?2004l[?2004h> for i in range(1, len(final)):
+[?2004l[?2004h>     gap = final[i]['start'] - final[i-1]['end']
+[?2004l[?2004h>     if gap > 0.3:
+[?2004l[?2004h>         mid = (final[i-1]['end'] + final[i]['start']) / 2.0
+[?2004l[?2004h>         final[i-1]['end'] = mid
+[?2004l[?2004h>         final[i]['start'] = mid
+[?2004l[?2004h>     elif gap < -0.05:
+[?2004l[?2004h>         mid = (final[i-1]['end'] + final[i]['start']) / 2.0
+[?2004l[?2004h>         final[i-1]['end'] = mid
+[?2004l[?2004h>         final[i]['start'] = mid
+[?2004l[?2004h> 
+[?2004l[?2004h> final = [s for s in final if (s['end'] - s['start']) > 0.5]
+[?2004l[?2004h> 
+[?2004l[?2004h> renamed = []
+[?2004l[?2004h> label_map = {}
+[?2004l[?2004h> for s in final:
+[?2004l[?2004h>     if s['label'] not in label_map:
+[?2004l[?2004h>         label_map[s['label']] = chr(ord('A') + len(label_map))
+[?2004l[?2004h>     renamed.append({'start': float(s['start']), 'end': float(s['end']), 'label': label_map[s['label']]})
+[?2004l[?2004h> 
+[?2004l[?2004h> renamed.sort(key=lambda x: x['start'])
+[?2004l[?2004h> 
+[?2004l[?2004h> print('FINAL SEGMENTS:')
+[?2004l[?2004h> for s in renamed:
+[?2004l[?2004h>     print(f"  {s['start']:.3f} -> {s['end']:.3f}  {s['label']}  (dur={s['end']-s['start']:.3f})")
+[?2004l[?2004h> 
+[?2004l[?2004h> with open(OUT_PATH, 'w') as f:
+[?2004l[?2004h>     json.dump(renamed, f, indent=2)
+[?2004l[?2004h> print('Wrote', OUT_PATH)
+[?2004l[?2004h> PYEOF
+[?2004l[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# echo done
+[?2004ldone
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 /home/user/segment.py
+[?2004ltempo=[89.10290948] n_beats=50 duration=33.0
+label counts: [19 18 14]
+initial runs: [(0, 18, 1), (18, 32, 2), (32, 51, 0)]
+after tiny merge: [(0, 18, 1), (18, 32, 2), (32, 51, 0)]
+letters per run: ['A', 'B', 'A']
+FINAL SEGMENTS:
+  0.000 -> 12.330  A  (dur=12.330)
+  12.330 -> 21.478  B  (dur=9.149)
+  21.478 -> 33.000  A  (dur=11.522)
+Wrote /home/user/segments.json
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# cat /home/user/segments.json
+[?2004l[
+  {
+    "start": 0.0,
+    "end": 12.329795918367347,
+    "label": "A"
+  },
+  {
+    "start": 12.329795918367347,
+    "end": 21.478458049886623,
+    "label": "B"
+  },
+  {
+    "start": 21.478458049886623,
+    "end": 33.0,
+    "label": "A"
+  }
+][?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 << 'EOF'
+[?2004l[?2004h> import json, re
+[?2004l[?2004h> with open('/home/user/segments.json') as f:
+[?2004l[?2004h>     segs = json.load(f)
+[?2004l[?2004h> labels = [s['label'] for s in segs]
+[?2004l[?2004h> assert len(segs) >= 3, 'need >=3 segments'
+[?2004l[?2004h> assert len(set(labels)) >= 2, 'need >=2 distinct labels'
+[?2004l[?2004h> assert max(labels.count(l) for l in set(labels)) >= 2, 'need reused label'
+[?2004l[?2004h> assert segs[0]['start'] <= 0.3, f'first start too late: {segs[0]["start"]}'
+[?2004l[?2004h> assert abs(segs[-1]['end'] - 33.0) < 0.5, f'last end off: {segs[-1]["end"]}'
+[?2004l[?2004h> for i, s in enumerate(segs):
+[?2004l[?2004h>     assert s['start'] < s['end'], f'seg {i} start>=end'
+[?2004l[?2004h>     assert s['end'] - s['start'] > 0.5, f'seg {i} too short'
+[?2004l[?2004h>     assert re.match(r'^[A-Z]$', s['label']), f'bad label {s["label"]}'
+[?2004l[?2004h>     if i > 0:
+[?2004l[?2004h>         gap = s['start'] - segs[i-1]['end']
+[?2004l[?2004h>         assert gap <= 0.3, f'gap too large {i}: {gap}'
+[?2004l[?2004h>         assert gap >= -0.05, f'overlap too large {i}: {gap}'
+[?2004l[?2004h> print('ALL CONSTRAINTS SATISFIED')
+[?2004l[?2004h> print('Labels:', labels)
+[?2004l[?2004h> print('Segments:')
+[?2004l[?2004h> for s in segs:
+[?2004l[?2004h>     print(f"  {s['start']:.3f} -> {s['end']:.3f}  {s['label']}")
+[?2004l[?2004h> EOF
+[?2004lALL CONSTRAINTS SATISFIED
+Labels: ['A', 'B', 'A']
+Segments:
+  0.000 -> 12.330  A
+  12.330 -> 21.478  B
+  21.478 -> 33.000  A
+[?2004hroot@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# 

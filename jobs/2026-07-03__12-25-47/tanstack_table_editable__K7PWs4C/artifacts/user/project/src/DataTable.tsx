@@ -1,0 +1,215 @@
+import { useState } from 'react'
+import {
+  createColumnHelper,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  type Row,
+} from '@tanstack/react-table'
+import { useForm } from '@tanstack/react-form'
+
+type User = {
+  id: number
+  name: string
+  email: string
+  role: string
+}
+
+const initialUsers: User[] = [
+  { id: 1, name: 'Alice Johnson', email: 'alice@example.com', role: 'Admin' },
+  { id: 2, name: 'Bob Smith', email: 'bob@example.com', role: 'Editor' },
+  { id: 3, name: 'Charlie Davis', email: 'charlie@example.com', role: 'Viewer' },
+  { id: 4, name: 'Diana Prince', email: 'diana@example.com', role: 'Editor' },
+]
+
+const ROLES = ['Admin', 'Editor', 'Viewer']
+
+const columnHelper = createColumnHelper<User>()
+
+function validateEmail(email: string) {
+  if (!email) return 'Email is required'
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!re.test(email)) return 'Email is not valid'
+  return undefined
+}
+
+function validateName(name: string) {
+  if (!name || name.trim().length === 0) return 'Name is required'
+  return undefined
+}
+
+function EditRow({ user, onSave, onCancel }: { user: User; onSave: (u: User) => void; onCancel: () => void }) {
+  const form = useForm({
+    defaultValues: { name: user.name, email: user.email, role: user.role },
+    onSubmit: async ({ value }) => {
+      onSave({ ...user, ...value })
+    },
+  })
+
+  return (
+    <tr>
+      <td>{user.id}</td>
+      <td>
+        <form.Field
+          name="name"
+          validators={{ onChange: ({ value }) => validateName(value) }}
+        >
+          {(field) => (
+            <>
+              <input
+                value={field.state.value}
+                onChange={(e) => field.handleChange(e.target.value)}
+                onBlur={field.handleBlur}
+              />
+              {field.state.meta.errors.length > 0 && (
+                <div className="error">{String(field.state.meta.errors[0])}</div>
+              )}
+            </>
+          )}
+        </form.Field>
+      </td>
+      <td>
+        <form.Field
+          name="email"
+          validators={{ onChange: ({ value }) => validateEmail(value) }}
+        >
+          {(field) => (
+            <>
+              <input
+                type="email"
+                value={field.state.value}
+                onChange={(e) => field.handleChange(e.target.value)}
+                onBlur={field.handleBlur}
+              />
+              {field.state.meta.errors.length > 0 && (
+                <div className="error">{String(field.state.meta.errors[0])}</div>
+              )}
+            </>
+          )}
+        </form.Field>
+      </td>
+      <td>
+        <form.Field
+          name="role"
+          validators={{ onChange: ({ value }) => (!value ? 'Role is required' : undefined) }}
+        >
+          {(field) => (
+            <select
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value)}
+              onBlur={field.handleBlur}
+            >
+              {ROLES.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+          )}
+        </form.Field>
+      </td>
+      <td>
+        <form.Subscribe selector={(s) => [s.canSubmit, s.isSubmitting] as const}>
+          {([canSubmit]) => (
+            <>
+              <button
+                className="btn-save"
+                disabled={!canSubmit}
+                onClick={() => form.handleSubmit()}
+              >
+                Save
+              </button>
+              <button className="btn-cancel" onClick={onCancel}>
+                Cancel
+              </button>
+            </>
+          )}
+        </form.Subscribe>
+      </td>
+    </tr>
+  )
+}
+
+function ReadRow({ user, onEdit }: { user: User; onEdit: () => void }) {
+  return (
+    <tr>
+      <td>{user.id}</td>
+      <td>{user.name}</td>
+      <td>{user.email}</td>
+      <td>{user.role}</td>
+      <td>
+        <button className="btn-edit" onClick={onEdit}>Edit</button>
+      </td>
+    </tr>
+  )
+}
+
+function DataTable() {
+  const [users, setUsers] = useState<User[]>(initialUsers)
+  const [editingId, setEditingId] = useState<number | null>(null)
+
+  const columns = [
+    columnHelper.accessor('id', { header: 'ID' }),
+    columnHelper.accessor('name', { header: 'Name' }),
+    columnHelper.accessor('email', { header: 'Email' }),
+    columnHelper.accessor('role', { header: 'Role' }),
+    columnHelper.display({
+      id: 'actions',
+      header: 'Actions',
+      cell: () => null,
+    }),
+  ]
+
+  const table = useReactTable({
+    data: users,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  })
+
+  const handleSave = (updated: User) => {
+    setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
+    setEditingId(null)
+  }
+
+  const renderRow = (row: Row<User>) => {
+    const user = row.original
+    if (editingId === user.id) {
+      return (
+        <EditRow
+          key={user.id}
+          user={user}
+          onSave={handleSave}
+          onCancel={() => setEditingId(null)}
+        />
+      )
+    }
+    return (
+      <ReadRow
+        key={user.id}
+        user={user}
+        onEdit={() => setEditingId(user.id)}
+      />
+    )
+  }
+
+  return (
+    <table>
+      <thead>
+        {table.getHeaderGroups().map((headerGroup) => (
+          <tr key={headerGroup.id}>
+            {headerGroup.headers.map((header) => (
+              <th key={header.id}>
+                {header.isPlaceholder
+                  ? null
+                  : flexRender(header.column.columnDef.header, header.getContext())}
+              </th>
+            ))}
+          </tr>
+        ))}
+      </thead>
+      <tbody>
+        {table.getRowModel().rows.map((row) => renderRow(row))}
+      </tbody>
+    </table>
+  )
+}
+
+export default DataTable

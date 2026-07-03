@@ -1,0 +1,93 @@
+import { Filesystem, Directory } from '@capacitor/filesystem';
+
+const statusEl = document.getElementById('download-status') as HTMLElement;
+const sizeEl = document.getElementById('file-size') as HTMLElement;
+const shaEl = document.getElementById('file-sha256') as HTMLElement;
+const button = document.getElementById('download-pdf') as HTMLButtonElement;
+
+function setStatus(text: string): void {
+  statusEl.textContent = text;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+function bufferToHex(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, '0');
+  }
+  return hex;
+}
+
+async function downloadAndPersist(): Promise<void> {
+  setStatus('downloading');
+  sizeEl.textContent = '';
+  shaEl.textContent = '';
+
+  try {
+    const response = await fetch('/sample.pdf');
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const downloadedBuffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(downloadedBuffer);
+
+    await Filesystem.writeFile({
+      path: 'sample.pdf',
+      data: base64,
+      directory: Directory.Documents,
+      recursive: true,
+    });
+
+    const readResult = await Filesystem.readFile({
+      path: 'sample.pdf',
+      directory: Directory.Documents,
+    });
+
+    let base64FromDisk: string;
+    if (typeof readResult.data === 'string') {
+      base64FromDisk = readResult.data;
+    } else if (readResult.data instanceof Blob) {
+      const buf = await readResult.data.arrayBuffer();
+      base64FromDisk = arrayBufferToBase64(buf);
+    } else {
+      throw new Error('Unexpected data type from Filesystem.readFile');
+    }
+
+    const persistedBuffer = base64ToArrayBuffer(base64FromDisk);
+    const persistedSize = persistedBuffer.byteLength;
+
+    const digest = await crypto.subtle.digest('SHA-256', persistedBuffer);
+    const sha256 = bufferToHex(digest);
+
+    sizeEl.textContent = String(persistedSize);
+    shaEl.textContent = sha256;
+    setStatus('saved');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    setStatus(`error: ${message}`);
+  }
+}
+
+button.addEventListener('click', () => {
+  void downloadAndPersist();
+});

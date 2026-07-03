@@ -1,0 +1,209 @@
+New Terminal Output:
+
+root@ca6e41e5-b3c4-4064-9922-f91b04547438:~# grep -n "def create" /usr/local/lib/python3.12/dist-packages/daytona/_sync/daytona.py
+277:    def create(
+320:    def create(
+378:    def create(
+root@ca6e41e5-b3c4-4064-9922-f91b04547438:~# sed -n '100,300p' /usr/local/lib/python3.12/dist-packages/daytona/_sync/daytona.py
+    _target: str | None = None
+    _tracer_provider: TracerProvider | None = None
+
+    def __init__(self, config: DaytonaConfig | None = None):
+        """Initializes Daytona instance with optional configuration.
+
+        If no config is provided, reads from environment variables:
+        - `DAYTONA_API_KEY`: Required API key for authentication
+        - `DAYTONA_API_URL`: Required api URL
+        - `DAYTONA_TARGET`: Optional target environment (if not provided, default region for the organization is used)
+
+        Args:
+            config (DaytonaConfig | None): Object containing api_key, api_url, and target.
+
+        Raises:
+            DaytonaError: If API key is not provided either through config or environment variables
+
+        Example:
+            ```python
+            from daytona import Daytona, DaytonaConfig
+            # Using environment variables
+            daytona1 = Daytona()
+
+            # Using explicit configuration
+            config = DaytonaConfig(
+                api_key="your-api-key",
+                api_url="https://your-api.com",
+                target="us"
+            )
+            daytona2 = Daytona(config)
+
+            ```
+        """
+
+        default_api_url = "https://app.daytona.io/api"
+        self.default_language: CodeLanguage = CodeLanguage.PYTHON
+        api_url = None
+
+        if config:
+            self._api_key = None if (not config.api_key and config.jwt_token) else config.api_key
+            self._jwt_token = config.jwt_token
+            self._organization_id = config.organization_id
+            api_url = config.api_url or config.server_url
+            self._target = config.target
+
+        env_reader: DaytonaEnvReader | None = None
+
+        if config is None or (
+            not all([self._api_key, api_url, self._target])
+            and not all(
+                [
+                    self._jwt_token,
+                    self._organization_id,
+                    api_url,
+                    self._target,
+                ]
+            )
+        ):
+            env_reader = DaytonaEnvReader()
+            self._api_key = self._api_key or (env_reader.get("DAYTONA_API_KEY") if not self._jwt_token else None)
+            self._jwt_token = self._jwt_token or env_reader.get("DAYTONA_JWT_TOKEN")
+            self._organization_id = self._organization_id or env_reader.get("DAYTONA_ORGANIZATION_ID")
+            api_url = api_url or env_reader.get("DAYTONA_API_URL") or env_reader.get("DAYTONA_SERVER_URL")
+            self._target = self._target or env_reader.get("DAYTONA_TARGET")
+
+            if env_reader.get("DAYTONA_SERVER_URL") and not env_reader.get("DAYTONA_API_URL"):
+                warnings.warn(
+                    "Environment variable `DAYTONA_SERVER_URL` is deprecated and will be removed in future versions. "
+                    + "Use `DAYTONA_API_URL` instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+
+        self._api_url = api_url or default_api_url
+
+        if not self._api_key and not self._jwt_token:
+            msg = (
+                "Authentication credentials not found."
+                + " Set DAYTONA_API_KEY, or both DAYTONA_JWT_TOKEN and DAYTONA_ORGANIZATION_ID."
+                + " These can also be provided via DaytonaConfig."
+            )
+            raise DaytonaAuthenticationError(msg)
+
+        # Create API configuration without api_key
+        configuration = Configuration(host=self._api_url)
+        # When None, keep urllib3 default (cpu_count * 5) — unlike aiohttp,
+        # urllib3 treats None as maxsize=1 which would hurt performance.
+        pool_size = config.connection_pool_maxsize if config else 250
+        if pool_size is not None:
+            configuration.connection_pool_maxsize = pool_size
+        self._api_client: ApiClient = ApiClient(configuration)
+        self._api_client.default_headers["Authorization"] = f"Bearer {self._api_key or self._jwt_token}"
+        self._api_client.default_headers["X-Daytona-Source"] = "sdk-python"
+
+        # Get SDK version dynamically
+        try:
+            sdk_version = None
+            for pkg_name in ["daytona", "daytona_sdk"]:
+                try:
+                    sdk_version = version(pkg_name)
+                    break
+                except Exception:
+                    continue
+
+            if sdk_version is None:
+                raise Exception("Neither package found")
+
+        except Exception:
+            # Fallback version if neither package metadata is available
+            sdk_version = "unknown"
+        self._api_client.default_headers["X-Daytona-SDK-Version"] = sdk_version
+        self._api_client.user_agent = f"sdk-python/{sdk_version}"
+
+        if not self._api_key:
+            if not self._organization_id:
+                raise DaytonaAuthenticationError(
+                    "DAYTONA_ORGANIZATION_ID is required when authenticating with DAYTONA_JWT_TOKEN."
+                    + " It can also be provided via DaytonaConfig."
+                )
+            self._api_client.default_headers["X-Daytona-Organization-ID"] = self._organization_id
+
+        # Shared pooled client for file-transfer paths; honors connection_pool_maxsize.
+        # build_sync_http_client installs a finalizer on the client itself, so the
+        # pool is closed when the last reference (this Daytona or any Sandbox it
+        # produced) goes away.
+        self._http_client: httpx.Client = build_sync_http_client(pool_size)
+
+        # Initialize API clients with the api_client instance
+        self._sandbox_api: SandboxApi = SandboxApi(self._api_client)
+        self._object_storage_api: ObjectStorageApi = ObjectStorageApi(self._api_client)
+        self._config_api: ConfigApi = ConfigApi(self._api_client)
+        self._toolbox_api_client: ToolboxApiClient = self._clone_api_client_to_toolbox_api_client()
+
+        # Initialize services
+        self.volume: VolumeService = VolumeService(VolumesApi(self._api_client))
+        self.snapshot: SnapshotService = SnapshotService(
+            SnapshotsApi(self._api_client), self._object_storage_api, self._target
+        )
+        self.secret: SecretService = SecretService(SecretApi(self._api_client))
+
+        # Initialize OpenTelemetry if enabled
+        env = env_reader or DaytonaEnvReader()
+        otel_enabled = (
+            (config and config.otel_enabled)
+            or (config and config._experimental and config._experimental.get("otelEnabled"))
+            or env.get("DAYTONA_OTEL_ENABLED") == "true"
+            or env.get("DAYTONA_EXPERIMENTAL_OTEL_ENABLED") == "true"
+        )
+        if otel_enabled:
+            self._init_otel(sdk_version)
+
+    def _init_otel(self, sdk_version: str):
+        """Initialize OpenTelemetry tracing.
+
+        Args:
+            sdk_version: The SDK version to include in resource attributes
+        """
+        # Create resource with SDK version
+        resource = Resource.create(
+            {
+                service_attributes.SERVICE_VERSION: sdk_version,
+                service_attributes.SERVICE_NAME: "daytona-python-sdk",
+            }
+        )
+
+        # Create and configure tracer provider
+        self._tracer_provider = TracerProvider(resource=resource)
+
+        otlp_exporter = OTLPSpanExporter()
+        self._tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+
+        AioHttpClientInstrumentor().instrument()
+
+        # Set the global tracer provider
+        trace.set_tracer_provider(self._tracer_provider)
+
+    @overload
+    def create(
+        self,
+        params: CreateSandboxFromSnapshotParams | None = None,
+        *,
+        timeout: float = 60,
+    ) -> Sandbox:
+        """Creates Sandboxes from specified or default snapshot. You can specify various parameters,
+        including language, image, environment variables, and volumes.
+
+        Args:
+            params (CreateSandboxFromSnapshotParams | None): Parameters for Sandbox creation. If not provided,
+                   defaults to default Daytona snapshot and Python language.
+            timeout (float): Timeout (in seconds) for sandbox creation. 0 means no timeout.
+                Default is 60 seconds.
+
+        Returns:
+            Sandbox: The created Sandbox instance.
+
+        Raises:
+            DaytonaError: If timeout, REDACTED_stop_interval or REDACTED_archive_interval is negative;
+                If sandbox fails to start or times out
+
+        Example:
+            Create a default Python Sandbox:
+root@ca6e41e5-b3c4-4064-9922-f91b04547438:~#

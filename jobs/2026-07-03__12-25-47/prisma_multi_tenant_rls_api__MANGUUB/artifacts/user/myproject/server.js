@@ -1,0 +1,117 @@
+const express = require('express');
+const { PrismaClient } = require('@prisma/client');
+const { PrismaBetterSqlite3 } = require('@prisma/adapter-better-sqlite3');
+
+const app = express();
+app.use(express.json());
+
+const adapter = new PrismaBetterSqlite3({ url: 'file:./dev.db' });
+const prisma = new PrismaClient({ adapter });
+
+// Operations that should REDACTED-add tenantId to `where` (read operations)
+const READ_OPERATIONS = new Set([
+  'findUnique',
+  'findUniqueOrThrow',
+  'findFirst',
+  'findFirstOrThrow',
+  'findMany',
+  'count',
+  'aggregate',
+  'groupBy',
+]);
+
+// Operations that mutate data, where tenantId should restrict by `where` filter
+const MUTATING_OPERATIONS_WITH_WHERE = new Set([
+  'update',
+  'updateMany',
+  'delete',
+  'deleteMany',
+  'upsert',
+  'findUniqueOrThrow',
+]);
+
+function createTenantClient(tenantId) {
+  return prisma.$extends({
+    query: {
+      item: {
+        $allOperations({ args, query, operation }) {
+          const filteredArgs = { ...args };
+
+          if (operation === 'create') {
+            // Force tenantId on create
+            filteredArgs.data = { ...(filteredArgs.data || {}), tenantId };
+          } else if (operation === 'createMany') {
+            if (Array.isArray(filteredArgs.data)) {
+              filteredArgs.data = filteredArgs.data.map((d) => ({ ...d, tenantId }));
+            } else {
+              filteredArgs.data = { ...(filteredArgs.data || {}), tenantId };
+            }
+          } else if (operation === 'upsert') {
+            filteredArgs.where = {
+              ...(filteredArgs.where || {}),
+              tenantId,
+            };
+            filteredArgs.create = { ...(filteredArgs.create || {}), tenantId };
+            if (filteredArgs.update) {
+              filteredArgs.update = { ...filteredArgs.update };
+            }
+          } else if (READ_OPERATIONS.has(operation)) {
+            filteredArgs.where = {
+              ...(filteredArgs.where || {}),
+              tenantId,
+            };
+          } else if (MUTATING_OPERATIONS_WITH_WHERE.has(operation)) {
+            filteredArgs.where = {
+              ...(filteredArgs.where || {}),
+              tenantId,
+            };
+          }
+          return query(filteredArgs);
+        },
+      },
+    },
+  });
+}
+
+app.get('/items', async (req, res) => {
+  const tenantId = req.header('x-tenant-id');
+  if (!tenantId) {
+    return res.status(400).json({ error: 'x-tenant-id header is required' });
+  }
+
+  const tenantPrisma = createTenantClient(tenantId);
+
+  try {
+    const items = await tenantPrisma.item.findMany();
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/items', async (req, res) => {
+  const tenantId = req.header('x-tenant-id');
+  if (!tenantId) {
+    return res.status(400).json({ error: 'x-tenant-id header is required' });
+  }
+  const { name } = req.body || {};
+  if (!name) {
+    return res.status(400).json({ error: 'name is required' });
+  }
+
+  const tenantPrisma = createTenantClient(tenantId);
+
+  try {
+    const item = await tenantPrisma.item.create({
+      data: { name },
+    });
+    res.json(item);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});

@@ -1,0 +1,88 @@
+New Terminal Output:
+
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:~/project# grep -B 2 -A 80 'class _JoinLogic' /usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py |
+head -120
+
+@dataclass
+class _JoinLogic(StatefulLogic[Tuple[int, Any], Tuple, _JoinState]):
+    insert_mode: JoinInsertMode
+    emit_mode: JoinEmitMode
+
+    state: _JoinState
+
+    @override
+    def on_item(self, value: Tuple[int, Any]) -> Tuple[Iterable[Tuple], bool]:
+        join_side, join_value = value
+        if self.insert_mode == "first" and not self.state.is_set(join_side):
+            self.state.set_val(join_side, join_value)
+        elif self.insert_mode == "last":
+            self.state.set_val(join_side, join_value)
+        elif self.insert_mode == "product":
+            self.state.add_val(join_side, join_value)
+
+        if self.emit_mode == "complete" and self.state.all_set():
+            return (self.state.astuples(), StatefulLogic.DISCARD)
+        elif self.emit_mode == "running":
+            return (self.state.astuples(), StatefulLogic.RETAIN)
+        else:
+            return (_EMPTY, StatefulLogic.RETAIN)
+
+    @override
+    def on_eof(self) -> Tuple[Iterable[Tuple], bool]:
+        if self.emit_mode == "final":
+            return (self.state.astuples(), StatefulLogic.DISCARD)
+        else:
+            return (_EMPTY, StatefulLogic.RETAIN)
+
+    @override
+    def snapshot(self) -> _JoinState:
+        return copy.deepcopy(self.state)
+
+
+@operator
+def _join_label_merge(
+    step_id: str,
+    *ups: KeyedStream[Any],
+) -> KeyedStream[Tuple[int, Any]]:
+    with_labels = [
+        # Horrible mess, see
+        # https://docs.astral.sh/ruff/rules/function-uses-loop-variable/
+        map_value(f"label_{i}", up, partial(lambda i, v: (i, v), i))
+        for i, up in enumerate(ups)
+    ]
+    return merge("merge", *with_labels)
+
+
+# https://stackoverflow.com/questions/73200382/using-typevartuple-with-inner-typevar
+@overload
+def join(
+    step_id: str,
+    side1: KeyedStream[U],
+    side2: KeyedStream[V],
+    /,
+    *,
+    insert_mode: JoinInsertMode = ...,
+    emit_mode: Literal["complete"] = ...,
+) -> KeyedStream[Tuple[U, V]]: ...
+
+
+@overload
+def join(
+    step_id: str,
+    side1: KeyedStream[U],
+    side2: KeyedStream[V],
+    side3: KeyedStream[W],
+    /,
+    *,
+    insert_mode: JoinInsertMode = ...,
+    emit_mode: Literal["complete"] = ...,
+) -> KeyedStream[Tuple[U, V, W]]: ...
+
+
+@overload
+def join(
+    step_id: str,
+    side1: KeyedStream[U],
+    side2: KeyedStream[V],
+    side3: KeyedStream[W],
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:~/project#

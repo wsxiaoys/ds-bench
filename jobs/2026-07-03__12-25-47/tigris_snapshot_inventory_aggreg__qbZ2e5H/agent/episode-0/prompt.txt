@@ -1,0 +1,167 @@
+You are an AI assistant tasked with solving command-line tasks in a Linux environment. You will be given a task description and the output from previously executed commands. Your goal is to solve the task by providing batches of shell commands.
+
+Format your response as JSON with the following structure:
+
+{
+  "analysis": "Analyze the current state based on the terminal output provided. What do you see? What has been accomplished? What still needs to be done?",
+  "plan": "Describe your plan for the next steps. What commands will you run and why? Be specific about what you expect each command to accomplish.",
+  "commands": [
+    {
+      "keystrokes": "ls -la\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cd project\n",
+      "duration": 0.1
+    }
+  ],
+  "task_complete": true
+}
+
+Required fields:
+- "analysis": Your analysis of the current situation
+- "plan": Your plan for the next steps
+- "commands": Array of command objects to execute
+
+Optional fields:
+- "task_complete": Boolean indicating if the task is complete (defaults to false if not present)
+
+Command object structure:
+- "keystrokes": String containing the exact keystrokes to send to the terminal (required)
+- "duration": Number of seconds to wait for the command to complete before the next command will be executed (defaults to 1.0 if not present)
+
+IMPORTANT: The text inside "keystrokes" will be used completely verbatim as keystrokes. Write commands exactly as you want them sent to the terminal:
+- You must end every command with a newline (\n) or it will not execute.
+- For special key sequences, use tmux-style escape sequences:
+  - C-c for Ctrl+C
+  - C-d for Ctrl+D
+
+The "duration" attribute specifies the number of seconds to wait for the command to complete (default: 1.0) before the next command will be executed. On immediate tasks (e.g., cd, ls, echo, cat) set a duration of 0.1 seconds. On commands (e.g., gcc, find, rustc) set a duration of 1.0 seconds. On slow commands (e.g., make, python3 [long running script], wget [file]) set an appropriate duration as you determine necessary.
+
+It is better to set a smaller duration than a longer duration. It is always possible to wait again if the prior output has not finished, by running {"keystrokes": "", "duration": 10.0} on subsequent requests to wait longer. Never wait longer than 60 seconds; prefer to poll to see intermediate result status.
+
+Important notes:
+- Each command's keystrokes are sent exactly as written to the terminal
+- Do not include extra whitespace before or after the keystrokes unless it's part of the intended command
+- Extra text before or after the JSON will generate warnings but be tolerated
+- The JSON must be valid - use proper escaping for quotes and special characters within strings
+- Commands array can be empty if you want to wait without taking action
+
+Task Description:
+# Aggregate Tigris Snapshot Inventory With the Tigris CLI
+
+## Background
+The Tigris Agent Kit provisions and manages many short-lived buckets on the Tigris control plane. Operators frequently need a quick "what do I currently own?" report — specifically, which evaluation buckets exist and how many point-in-time snapshots each one has. The Tigris CLI (`@tigrisdata/cli`) exposes both pieces via `tigris buckets list --format json` and `tigris snapshots list <bucket> --format json`. Each snapshot has a unique `version` string (a UNIX nanosecond-precision timestamp) that doubles as an ascending creation-time ordering key.
+
+For this task an operator has primed the Tigris account with six buckets. Three of them are evaluation buckets whose names begin with the prefix `harbor-inv-${run_id}-` (and have snapshots enabled); the others have unrelated names and are owned by a separate workflow that must NOT be touched. You must write a Node.js program that walks the account, filters by the `harbor-inv-${run_id}-` prefix, gathers every snapshot version per bucket, persists the result as JSON, and prints a one-line summary.
+
+## Requirements
+1. Implement a Node.js program at `/home/user/inv/index.js` that, **when invoked with `node index.js` from `/home/user/inv`**, performs the following steps:
+   1. Read the run id from `/logs/artifacts/run-id`. Construct the prefix as `harbor-inv-${run_id}-` (substitute the actual id; do NOT keep the `${run_id}` placeholder literal). Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the prefix by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
+   2. Shells out to the Tigris CLI to obtain the list of buckets visible to the current credentials using `tigris buckets list --format json`.
+   3. Filters the bucket list down to exactly the buckets whose name **starts with** the normalized prefix. Buckets with any other name MUST be ignored.
+   4. For each filtered bucket, shells out to `tigris snapshots list <bucket> --format json` and collects every snapshot's `version` field.
+   5. Sorts the snapshot version IDs for each bucket in **ascending creation-time order** (i.e. oldest first). Because each `version` is a UNIX nanosecond timestamp, ascending lexicographic / numeric sort matches ascending creation time.
+   6. Aggregates the result into a JSON object whose keys are bucket names and whose values are the sorted array of snapshot version IDs (strings).
+   7. Writes the aggregated object to `/home/user/inv/inventory.json` as pretty-printed JSON (a trailing newline is allowed).
+   8. Writes exactly one summary line to stdout of the form `<bucketCount> buckets, <snapshotTotal> snapshots` where `<bucketCount>` is the number of `harbor-inv-${run_id}-*` buckets included and `<snapshotTotal>` is the sum of every snapshot count.
+2. The program MUST exit with status 0 on success.
+
+## Implementation Guide
+1. Change into the project directory: `cd /home/user/inv`.
+2. Implement `/home/user/inv/index.js`. A reasonable structure (you do not have to match it verbatim):
+   ```js
+   import { execFileSync } from "node:child_process";
+   import { readFileSync, writeFileSync } from "node:fs";
+
+   function tigrisJSON(args) {
+     const stdout = execFileSync("tigris", args, { encoding: "utf8" });
+     return JSON.parse(stdout);
+   }
+
+   const runId = readFileSync("/logs/artifacts/run-id", "utf8").trim();
+   const PREFIX = `harbor-inv-${runId}-`.toLowerCase().replace(/[^a-z0-9.-]/g, "-");
+
+   const bucketsPayload = tigrisJSON(["buckets", "list", "--format", "json"]);
+   const allBuckets = Array.isArray(bucketsPayload)
+     ? bucketsPayload
+     : (bucketsPayload.items ?? bucketsPayload.buckets ?? []);
+   const targetNames = allBuckets
+     .map((b) => b.name)
+     .filter((name) => typeof name === "string" && name.startsWith(PREFIX))
+     .sort();
+
+   const inventory = {};
+   let total = 0;
+   for (const name of targetNames) {
+     const snapsPayload = tigrisJSON(["snapshots", "list", name, "--format", "json"]);
+     const snaps = snapsPayload.snapshots ?? [];
+     const versions = snaps.map((s) => s.version).filter(Boolean).sort();
+     inventory[name] = versions;
+     total += versions.length;
+   }
+
+   writeFileSync("/home/user/inv/inventory.json", JSON.stringify(inventory, null, 2) + "\n");
+   console.log(`${targetNames.length} buckets, ${total} snapshots`);
+   ```
+3. Run your script:
+   ```bash
+   node /home/user/inv/index.js
+   ```
+   You should see a single line of stdout matching `3 buckets, 6 snapshots`, and `/home/user/inv/inventory.json` should exist on disk with three keys.
+
+## Constraints
+- Project path: `/home/user/inv`
+- Entrypoint script (the one you write): `/home/user/inv/index.js`
+- Output JSON (the one you write): `/home/user/inv/inventory.json`
+- Bucket prefix to include: dynamically constructed as `harbor-inv-${run_id}-` (must be matched literally with `String.startsWith`).
+- Use the real Tigris CLI (`@tigrisdata/cli`) against the live Tigris control plane via Node's `child_process` APIs. Do not invent fake data and do not use the AWS S3 API directly.
+- The admin credentials are available as `TIGRIS_STORAGE_ACCESS_KEY_ID` and `TIGRIS_STORAGE_SECRET_ACCESS_KEY` in the environment, but the environment already persists them into `~/.tigris/config.json` via `tigris configure`, so subsequent `tigris` invocations from inside Node work without any extra wiring.
+
+## Integrations
+- Tigris Object Storage (admin credentials `TIGRIS_STORAGE_ACCESS_KEY_ID` and `TIGRIS_STORAGE_SECRET_ACCESS_KEY` are injected into both the task and verifier environments).
+
+
+Current terminal state:
+Current Terminal Screen:
+root@885b10cb-812f-4e17-8c79-0758b4a52819:~#
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

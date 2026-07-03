@@ -1,0 +1,105 @@
+New Terminal Output:
+
+root@12705142-6aa2-4620-a7d6-08e290ecf8c5:~# cat /usr/local/lib/python3.12/dist-packages/bytewax/testing.py | sed -n '100,200p'
+    def next_batch(self) -> List[X]:
+        if self._raise is not None:
+            raise self._raise
+        if self._next_awake is not None:
+            self._next_awake = None
+
+        batch = []
+        for item in self._it:
+            if isinstance(item, TestingSource.EOF):
+                self._raise = StopIteration()
+                # Skip over this on continuation.
+                self._start_idx += 1
+                # Batch is done early.
+                break
+            elif isinstance(item, TestingSource.ABORT):
+                if not item._triggered:
+                    self._raise = AbortExecution()
+                    # Don't trigger on next execution.
+                    item._triggered = True
+                    # Batch is done early.
+                    break
+            elif isinstance(item, TestingSource.PAUSE):
+                now = datetime.now(tz=timezone.utc)
+                self._next_awake = now + item.for_duration
+                # Batch is done early.
+                break
+            else:
+                batch.append(item)
+                if len(batch) >= self._batch_size:
+                    break
+
+        # If the last item was a sentinel, then don't say EOF, let the
+        # next batch raise the exception.
+        if len(batch) > 0 or self._raise is not None or self._next_awake is not None:
+            self._start_idx += len(batch)
+            return batch
+        else:
+            raise StopIteration()
+
+    @override
+    def next_awake(self) -> Optional[datetime]:
+        return self._next_awake
+
+    @override
+    def snapshot(self) -> int:
+        return self._start_idx
+
+
+class TestingSource(FixedPartitionedSource[X, int]):
+    """Produce input from a Python iterable.
+
+    You only want to use this for unit testing.
+
+    The iterable must be identical on all workers.
+
+    There is no parallelism; only one worker will actually consume the
+    iterable.
+
+    Be careful using a generator as the iterable; if you fail and
+    attempt to resume the dataflow without rebuilding it, the
+    half-consumed generator will be re-used on recovery and early
+    input will be lost so resume will see the correct data.
+
+    """
+
+    __test__ = False
+
+    @dataclass
+    class EOF:
+        """Signal the input to EOF.
+
+        The next execution will continue from the item after this.
+
+        """
+
+        pass
+
+    # TODO: Find a way to use ABORT in a multi-worker scenario.
+    # Something like a back channel that one has aborted.
+    @dataclass
+    class ABORT:
+        """Abort the execution when the input processes this item.
+
+        The next execution will resume from some item befor this one.
+
+        Each abort will only trigger once. They'll be skipped on
+        resume executions.
+
+        You cannot use this in multi-worker executions because the
+        other workers don't know when to stop.
+
+        """
+
+        _triggered: bool = False
+
+    @dataclass
+    class PAUSE:
+        """Signal this input to not emit items for a duration."""
+
+        for_duration: timedelta
+
+root@12705142-6aa2-4620-a7d6-08e290ecf8c5:~#

@@ -1,0 +1,60 @@
+import { fn, type } from "arktype";
+import { State } from "./state.js";
+import { Event } from "./event.js";
+
+// The transition function: takes a State and an Event, returns the next State.
+// We use arktype's `fn` to enforce that:
+//   * the first argument matches the State discriminated union,
+//   * the second argument matches the Event discriminated union,
+//   * the returned value also matches the State discriminated union.
+//
+// Transition rules (only the listed pairings change the state; every other
+// state/event combination leaves the state unchanged):
+//   Idle    + Start   -> Loading   with startedAt  = trunc(event.at)
+//   Loading + Resolve -> Success   with data       = event.data,
+//                                         fetchedAt   = trunc(event.at)
+//   Loading + Reject  -> Failure   with code       = event.code,
+//                                         reason      = event.reason
+//   *       + Reset   -> Idle
+export const transition = fn(
+  State,
+  Event,
+  ":",
+  State
+)((state, event) => {
+  // Reset always returns to Idle, regardless of the current state.
+  if (event.type === "reset") {
+    return { status: "idle" };
+  }
+
+  if (state.status === "idle" && event.type === "start") {
+    return {
+      status: "loading",
+      startedAt: Math.trunc(event.at),
+    };
+  }
+
+  if (state.status === "loading" && event.type === "resolve") {
+    return {
+      status: "success",
+      data: event.data,
+      fetchedAt: Math.trunc(event.at),
+    };
+  }
+
+  if (state.status === "loading" && event.type === "reject") {
+    return {
+      status: "failure",
+      code: event.code,
+      reason: event.reason,
+    };
+  }
+
+  // Any other state/event pairing leaves the state unchanged.
+  return state;
+});
+
+// Re-export the underlying types for callers that need to validate inputs
+// directly (for example, the CLI entry point).
+export { State, Event };
+export { type as arktype };

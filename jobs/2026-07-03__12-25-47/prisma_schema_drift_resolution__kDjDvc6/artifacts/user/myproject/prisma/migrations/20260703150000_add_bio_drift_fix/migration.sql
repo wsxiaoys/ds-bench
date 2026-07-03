@@ -1,0 +1,2 @@
+-- No-op migration: column "bio" was already added directly via SQL.
+-- This migration records the schema change in migration history.

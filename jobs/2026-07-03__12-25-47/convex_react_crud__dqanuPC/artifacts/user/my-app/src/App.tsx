@@ -1,0 +1,68 @@
+import { useState } from 'react';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../convex/_generated/api';
+import './App.css';
+
+function App() {
+  const runId = import.meta.env.VITE_RUN_ID as string;
+  const tasks = useQuery(api.tasks.get, { runId }) ?? [];
+  const addTask = useMutation(api.tasks.add);
+  const updateStatus = useMutation(api.tasks.updateStatus);
+  const removeTask = useMutation(api.tasks.remove);
+
+  const [text, setText] = useState('');
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    await addTask({ text: trimmed, runId });
+    setText('');
+  };
+
+  const toggleStatus = async (id: typeof tasks[number]['_id'], status: 'todo' | 'done') => {
+    await updateStatus({ id, status: status === 'todo' ? 'done' : 'todo' });
+  };
+
+  const handleDelete = async (id: typeof tasks[number]['_id']) => {
+    await removeTask({ id });
+  };
+
+  return (
+    <div className="app">
+      <h1>Task Manager</h1>
+      <p className="run-id">Run ID: {runId}</p>
+
+      <form onSubmit={handleAdd} className="add-form">
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Enter a new task..."
+          aria-label="New task"
+        />
+        <button type="submit">Add Task</button>
+      </form>
+
+      <ul className="task-list">
+        {tasks.length === 0 && <li className="empty">No tasks yet.</li>}
+        {tasks.map((task) => (
+          <li key={task._id} className={`task ${task.status}`}>
+            <span className="task-text">{task.text}</span>
+            <span className="task-status">{task.status}</span>
+            <div className="task-actions">
+              <button onClick={() => toggleStatus(task._id, task.status)}>
+                {task.status === 'todo' ? 'Mark Done' : 'Mark Todo'}
+              </button>
+              <button onClick={() => handleDelete(task._id)} className="delete">
+                Delete
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export default App;

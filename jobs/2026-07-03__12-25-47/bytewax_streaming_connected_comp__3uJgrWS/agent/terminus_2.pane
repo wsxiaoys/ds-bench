@@ -1,0 +1,2585 @@
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# clear
+[?2004l[H[J[3J[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# ls -la /home/user/graph_pipeline/
+[?2004ltotal 4
+drwxr-xr-x 2 root root  39 Jul  3 13:10 [0m[01;34m.[0m
+drwxr-xr-x 1 root root  36 Jul  3 13:10 [01;34m..[0m
+-rw-r--r-- 1 root root 105 Jul  3 13:10 input_edges.jsonl
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cat /home/user/graph_pipeline/input_edges.jsonl
+[?2004l{"u": "A", "v": "B"}
+{"u": "B", "v": "C"}
+{"u": "A", "v": "C"}
+{"u": "D", "v": "E"}
+{"u": "C", "v": "E"}
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cat /logs/artifacts/run-id
+[?2004lzr7scukw36
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# python3 --version
+[?2004lPython 3.12.3
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# pip show bytewax 2>/dev/null | head -5
+[?2004lName: bytewax
+Version: 0.21.1
+Summary: 
+Home-page: 
+Author: 
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# python3 -c "import bytewax; print(bytewax.__version__)"
+[?2004lTraceback (most recent call last):
+  File "<string>", line 1, in <module>
+AttributeError: module 'bytewax' has no attribute '__version__'
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# python3 -c "from bytewax.dataflow import Dataflow; from bytewax.inputs import ManualInputConfig; from bytewax.outputs import FileOutput; from bytewax.execution import run_main; from bytewax.connectors.files import FileSource; print('all imports ok')"
+[?2004lTraceback (most recent call last):
+  File "<string>", line 1, in <module>
+ImportError: cannot import name 'ManualInputConfig' from 'bytewax.inputs' (/usr/local/lib/python3.12/dist-packages/bytewax/inputs.py)
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# ls /usr/local/lib/python3.12/dist-packages/bytewax/
+[?2004l[0m[01;34m__pycache__[0m                               _bytewax.pyi  _utils.py   dataflow.py  inputs.py  outputs.py  recovery.py  testing.py  visualize.py
+[01;32m_bytewax.cpython-312-x86_64-linux-gnu.so[0m  _metrics.py   [01;34mconnectors[0m  errors.py    [01;34moperators[0m  py.typed    run.py       tracing.py
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cat /usr/local/lib/python3.12/dist-packages/bytewax/inputs.py
+[?2004l"""Low-level input interfaces and input helpers.
+
+If you want pre-built connectors for various external systems, see
+{py:obj}`bytewax.connectors`.
+
+"""
+
+import asyncio
+import queue
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from itertools import islice
+from typing import (
+    Callable,
+    Generic,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Type,
+    cast,
+)
+
+from bytewax._bytewax import AbortExecution
+from typing_extensions import AsyncIterable, TypeVar, override
+
+__all__ = [
+    "AbortExecution",
+    "DynamicSource",
+    "FixedPartitionedSource",
+    "S",
+    "SimplePollingSource",
+    "Sn",
+    "Source",
+    "StatefulSourcePartition",
+    "StatelessSourcePartition",
+    "X",
+    "batch",
+    "batch_async",
+    "batch_getter",
+    "batch_getter_ex",
+]
+
+X = TypeVar("X")
+"""Type emitted by a {py:obj}`Source`."""
+
+
+S = TypeVar("S")
+"""Type of state snapshots."""
+
+
+Sn = TypeVar("Sn", default=None)
+"""Type of state snapshots but defaults to `None`."""
+
+
+class Source(ABC, Generic[X]):  # noqa: B024
+    """A location to read input items from.
+
+    Base class for all input sources. Do not subclass this.
+
+    If you want to implement a custom connector, instead subclass one
+    of the specific source sub-types below in this module.
+
+    """
+
+    pass
+
+
+class StatefulSourcePartition(ABC, Generic[X, S]):
+    """Input partition that maintains state of its position."""
+
+    @abstractmethod
+    def next_batch(self) -> Iterable[X]:
+        """Attempt to get the next batch of input items.
+
+        This must participate in a kind of cooperative multi-tasking,
+        never blocking but returning an empty list if there are no
+        items to emit yet.
+
+        :returns: Items immediately ready. May be empty if no new
+            items.
+
+        :raises StopIteration: When the source is complete.
+
+        """
+        ...
+
+    def next_awake(self) -> Optional[datetime]:
+        """When to next attempt to get input items.
+
+        {py:obj}`next_batch` will not be called until the most
+        recently returned time has past.
+
+        This will be called upon initialization of the source and
+        after {py:obj}`next_batch`, but also possibly at other times.
+        Multiple times are not stored; you must return the next awake
+        time on every call, if any.
+
+        If this returns `None`, {py:obj}`next_batch` will be called
+        immediately unless the previous batch had no items, in which
+        case there is a 1 millisecond delay.
+
+        Use this instead of {py:obj}`time.sleep` in
+        {py:obj}`next_batch`.
+
+        :returns: Next awake time or `None` to indicate REDACTEDmatic
+            behavior.
+
+        """
+        return None
+
+    @abstractmethod
+    def snapshot(self) -> S:
+        """Snapshot the position of the next read of this partition.
+
+        This will be returned to you via the `resume_state` parameter
+        of your input builder.
+
+        Be careful of "off by one" errors in resume state. This should
+        return a state that, when built into a partition, resumes
+        reading _after the last read item_, not any of the same items
+        that {py:obj}`next_batch` last returned.
+
+        This is guaranteed to never be called after {py:obj}`close`.
+
+        :returns: Resume state.
+
+        """
+        ...
+
+    def close(self) -> None:
+        """Cleanup this partition when the dataflow completes.
+
+        This is not guaranteed to be called. It will only be called
+        when the dataflow finishes on finite input. It will not be
+        called during an abrupt or abort shutdown.
+
+        """
+        return
+
+
+class FixedPartitionedSource(Source[X], Generic[X, S]):
+    """An input source with a fixed number of independent partitions.
+
+    Will maintain the state of each source and re-build using it
+    during resume. If the source supports seeking, this input can
+    support exactly-once processing.
+
+    Each partition must contain unique data. If you re-read the same data
+    in multiple partitions, the dataflow will process these duplicate
+    items.
+
+    """
+
+    @abstractmethod
+    def list_parts(self) -> List[str]:
+        """List all local partitions this worker has access to.
+
+        You do not need to list all partitions globally.
+
+        :returns: Local partition keys.
+
+        """
+        ...
+
+    @abstractmethod
+    def build_part(
+        self,
+        step_id: str,
+        for_part: str,
+        resume_state: Optional[S],
+    ) -> StatefulSourcePartition[X, S]:
+        """Build anew or resume an input partition.
+
+        Will be called once per execution for each partition key on a
+        worker that reported that partition was local in
+        {py:obj}`list_parts`.
+
+        Do not pre-build state about a partition in the
+        constructor. All state must be derived from `resume_state` for
+        recovery to work properly.
+
+        :arg step_id: The step_id of the input operator.
+
+        :arg for_part: Which partition to build. Will always be one of
+            the keys returned by {py:obj}`list_parts` on this worker.
+
+        :arg resume_state: State data containing where in the input
+            stream this partition should be begin reading during this
+            execution.
+
+        :returns: The built partition.
+
+        """
+        ...
+
+
+class StatelessSourcePartition(ABC, Generic[X]):
+    """Input partition that is stateless."""
+
+    @abstractmethod
+    def next_batch(self) -> Iterable[X]:
+        """Attempt to get the next batch of input items.
+
+        This must participate in a kind of cooperative multi-tasking,
+        never blocking but yielding an empty list if there are no new
+        items yet.
+
+        :returns: Items immediately ready. May be empty if no new
+            items.
+
+        :raises StopIteration: When the source is complete.
+
+        """
+        ...
+
+    def next_awake(self) -> Optional[datetime]:
+        """When to next attempt to get input items.
+
+        {py:obj}`next_batch` will not be called until the most
+        recently returned time has past.
+
+        This will be called upon initialization of the source and
+        after {py:obj}`next_batch`, but also possibly at other times.
+        Multiple times are not stored; you must return the next awake
+        time on every call, if any.
+
+        If this returns `None`, {py:obj}`next_batch` will be called
+        immediately unless the previous batch had no items, in which
+        case there is a 1 millisecond delay.
+
+        Use this instead of {py:obj}`time.sleep` in
+        {py:obj}`next_batch`.
+
+        :returns: Next awake time or `None` to indicate REDACTEDmatic
+            behavior.
+
+        """
+        return None
+
+    def close(self) -> None:
+        """Cleanup this partition when the dataflow completes.
+
+        This is not guaranteed to be called. It will only be called
+        when the dataflow finishes on finite input. It will not be
+        called during an abrupt or abort shutdown.
+
+        """
+        return
+
+
+class DynamicSource(Source[X]):
+    """An input source where all workers can read distinct items.
+
+    Does not support storing any resume state. Thus these kind of
+    sources only naively can support at-most-once processing.
+
+    The source must somehow support supplying disjoint data for each
+    worker. If you re-read the same items on multiple workers, the
+    dataflow will process these as duplicate items.
+
+    """
+
+    @abstractmethod
+    def build(
+        self, step_id: str, worker_index: int, worker_count: int
+    ) -> StatelessSourcePartition[X]:
+        """Build an input source for a worker.
+
+        Will be called once on each worker.
+
+        :arg step_id: The step_id of the input operator.
+
+        :arg worker_index: Index of this worker. Workers are zero-indexed.
+
+        :arg worker_count: Total number of workers.
+
+        :returns: The built partition.
+
+        """
+        ...
+
+
+class _SimplePollingPartition(StatefulSourcePartition[X, S]):
+    def __init__(
+        self,
+        now: datetime,
+        interval: timedelta,
+        align_to: Optional[datetime],
+        getter: Callable[[], X],
+        snapshot: Callable[[], S],
+    ):
+        self._interval = interval
+        self._getter = getter
+        self._snapshot = snapshot
+
+        if align_to is not None:
+            # Hell yeah timedelta implements remainder.
+            since_last_awake = (now - align_to) % interval
+            if since_last_awake > timedelta(seconds=0):
+                until_next_awake = interval - since_last_awake
+            else:
+                # If now is exactly on the align_to mark (remainder is
+                # 0), don't wait a whole interval; activate
+                # immediately.
+                until_next_awake = timedelta(seconds=0)
+            self._next_awake = now + until_next_awake
+        else:
+            self._next_awake = now
+
+    @override
+    def next_batch(self) -> List[X]:
+        try:
+            item = self._getter()
+            self._next_awake += self._interval
+            if item is None:
+                return []
+            return [item]
+        except SimplePollingSource.Retry as ex:
+            self._next_awake += ex.timeout
+            return []
+
+    @override
+    def next_awake(self) -> Optional[datetime]:
+        return self._next_awake
+
+    @override
+    def snapshot(self) -> S:
+        return self._snapshot()
+
+
+class SimplePollingSource(FixedPartitionedSource[X, Sn]):
+    """Calls a user defined function at a regular interval.
+
+    ```{testcode}
+    from bytewax.inputs import SimplePollingSource
+
+    class URLSource(SimplePollingSource):
+        def __init__(self):
+            super().__init__(interval=timedelta(seconds=10))
+
+        def next_item(self):
+            res = requests.get("https://example.com")
+            if not res.ok:
+                raise SimplePollingSource.Retry(timedelta(seconds=1))
+            return res.text
+    ```
+
+    There is no parallelism; only one worker will poll this source.
+
+    Supports maintaining the state of the source and resuming. If the
+    source supports seeking, this input can support exactly-once
+    processing. Override {py:obj}`snapshot` and {py:obj}`resume`.
+
+    This is best for low-throughput polling on the order of seconds to
+    hours.
+
+    If you need a high-throughput source, or custom retry or timing,
+    avoid this. Instead create a source using one of the other
+    {py:obj}`Source` subclasses where you can have increased
+    parallelism, batching, and finer control over timing.
+
+    """
+
+    @dataclass
+    class Retry(Exception):
+        """Raise this to try to get items before the usual interval.
+
+        :arg timeout: How long to wait before calling
+            {py:obj}`SimplePollingSource.next_item` again.
+
+        """
+
+        timeout: timedelta
+
+    def __init__(self, interval: timedelta, align_to: Optional[datetime] = None):
+        """Init.
+
+        :arg interval: The interval between calling
+            {py:obj}`next_item`.
+
+        :arg align_to: Align awake times to the given datetime. Defaults
+            to now.
+
+        """
+        self._interval = interval
+        self._align_to = align_to
+
+    @override
+    def list_parts(self) -> List[str]:
+        return ["singleton"]
+
+    @override
+    def build_part(
+        self,
+        _step_id: str,
+        for_part: str,
+        resume_state: Optional[Sn],
+    ) -> _SimplePollingPartition[X, Sn]:
+        now = datetime.now(timezone.utc)
+
+        if resume_state is not None:
+            self.resume(resume_state)
+
+        return _SimplePollingPartition(
+            now,
+            self._interval,
+            self._align_to,
+            self.next_item,
+            self.snapshot,
+        )
+
+    @abstractmethod
+    def next_item(self) -> X:
+        """Override with custom logic to poll your source.
+
+        :returns: Next item to emit into the dataflow. If `None`, no
+            item is emitted.
+
+        :raises Retry: Raise if you can't fetch items and would like
+            to call this function sooner than the usual interval.
+
+        """
+        ...
+
+    def snapshot(self) -> Sn:
+        """Snapshot the position of the next read of this source.
+
+        This will be returned to you via the `resume_state` parameter
+        of {py:obj}`resume`.
+
+        Be careful of "off by one" errors in resume state. This should
+        return a state that, after being passed to {py:obj}`resume`,
+        resumes reading _after the last read item_, not any of the
+        same item that {py:obj}`next_item` last returned.
+
+        :returns: Resume state.
+
+        """
+        return cast(Sn, None)
+
+    def resume(self, resume_state: Sn) -> None:
+        """Reset the position of the next read of this source.
+
+        This will be called once before {py:obj}`next_item` if this
+        execution is a resume.
+
+        :arg resume_state:
+
+        """
+        pass
+
+
+def batch(ib: Iterable[X], batch_size: int) -> Iterator[List[X]]:
+    """Batch an iterable.
+
+    Use this to easily generate batches of items for a partition's
+    `next_batch` method.
+
+    :arg ib: The underlying source iterable of items.
+
+    :arg batch_size: Maximum number of items to yield in a batch.
+
+    :yields: The next gathered batch of items.
+
+    """
+    # Ensure that we have the stateful iterator of the source.
+    it = iter(ib)
+    while True:
+        batch = list(islice(it, batch_size))
+        if len(batch) <= 0:
+            return
+        yield batch
+
+
+def batch_getter(
+    getter: Callable[[], X], batch_size: int, yield_on: Optional[X] = None
+) -> Iterator[List[X]]:
+    """Batch from a getter function that might not return an item.
+
+     Use this to easily generate batches of items for a partition's
+    `next_batch` method.
+
+    :arg getter: Function to call to get the next item. Should raise
+        {py:obj}`StopIteration` on EOF.
+
+    :arg batch_size: Maximum number of items to yield in a batch.
+
+    :arg yield_on: Sentinel value that indicates that there are no
+            more items yet, and to return the current batch. Defaults
+            to `None`.
+
+    :yields: The next gathered batch of items.
+
+    """
+    while True:
+        batch: List[X] = []
+        while len(batch) < batch_size:
+            try:
+                item = getter()
+                if item != yield_on:
+                    batch.append(item)
+                else:
+                    break
+            except StopIteration:
+                yield batch
+                return
+        yield batch
+
+
+def batch_getter_ex(
+    getter: Callable[[], X], batch_size: int, yield_ex: Type[Exception] = queue.Empty
+) -> Iterator[List[X]]:
+    """Batch from a getter function that raises on no items yet.
+
+     Use this to easily generate batches of items for a partitions's
+    `next_batch` method.
+
+    :arg getter: Function to call to get the next item. Should raise
+        {py:obj}`StopIteration` on EOF.
+
+    :arg batch_size: Maximum number of items to return in a batch.
+
+    :arg yield_ex: Exception raised by `getter` that indicates that
+        there are no more items yet, and to return the current batch.
+        Defaults to {py:obj}`queue.Empty`.
+
+    :yields: The next gathered batch of items.
+
+    """
+    while True:
+        batch: List[X] = []
+        while len(batch) < batch_size:
+            try:
+                item = getter()
+                batch.append(item)
+            except yield_ex:
+                break
+            except StopIteration:
+                yield batch
+                return
+        yield batch
+
+
+def batch_async(
+    aib: AsyncIterable[X],
+    timeout: timedelta,
+    batch_size: int,
+    loop=None,
+) -> Iterator[List[X]]:
+    """Batch an async iterable synchronously up to a timeout.
+
+    This allows using an async iterator as an input source. The
+    `next_batch` method on a partition must never block, this allows
+    running an async iterator up to a timeout so that you correctly
+    cooperatively multitask with the rest of the dataflow.
+
+    :arg aib: The underlying source async iterable of items.
+
+    :arg timeout: Duration of time to repeatedly poll the source async
+        iterator for items.
+
+    :arg batch_size: Maximum number of items to yield in a batch, even
+        if the timeout has not been hit.
+
+    :arg loop: Custom `asyncio` run loop to use, if any.
+
+    :yields: The next gathered batch of items.
+
+        This function will take up to `timeout` time to yield, or
+        will return a list with length up to `max_len`.
+
+    """
+    # Ensure that we have the stateful iterator of the source.
+    ait = aib.__aiter__()
+
+    loop = loop if loop is not None else asyncio.new_event_loop()
+    task = None
+
+    async def anext_batch():
+        nonlocal task
+
+        batch = []
+        # Only try to gather this many items.
+        for _ in range(batch_size):
+            if task is None:
+
+                async def coro():
+                    return await ait.__anext__()
+
+                task = loop.create_task(coro())
+
+            try:
+                # Prevent the `wait_for` cancellation from
+                # stopping the `__anext__` task; usually all
+                # sub-tasks are cancelled too. It'll be re-used in
+                # the next batch.
+                next_item = await asyncio.shield(task)
+            except asyncio.CancelledError:
+                # Timeout was hit and thus return the batch
+                # immediately.
+                break
+            except StopAsyncIteration:
+                if len(batch) > 0:
+                    # Return a half-finished batch if we run out
+                    # of source items.
+                    break
+                else:
+                    # We can't raise `StopIteration` directly here
+                    # because it's part of the coro protocol and
+                    # would mess with this async function.
+                    raise
+
+            batch.append(next_item)
+            task = None
+        return batch
+
+    while True:
+        try:
+            # `wait_for` will raise `CancelledError` at the internal
+            # await point in `anext_batch` if the timeout is hit.
+            batch = loop.run_until_complete(
+                asyncio.wait_for(anext_batch(), timeout.total_seconds())
+            )
+            yield batch
+        except StopAsyncIteration:
+            return
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# ls /usr/local/lib/python3.12/dist-packages/bytewax/connectors/
+[?2004l__init__.py  [0m[01;34m__pycache__[0m  demo.py  files.py  [01;34mkafka[0m  stdio.py
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# ls /usr/local/lib/python3.12/dist-packages/bytewax/operators/
+[?2004l__init__.py  [0m[01;34m__pycache__[0m  helpers.py  windowing.py
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# ls /usr/local/lib/python3.12/dist-packages/bytewax/connectors/files/
+[?2004lls: cannot access '/usr/local/lib/python3.12/dist-packages/bytewax/connectors/files/': No such file or directory
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cat /usr/local/lib/python3.12/dist-packages/bytewax/connectors/files.py | head -100
+[?2004l"""Connectors for local text files."""
+
+import os
+from csv import DictReader
+from pathlib import Path
+from typing import Any, Callable, Dict, Iterator, List, Optional, Union
+from zlib import adler32
+
+from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition, batch
+from bytewax.outputs import FixedPartitionedSink, StatefulSinkPartition
+from typing_extensions import override
+
+
+def _get_path_dev(path: Path) -> str:
+    return hex(path.stat().st_dev)
+
+
+def _readlines(f) -> Iterator[str]:
+    """Turn a file into a generator of lines but support `tell`.
+
+    Python files don't support `tell` to learn the offset if you use
+    them in iterator mode via `next`, so re-create that iterator using
+    `readline`.
+
+    """
+    while True:
+        line = f.readline()
+        if len(line) <= 0:
+            break
+        yield line
+
+
+def _strip_n(s: str) -> str:
+    return s.rstrip("\n")
+
+
+class _FileSourcePartition(StatefulSourcePartition[str, int]):
+    def __init__(self, path: Path, batch_size: int, resume_state: Optional[int]):
+        self._f = open(path, "rt")
+        if resume_state is not None:
+            self._f.seek(resume_state)
+        it = map(_strip_n, _readlines(self._f))
+        self._batcher = batch(it, batch_size)
+
+    @override
+    def next_batch(self) -> List[str]:
+        return next(self._batcher)
+
+    @override
+    def snapshot(self) -> int:
+        return self._f.tell()
+
+    @override
+    def close(self) -> None:
+        self._f.close()
+
+
+class DirSource(FixedPartitionedSource[str, int]):
+    """Read all files in a filesystem directory line-by-line.
+
+    The directory must exist on at least one worker. Each worker can
+    have unique files at overlapping paths if each worker mounts a
+    distinct filesystem. Tries to read only one instance of each
+    unique file in the whole cluster by deduplicating paths by
+    filesystem ID. See `get_fs_id` argument to adjust this.
+
+    Unique files are the unit of parallelism; only one worker will
+    read each unique file. Thus, lines from different files are
+    interleaved.
+
+    Can support exactly-once processing.
+
+    """
+
+    def __init__(
+        self,
+        dir_path: Path,
+        glob_pat: str = "*",
+        batch_size: int = 1000,
+        get_fs_id: Callable[[Path], str] = _get_path_dev,
+    ):
+        """Init.
+
+        :arg dir_path: Path to directory.
+
+        :arg glob_pat: Pattern of files to read from the directory.
+            Defaults to `"*"` or all files.
+
+        :arg batch_size: Number of lines to read per batch. Defaults
+            to 1000.
+
+        :arg get_fs_id: Called with the directory and must return a
+            consistent (across workers and restarts) unique ID for the
+            filesystem of that directory. Defaults to using
+            {py:obj}`os.stat_result.st_dev`.
+
+            If you know all workers have access to identical files,
+            you can have this return a constant: `lambda _dir:
+            "SHARED"`.
+
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'def ' /usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py | head -30
+[?2004l83:def _identity(x: X) -> X:
+87:def _untyped_none() -> Any:
+91:def _get_system_utc() -> datetime:
+104:def branch(
+112:def branch(
+120:def branch(
+180:def flat_map_batch(
+195:    def batch_mapper(batch):
+241:def input(  # noqa: A001
+292:def _default_debug_inspector(step_id: str, item: Any, epoch: int, worker: int) -> None:
+297:def inspect_debug(
+343:def merge(
+351:def merge(
+360:def merge(
+370:def merge(
+381:def merge(
+388:def merge(
+395:def merge(
+450:def output(step_id: str, up: Stream[X], sink: Sink[X]) -> None:
+498:def redistribute(step_id: str, up: Stream[X]) -> Stream[X]:
+606:        def __init__(self):
+609:        def on_batch(self, batch):
+622:        def snapshot(self):
+626:        def restore(self, snapshot):
+707:    def on_batch(self, values: List[V]) -> Tuple[Iterable[W], bool]:
+722:    def on_notify(self) -> Tuple[Iterable[W], bool]:
+734:    def on_eof(self) -> Tuple[Iterable[W], bool]:
+749:    def notify_at(self) -> Optional[datetime]:
+770:    def snapshot(self) -> S:
+796:def stateful_batch(
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'def ' /usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py
+[?2004l[32m[K83[m[K[36m[K:[m[K[01;31m[Kdef [m[K_identity(x: X) -> X:
+[32m[K87[m[K[36m[K:[m[K[01;31m[Kdef [m[K_untyped_none() -> Any:
+[32m[K91[m[K[36m[K:[m[K[01;31m[Kdef [m[K_get_system_utc() -> datetime:
+[32m[K104[m[K[36m[K:[m[K[01;31m[Kdef [m[Kbranch(
+[32m[K112[m[K[36m[K:[m[K[01;31m[Kdef [m[Kbranch(
+[32m[K120[m[K[36m[K:[m[K[01;31m[Kdef [m[Kbranch(
+[32m[K180[m[K[36m[K:[m[K[01;31m[Kdef [m[Kflat_map_batch(
+[32m[K195[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kbatch_mapper(batch):
+[32m[K241[m[K[36m[K:[m[K[01;31m[Kdef [m[Kinput(  # noqa: A001
+[32m[K292[m[K[36m[K:[m[K[01;31m[Kdef [m[K_default_debug_inspector(step_id: str, item: Any, epoch: int, worker: int) -> None:
+[32m[K297[m[K[36m[K:[m[K[01;31m[Kdef [m[Kinspect_debug(
+[32m[K343[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmerge(
+[32m[K351[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmerge(
+[32m[K360[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmerge(
+[32m[K370[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmerge(
+[32m[K381[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmerge(
+[32m[K388[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmerge(
+[32m[K395[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmerge(
+[32m[K450[m[K[36m[K:[m[K[01;31m[Kdef [m[Koutput(step_id: str, up: Stream[X], sink: Sink[X]) -> None:
+[32m[K498[m[K[36m[K:[m[K[01;31m[Kdef [m[Kredistribute(step_id: str, up: Stream[X]) -> Stream[X]:
+[32m[K606[m[K[36m[K:[m[K        [01;31m[Kdef [m[K__init__(self):
+[32m[K609[m[K[36m[K:[m[K        [01;31m[Kdef [m[Kon_batch(self, batch):
+[32m[K622[m[K[36m[K:[m[K        [01;31m[Kdef [m[Ksnapshot(self):
+[32m[K626[m[K[36m[K:[m[K        [01;31m[Kdef [m[Krestore(self, snapshot):
+[32m[K707[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_batch(self, values: List[V]) -> Tuple[Iterable[W], bool]:
+[32m[K722[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_notify(self) -> Tuple[Iterable[W], bool]:
+[32m[K734[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_eof(self) -> Tuple[Iterable[W], bool]:
+[32m[K749[m[K[36m[K:[m[K    [01;31m[Kdef [m[Knotify_at(self) -> Optional[datetime]:
+[32m[K770[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksnapshot(self) -> S:
+[32m[K796[m[K[36m[K:[m[K[01;31m[Kdef [m[Kstateful_batch(
+[32m[K813[m[K[36m[K:[m[K        [01;31m[Kdef [m[K__init__(self):
+[32m[K816[m[K[36m[K:[m[K        [01;31m[Kdef [m[Kon_batch(self, batch):
+[32m[K829[m[K[36m[K:[m[K        [01;31m[Kdef [m[Ksnapshot(self):
+[32m[K833[m[K[36m[K:[m[K        [01;31m[Kdef [m[Krestore(self, snapshot):
+[32m[K944[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_item(self, value: V) -> Tuple[Iterable[W], bool]:
+[32m[K959[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_notify(self) -> Tuple[Iterable[W], bool]:
+[32m[K969[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_eof(self) -> Tuple[Iterable[W], bool]:
+[32m[K982[m[K[36m[K:[m[K    [01;31m[Kdef [m[Knotify_at(self) -> Optional[datetime]:
+[32m[K999[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksnapshot(self) -> S:
+[32m[K1030[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_batch(self, values: List[V]) -> Tuple[Iterable[W], bool]:
+[32m[K1045[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_notify(self) -> Tuple[Iterable[W], bool]:
+[32m[K1050[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_eof(self) -> Tuple[Iterable[W], bool]:
+[32m[K1055[m[K[36m[K:[m[K    [01;31m[Kdef [m[Knotify_at(self) -> Optional[datetime]:
+[32m[K1060[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksnapshot(self) -> S:
+[32m[K1066[m[K[36m[K:[m[K[01;31m[Kdef [m[Kstateful(
+[32m[K1099[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_builder(resume_state: Optional[S]) -> _StatefulLogic[V, W, S]:
+[32m[K1121[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_item(self, value: V) -> Tuple[Iterable[List[V]], bool]:
+[32m[K1132[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_notify(self) -> Tuple[Iterable[List[V]], bool]:
+[32m[K1136[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_eof(self) -> Tuple[Iterable[List[V]], bool]:
+[32m[K1140[m[K[36m[K:[m[K    [01;31m[Kdef [m[Knotify_at(self) -> Optional[datetime]:
+[32m[K1144[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksnapshot(self) -> _CollectState[V]:
+[32m[K1149[m[K[36m[K:[m[K[01;31m[Kdef [m[Kcollect(
+[32m[K1213[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_builder(resume_state: Optional[_CollectState[V]]) -> _CollectLogic[V]:
+[32m[K1222[m[K[36m[K:[m[K[01;31m[Kdef [m[Kcount_final(
+[32m[K1284[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kget(self, k: DK) -> DV:
+[32m[K1305[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kremove(self, k: DK) -> None:
+[32m[K1315[m[K[36m[K:[m[K[01;31m[Kdef [m[Kenrich_cached(
+[32m[K1330[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kmock_service(key):
+[32m[K1336[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kenrich_with_service(cache, item):
+[32m[K1377[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kquery_icon_url_service(code):
+[32m[K1401[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kicon_code_to_url(cache, msg):
+[32m[K1444[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kbatch_now_getter() -> datetime:
+[32m[K1450[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(xs: Iterable[X]) -> Iterable[Y]:
+[32m[K1461[m[K[36m[K:[m[K[01;31m[Kdef [m[Kflat_map(
+[32m[K1488[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksplit_into_words(sentence):
+[32m[K1520[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(xs: List[X]) -> Iterable[Y]:
+[32m[K1527[m[K[36m[K:[m[K[01;31m[Kdef [m[Kflat_map_value(
+[32m[K1544[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksplit_words(value):
+[32m[K1577[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(k_v: Tuple[str, V]) -> Iterable[Tuple[str, W]]:
+[32m[K1594[m[K[36m[K:[m[K[01;31m[Kdef [m[Kflatten(
+[32m[K1639[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(x: Iterable[X]) -> Iterable[X]:
+[32m[K1653[m[K[36m[K:[m[K[01;31m[Kdef [m[Kfilter(  # noqa: A001
+[32m[K1677[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kis_odd(item):
+[32m[K1709[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(x: X) -> Iterable[X]:
+[32m[K1727[m[K[36m[K:[m[K[01;31m[Kdef [m[Kfilter_value(
+[32m[K1773[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(v: V) -> Iterable[V]:
+[32m[K1791[m[K[36m[K:[m[K[01;31m[Kdef [m[Kfilter_map(
+[32m[K1816[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kvalidate(data):
+[32m[K1850[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(x: X) -> Iterable[Y]:
+[32m[K1861[m[K[36m[K:[m[K[01;31m[Kdef [m[Kfilter_map_value(
+[32m[K1881[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kto_even_str(val):
+[32m[K1913[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(v: V) -> Iterable[W]:
+[32m[K1930[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_item(self, value: V) -> Tuple[Iterable[S], bool]:
+[32m[K1935[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_eof(self) -> Tuple[Iterable[S], bool]:
+[32m[K1940[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksnapshot(self) -> S:
+[32m[K1945[m[K[36m[K:[m[K[01;31m[Kdef [m[Kfold_final(
+[32m[K1972[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kbuild_accumulator():
+[32m[K1975[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kfolder(acc, val):
+[32m[K2010[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_builder(resume_state: Optional[S]) -> _FoldFinalLogic[V, S]:
+[32m[K2017[m[K[36m[K:[m[K[01;31m[Kdef [m[K_default_inspector(step_id: str, item: Any) -> None:
+[32m[K2022[m[K[36m[K:[m[K[01;31m[Kdef [m[Kinspect(
+[32m[K2064[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_inspector(
+[32m[K2080[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kfor_side_count(cls, side_count: int) -> Self:
+[32m[K2083[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kset_val(self, side: int, value: Any) -> None:
+[32m[K2086[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kadd_val(self, side: int, value: Any) -> None:
+[32m[K2089[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kis_set(self, side: int) -> bool:
+[32m[K2092[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kall_set(self) -> bool:
+[32m[K2095[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kastuples(self) -> List[Tuple]:
+[32m[K2102[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kclear(self) -> None:
+[32m[K2106[m[K[36m[K:[m[K    [01;31m[Kdef [m[K__iadd__(self, other: Self) -> Self:
+[32m[K2114[m[K[36m[K:[m[K    [01;31m[Kdef [m[K__ior__(self, other: Self) -> Self:
+[32m[K2165[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_item(self, value: Tuple[int, Any]) -> Tuple[Iterable[Tuple], bool]:
+[32m[K2182[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_eof(self) -> Tuple[Iterable[Tuple], bool]:
+[32m[K2189[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksnapshot(self) -> _JoinState:
+[32m[K2194[m[K[36m[K:[m[K[01;31m[Kdef [m[K_join_label_merge(
+[32m[K2209[m[K[36m[K:[m[K[01;31m[Kdef [m[Kjoin(
+[32m[K2221[m[K[36m[K:[m[K[01;31m[Kdef [m[Kjoin(
+[32m[K2234[m[K[36m[K:[m[K[01;31m[Kdef [m[Kjoin(
+[32m[K2248[m[K[36m[K:[m[K[01;31m[Kdef [m[Kjoin(
+[32m[K2259[m[K[36m[K:[m[K[01;31m[Kdef [m[Kjoin(
+[32m[K2271[m[K[36m[K:[m[K[01;31m[Kdef [m[Kjoin(
+[32m[K2284[m[K[36m[K:[m[K[01;31m[Kdef [m[Kjoin(
+[32m[K2298[m[K[36m[K:[m[K[01;31m[Kdef [m[Kjoin(
+[32m[K2307[m[K[36m[K:[m[K[01;31m[Kdef [m[Kjoin(
+[32m[K2316[m[K[36m[K:[m[K[01;31m[Kdef [m[Kjoin(
+[32m[K2325[m[K[36m[K:[m[K[01;31m[Kdef [m[Kjoin(
+[32m[K2362[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_builder(
+[32m[K2376[m[K[36m[K:[m[K[01;31m[Kdef [m[Kkey_on(step_id: str, up: Stream[X], key: Callable[[X], str]) -> KeyedStream[X]:
+[32m[K2425[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(x: X) -> Tuple[str, X]:
+[32m[K2440[m[K[36m[K:[m[K[01;31m[Kdef [m[Kkey_rm(step_id: str, up: KeyedStream[X]) -> Stream[X]:
+[32m[K2490[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(k_v: Tuple[str, X]) -> X:
+[32m[K2498[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmap(  # noqa: A001
+[32m[K2519[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kadd_one(item):
+[32m[K2551[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(xs: List[X]) -> Iterable[Y]:
+[32m[K2558[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmap_value(
+[32m[K2601[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(k_v: Tuple[str, V]) -> Tuple[str, W]:
+[32m[K2610[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmax_final(
+[32m[K2617[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmax_final(
+[32m[K2625[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmax_final(
+[32m[K2678[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmin_final(
+[32m[K2685[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmin_final(
+[32m[K2693[m[K[36m[K:[m[K[01;31m[Kdef [m[Kmin_final(
+[32m[K2750[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kwrite_batch(self, items: List[Any]) -> None:
+[32m[K2761[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kbuild(
+[32m[K2768[m[K[36m[K:[m[K[01;31m[Kdef [m[Kraises(
+[32m[K2784[m[K[36m[K:[m[K[01;31m[Kdef [m[Kreduce_final(
+[32m[K2836[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kpre_reducer(mixed_batch: List[Tuple[str, V]]) -> Iterable[Tuple[str, V]]:
+[32m[K2849[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_folder(s: V, v: V) -> V:
+[32m[K2867[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kon_item(self, value: V) -> Tuple[Iterable[W], bool]:
+[32m[K2888[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksnapshot(self) -> S:
+[32m[K2894[m[K[36m[K:[m[K[01;31m[Kdef [m[Kstateful_flat_map(
+[32m[K2914[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_builder(resume_state: Optional[S]) -> _StatefulFlatMapLogic[V, W, S]:
+[32m[K2921[m[K[36m[K:[m[K[01;31m[Kdef [m[Kstateful_map(
+[32m[K2952[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kcheck(running_count, _item):
+[32m[K2991[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kshim_mapper(state: Optional[S], v: V) -> Tuple[Optional[S], Iterable[W]]:
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# sed -n '2921,3000p' /usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py
+[?2004ldef stateful_map(
+    step_id: str,
+    up: KeyedStream[V],
+    mapper: Callable[[Optional[S], V], Tuple[Optional[S], W]],
+) -> KeyedStream[W]:
+    """Transform values one-to-one, referencing a persistent state.
+
+    It is commonly used for:
+
+    - Anomaly detection
+
+    - State machines
+
+    ```{testcode}
+    import bytewax.operators as op
+    from bytewax.testing import TestingSource, run_main
+    from bytewax.dataflow import Dataflow
+
+    flow = Dataflow("stateful_map_eg")
+
+    inp = [
+        "a",
+        "a",
+        "a",
+        "b",
+        "a",
+    ]
+    s = op.input("inp", flow, TestingSource(inp))
+
+    s = op.key_on("self_as_key", s, lambda x: x)
+
+    def check(running_count, _item):
+        if running_count is None:
+            running_count = 0
+        running_count += 1
+        return (running_count, running_count)
+
+    s = op.stateful_map("running_count", s, check)
+    _ = op.inspect("out", s)
+    ```
+
+    ```{testcode}
+    :hide:
+
+    from bytewax.testing import run_main
+
+    run_main(flow)
+    ```
+
+    ```{testoutput}
+    stateful_map_eg.out: ('a', 1)
+    stateful_map_eg.out: ('a', 2)
+    stateful_map_eg.out: ('a', 3)
+    stateful_map_eg.out: ('b', 1)
+    stateful_map_eg.out: ('a', 4)
+    ```
+
+    :arg step_id: Unique ID.
+
+    :arg up: Keyed stream.
+
+    :arg mapper: Called whenever a value is encountered from upstream
+        with the last state or `None`, and then the upstream value.
+        Should return a 2-tuple of `(updated_state, emit_value)`. If
+        the updated state is `None`, discard it.
+
+    :returns: A keyed stream.
+
+    """
+
+    def shim_mapper(state: Optional[S], v: V) -> Tuple[Optional[S], Iterable[W]]:
+        res = mapper(state, v)
+        try:
+            s, w = res
+        except TypeError as ex:
+            msg = (
+                f"return value of `mapper` {f_repr(mapper)} "
+                f"in step {step_id!r} "
+                "must be a 2-tuple of `(updated_state, emit_value)`; "
+                f"got a {type(res)!r} instead"
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'def run\|run_main' /usr/local/lib/python3.12/dist-packages/bytewax/execution.py
+[?2004lgrep: /usr/local/lib/python3.12/dist-packages/bytewax/execution.py: No such file or directory
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# find /usr/local/lib/python3.12/dist-packages/bytewax -name '*.py' | xargs grep -l 'def run_main' 2>/dev/null
+[?2004l[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cat /usr/local/lib/python3.12/dist-packages/bytewax/run.py | head -100
+[?2004l"""Executing dataflows and the Bytewax runtime.
+
+Dataflows are run for local development or production by executing
+this module as as script with `python -m bytewax.run`.
+
+See `python -m bytewax.run --help` for more info.
+
+If you need to execute a dataflow as part of running unit tests, see
+{py:obj}`bytewax.testing`.
+
+"""
+
+import argparse
+import ast
+import inspect
+import os
+import sys
+from datetime import timedelta
+from pathlib import Path
+from typing import Tuple
+
+from bytewax._bytewax import cli_main
+from bytewax.recovery import RecoveryConfig
+
+__all__ = [
+    "cli_main",
+]
+
+
+def _locate_dataflow(module_name, dataflow_name):
+    """Import a module and try to find a Dataflow within it.
+
+    Check if the given string is a variable name or a function.
+    Call a function to get the dataflow instance, or return the
+    variable directly.
+
+    This is adapted from Flask's codebase.
+    """
+    from bytewax.dataflow import Dataflow
+
+    try:
+        __import__(module_name)
+    except ImportError as ex:
+        # Reraise the ImportError if it occurred within the imported module.
+        # Determine this by checking whether the trace has a depth > 1.
+        if ex.__traceback__ is not None:
+            raise
+        else:
+            msg = f"Could not import {module_name!r}."
+            raise ImportError(msg) from None
+
+    module = sys.modules[module_name]
+
+    # Parse dataflow_name as a single expression to determine if it's a valid
+    # attribute name or function call.
+    try:
+        expr = ast.parse(dataflow_name.strip(), mode="eval").body
+    except SyntaxError:
+        msg = f"Failed to parse {dataflow_name!r} as an attribute name or function call"
+        raise SyntaxError(msg) from None
+
+    if isinstance(expr, ast.Name):
+        name = expr.id
+        args = []
+        kwargs = {}
+    elif isinstance(expr, ast.Call):
+        # Ensure the function name is an attribute name only.
+        if not isinstance(expr.func, ast.Name):
+            msg = f"Function reference must be a simple name: {dataflow_name!r}."
+            raise TypeError(msg)
+
+        name = expr.func.id
+
+        # Parse the positional and keyword arguments as literals.
+        try:
+            args = [ast.literal_eval(arg) for arg in expr.args]
+            kwargs = {str(kw.arg): ast.literal_eval(kw.value) for kw in expr.keywords}
+        except ValueError:
+            # literal_eval gives cryptic error messages, show a generic
+            # message with the full expression instead.
+            msg = f"Failed to parse arguments as literal values: {dataflow_name!r}"
+            raise ValueError(msg) from None
+    else:
+        msg = f"Failed to parse {dataflow_name!r} as an attribute name or function call"
+        raise ValueError(msg)
+
+    try:
+        attr = getattr(module, name)
+    except AttributeError as e:
+        msg = f"Failed to find attribute {name!r} in {module.__name__!r}."
+        raise AttributeError(msg) from e
+
+    # If the attribute is a function, call it with any args and kwargs
+    # to get the real application.
+    if inspect.isfunction(attr):
+        try:
+            dataflow = attr(*args, **kwargs)
+        except TypeError as e:
+            if not _called_with_wrong_args(attr):
+                raise
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'def \|argparse\|add_argument' /usr/local/lib/python3.12/dist-packages/bytewax/run.py | head -40
+[?2004l13:import argparse
+30:def _locate_dataflow(module_name, dataflow_name):
+120:def _called_with_wrong_args(f):
+140:class _EnvDefault(argparse.Action):
+143:    def __init__(self, envvar, default=None, **kwargs):
+149:    def __call__(self, parser, namespace, values, option_string=None):
+153:def _prepare_import(import_str: str) -> Tuple[str, str]:
+193:def _parse_timedelta(s):
+197:def _create_arg_parser():
+198:    """Create and return an argparse instance.
+203:    parser = argparse.ArgumentParser(
+206:        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+208:    parser.add_argument(
+216:    recovery = parser.add_argument_group(
+219:    recovery.add_argument(
+228:    parser.add_argument(
+238:    recovery.add_argument(
+250:def _parse_args():
+254:    scaling = arg_parser.add_argument_group(
+259:    scaling.add_argument(
+267:    scaling.add_argument(
+275:    scaling.add_argument(
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'class \|def ' /usr/local/lib/python3.12/dist-packages/bytewax/outputs.py | head -30
+[?2004l19:class Sink(ABC, Generic[X]):  # noqa: B024
+22:    Base class for all output sinks. Do not subclass this.
+24:    If you want to implement a custom connector, instead subclass one
+32:class StatefulSinkPartition(ABC, Generic[X, S]):
+36:    def write_batch(self, values: List[X]) -> None:
+52:    def snapshot(self) -> S:
+69:    def close(self) -> None:
+80:class FixedPartitionedSink(Sink[Tuple[str, X]], Generic[X, S]):
+90:    def list_parts(self) -> List[str]:
+100:    def part_fn(self, item_key: str) -> int:
+130:    def build_part(
+161:class StatelessSinkPartition(ABC, Generic[X]):
+165:    def write_batch(self, items: List[X]) -> None:
+177:    def close(self) -> None:
+188:class DynamicSink(Sink[X]):
+197:    def build(
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'class \|def ' /usr/local/lib/python3.12/dist-packages/bytewax/connectors/stdio.py
+[?2004l[32m[K10[m[K[36m[K:[m[K[01;31m[Kclass [m[K_PrintSinkPartition(StatelessSinkPartition[Any]):
+[32m[K12[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kwrite_batch(self, items: List[Any]) -> None:
+[32m[K20[m[K[36m[K:[m[K[01;31m[Kclass [m[KStdOutSink(DynamicSink[Any]):
+[32m[K34[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kbuild(
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# sed -n '197,275p' /usr/local/lib/python3.12/dist-packages/bytewax/run.py
+[?2004ldef _create_arg_parser():
+    """Create and return an argparse instance.
+
+    This function returns the parser, as we add options for scaling
+    that are used only for testing in the testing namespace.
+    """
+    parser = argparse.ArgumentParser(
+        prog="python -m bytewax.run",
+        description="Run a bytewax dataflow",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "import_str",
+        type=str,
+        help="Dataflow import string in the format "
+        "<module_name>[:<dataflow_variable_or_factory>] "
+        "Example: src.dataflow or src.dataflow:flow or "
+        "src.dataflow:get_flow('string_argument')",
+    )
+    recovery = parser.add_argument_group(
+        "Recovery", """See the `bytewax.recovery` module docstring for more info."""
+    )
+    recovery.add_argument(
+        "-r",
+        "--recovery-directory",
+        type=Path,
+        help="""Local file system directory to look for pre-initialized recovery
+        partitions; see `python -m bytewax.recovery` for how to init partitions""",
+        action=_EnvDefault,
+        envvar="BYTEWAX_RECOVERY_DIRECTORY",
+    )
+    parser.add_argument(
+        "-s",
+        "--snapshot-interval",
+        type=_parse_timedelta,
+        help="""System time duration in seconds to snapshot state for recovery;
+        on resume, dataflow might need to rewind and replay all the data processed
+        in one of these intervals""",
+        action=_EnvDefault,
+        envvar="BYTEWAX_SNAPSHOT_INTERVAL",
+    )
+    recovery.add_argument(
+        "-b",
+        "--backup-interval",
+        type=_parse_timedelta,
+        help="""System time duration in seconds to keep extra state snapshots around;
+        set this to the interval at which you are backing up recovery partitions""",
+        action=_EnvDefault,
+        envvar="BYTEWAX_RECOVERY_BACKUP_INTERVAL",
+    )
+    return parser
+
+
+def _parse_args():
+    arg_parser = _create_arg_parser()
+
+    # Add scaling arguments for the run namespace
+    scaling = arg_parser.add_argument_group(
+        "Scaling",
+        "You should use either '-w' to spawn multiple workers "
+        "within a process, or '-i/-a' to manage multiple processes",
+    )
+    scaling.add_argument(
+        "-w",
+        "--workers-per-process",
+        type=int,
+        help="Number of workers for each process",
+        action=_EnvDefault,
+        envvar="BYTEWAX_WORKERS_PER_PROCESS",
+    )
+    scaling.add_argument(
+        "-i",
+        "--process-id",
+        type=int,
+        help="Process id",
+        action=_EnvDefault,
+        envvar="BYTEWAX_PROCESS_ID",
+    )
+    scaling.add_argument(
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cat /usr/local/lib/python3.12/dist-packages/bytewax/connectors/stdio.py
+[?2004l"""Connectors to console IO."""
+
+import sys
+from typing import Any, List
+
+from bytewax.outputs import DynamicSink, StatelessSinkPartition
+from typing_extensions import override
+
+
+class _PrintSinkPartition(StatelessSinkPartition[Any]):
+    @override
+    def write_batch(self, items: List[Any]) -> None:
+        for item in items:
+            line = str(item)
+            sys.stdout.write(line)
+            sys.stdout.write("\n")
+        sys.stdout.flush()
+
+
+class StdOutSink(DynamicSink[Any]):
+    """Write each output item to stdout on that worker.
+
+    Items consumed from the dataflow must look like a string. Use a
+    proceeding map step to do custom formatting.
+
+    Workers are the unit of parallelism.
+
+    Can support at-least-once processing. Messages from the resume
+    epoch will be duplicated right after resume.
+
+    """
+
+    @override
+    def build(
+        self, _step_id: str, _worker_index: int, _worker_count: int
+    ) -> _PrintSinkPartition:
+        return _PrintSinkPartition()
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'def ' /usr/local/lib/python3.12/dist-packages/bytewax/testing.py | head -20
+[?2004l44:    def advance(self, td: timedelta) -> None:
+52:    def get(self) -> datetime:
+63:def ffwd_iter(it: Iterator[Any], n: int) -> None:
+78:    def __init__(
+100:    def next_batch(self) -> List[X]:
+140:    def next_awake(self) -> Optional[datetime]:
+144:    def snapshot(self) -> int:
+201:    def __init__(self, ib: Iterable[Union[X, EOF, ABORT, PAUSE]], batch_size: int = 1):
+214:    def list_parts(self):
+218:    def build_part(
+225:    def __init__(self, ls: List[X]):
+229:    def write_batch(self, items: List[X]) -> None:
+245:    def __init__(self, ls: List[X]):
+254:    def build(
+260:def poll_next_batch(part, timeout=timedelta(seconds=5)):
+287:def _unparse_args(args: Dict[str, Any]) -> Iterable[str]:
+298:async def _create_wait_and_check(argv: List[str]) -> None:
+311:async def _testing_cli_main(
+346:def _parse_args():
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# sed -n '40,80p' /usr/local/lib/python3.12/dist-packages/bytewax/testing.py
+[?2004l    """Wrapper to provide a modifyable system clock for unit tests."""
+
+    now: datetime
+
+    def advance(self, td: timedelta) -> None:
+        """Advance the current time.
+
+        :arg td: By this amount.
+
+        """
+        self.now += td
+
+    def get(self) -> datetime:
+        """Return the "current time".
+
+        Use this if you need a getter.
+
+        :returns: The "current time".
+
+        """
+        return self.now
+
+
+def ffwd_iter(it: Iterator[Any], n: int) -> None:
+    """Skip an iterator forward some number of items.
+
+    :arg it: A stateful iterator to advance.
+
+    :arg n: Number of items to skip from the current position.
+
+    """
+    # Taken from `consume`
+    # https://docs.python.org/3/library/itertools.html#itertools-recipes
+    # Apparently faster than a for loop.
+    next(islice(it, n, n), None)
+
+
+class _IterSourcePartition(StatefulSourcePartition[X, int]):
+    def __init__(
+        self,
+        ib: Iterable[
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'run_main\|FileOutput\|class ' /usr/local/lib/python3.12/dist-packages/bytewax/testing.py
+[?2004l[32m[K12[m[K[36m[K:[m[K    [01;31m[Krun_main[m[K,
+[32m[K33[m[K[36m[K:[m[K    "[01;31m[Krun_main[m[K",
+[32m[K39[m[K[36m[K:[m[K[01;31m[Kclass [m[KTimeTestingGetter:
+[32m[K77[m[K[36m[K:[m[K[01;31m[Kclass [m[K_IterSourcePartition(StatefulSourcePartition[X, int]):
+[32m[K148[m[K[36m[K:[m[K[01;31m[Kclass [m[KTestingSource(FixedPartitionedSource[X, int]):
+[32m[K168[m[K[36m[K:[m[K    [01;31m[Kclass [m[KEOF:
+[32m[K180[m[K[36m[K:[m[K    [01;31m[Kclass [m[KABORT:
+[32m[K196[m[K[36m[K:[m[K    [01;31m[Kclass [m[KPAUSE:
+[32m[K224[m[K[36m[K:[m[K[01;31m[Kclass [m[K_ListSinkPartition(StatelessSinkPartition[X]):
+[32m[K233[m[K[36m[K:[m[K[01;31m[Kclass [m[KTestingSink(DynamicSink[X]):
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -rn 'FileOutput\|FileSink\|class .*Sink' /usr/local/lib/python3.12/dist-packages/bytewax/outputs.py
+[?2004l[32m[K19[m[K[36m[K:[m[K[01;31m[Kclass Sink[m[K(ABC, Generic[X]):  # noqa: B024
+[32m[K32[m[K[36m[K:[m[K[01;31m[Kclass StatefulSink[m[KPartition(ABC, Generic[X, S]):
+[32m[K80[m[K[36m[K:[m[K[01;31m[Kclass FixedPartitionedSink(Sink[m[K[Tuple[str, X]], Generic[X, S]):
+[32m[K161[m[K[36m[K:[m[K[01;31m[Kclass StatelessSink[m[KPartition(ABC, Generic[X]):
+[32m[K188[m[K[36m[K:[m[K[01;31m[Kclass DynamicSink(Sink[m[K[X]):
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# sed -n '275,400p' /usr/local/lib/python3.12/dist-packages/bytewax/run.py
+[?2004l    scaling.add_argument(
+        "-a",
+        "--addresses",
+        help="Addresses of other processes, separated by semicolon:\n"
+        '-a "localhost:2021;localhost:2022;localhost:2023" ',
+        action=_EnvDefault,
+        envvar="BYTEWAX_ADDRESSES",
+    )
+
+    args = arg_parser.parse_args()
+
+    # First of all check if a process_id was set with a different
+    # env var, used in the helm chart for deploy
+    env = os.environ
+    if args.process_id is None:
+        if "BYTEWAX_POD_NAME" in env and "BYTEWAX_STATEFULSET_NAME" in env:
+            args.process_id = int(
+                env["BYTEWAX_POD_NAME"].replace(
+                    env["BYTEWAX_STATEFULSET_NAME"] + "-", ""
+                )
+            )
+
+    # If process_id is set, check if the addresses parameter is correctly set.
+    # Again, we check for a different env var that can be used by the helm chart,
+    # which specifies a file with host addresses. We read the file and populate
+    # the argument if needed.
+    # Not using else since we might have modified the condition inside the first if.
+    if args.process_id is not None and args.addresses is None:
+        if "BYTEWAX_HOSTFILE_PATH" in env:
+            with open(env["BYTEWAX_HOSTFILE_PATH"]) as hostfile:
+                args.addresses = ";".join(
+                    [address.strip() for address in hostfile if address.strip()]
+                )
+        else:
+            arg_parser.error(
+                "the addresses option is required if a process_id is passed"
+            )
+
+    # If recovery is configured, make sure that the snapshot_interval and
+    # backup_interval are set.
+    if args.recovery_directory is not None and (
+        args.snapshot_interval is None or args.backup_interval is None
+    ):
+        arg_parser.error(
+            "when running with recovery, the `-s/--snapshot_interval` and "
+            "`-b/--backup_interval` values must be set. For more information "
+            "about setting these values, please see "
+            "https://bytewax.io/docs/concepts/recovery."
+        )
+
+    return args
+
+
+if __name__ == "__main__":
+    kwargs = vars(_parse_args())
+    snapshot_interval = kwargs.pop("snapshot_interval")
+
+    recovery_directory, backup_interval = (
+        kwargs.pop("recovery_directory"),
+        kwargs.pop("backup_interval"),
+    )
+    kwargs["recovery_config"] = None
+    if recovery_directory is not None:
+        kwargs["epoch_interval"] = snapshot_interval
+        kwargs["recovery_config"] = RecoveryConfig(recovery_directory, backup_interval)
+    else:
+        # Default epoch interval if there is no recovery setup. Since
+        # there's no recovery, this needs not be coordinated with
+        # anything else.
+        kwargs["epoch_interval"] = snapshot_interval or timedelta(seconds=10)
+
+    # Prepare addresses
+    addresses = kwargs.pop("addresses")
+    if addresses is not None:
+        kwargs["addresses"] = addresses.split(";")
+
+    # Import the dataflow
+    mod_str, attr_str = _prepare_import(kwargs.pop("import_str"))
+    kwargs["flow"] = _locate_dataflow(mod_str, attr_str)
+
+    cli_main(**kwargs)
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'def input\|ManualSource\|class' /usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py | head -10
+[?2004l12:from dataclasses import dataclass, field
+95:@dataclass(frozen=True)
+96:class BranchOut(Generic[X, Y]):
+241:def input(  # noqa: A001
+593:class StatefulBatchLogic(ABC, Generic[V, W, S]):
+594:    r"""Abstract class to define a {py:obj}`stateful` operator.
+605:    class SumLogic(StatefulBatchLogic):
+783:        other functions in this class might be able to mutate the
+812:    class SumLogic(StatefulBatchLogic):
+896:    Subclass {py:obj}`StatefulBatchLogic` to define its behavior. See
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# sed -n '186,290p' /usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py
+[?2004l
+    ```{testcode}
+    from bytewax.dataflow import Dataflow
+    import bytewax.operators as op
+    from bytewax.testing import TestingSource
+
+    flow = Dataflow("flat_map_batch_eg")
+    numbers = numbers = op.input("nums", flow, TestingSource([[1, 2], [3]]))
+
+    def batch_mapper(batch):
+        return [x * 10 for x in batch]
+
+    flat_mapped = op.flat_map_batch("batch_flat_map", numbers, batch_mapper)
+
+    op.inspect("out", flat_mapped)
+    ```
+
+    ```{testcode}
+    :hide:
+
+    from bytewax.testing import run_main
+
+    run_main(flow)
+    ```
+
+    ```{testoutput}
+    flat_map_batch_eg.out: [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2]
+    flat_map_batch_eg.out: [3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+    ```
+
+    The batch size received here depends on the exact behavior of the
+    upstream input sources and operators. It should be used as a
+    performance optimization when processing multiple items at once
+    has much reduced overhead.
+
+    See also the `batch_size` parameter on various input sources.
+
+    See also the {py:obj}`collect` operator, which collects multiple
+    items next to each other in a stream into a single list of them
+    flowing through the stream.
+
+    :arg step_id: Unique ID.
+
+    :arg up: Stream.
+
+    :arg mapper: Called once with each batch of items the runtime
+        receives. Returns the items to emit downstream.
+
+    :returns: A stream of each item returned by the mapper.
+
+    """
+    return Stream(f"{up._scope.parent_id}.down", up._scope)
+
+
+@operator(_core=True)
+def input(  # noqa: A001
+    step_id: str,
+    flow: Dataflow,
+    source: Source[X],
+) -> Stream[X]:
+    """Introduce items into a dataflow.
+
+    ```{testcode}
+    from bytewax.dataflow import Dataflow
+    import bytewax.operators as op
+    from bytewax.testing import TestingSource
+
+    flow = Dataflow("input_eg")
+    nums = op.input("nums", flow, TestingSource([10, 20, 30]))
+    op.inspect("out", nums)
+    ```
+
+    ```{testcode}
+    :hide:
+    from bytewax.testing import run_main
+
+    run_main(flow)
+    ```
+
+    ```{testoutput}
+    input_eg.out: 10
+    input_eg.out: 20
+    input_eg.out: 30
+    ```
+
+    See {py:obj}`bytewax.inputs` for more information on how input
+    works. See {py:obj}`bytewax.connectors` for a buffet of our
+    built-in connector types.
+
+    :arg step_id: Unique ID.
+
+    :arg flow: The dataflow.
+
+    :arg source: To read items from.
+
+    :returns: A stream of items from the source. See your specific
+        {py:obj}`~bytewax.inputs.Source` documentation for what kind
+        of item that is.
+
+        This stream might be keyed. See your specific
+        {py:obj}`~bytewax.inputs.Source`.
+
+    """
+    return Stream(f"{flow._scope.parent_id}.down", flow._scope)
+
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'def run_main' /usr/local/lib/python3.12/dist-packages/bytewax/testing.py
+[?2004l[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -A 20 'def run_main' /usr/local/lib/python3.12/dist-packages/bytewax/testing.py
+[?2004l[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -rn 'def run_main' /usr/local/lib/python3.12/dist-packages/bytewax/
+[?2004l[35m[K/usr/local/lib/python3.12/dist-packages/bytewax/_bytewax.pyi[m[K[36m[K:[m[K[32m[K164[m[K[36m[K:[m[K[01;31m[Kdef run_main[m[K(flow, *, epoch_interval=None, recovery_config=None):
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# head -40 /usr/local/lib/python3.12/dist-packages/bytewax/testing.py
+[?2004l"""Helper tools for testing dataflows."""
+
+import asyncio
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from itertools import islice
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Union
+
+from bytewax._bytewax import (
+    cluster_main,
+    run_main,
+)
+from bytewax.inputs import (
+    AbortExecution,
+    FixedPartitionedSource,
+    StatefulSourcePartition,
+    X,
+)
+from bytewax.outputs import DynamicSink, StatelessSinkPartition
+from bytewax.run import (
+    _create_arg_parser,
+    _EnvDefault,
+)
+from typing_extensions import override
+
+__all__ = [
+    "TestingSink",
+    "TestingSource",
+    "TimeTestingGetter",
+    "ffwd_iter",
+    "poll_next_batch",
+    "run_main",
+    "cluster_main",
+]
+
+
+@dataclass
+class TimeTestingGetter:
+    """Wrapper to provide a modifyable system clock for unit tests."""
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -B 1 -A 10 'def run_main' /usr/local/lib/python3.12/dist-packages/bytewax/_bytewax.pyi
+[?2004l
+[01;31m[Kdef run_main[m[K(flow, *, epoch_interval=None, recovery_config=None):
+    """Execute a dataflow in the current thread.
+
+    Blocks until execution is complete.
+
+    This is only used for unit testing. See `bytewax.run`.
+
+    ```{testcode}
+    from bytewax.dataflow import Dataflow
+    import bytewax.operators as op
+    from bytewax.testing import TestingSource, run_main
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cat /home/user/graph_pipeline/input_edges.jsonl
+[?2004l{"u": "A", "v": "B"}
+{"u": "B", "v": "C"}
+{"u": "A", "v": "C"}
+{"u": "D", "v": "E"}
+{"u": "C", "v": "E"}
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'class \|def ' /usr/local/lib/python3.12/dist-packages/bytewax/connectors/files.py
+[?2004l[32m[K14[m[K[36m[K:[m[K[01;31m[Kdef [m[K_get_path_dev(path: Path) -> str:
+[32m[K18[m[K[36m[K:[m[K[01;31m[Kdef [m[K_readlines(f) -> Iterator[str]:
+[32m[K33[m[K[36m[K:[m[K[01;31m[Kdef [m[K_strip_n(s: str) -> str:
+[32m[K37[m[K[36m[K:[m[K[01;31m[Kclass [m[K_FileSourcePartition(StatefulSourcePartition[str, int]):
+[32m[K38[m[K[36m[K:[m[K    [01;31m[Kdef [m[K__init__(self, path: Path, batch_size: int, resume_state: Optional[int]):
+[32m[K46[m[K[36m[K:[m[K    [01;31m[Kdef [m[Knext_batch(self) -> List[str]:
+[32m[K50[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksnapshot(self) -> int:
+[32m[K54[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kclose(self) -> None:
+[32m[K58[m[K[36m[K:[m[K[01;31m[Kclass [m[KDirSource(FixedPartitionedSource[str, int]):
+[32m[K75[m[K[36m[K:[m[K    [01;31m[Kdef [m[K__init__(
+[32m[K118[m[K[36m[K:[m[K    [01;31m[Kdef [m[Klist_parts(self) -> List[str]:
+[32m[K128[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kbuild_part(
+[32m[K136[m[K[36m[K:[m[K[01;31m[Kclass [m[KFileSource(FixedPartitionedSource[str, int]):
+[32m[K151[m[K[36m[K:[m[K    [01;31m[Kdef [m[K__init__(
+[32m[K185[m[K[36m[K:[m[K    [01;31m[Kdef [m[Klist_parts(self) -> List[str]:
+[32m[K192[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kbuild_part(
+[32m[K202[m[K[36m[K:[m[K[01;31m[Kclass [m[K_CSVPartition(StatefulSourcePartition[Dict[str, str], int]):
+[32m[K203[m[K[36m[K:[m[K    [01;31m[Kdef [m[K__init__(
+[32m[K219[m[K[36m[K:[m[K    [01;31m[Kdef [m[Knext_batch(self) -> List[Dict[str, str]]:
+[32m[K223[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksnapshot(self) -> int:
+[32m[K227[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kclose(self) -> None:
+[32m[K231[m[K[36m[K:[m[K[01;31m[Kclass [m[KCSVSource(FixedPartitionedSource[Dict[str, str], int]):
+[32m[K277[m[K[36m[K:[m[K    [01;31m[Kdef [m[K__init__(
+[32m[K308[m[K[36m[K:[m[K    [01;31m[Kdef [m[Klist_parts(self) -> List[str]:
+[32m[K312[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kbuild_part(self, step_id: str, for_part: str, resume_state: Optional[Any]):
+[32m[K325[m[K[36m[K:[m[K[01;31m[Kclass [m[K_FileSinkPartition(StatefulSinkPartition[str, int]):
+[32m[K326[m[K[36m[K:[m[K    [01;31m[Kdef [m[K__init__(self, path: Path, resume_state: Optional[int], end: str):
+[32m[K334[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kwrite_batch(self, values: List[str]) -> None:
+[32m[K342[m[K[36m[K:[m[K    [01;31m[Kdef [m[Ksnapshot(self) -> int:
+[32m[K346[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kclose(self) -> None:
+[32m[K350[m[K[36m[K:[m[K[01;31m[Kclass [m[KDirSink(FixedPartitionedSink[str, int]):
+[32m[K368[m[K[36m[K:[m[K    [01;31m[Kdef [m[K__init__(
+[32m[K404[m[K[36m[K:[m[K    [01;31m[Kdef [m[Klist_parts(self) -> List[str]:
+[32m[K408[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kpart_fn(self, item_key: str) -> int:
+[32m[K412[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kbuild_part(
+[32m[K419[m[K[36m[K:[m[K[01;31m[Kclass [m[KFileSink(FixedPartitionedSink[str, int]):
+[32m[K436[m[K[36m[K:[m[K    [01;31m[Kdef [m[K__init__(self, path: Path, end: str = "\n"):
+[32m[K449[m[K[36m[K:[m[K    [01;31m[Kdef [m[Klist_parts(self) -> List[str]:
+[32m[K453[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kpart_fn(self, item_key: str) -> int:
+[32m[K457[m[K[36m[K:[m[K    [01;31m[Kdef [m[Kbuild_part(
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# sed -n '180,300p' /usr/local/lib/python3.12/dist-packages/bytewax/connectors/files.py
+[?2004l        if "::" in self._fs_id:
+            msg = f"result of `get_fs_id` must not contain `::`; got {self._fs_id!r}"
+            raise ValueError(msg)
+
+    @override
+    def list_parts(self) -> List[str]:
+        if self._path.exists():
+            return [f"{self._fs_id}::{self._path}"]
+        else:
+            return []
+
+    @override
+    def build_part(
+        self, step_id: str, for_part: str, resume_state: Optional[int]
+    ) -> _FileSourcePartition:
+        _fs_id, path = for_part.split("::", 1)
+        # TODO: Warn and return None. Then we could support
+        # continuation from a different file.
+        assert path == str(self._path), "Can't resume reading from different file"
+        return _FileSourcePartition(self._path, self._batch_size, resume_state)
+
+
+class _CSVPartition(StatefulSourcePartition[Dict[str, str], int]):
+    def __init__(
+        self,
+        path: Path,
+        batch_size: int,
+        resume_state: Optional[int],
+        fmtparams: Dict[str, Any],
+    ):
+        self._f = open(path, "rt", newline="")
+        reader = DictReader(_readlines(self._f), **fmtparams)
+        # Force reading of the header.
+        _ = reader.fieldnames
+        if resume_state is not None:
+            self._f.seek(resume_state)
+        self._batcher = batch(reader, batch_size)
+
+    @override
+    def next_batch(self) -> List[Dict[str, str]]:
+        return next(self._batcher)
+
+    @override
+    def snapshot(self) -> int:
+        return self._f.tell()
+
+    @override
+    def close(self) -> None:
+        self._f.close()
+
+
+class CSVSource(FixedPartitionedSource[Dict[str, str], int]):
+    """Read a path as a CSV file row-by-row as keyed-by-column dicts.
+
+    The path must exist on at least one worker. Each worker can have a
+    unique file at the path if each worker mounts a distinct
+    filesystem. Tries to read only one instance of each unique file in
+    the whole cluster by deduplicating paths by filesystem ID. See
+    `get_fs_id` argument to adjust this.
+
+    Unique files are the unit of parallelism; only one worker will
+    read each unique file. Thus, lines from different files are
+    interleaved.
+
+    Sample input:
+
+    ```
+    index,timestamp,value,instance
+    0,2022-02-24 11:42:08,0.132,24ae8d
+    0,2022-02-24 11:42:08,0.066,c6585a
+    0,2022-02-24 11:42:08,42.652,ac20cd
+    ```
+
+    Sample output:
+
+    ```json
+    {
+        "index": "0",
+        "timestamp": "2022-02-24 11:42:08",
+        "value": "0.132",
+        "instance": "24ae8d",
+    }
+    {
+        "index": "0",
+        "timestamp": "2022-02-24 11:42:08",
+        "value": "0.066",
+        "instance": "c6585a",
+    }
+    {
+        "index": "0",
+        "timestamp": "2022-02-24 11:42:08",
+        "value": "42.652",
+        "instance": "ac20cd",
+    }
+    ```
+    """
+
+    def __init__(
+        self,
+        path: Path,
+        batch_size: int = 1000,
+        get_fs_id: Callable[[Path], str] = _get_path_dev,
+        **fmtparams,
+    ):
+        """Init.
+
+        :arg path: Path to file.
+
+        :arg batch_size: Number of lines to read per batch. Defaults
+            to 1000.
+
+        :arg get_fs_id: Called with the parent directory and must
+            return a consistent (across workers and restarts) unique
+            ID for the filesystem of that directory. Defaults to using
+            {py:obj}`os.stat_result.st_dev`.
+
+            If you know all workers have access to identical files,
+            you can have this return a constant: `lambda _dir:
+            "SHARED"`.
+
+        :arg **fmtparams: Any custom formatting arguments you can pass
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# sed -n '325,460p' /usr/local/lib/python3.12/dist-packages/bytewax/connectors/files.py
+[?2004lclass _FileSinkPartition(StatefulSinkPartition[str, int]):
+    def __init__(self, path: Path, resume_state: Optional[int], end: str):
+        resume_offset = 0 if resume_state is None else resume_state
+        self._f = open(path, "at")
+        self._f.seek(resume_offset)
+        self._f.truncate()
+        self._end = end
+
+    @override
+    def write_batch(self, values: List[str]) -> None:
+        for value in values:
+            self._f.write(value)
+            self._f.write(self._end)
+        self._f.flush()
+        os.fsync(self._f.fileno())
+
+    @override
+    def snapshot(self) -> int:
+        return self._f.tell()
+
+    @override
+    def close(self) -> None:
+        self._f.close()
+
+
+class DirSink(FixedPartitionedSink[str, int]):
+    """Write to a set of files in a filesystem directory line-by-line.
+
+    Items consumed from the dataflow must look like two-tuples of
+    `(key, value)`, where the value must look like a string. Use a
+    proceeding map step to do custom formatting.
+
+    The directory must exist and contain identical data on all
+    workers, so either run on a single machine or use a shared mount.
+
+    Individual files are the unit of parallelism.
+
+    Can support exactly-once processing in a batch context. Each file
+    will be truncated during resume so duplicates are
+    prevented. Tailing the output files will result in undefined
+    behavior.
+    """
+
+    def __init__(
+        self,
+        dir_path: Path,
+        file_count: int,
+        file_namer: Callable[[int, int], str] = lambda i, _n: f"part_{i}",
+        assign_file: Callable[[str], int] = lambda k: adler32(k.encode()),
+        end: str = "\n",
+    ):
+        """Init.
+
+        :arg dir_path: Path to directory.
+
+        :arg file_count: Number of separate partition files to create.
+
+        :arg file_namer: Will be called with two arguments, the file
+            index and total file count, and must return the file name
+            to use for that file partition. Defaults to naming files
+            like `"part_{i}"`, where `i` is the file index.
+
+        :arg assign_file: Will be called with the key of each consumed
+            item and must return the file index the value will be
+            written to. Will wrap to the file count if you return a
+            larger value. Defaults to calling {py:obj}`zlib.adler32`
+            as a simple globally-consistent hash.
+
+        :arg end: String to write after each item. Defaults to
+            newline.
+
+        """
+        self._dir_path = dir_path
+        self._file_count = file_count
+        self._file_namer = file_namer
+        self._assign_file = assign_file
+        self._end = end
+
+    @override
+    def list_parts(self) -> List[str]:
+        return [self._file_namer(i, self._file_count) for i in range(self._file_count)]
+
+    @override
+    def part_fn(self, item_key: str) -> int:
+        return self._assign_file(item_key)
+
+    @override
+    def build_part(
+        self, step_id: str, for_part: str, resume_state: Optional[int]
+    ) -> _FileSinkPartition:
+        path = self._dir_path / for_part
+        return _FileSinkPartition(path, resume_state, self._end)
+
+
+class FileSink(FixedPartitionedSink[str, int]):
+    """Write to a single file line-by-line on the filesystem.
+
+    Items consumed from the dataflow must look like a string. Use a
+    proceeding map step to do custom formatting.
+
+    The file must exist and be identical on all workers.
+
+    There is no parallelism; only one worker will actually write to
+    the file.
+
+    Can support exactly-once processing in a batch context. The file
+    will be truncated during resume so duplicates are
+    prevented. Tailing the output file will result in undefined
+    behavior.
+    """
+
+    def __init__(self, path: Path, end: str = "\n"):
+        """Init.
+
+        :arg path: Path to file.
+
+        :arg end: String to write after each item. Defaults to
+            newline.
+
+        """
+        self._path = path
+        self._end = end
+
+    @override
+    def list_parts(self) -> List[str]:
+        return [str(self._path)]
+
+    @override
+    def part_fn(self, item_key: str) -> int:
+        return 0
+
+    @override
+    def build_part(
+        self, step_id: str, for_part: str, resume_state: Optional[int]
+    ) -> _FileSinkPartition:
+        # TODO: Warn and return None. Then we could support
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cat /usr/local/lib/python3.12/dist-packages/bytewax/recovery.py
+[?2004l"""Failure recovery."""
+
+import argparse
+from pathlib import Path
+
+from bytewax._bytewax import (
+    InconsistentPartitionsError,
+    MissingPartitionsError,
+    NoPartitionsError,
+    RecoveryConfig,
+    init_db_dir,
+)
+
+__all__ = [
+    "InconsistentPartitionsError",
+    "NoPartitionsError",
+    "MissingPartitionsError",
+    "RecoveryConfig",
+    "init_db_dir",
+]
+
+
+def _parse_args():
+    parser = argparse.ArgumentParser(
+        prog="python -m bytewax.recovery",
+        description="Create and init a set of empty recovery partitions.",
+        epilog="""See the `bytewax.recovery` module docstring for more
+        info.""",
+    )
+    parser.add_argument(
+        "db_dir",
+        type=Path,
+        help="Local directory to create partitions in",
+    )
+    parser.add_argument(
+        "part_count",
+        type=int,
+        help="Number of partitions to create",
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = _parse_args()
+    init_db_dir(args.db_dir, args.part_count)
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cat > /home/user/graph_pipeline/pipeline.py << 'EOF'
+[?2004l[?2004h> """Bytewax dataflow for streaming connected components with Union-Find.
+[?2004l[?2004h> 
+[?2004l[?2004h> Reads edges from a JSONL file, maintains a global Union-Find structure
+[?2004l[?2004h> in a single stateful partition, and emits per-edge events describing
+[?2004l[?2004h> whether the edge was already in the same component or produced a merge.
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import json
+[?2004l[?2004h> import os
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> from typing import Any, Dict, Iterable, List, Optional, Tuple
+[?2004l[?2004h> 
+[?2004l[?2004h> from bytewax.connectors.files import FileSink, FileSource
+[?2004l[?2004h> from bytewax.dataflow import Dataflow
+[?2004l[?2004h> import bytewax.operators as op
+[?2004l[?2004h> 
+[?2004l[?2004h> # ---------------------------------------------------------------------------
+[?2004l[?2004h> # Constants
+[?2004l[?2004h> # ---------------------------------------------------------------------------
+[?2004l[?2004h> 
+[?2004ln[?2004h> GRAPH_DIR = Path("/home/user/graph_pipeline")
+[?2004l[?2004h> INPUT_PATH = GRAPH_DIR / "input_edges.jsonl"
+[?2004l[?2004h> RUN_ID_PATH = Path("/logs/artifacts/run-id")
+[?2004l[?2004h> 
+[?2004l[?2004h> # All edges get the same key so they are routed to a single stateful
+[?2004l[?2004h> # partition, which is necessary because Union-Find needs a global view.
+[?2004l[?2004h> PARTITION_KEY = "global"
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> # ---------------------------------------------------------------------------
+[?2004l[?2004h> # Union-Find state
+[?2004l[?2004h> # ---------------------------------------------------------------------------
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> class UnionFind:
+[?2004l[?2004h>     """Disjoint set data structure with path compression and union by size.
+[?2004l[?2004h> 
+[?2004l[?2004h>     The state is held in two plain dicts so the entire structure is fully
+[?2004l[?2004h>     picklable, which is required by Bytewax's SQLite recovery.
+[?2004l[?2004h>     """
+[?2004l[?2004h> 
+[?2004l[?2004h>     __slots__ = ("_parent", "_size")
+[?2004l[?2004h> 
+[?2004l[?2004h>     def __init__(self) -> None:
+[?2004l[?2004h>         self._parent: Dict[str, str] = {}
+[?2004l[?2004h>         self._size: Dict[str, int] = {}
+[?2004l[?2004h> 
+[?2004l[?2004h>     def _ensure(self, node: str) -> None:
+[?2004l[?2004h>         if node not in self._parent:
+[?2004l[?2004h>             self._parent[node] = node
+[?2004l[?2004h>             self._size[node] = 1
+[?2004l[?2004h> 
+[?2004l[?2004h>     def find(self, node: str) -> str:
+[?2004l[?2004h>         # Walk up to the root.
+[?2004l[?2004h>         root = node
+[?2004l[?2004h>         while self._parent[root] != root:
+[?2004l[?2004h>             root = self._parent[root]
+[?2004l[?2004h>         # Path compression: re-parent every node on the path.
+[?2004l[?2004h>         while self._parent[node] != root:
+[?2004l[?2004h>             nxt = self._parent[node]
+[?2004l[?2004h>             self._parent[node] = root
+[?2004l[?2004h>             node = nxt
+[?2004l[?2004h>         return root
+[?2004l[?2004h> 
+[?2004l[?2004h>     def union(self, a: str, b: str) -> Tuple[bool, int]:
+[?2004l[?2004h>         """Merge components containing ``a`` and ``b``.
+[?2004l[?2004h> 
+[?2004l[?2004h>         Returns ``(merged, new_component_size)``.
+[?2004l[?2004h>         """
+[?2004l[?2004h>         self._ensure(a)
+[?2004l[?2004h>         self._ensure(b)
+[?2004l[?2004h>         ra = self.find(a)
+[?2004l[?2004h>         rb = self.find(b)
+[?2004l[?2004h>         if ra == rb:
+[?2004l[?2004h>             return False, self._size[ra]
+[?2004l[?2004h>         # Union by size: attach the smaller tree under the larger root.
+[?2004l[?2004h>         if self._size[ra] < self._size[rb]:
+[?2004l[?2004h>             ra, rb = rb, ra
+[?2004l[?2004h>         self._parent[rb] = ra
+[?2004l[?2004h>         self._size[ra] += self._size[rb]
+[?2004l[?2004h>         # Drop the size entry of the absorbed root to keep the state tidy.
+[?2004l[?2004h>         self._size.pop(rb, None)
+[?2004l[?2004h>         return True, self._size[ra]
+[?2004l[?2004h> 
+[?2004l[?2004h>     def component_size(self, node: str) -> int:
+[?2004l[?2004h>         self._ensure(node)
+[?2004l[?2004h>         return self._size[self.find(node)]
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> # ---------------------------------------------------------------------------
+[?2004l[?2004h> # Stream processing
+[?2004l[?2004h> # ---------------------------------------------------------------------------
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_edge(line: str) -> Dict[str, str]:
+[?2004l[?2004h>     """Parse a single JSONL line into an ``{"u": ..., "v": ...}`` dict."""
+[?2004l[?2004h>     obj = json.loads(line)
+[?2004l[?2004h>     return {"u": obj["u"], "v": obj["v"]}
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def process_edge(
+[?2004l[?2004h>     state: Optional[UnionFind], edge: Dict[str, str]
+[?2004l[?2004h> ) -> Tuple[UnionFind, Dict[str, Any]]:
+[?2004l[?2004h>     """Update Union-Find with a single edge and produce an event.
+[?2004l[?2004h> 
+[?2004l[?2004h>     Returns ``(updated_state, emitted_event)``. ``emitted_event`` is a dict
+[?2004l[?2004h>     ready to be serialized as JSON.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     if state is None:
+[?2004l[?2004h>         state = UnionFind()
+[?2004l[?2004h> 
+[?2004l[?2004h>     u, v = edge["u"], edge["v"]
+[?2004l[?2004h>     merged, size = state.union(u, v)
+[?2004l[?2004h> 
+[?2004l[?2004h>     if merged:
+[?2004l[?2004h>         event = {
+[?2004l[?2004h>             "u": u,
+[?2004l[?2004h>             "v": v,
+[?2004l[?2004h>             "status": "merged",
+[?2004l[?2004h>             "new_component_size": size,
+[?2004l[?2004h>         }
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         event = {
+[?2004l[?2004h>             "u": u,
+[?2004l[?2004h>             "v": v,
+[?2004l[?2004h>             "status": "already_connected",
+[?2004l[?2004h>             "component_size": size,
+[?2004l[?2004h>         }
+[?2004l[?2004h> 
+[?2004l[?2004h>     return state, event
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def to_json_line(event: Dict[str, Any]) -> str:
+[?2004l[?2004h>     """Serialize an event dict to a single-line JSON string."""
+[?2004l[?2004h>     return json.dumps(event, separators=(",", ":"), sort_keys=False)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> # ---------------------------------------------------------------------------
+[?2004l[?2004h> # Dataflow construction
+[?2004l[?2004h> # ---------------------------------------------------------------------------
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def build_output_path() -> Path:
+[?2004l[?2004h>     """Build the output file path using the current run id."""
+[?2004l[?2004h>     run_id = RUN_ID_PATH.read_text().strip()
+[?2004l[?2004h>     return GRAPH_DIR / f"output_events_{run_id}.jsonl"
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def build_dataflow() -> Tuple[Dataflow, Path]:
+[?2004l[?2004h>     """Build the connected-components dataflow."""
+[?2004l[?2004h>     flow = Dataflow("connected_components")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # 1. Read raw JSONL lines.
+[?2004l[?2004h>     raw = op.input("edges_in", flow, FileSource(INPUT_PATH))
+[?2004l[?2004h> 
+[?2004l[?2004h>     # 2. Parse each line into an {u, v} dict.
+[?2004l[?2004h>     edges = op.map("parse", raw, parse_edge)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # 3. Route every edge to the same keyed partition so that all state
+[?2004l[?2004h>     #    modifications happen on a single instance.
+[?2004l[?2004h>     keyed = op.key_on("single_partition", edges, lambda _e: PARTITION_KEY)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # 4. Maintain Union-Find per partition and emit a status event.
+[?2004l[?2004h>     stateful = op.stateful_map("union_find", keyed, process_edge)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # 5. Drop the key (the underlying FileSink is a FixedPartitionedSink
+[?2004l[?2004h>     #    that expects (key, value) tuples but our output file is single
+[?2004l[?2004h>     #    partitioned so we can just write the values).
+[?2004l[?2004h>     values = op.map_value("drop_key", stateful, to_json_line)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # 6. Write JSON lines to the output file.
+[?2004l[?2004h>     output_path = build_output_path()
+[?2004l[?2004h>     op.output("events_out", values, FileSink(output_path))
+[?2004l[?2004h> 
+[?2004l[?2004h>     return flow, output_path
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> # When executed via `python -m bytewax.run pipeline:get_flow` the CLI
+[?2004l[?2004h> # will import this module and look for a dataflow object exposed by the
+[?2004l[?2004h> # name below. We also support being imported as a library so the dataflow
+[?2004l[?2004h> # can be inspected programmatically.
+[?2004l[?2004h> flow, _OUTPUT_PATH = build_dataflow()
+[?2004l[?2004h> get_flow = lambda: flow
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     # Allow direct invocation for quick debugging; the CLI is preferred
+[?2004l[?2004h>     # for production because it supports recovery and multi-process
+[?2004l[?2004h>     # scaling.
+[?2004l[?2004h>     from bytewax.testing import run_main
+[?2004l[?2004h> 
+[?2004l[?2004h>     flow_local, _ = build_dataflow()
+[?2004l[?2004h>     run_main(flow_local)
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# ls -la /home/user/graph_pipeline/
+[?2004ltotal 12
+drwxr-xr-x 1 root root   33 Jul  3 13:12 [0m[01;34m.[0m
+drwxr-xr-x 1 root root   36 Jul  3 13:10 [01;34m..[0m
+-rw-r--r-- 1 root root  105 Jul  3 13:10 input_edges.jsonl
+-rw-r--r-- 1 root root 6326 Jul  3 13:12 pipeline.py
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# sed -n '450,510p' /usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py
+[?2004ldef output(step_id: str, up: Stream[X], sink: Sink[X]) -> None:
+    """Write items out of a dataflow.
+
+    ```{testcode}
+    from bytewax.dataflow import Dataflow
+    import bytewax.operators as op
+    from bytewax.testing import TestingSource
+    from bytewax.connectors.stdio import StdOutSink
+
+    flow = Dataflow("output_eg")
+    nums = op.input("nums", flow, TestingSource([1, 2, 3]))
+
+    # This will print the items to stdout.
+    # You can replace this with any other sink.
+    op.output("sink", nums, StdOutSink())
+    ```
+
+    ```{testcode}
+    :hide:
+
+    from bytewax.testing import run_main
+
+    run_main(flow)
+    ```
+
+    ```{testoutput}
+    1
+    2
+    3
+    ```
+
+    See {py:obj}`bytewax.outputs` for more information on how output
+    works. See {py:obj}`bytewax.connectors` for a buffet of our
+    built-in connector types.
+
+    :arg step_id: Unique ID.
+
+    :arg up: Stream of items to write. See your specific
+        {py:obj}`~bytewax.outputs.Sink` documentation for the required
+        type of those items.
+
+    :arg sink: Write items to.
+
+    """
+    return None
+
+
+@operator(_core=True)
+def redistribute(step_id: str, up: Stream[X]) -> Stream[X]:
+    """Redistributes data across workers in a Bytewax dataflow.
+
+    The `{py:obj}~bytewax.operators.redistribute` operator is
+    useful for redistributing work to
+    achieve better parallelization in a distributed dataflow.
+    It moves each incoming item to a random worker to balance the workload,
+    especially in cases where a prior step concentrates data on only a
+    few workers, leading to poor utilization of CPU resources across the cluster.
+
+    Bytewax will exchange an item between workers before stateful steps
+    to ensure correctness, but stateless operators like
+    `{py:obj}~bytewax.operators.filter` are run
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# sed -n '450,470p' /usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py
+[?2004ldef output(step_id: str, up: Stream[X], sink: Sink[X]) -> None:
+    """Write items out of a dataflow.
+
+    ```{testcode}
+    from bytewax.dataflow import Dataflow
+    import bytewax.operators as op
+    from bytewax.testing import TestingSource
+    from bytewax.connectors.stdio import StdOutSink
+
+    flow = Dataflow("output_eg")
+    nums = op.input("nums", flow, TestingSource([1, 2, 3]))
+
+    # This will print the items to stdout.
+    # You can replace this with any other sink.
+    op.output("sink", nums, StdOutSink())
+    ```
+
+    ```{testcode}
+    :hide:
+
+    from bytewax.testing import run_main
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cd /home/user/graph_pipeline && python3 pipeline.py 2>&1 | head -50
+[?2004l[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# ls -la /home/user/graph_pipeline/
+[?2004ltotal 16
+drwxr-xr-x 1 root root   75 Jul  3 13:13 [0m[01;34m.[0m
+drwxr-xr-x 1 root root   36 Jul  3 13:10 [01;34m..[0m
+-rw-r--r-- 1 root root  105 Jul  3 13:10 input_edges.jsonl
+-rw-r--r-- 1 root root  302 Jul  3 13:13 output_events_zr7scukw36.jsonl
+-rw-r--r-- 1 root root 6326 Jul  3 13:12 pipeline.py
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# cat /home/user/graph_pipeline/output_events_zr7scukw36.jsonl
+[?2004l{"u":"A","v":"B","status":"merged","new_component_size":2}
+{"u":"B","v":"C","status":"merged","new_component_size":3}
+{"u":"A","v":"C","status":"already_connected","component_size":3}
+{"u":"D","v":"E","status":"merged","new_component_size":2}
+{"u":"C","v":"E","status":"merged","new_component_size":5}
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# rm /home/user/graph_pipeline/output_events_zr7scukw36.jsonl
+[?2004l[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# mkdir -p /tmp/recovery_db && python3 -m bytewax.recovery /tmp/recovery_db 1
+[?2004l[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# ls /tmp/recovery_db
+[?2004lpart-0.sqlite3
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# cd /home/user/graph_pipeline && python3 -m bytewax.run -r /tmp/recovery_db -s 1s -b 1s pipeline:get_flow
+[?2004lusage: python -m bytewax.run [-h] [-r RECOVERY_DIRECTORY] [-s SNAPSHOT_INTERVAL] [-b BACKUP_INTERVAL] [-w WORKERS_PER_PROCESS] [-i PROCESS_ID] [-a ADDRESSES]
+                             import_str
+python -m bytewax.run: error: argument -s/--snapshot-interval: invalid _parse_timedelta value: '1s'
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# sed -n '193,200p' /usr/local/lib/python3.12/dist-packages/bytewax/run.py
+[?2004ldef _parse_timedelta(s):
+    return timedelta(seconds=int(s))
+
+
+def _create_arg_parser():
+    """Create and return an argparse instance.
+
+    This function returns the parser, as we add options for scaling
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# python3 -m bytewax.run -r /tmp/recovery_db -s 1 -b 1 pipeline:get_flow
+[?2004l[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# ls -la /home/user/graph_pipeline/
+[?2004ltotal 16
+drwxr-xr-x 1 root root   98 Jul  3 13:13 [0m[01;34m.[0m
+drwxr-xr-x 1 root root   36 Jul  3 13:10 [01;34m..[0m
+drwxr-xr-x 2 root root   46 Jul  3 13:13 [01;34m__pycache__[0m
+-rw-r--r-- 1 root root  105 Jul  3 13:10 input_edges.jsonl
+-rw-r--r-- 1 root root  302 Jul  3 13:13 output_events_zr7scukw36.jsonl
+-rw-r--r-- 1 root root 6326 Jul  3 13:12 pipeline.py
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# cat /home/user/graph_pipeline/output_events_zr7scukw36.jsonl
+[?2004l{"u":"A","v":"B","status":"merged","new_component_size":2}
+{"u":"B","v":"C","status":"merged","new_component_size":3}
+{"u":"A","v":"C","status":"already_connected","component_size":3}
+{"u":"D","v":"E","status":"merged","new_component_size":2}
+{"u":"C","v":"E","status":"merged","new_component_size":5}
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# cat /home/user/graph_pipeline/pipeline.py | head -50
+[?2004l"""Bytewax dataflow for streaming connected components with Union-Find.
+
+Reads edges from a JSONL file, maintains a global Union-Find structure
+in a single stateful partition, and emits per-edge events describing
+whether the edge was already in the same component or produced a merge.
+"""
+
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from bytewax.connectors.files import FileSink, FileSource
+from bytewax.dataflow import Dataflow
+import bytewax.operators as op
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+GRAPH_DIR = Path("/home/user/graph_pipeline")
+INPUT_PATH = GRAPH_DIR / "input_edges.jsonl"
+RUN_ID_PATH = Path("/logs/artifacts/run-id")
+
+# All edges get the same key so they are routed to a single stateful
+# partition, which is necessary because Union-Find needs a global view.
+PARTITION_KEY = "global"
+
+
+# ---------------------------------------------------------------------------
+# Union-Find state
+# ---------------------------------------------------------------------------
+
+
+class UnionFind:
+    """Disjoint set data structure with path compression and union by size.
+
+    The state is held in two plain dicts so the entire structure is fully
+    picklable, which is required by Bytewax's SQLite recovery.
+    """
+
+    __slots__ = ("_parent", "_size")
+
+    def __init__(self) -> None:
+        self._parent: Dict[str, str] = {}
+        self._size: Dict[str, int] = {}
+
+    def _ensure(self, node: str) -> None:
+        if node not in self._parent:
+            self._parent[node] = node
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# rm -rf /home/user/graph_pipeline/__pycache__ /tmp/recovery_db
+[?2004l[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# rm /home/user/graph_pipeline/output_events_zr7scukw36.jsonl
+[?2004l[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# ls -la /home/user/graph_pipeline/
+[?2004ltotal 12
+drwxr-xr-x 1 root root   33 Jul  3 13:14 [0m[01;34m.[0m
+drwxr-xr-x 1 root root   36 Jul  3 13:10 [01;34m..[0m
+-rw-r--r-- 1 root root  105 Jul  3 13:10 input_edges.jsonl
+-rw-r--r-- 1 root root 6326 Jul  3 13:12 pipeline.py
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# cd /home/user/graph_pipeline && cat pipeline.py
+[?2004l"""Bytewax dataflow for streaming connected components with Union-Find.
+
+Reads edges from a JSONL file, maintains a global Union-Find structure
+in a single stateful partition, and emits per-edge events describing
+whether the edge was already in the same component or produced a merge.
+"""
+
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from bytewax.connectors.files import FileSink, FileSource
+from bytewax.dataflow import Dataflow
+import bytewax.operators as op
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+GRAPH_DIR = Path("/home/user/graph_pipeline")
+INPUT_PATH = GRAPH_DIR / "input_edges.jsonl"
+RUN_ID_PATH = Path("/logs/artifacts/run-id")
+
+# All edges get the same key so they are routed to a single stateful
+# partition, which is necessary because Union-Find needs a global view.
+PARTITION_KEY = "global"
+
+
+# ---------------------------------------------------------------------------
+# Union-Find state
+# ---------------------------------------------------------------------------
+
+
+class UnionFind:
+    """Disjoint set data structure with path compression and union by size.
+
+    The state is held in two plain dicts so the entire structure is fully
+    picklable, which is required by Bytewax's SQLite recovery.
+    """
+
+    __slots__ = ("_parent", "_size")
+
+    def __init__(self) -> None:
+        self._parent: Dict[str, str] = {}
+        self._size: Dict[str, int] = {}
+
+    def _ensure(self, node: str) -> None:
+        if node not in self._parent:
+            self._parent[node] = node
+            self._size[node] = 1
+
+    def find(self, node: str) -> str:
+        # Walk up to the root.
+        root = node
+        while self._parent[root] != root:
+            root = self._parent[root]
+        # Path compression: re-parent every node on the path.
+        while self._parent[node] != root:
+            nxt = self._parent[node]
+            self._parent[node] = root
+            node = nxt
+        return root
+
+    def union(self, a: str, b: str) -> Tuple[bool, int]:
+        """Merge components containing ``a`` and ``b``.
+
+        Returns ``(merged, new_component_size)``.
+        """
+        self._ensure(a)
+        self._ensure(b)
+        ra = self.find(a)
+        rb = self.find(b)
+        if ra == rb:
+            return False, self._size[ra]
+        # Union by size: attach the smaller tree under the larger root.
+        if self._size[ra] < self._size[rb]:
+            ra, rb = rb, ra
+        self._parent[rb] = ra
+        self._size[ra] += self._size[rb]
+        # Drop the size entry of the absorbed root to keep the state tidy.
+        self._size.pop(rb, None)
+        return True, self._size[ra]
+
+    def component_size(self, node: str) -> int:
+        self._ensure(node)
+        return self._size[self.find(node)]
+
+
+# ---------------------------------------------------------------------------
+# Stream processing
+# ---------------------------------------------------------------------------
+
+
+def parse_edge(line: str) -> Dict[str, str]:
+    """Parse a single JSONL line into an ``{"u": ..., "v": ...}`` dict."""
+    obj = json.loads(line)
+    return {"u": obj["u"], "v": obj["v"]}
+
+
+def process_edge(
+    state: Optional[UnionFind], edge: Dict[str, str]
+) -> Tuple[UnionFind, Dict[str, Any]]:
+    """Update Union-Find with a single edge and produce an event.
+
+    Returns ``(updated_state, emitted_event)``. ``emitted_event`` is a dict
+    ready to be serialized as JSON.
+    """
+    if state is None:
+        state = UnionFind()
+
+    u, v = edge["u"], edge["v"]
+    merged, size = state.union(u, v)
+
+    if merged:
+        event = {
+            "u": u,
+            "v": v,
+            "status": "merged",
+            "new_component_size": size,
+        }
+    else:
+        event = {
+            "u": u,
+            "v": v,
+            "status": "already_connected",
+            "component_size": size,
+        }
+
+    return state, event
+
+
+def to_json_line(event: Dict[str, Any]) -> str:
+    """Serialize an event dict to a single-line JSON string."""
+    return json.dumps(event, separators=(",", ":"), sort_keys=False)
+
+
+# ---------------------------------------------------------------------------
+# Dataflow construction
+# ---------------------------------------------------------------------------
+
+
+def build_output_path() -> Path:
+    """Build the output file path using the current run id."""
+    run_id = RUN_ID_PATH.read_text().strip()
+    return GRAPH_DIR / f"output_events_{run_id}.jsonl"
+
+
+def build_dataflow() -> Tuple[Dataflow, Path]:
+    """Build the connected-components dataflow."""
+    flow = Dataflow("connected_components")
+
+    # 1. Read raw JSONL lines.
+    raw = op.input("edges_in", flow, FileSource(INPUT_PATH))
+
+    # 2. Parse each line into an {u, v} dict.
+    edges = op.map("parse", raw, parse_edge)
+
+    # 3. Route every edge to the same keyed partition so that all state
+    #    modifications happen on a single instance.
+    keyed = op.key_on("single_partition", edges, lambda _e: PARTITION_KEY)
+
+    # 4. Maintain Union-Find per partition and emit a status event.
+    stateful = op.stateful_map("union_find", keyed, process_edge)
+
+    # 5. Drop the key (the underlying FileSink is a FixedPartitionedSink
+    #    that expects (key, value) tuples but our output file is single
+    #    partitioned so we can just write the values).
+    values = op.map_value("drop_key", stateful, to_json_line)
+
+    # 6. Write JSON lines to the output file.
+    output_path = build_output_path()
+    op.output("events_out", values, FileSink(output_path))
+
+    return flow, output_path
+
+
+# When executed via `python -m bytewax.run pipeline:get_flow` the CLI
+# will import this module and look for a dataflow object exposed by the
+# name below. We also support being imported as a library so the dataflow
+# can be inspected programmatically.
+flow, _OUTPUT_PATH = build_dataflow()
+get_flow = lambda: flow
+
+
+if __name__ == "__main__":
+    # Allow direct invocation for quick debugging; the CLI is preferred
+    # for production because it supports recovery and multi-process
+    # scaling.
+    from bytewax.testing import run_main
+
+    flow_local, _ = build_dataflow()
+    run_main(flow_local)
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# mkdir -p /tmp/recovery_db && python3 -m bytewax.recovery /tmp/recovery_db 1 && python3 -m bytewax.run -r /tmp/recovery_db -s 1 -b 1 pipeline:get_flow
+[?2004l[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# ls -la /home/user/graph_pipeline/ && echo '---OUTPUT---' && cat /home/user/graph_pipeline/output_events_zr7scukw36.jsonl
+[?2004ltotal 16
+drwxr-xr-x 1 root root   98 Jul  3 13:14 [0m[01;34m.[0m
+drwxr-xr-x 1 root root   36 Jul  3 13:10 [01;34m..[0m
+drwxr-xr-x 2 root root   46 Jul  3 13:14 [01;34m__pycache__[0m
+-rw-r--r-- 1 root root  105 Jul  3 13:10 input_edges.jsonl
+-rw-r--r-- 1 root root  302 Jul  3 13:14 output_events_zr7scukw36.jsonl
+-rw-r--r-- 1 root root 6326 Jul  3 13:12 pipeline.py
+---OUTPUT---
+{"u":"A","v":"B","status":"merged","new_component_size":2}
+{"u":"B","v":"C","status":"merged","new_component_size":3}
+{"u":"A","v":"C","status":"already_connected","component_size":3}
+{"u":"D","v":"E","status":"merged","new_component_size":2}
+{"u":"C","v":"E","status":"merged","new_component_size":5}
+[?2004hroot@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:/home/user/graph_pipeline# 

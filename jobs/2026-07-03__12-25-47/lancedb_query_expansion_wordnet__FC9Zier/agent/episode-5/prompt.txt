@@ -1,0 +1,147 @@
+New Terminal Output:
+
+root@fc2ffc99-f6cb-4248-a726-8c98273b5829:~# cat > /home/user/myproject/solution.py << 'PYEOF'
+> import os
+> import nltk
+>
+> # Ensure WordNet corpora are present
+> for pkg in ('wordnet', 'omw-1.4'):
+>     try:
+>         nltk.data.find(f'corpora/{pkg}')
+>     except LookupError:
+>         nltk.download(pkg, quiet=True)
+>
+> from nltk.corpus import wordnet as wn  # noqa: E402
+>
+> import lancedb  # noqa: E402
+> from lancedb.query import MatchQuery, BooleanQuery, Occur  # noqa: E402
+>
+> _TABLE = None
+> _IDX_BUILT = False
+>
+>
+> def _get_table():
+>     global _TABLE
+>     if _TABLE is None:
+>         db = lancedb.connect(os.environ['LANCEDB_URI'])
+>         _TABLE = db.open_table(os.environ['LANCEDB_TABLE'])
+>     return _TABLE
+>
+>
+> def _ensure_fts_index():
+>     global _IDX_BUILT
+>     if _IDX_BUILT:
+>         return
+>     table = _get_table()
+>     # Check if an FTS index on 'content' already exists
+>     has_fts = False
+>     try:
+>         for idx in table.list_indices():
+>             # idx columns dict and details vary between lancedb versions; just attempt create if not.
+>             try:
+>                 cols = idx.columns if hasattr(idx, 'columns') else None
+>             except Exception:
+>                 cols = None
+>             if cols is None:
+>                 continue
+>             col_names = [c if isinstance(c, str) else getattr(c, 'name', str(c)) for c in cols]
+>             if any(name == 'content' or name.endswith('content') for name in col_names):
+>                 # Roughly check if it is an FTS index; if type info available
+>                 idx_type = getattr(idx, 'index_type', None) or getattr(idx, 'type', None)
+>                 if idx_type is None or 'FTS' in str(idx_type).upper() or 'INVERTED' in str(idx_type).upper():
+>                     has_fts = True
+>                     break
+>     except Exception:
+>         has_fts = False
+>     if not has_fts:
+>         try:
+>             table.create_fts_index("content", use_tantivy=False, replace=False)
+>         except Exception as e:
+>             # If the index already exists in some form, ignore
+>             if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
+>                 raise
+>     _IDX_BUILT = True
+>
+>
+> def _expand_token(token: str) -> list[str]:
+>     """Return the token itself plus up to 3 single-word lowercase synonyms from WordNet."""
+>     token = token.lower()
+>     out = []
+>     seen = {token}
+>     # Use wn.synonyms which returns synonyms grouped by sense
+>     try:
+>         groups = wn.synonyms(token) or []
+>     except Exception:
+>         groups = []
+>     if not groups:
+>         # Fallback: walk synsets ourselves
+>         groups = []
+>         for syn in wn.synsets(token):
+>             names = [n.replace('_', ' ').replace('-', ' ') for n in syn.lemma_names()]
+>             groups.append(names)
+>     for group in groups:
+>         for lemma in group:
+>             lemma = lemma.lower().strip()
+>             if not lemma or lemma in seen:
+>                 continue
+>             # Single token only (no '_' or whitespace)
+>             if '_' in lemma or ' ' in lemma or '\t' in lemma or '\n' in lemma:
+>                 continue
+>             seen.add(lemma)
+>             out.append(lemma)
+>             if len(out) >= 3:
+>                 break
+>         if len(out) >= 3:
+>             break
+>     return [token] + out
+>
+>
+> def expanded_search(query: str, k: int = 10) -> list[int]:
+>     tokens = query.lower().split()
+>     expansion_tokens = []
+>     for t in tokens:
+>         expansion_tokens.extend(_expand_token(t))
+>     # Deduplicate while preserving order
+>     seen = set()
+>     uniq = []
+>     for t in expansion_tokens:
+>         if t not in seen:
+>             seen.add(t)
+>             uniq.append(t)
+>
+>     table = _get_table()
+>     _ensure_fts_index()
+>
+>     # Build a SHOULD/OR boolean query
+>     if len(uniq) == 1:
+>         search_q = MatchQuery(uniq[0], "content")
+>     else:
+>         clauses = [(Occur.SHOULD, MatchQuery(t, "content")) for t in uniq]
+>         search_q = BooleanQuery(clauses)
+>
+>     results = table.search(search_q, query_type="fts").limit(k).to_list()
+>     return [r['id'] for r in results]
+> PYEOF
+root@fc2ffc99-f6cb-4248-a726-8c98273b5829:~# echo '---' && cat /home/user/myproject/solution.py | head -20
+---
+import os
+import nltk
+
+# Ensure WordNet corpora are present
+for pkg in ('wordnet', 'omw-1.4'):
+    try:
+        nltk.data.find(f'corpora/{pkg}')
+    except LookupError:
+        nltk.download(pkg, quiet=True)
+
+from nltk.corpus import wordnet as wn  # noqa: E402
+
+import lancedb  # noqa: E402
+from lancedb.query import MatchQuery, BooleanQuery, Occur  # noqa: E402
+
+_TABLE = None
+_IDX_BUILT = False
+
+
+def _get_table():
+root@fc2ffc99-f6cb-4248-a726-8c98273b5829:~#

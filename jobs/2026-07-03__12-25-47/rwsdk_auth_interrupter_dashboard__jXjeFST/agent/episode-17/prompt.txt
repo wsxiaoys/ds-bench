@@ -1,0 +1,153 @@
+New Terminal Output:
+
+root@cdcee175-d6b4-4fb7-82d4-3785b160d7ce:/home/user/myproject# cat node_modules/rwsdk/dist/runtime/lib/auth/session.js
+import { env } from "cloudflare:workers";
+import { ErrorResponse } from "../../error";
+const AUTH_SECRET_KEY = env.AUTH_SECRET_KEY ??
+    (import.meta.env.VITE_IS_DEV_SERVER
+        ? "development-secret-key-do-not-use-in-production"
+        : undefined);
+if (AUTH_SECRET_KEY === "") {
+    console.warn("AUTH_SECRET_KEY is set but empty. Please provide a non-empty secret key for session store security.");
+}
+if (!AUTH_SECRET_KEY) {
+    console.warn("AUTH_SECRET_KEY not set. Please set this environment variable to a secure random key for session store security.");
+}
+export const MAX_SESSION_DURATION = 14 * 24 * 60 * 60 * 1000; // 14 days
+const packSessionId = (parts) => {
+    return btoa([parts.unsignedSessionId, parts.signature].join(":"));
+};
+const unpackSessionId = (packed) => {
+    const [unsignedSessionId, signature] = atob(packed).split(":");
+    return { unsignedSessionId, signature };
+};
+const arrayBufferToHex = (buffer) => {
+    const array = new Uint8Array(buffer);
+    return Array.from(array)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+};
+export const createSessionCookie = ({ name, sessionId, maxAge, }) => {
+    const isViteDev = typeof import.meta.env !== "undefined" && import.meta.env.DEV;
+    return `${name}=${sessionId}; Path=/; HttpOnly; ${isViteDev ? "" : "Secure; "}SameSite=Lax${maxAge != null
+        ? `; Max-Age=${maxAge === true ? MAX_SESSION_DURATION / 1000 : maxAge}`
+        : ""}`;
+};
+export const signSessionId = async ({ unsignedSessionId, secretKey, }) => {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey("raw", encoder.encode(secretKey), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const signatureArrayBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(unsignedSessionId));
+    return arrayBufferToHex(signatureArrayBuffer);
+};
+export const generateSessionId = async ({ secretKey, }) => {
+    const unsignedSessionId = crypto.randomUUID();
+    const signature = await signSessionId({ unsignedSessionId, secretKey });
+    return packSessionId({ unsignedSessionId, signature });
+};
+export const isValidSessionId = async ({ sessionId, secretKey, }) => {
+    try {
+        const { unsignedSessionId, signature } = unpackSessionId(sessionId);
+        const computedSignature = await signSessionId({
+            unsignedSessionId,
+            secretKey,
+        });
+        return computedSignature === signature;
+    }
+    catch {
+        return false;
+    }
+};
+export const defineSessionStore = ({ cookieName = "session_id", createCookie = createSessionCookie, secretKey = AUTH_SECRET_KEY, get, set, unset, }) => {
+    if (!secretKey) {
+        throw new Error("No secret key provided for session store");
+    }
+    const getSessionIdFromCookie = (request) => {
+        const cookieHeader = request.headers.get("Cookie");
+        if (!cookieHeader)
+            return undefined;
+        for (const cookie of cookieHeader.split(";")) {
+            const trimmedCookie = cookie.trim();
+            const separatorIndex = trimmedCookie.indexOf("=");
+            if (separatorIndex === -1)
+                continue;
+            const key = trimmedCookie.slice(0, separatorIndex);
+            const value = trimmedCookie.slice(separatorIndex + 1);
+            if (key === cookieName) {
+                return value;
+            }
+        }
+    };
+    const load = async (request) => {
+        const sessionId = getSessionIdFromCookie(request);
+        if (!sessionId) {
+            return null;
+        }
+        if (!(await isValidSessionId({ sessionId, secretKey }))) {
+            throw new ErrorResponse(401, "Invalid session id");
+        }
+        try {
+            return await get(sessionId);
+        }
+        catch (error) {
+            throw new ErrorResponse(401, "Invalid session id");
+        }
+    };
+    const save = async (responseHeaders, sessionInputData, { maxAge } = {}) => {
+        const sessionId = await generateSessionId({ secretKey });
+        await set(sessionId, sessionInputData);
+        responseHeaders.set("Set-Cookie", createCookie({ name: cookieName, sessionId, maxAge }));
+    };
+    const remove = async (request, responseHeaders) => {
+        const sessionId = getSessionIdFromCookie(request);
+        if (sessionId) {
+            await unset(sessionId);
+        }
+        responseHeaders.set("Set-Cookie", createCookie({ name: cookieName, sessionId: "", maxAge: 0 }));
+    };
+    return {
+        load,
+        save,
+        remove,
+    };
+};
+export const defineDurableSession = ({ cookieName, createCookie, secretKey = AUTH_SECRET_KEY, sessionDurableObject, }) => {
+    const get = async (sessionId) => {
+        const { unsignedSessionId } = unpackSessionId(sessionId);
+        const doId = sessionDurableObject.idFromName(unsignedSessionId);
+        const sessionStub = sessionDurableObject.get(doId);
+        const result = (await sessionStub.getSession());
+        if ("error" in result) {
+            throw new Error(result.error);
+        }
+        return result.value;
+    };
+    const set = async (sessionId, sessionInputData) => {
+        const { unsignedSessionId } = unpackSessionId(sessionId);
+        const doId = sessionDurableObject.idFromName(unsignedSessionId);
+        const sessionStub = sessionDurableObject.get(doId);
+        // todo(justinvdm, 2025-02-20): Fix this
+        // @ts-ignore
+        await sessionStub.saveSession(sessionInputData);
+    };
+    const unset = async (sessionId) => {
+        let unsignedSessionId;
+        try {
+            unsignedSessionId = unpackSessionId(sessionId).unsignedSessionId;
+        }
+        catch {
+            return;
+        }
+        const doId = sessionDurableObject.idFromName(unsignedSessionId);
+        const sessionStub = sessionDurableObject.get(doId);
+        await sessionStub.revokeSession();
+    };
+    return defineSessionStore({
+        cookieName,
+        createCookie,
+        secretKey,
+        get,
+        set,
+        unset,
+    });
+};
+root@cdcee175-d6b4-4fb7-82d4-3785b160d7ce:/home/user/myproject#

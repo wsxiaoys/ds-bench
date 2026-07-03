@@ -1,0 +1,68 @@
+"""PCA-projected LanceDB vector search."""
+import os
+import numpy as np
+import lancedb
+
+DB_DIR = '/home/user/myproject/lancedb/'
+MODEL_PATH = '/app/pca_model.npz'
+
+_RUN_ID = None
+_TABLE_NAME = None
+_COMPONENTS = None
+_MEAN = None
+_TABLE = None
+
+
+def _ensure_loaded():
+    global _RUN_ID, _TABLE_NAME, _COMPONENTS, _MEAN, _TABLE
+    if _TABLE is not None:
+        return
+    with open('/logs/artifacts/run-id', 'r') as f:
+        _RUN_ID = f.read().strip()
+    _TABLE_NAME = f'articles_pca_{_RUN_ID}'
+    model = np.load(MODEL_PATH)
+    _COMPONENTS = model['components'].astype(np.float64)
+    _MEAN = model['mean'].astype(np.float64)
+    db = lancedb.connect(DB_DIR)
+    _TABLE = db[_TABLE_NAME]
+
+
+def _project(q: np.ndarray) -> np.ndarray:
+    """Project 128-d vector to 16-d using sklearn convention:
+    projected = (q - mean) @ components.T
+    """
+    q = np.asarray(q, dtype=np.float64).reshape(-1)
+    if q.shape[0] != _MEAN.shape[0]:
+        raise ValueError(
+            f'query_vec must be {_MEAN.shape[0]}-d, got {q.shape[0]}'
+        )
+    return ((q - _MEAN) @ _COMPONENTS.T).astype(np.float32)
+
+
+def search(query_vec, k):
+    """Search for the k nearest neighbours of `query_vec` in the PCA-projected table.
+
+    Parameters
+    ----------
+    query_vec : sequence of 128 floats
+        Input vector in the original embedding space.
+    k : int
+        Number of neighbours to return.
+
+    Returns
+    -------
+    list of dict
+        Each dict has keys ``id`` (int), ``title`` (str), ``original_id`` (int),
+        ordered from most to least similar.
+    """
+    _ensure_loaded()
+    proj = _project(query_vec)
+    results = _TABLE.search(proj.tolist()).limit(int(k)).to_list()
+    out = []
+    for r in results:
+        out.append({
+            'id': int(r['id']),
+            'title': str(r['title']),
+            'original_id': int(r['original_id']),
+        })
+    return out

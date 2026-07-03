@@ -1,0 +1,290 @@
+#!/usr/bin/env node
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const fs = __importStar(require("fs"));
+const sdk_1 = __importDefault(require("@alchemystai/sdk"));
+const sdk_2 = require("@alchemystai/sdk");
+function parseArgs(argv) {
+    const args = { thresholds: [], help: false };
+    for (let i = 0; i < argv.length; i++) {
+        const a = argv[i];
+        if (a === '--thresholds' || a === '-t') {
+            const v = argv[++i];
+            if (!v) {
+                process.stderr.write('Error: --thresholds requires a value\n');
+                process.exit(2);
+            }
+            const parts = v.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+            if (parts.length === 0) {
+                process.stderr.write('Error: --thresholds requires at least one value\n');
+                process.exit(2);
+            }
+            for (const p of parts) {
+                const n = Number(p);
+                if (!Number.isFinite(n) || n < 0 || n > 1) {
+                    process.stderr.write(`Error: invalid threshold '${p}', must be a number in [0, 1]\n`);
+                    process.exit(2);
+                }
+                args.thresholds.push(n);
+            }
+        }
+        else if (a === '--help' || a === '-h') {
+            args.help = true;
+        }
+        else {
+            process.stderr.write(`Error: unknown argument '${a}'\n`);
+            process.exit(2);
+        }
+    }
+    return args;
+}
+function printHelp() {
+    process.stderr.write('Usage: node dist/main.js --thresholds <csv>\n' +
+        '  --thresholds   Comma-separated list of similarity_threshold values in [0, 1]\n' +
+        '                 Example: --thresholds 0.5,0.7,0.9\n');
+}
+function sleep(ms) {
+    return new Promise((res) => setTimeout(res, ms));
+}
+async function addContextWithRetry(client, body) {
+    // Idempotency: the SDK REDACTED-retries 409s twice, but we still wrap in case
+    // the retries are exhausted or we want to treat persistent conflict as success.
+    try {
+        await client.v1.context.add(body);
+    }
+    catch (err) {
+        if (err instanceof sdk_2.ConflictError) {
+            // 409: documents with the same file_name already stored; treat as success.
+            process.stderr.write(`[warn] ingest returned 409 Conflict (already stored); continuing\n`);
+            return;
+        }
+        if (err instanceof sdk_2.RateLimitError) {
+            process.stderr.write(`[warn] ingest rate limited; backing off\n`);
+            await sleep(2000);
+            try {
+                await client.v1.context.add(body);
+            }
+            catch (err2) {
+                if (err2 instanceof sdk_2.ConflictError) {
+                    process.stderr.write(`[warn] ingest returned 409 Conflict after retry; continuing\n`);
+                    return;
+                }
+                throw err2;
+            }
+            return;
+        }
+        throw err;
+    }
+}
+function buildCorpus() {
+    // Query topic: "Quantum error correction in superconducting qubits".
+    // The corpus mixes clearly on-topic, tangentially related, and clearly off-topic
+    // documents so that varying similarity_threshold visibly changes the result count.
+    return [
+        {
+            idx: 0,
+            relevance: 'high',
+            content: 'Quantum error correction protects logical qubits in superconducting processors. ' +
+                'Surface codes encode a logical qubit in a two-dimensional lattice of physical qubits ' +
+                'with stabilizer measurements that detect bit-flip and phase-flip errors without ' +
+                'disturbing the encoded information.',
+        },
+        {
+            idx: 1,
+            relevance: 'high',
+            content: 'In superconducting qubit hardware, transmon qubits are coupled to readout resonators ' +
+                'and used to implement surface-code quantum error correction. Repeated stabilizer ' +
+                'measurements produce a syndrome stream that a classical decoder uses to infer and ' +
+                'correct errors in real time.',
+        },
+        {
+            idx: 2,
+            relevance: 'high',
+            content: 'Topological quantum error correction schemes such as the surface code and the color ' +
+                'code are leading candidates for fault-tolerant quantum computing on superconducting ' +
+                'qubit platforms. They require physical error rates well below the surface-code threshold.',
+        },
+        {
+            idx: 3,
+            relevance: 'high',
+            content: 'Syndrome extraction for a distance-d surface code on superconducting qubits requires ' +
+                'entangling gates between data and ancilla qubits. Low-latency classical decoding of the ' +
+                'syndrome enables real-time quantum error correction within a coherence time.',
+        },
+        {
+            idx: 4,
+            relevance: 'medium',
+            content: 'Superconducting qubits are fabricated using lithographic processes similar to those used ' +
+                'in classical CMOS technology. They operate at millikelvin temperatures inside dilution ' +
+                'refrigerators and are controlled by microwave pulses delivered through attenuator chains.',
+        },
+        {
+            idx: 5,
+            relevance: 'medium',
+            content: 'Quantum computing promises speedups for certain problems such as integer factorization ' +
+                'and quantum simulation. Implementations exist on superconducting, trapped-ion, photonic, ' +
+                'and neutral-atom platforms.',
+        },
+        {
+            idx: 6,
+            relevance: 'medium',
+            content: 'Decoherence is the dominant source of errors in quantum hardware. Material imperfections, ' +
+                'flux noise, and cosmic rays can flip qubits and degrade gate fidelity over time.',
+        },
+        {
+            idx: 7,
+            relevance: 'low',
+            content: 'A classic chocolate cake recipe calls for flour, sugar, cocoa powder, eggs, butter, and ' +
+                'baking powder. The dry ingredients are sifted together before being folded into a wet ' +
+                'batter.',
+        },
+        {
+            idx: 8,
+            relevance: 'low',
+            content: 'Modern soccer tactics emphasize high pressing, positional rotations, and quick ' +
+                'transitions from defense to attack. Wing-backs stretch the field and create numerical ' +
+                'advantages in wide areas.',
+        },
+        {
+            idx: 9,
+            relevance: 'low',
+            content: 'A list of popular tourist destinations in Iceland includes the Blue Lagoon, the Golden ' +
+                'Circle, the waterfalls of the south coast, and the black sand beaches of Reynisfjara.',
+        },
+    ];
+}
+async function main() {
+    const args = parseArgs(process.argv.slice(2));
+    if (args.help) {
+        printHelp();
+        process.exit(0);
+    }
+    if (args.thresholds.length === 0) {
+        process.stderr.write('Error: --thresholds is required\n');
+        printHelp();
+        process.exit(2);
+    }
+    const apiKey = process.env.ALCHEMYST_AI_API_KEY;
+    if (!apiKey || apiKey.trim() === '') {
+        process.stderr.write('Error: ALCHEMYST_AI_API_KEY environment variable is not set\n');
+        process.exit(1);
+    }
+    const runIdPath = '/logs/artifacts/run-id';
+    if (!fs.existsSync(runIdPath)) {
+        process.stderr.write(`Error: run-id file not found at ${runIdPath}\n`);
+        process.exit(1);
+    }
+    const runId = fs.readFileSync(runIdPath, 'utf8').trim();
+    if (!runId) {
+        process.stderr.write(`Error: run-id file at ${runIdPath} is empty\n`);
+        process.exit(1);
+    }
+    const client = new sdk_1.default({ apiKey });
+    const query = 'Quantum error correction in superconducting qubits';
+    const scope = 'internal';
+    const source = 'platform.api.threshold-sensitivity-cli';
+    const corpus = buildCorpus();
+    // Ingest documents. We chunk them into small batches so that any single
+    // add call cannot blow past rate limits, and so that an individual 409 on
+    // one batch is handled cleanly without re-ingesting the whole corpus.
+    const batchSize = 5;
+    for (let i = 0; i < corpus.length; i += batchSize) {
+        const batch = corpus.slice(i, i + batchSize);
+        const documents = batch.map((d) => ({
+            content: d.content,
+            // The metadata.fileName is the canonical 'file_name' on this endpoint
+            // and must include the run-id so concurrent runs do not collide.
+            fileName: `threshold_doc_${d.idx}_${runId}.md`,
+            fileType: 'text/markdown',
+        }));
+        await addContextWithRetry(client, {
+            context_type: 'resource',
+            documents,
+            scope,
+            source,
+            metadata: {
+                fileName: `threshold_sensitivity_batch_${i}_${runId}.md`,
+                fileType: 'text/markdown',
+                groupName: ['threshold-sensitivity', `run-${runId}`],
+                lastModified: new Date().toISOString(),
+            },
+        });
+        // Small gap between batches to be polite to the ingest pipeline.
+        await sleep(250);
+    }
+    // Allow a brief window for ingested documents to be indexed and searchable.
+    await sleep(1500);
+    const results = [];
+    for (const threshold of args.thresholds) {
+        // minimum_similarity_threshold must be <= similarity_threshold; use 0 so the
+        // upper bound is the only thing that constrains the result set.
+        const minimum_similarity_threshold = 0;
+        let contexts;
+        for (let attempt = 0; attempt < 4; attempt++) {
+            try {
+                const resp = await client.v1.context.search({
+                    minimum_similarity_threshold,
+                    query,
+                    similarity_threshold: threshold,
+                    scope,
+                });
+                contexts = resp.contexts;
+                break;
+            }
+            catch (err) {
+                if (err instanceof sdk_2.RateLimitError) {
+                    process.stderr.write(`[warn] search rate limited at threshold=${threshold}; backing off\n`);
+                    await sleep(1500 * (attempt + 1));
+                    continue;
+                }
+                throw err;
+            }
+        }
+        const count = Array.isArray(contexts) ? contexts.length : 0;
+        results.push({ threshold, count });
+        // Small gap between searches to respect rate limits.
+        await sleep(200);
+    }
+    const out = { query, results };
+    process.stdout.write(JSON.stringify(out) + '\n');
+}
+main().catch((err) => {
+    process.stderr.write(`Fatal: ${err && err.stack ? err.stack : String(err)}\n`);
+    process.exit(1);
+});

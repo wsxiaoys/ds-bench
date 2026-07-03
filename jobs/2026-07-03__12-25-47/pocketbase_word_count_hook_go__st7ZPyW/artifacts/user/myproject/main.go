@@ -1,0 +1,46 @@
+package main
+
+import (
+	"log"
+	"math"
+	"strings"
+
+	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/core"
+
+	_ "pbapp/migrations"
+)
+
+func computeContentFields(content string) (int, int) {
+	words := strings.Fields(content)
+	wordCount := len(words)
+	readingTime := 0
+	if wordCount > 0 {
+		readingTime = int(math.Ceil(float64(wordCount) / 200.0))
+	}
+	return wordCount, readingTime
+}
+
+func articlesHook(e *core.RecordRequestEvent) error {
+	content := e.Record.GetString("content")
+	wordCount, readingTime := computeContentFields(content)
+	e.Record.Set("word_count", wordCount)
+	e.Record.Set("reading_time_minutes", readingTime)
+	return e.Next()
+}
+
+func main() {
+	app := pocketbase.New()
+
+	app.OnRecordCreateRequest("articles").BindFunc(func(e *core.RecordRequestEvent) error {
+		return articlesHook(e)
+	})
+
+	app.OnRecordUpdateRequest("articles").BindFunc(func(e *core.RecordRequestEvent) error {
+		return articlesHook(e)
+	})
+
+	if err := app.Start(); err != nil {
+		log.Fatal(err)
+	}
+}

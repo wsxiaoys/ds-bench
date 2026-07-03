@@ -1,0 +1,131 @@
+New Terminal Output:
+
+}root@fc83f711-c5a7-4bc2-8d42-cbf3f0b65bee:/home/user/myproject# cat /home/user/myproject/extract.py
+#!/usr/bin/env python3
+"""Async batch extraction with LlamaCloud v2 SDK."""
+import asyncio
+import json
+import os
+from pathlib import Path
+from typing import List, Optional
+
+from pydantic import BaseModel
+from llama_cloud import AsyncLlamaCloud
+
+
+class LineItem(BaseModel):
+    description: str
+    quantity: Optional[float] = None
+    unit_price: Optional[float] = None
+    amount: Optional[float] = None
+
+
+class InvoiceSchema(BaseModel):
+    vendor_name: str
+    invoice_number: str
+    total_amount: float
+    line_items: List[str]
+
+
+DATA_DIR = Path("/home/user/myproject/data")
+RESULTS_PATH = Path("/home/user/myproject/results.json")
+LOG_PATH = Path("/home/user/myproject/output.log")
+RUN_ID_PATH = Path("/logs/artifacts/run-id")
+
+
+async def process_file(
+    client: AsyncLlamaCloud,
+    semaphore: asyncio.Semaphore,
+    filepath: Path,
+    run_id: str,
+):
+    external_file_id = f"{filepath.stem}-{run_id}"
+    async with semaphore:
+        # Upload
+        with open(filepath, "rb") as f:
+            uploaded = await client.files.create(
+                file=f,
+                purpose="extract",
+                external_file_id=external_file_id,
+            )
+
+        file_id = uploaded.id
+
+        # Create extract job
+        job = await client.extract.create(
+            file_input=file_id,
+            configuration={
+                "extraction_target": "per_doc",
+                "tier": "cost_effective",
+                "data_schema": InvoiceSchema.model_json_schema(),
+            },
+        )
+
+        # Poll
+        while True:
+            job = await client.extract.get(job.id)
+            if job.status in ("COMPLETED", "FAILED", "CANCELED"):
+                break
+            await asyncio.sleep(2)
+
+        # Log line
+        with open(LOG_PATH, "a") as logf:
+            logf.write(f"Extract Job: {filepath.name} {job.id} {job.status}\n")
+
+        record = {}
+        if job.status == "COMPLETED" and getattr(job, "extract_result", None) is not None:
+            er = job.extract_result
+            # try common shapes
+            if isinstance(er, dict):
+                data = er.get("data", er)
+            else:
+                data = er
+            record = {
+                "vendor_name": data.get("vendor_name") if isinstance(data, dict) else None,
+                "invoice_number": data.get("invoice_number") if isinstance(data, dict) else None,
+                "total_amount": data.get("total_amount") if isinstance(data, dict) else None,
+                "line_items": data.get("line_items") if isinstance(data, dict) else [],
+            }
+        else:
+            record = {
+                "vendor_name": None,
+                "invoice_number": None,
+                "total_amount": None,
+                "line_items": [],
+            }
+
+        return filepath.name, record
+
+
+async def main():
+    run_id = RUN_ID_PATH.read_text().strip()
+    client = AsyncLlamaCloud(api_key=os.environ["LLAMA_CLOUD_API_KEY"])
+    semaphore = asyncio.Semaphore(3)
+
+    files = sorted(DATA_DIR.glob("invoice_*.pdf"))
+    tasks = [process_file(client, semaphore, f, run_id) for f in files]
+    results_list = await asyncio.gather(*tasks)
+
+    results = {name: rec for name, rec in results_list}
+    # If an existing results.json exists, merge - but spec says "persist", so we overwrite
+    RESULTS_PATH.write_text(json.dumps(results, indent=2))
+    print(f"Wrote {RESULTS_PATH}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+root@fc83f711-c5a7-4bc2-8d42-cbf3f0b65bee:/home/user/myproject# grep -E 'Semaphore|AsyncLlamaCloud|extraction_target|cost_effective|data_schema|external_file_id
+|file_input|configuration' /home/user/myproject/extract.py
+from llama_cloud import AsyncLlamaCloud
+    client: AsyncLlamaCloud,
+    semaphore: asyncio.Semaphore,
+    external_file_id = f"{filepath.stem}-{run_id}"
+                external_file_id=external_file_id,
+            file_input=file_id,
+            configuration={
+                "extraction_target": "per_doc",
+                "tier": "cost_effective",
+                "data_schema": InvoiceSchema.model_json_schema(),
+    client = AsyncLlamaCloud(api_key=os.environ["LLAMA_CLOUD_API_KEY"])
+    semaphore = asyncio.Semaphore(3)
+root@fc83f711-c5a7-4bc2-8d42-cbf3f0b65bee:/home/user/myproject#

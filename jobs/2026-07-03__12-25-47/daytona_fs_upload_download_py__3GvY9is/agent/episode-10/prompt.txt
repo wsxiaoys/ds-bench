@@ -1,0 +1,262 @@
+New Terminal Output:
+
+root@bee7247a-5980-4279-830c-31166d303bb2:/home/user/myproject# cat $(python3 -c 'import daytona._sync.filesystem as f; import os; print(os.path.abspath(f.__fil
+e__))')
+# Copyright Daytona Platforms Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+from __future__ import annotations
+
+import io
+import os
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack
+from typing import Any, cast, final, overload
+
+import httpx
+from python_multipart.multipart import MultipartParser, parse_options_header
+from typing_extensions import override
+
+from daytona_toolbox_api_client import (
+    FileInfo,
+    FilesDownloadRequest,
+    FileSystemApi,
+    Match,
+    ReplaceRequest,
+    ReplaceResult,
+    SearchFilesResponse,
+)
+
+from .._utils.errors import intercept_errors
+from .._utils.otel_decorator import with_instrumentation
+from ..common.errors import DaytonaError
+from ..common.file_transfer import (
+    create_multipart_parser,
+    parse_content_type_boundary,
+    raise_if_multipart_truncated,
+    serialize_download_request,
+)
+from ..common.filesystem import (
+    CancelEvent,
+    DownloadProgress,
+    FileDownloadErrorDetails,
+    FileDownloadRequest,
+    FileDownloadResponse,
+    FileUpload,
+    UploadProgress,
+    create_file_download_error,
+    parse_file_download_error_payload,
+    raise_if_stream_error,
+)
+from ..internal.http_client import request_timeout as _request_timeout
+
+
+class FileSystem:
+    """Provides file system operations within a Sandbox.
+
+    This class implements a high-level interface to file system operations that can
+    be performed within a Daytona Sandbox.
+    """
+
+    def __init__(
+        self,
+        api_client: FileSystemApi,
+        http_client: httpx.Client,
+    ):
+        """Initializes a new FileSystem instance.
+
+        Args:
+            api_client (FileSystemApi): API client for Sandbox file system operations.
+            http_client (httpx.Client): Shared pooled client for upload/download.
+        """
+        self._api_client: FileSystemApi = api_client
+        self._http_client: httpx.Client = http_client
+
+    @intercept_errors(message_prefix="Failed to create folder: ")
+    @with_instrumentation()
+    def create_folder(self, path: str, mode: str) -> None:
+        """Creates a new directory in the Sandbox at the specified path with the given
+        permissions.
+
+        Args:
+            path (str): Path where the folder should be created. Relative paths are resolved based
+            on the sandbox working directory.
+            mode (str): Folder permissions in octal format (e.g., "755" for rwxr-xr-x).
+
+        Example:
+            ```python
+            # Create a directory with standard permissions
+            sandbox.fs.create_folder("workspace/data", "755")
+
+            # Create a private directory
+            sandbox.fs.create_folder("workspace/secrets", "700")
+            ```
+        """
+        self._api_client.create_folder(
+            path=path,
+            mode=mode,
+        )
+
+    @intercept_errors(message_prefix="Failed to delete file: ")
+    @with_instrumentation()
+    def delete_file(self, path: str, recursive: bool = False) -> None:
+        """Deletes a file from the Sandbox.
+
+        Args:
+            path (str): Path to the file to delete. Relative paths are resolved based on the sandbox working directory.
+            recursive (bool): If the file is a directory, this must be true to delete it.
+
+        Example:
+            ```python
+            # Delete a file
+            sandbox.fs.delete_file("workspace/data/old_file.txt")
+            ```
+        """
+        self._api_client.delete_file(path=path, recursive=recursive)
+
+    @overload
+    def download_file(self, remote_path: str, timeout: int = 30 * 60) -> bytes:
+        """Downloads a file from the Sandbox. Returns the file contents as a bytes object.
+        This method is useful when you want to load the file into memory without saving it to disk.
+        It can only be used for smaller files.
+
+        Args:
+            remote_path (str): Path to the file in the Sandbox. Relative paths are resolved based
+            on the sandbox working directory.
+            timeout (int): Timeout for the download operation in seconds. 0 means no timeout. Default is 30 minutes.
+
+        Returns:
+            bytes: The file contents as a bytes object.
+
+        Example:
+            ```python
+            # Download and save a file locally
+            content = sandbox.fs.download_file("workspace/data/file.txt")
+            with open("local_copy.txt", "wb") as f:
+                f.write(content)
+
+            # Download and process text content
+            content = sandbox.fs.download_file("workspace/data/config.json")
+            config = json.loads(content.decode('utf-8'))
+            ```
+        """
+
+    @overload
+    def download_file(self, remote_path: str, local_path: str, timeout: int = 30 * 60) -> None:
+        """Downloads a file from the Sandbox and saves it to a local file using 
+[... output limited to 10000 bytes; 71 interior bytes omitted ...]
+ | bytearray | str | IOBase): Data to upload. ``bytes`` is uploaded
+                from memory; ``str`` is treated as a local file path and read in chunks; a
+                file-like object (anything implementing ``.read()``) is streamed as-is.
+            remote_path (str): Destination path in the Sandbox.
+            timeout (int): Timeout in seconds. 0 means no timeout. Default is 30 minutes.
+            on_progress (Callable[[UploadProgress], None] | None): Optional callback invoked
+                with cumulative bytes sent.
+            cancel_event (CancelEvent | None): Optional ``threading.Event``-compatible token.
+                When set during streaming, the next chunk read raises ``DaytonaError`` and
+                tears down the request.
+
+        Raises:
+            DaytonaError: If the upload fails or is cancelled via ``cancel_event``.
+
+        Example:
+            ```python
+            import threading
+            cancel = threading.Event()
+            with open("large_dataset.csv", "rb") as f:
+                sandbox.fs.upload_file_stream(
+                    f,
+                    "tmp/dataset.csv",
+                    on_progress=lambda p: print(f"{p.bytes_sent} bytes sent"),
+                    cancel_event=cancel,
+                )
+            ```
+        """
+        if cancel_event is not None and cancel_event.is_set():
+            raise DaytonaError(f"Upload cancelled: {remote_path}")
+
+        with ExitStack() as stack:
+            stream = _open_upload_source(stack, source)
+            wrapped = _CountingUploadReader(stream, on_progress, cancel_event, remote_path)
+
+            data_fields = {"files[0].path": remote_path}
+            # httpx accepts any IO[bytes]-shaped object as a multipart file; our
+            # _CountingUploadReader is RawIOBase but pyright can't see that the
+            # (filename, reader) tuple satisfies the structural FileTypes union,
+            # so we drop into Any for the call.
+            file_fields = cast(Any, {"files[0].file": (remote_path, wrapped)})
+
+            _, url, headers, *_ = self._api_client._upload_files_serialize(None, None, None, None)
+            _ = headers.pop("Content-Type", None)
+
+            with httpx.Client(timeout=timeout or None) as client:
+                response = client.post(url, data=data_fields, files=file_fields, headers=headers)
+
+                if not response.is_success:
+                    try:
+                        detail = ", ".join(response.json()["errors"])
+                    except Exception:
+                        detail = response.text
+                    raise DaytonaError(
+                        f"{response.status_code}: {detail}",
+                        status_code=response.status_code,
+                    )
+
+
+def _open_upload_source(stack: ExitStack, source: object) -> io.IOBase:
+    """Coerces ``upload_file_stream`` source variants into a uniform read-ready stream.
+
+    The stack owns closing any file we opened on the caller's behalf; file-like objects passed
+    in by the caller are returned untouched (caller retains ownership and lifecycle).
+    """
+    if isinstance(source, (bytes, bytearray)):
+        return io.BytesIO(bytes(source))
+    if isinstance(source, str):
+        return stack.enter_context(open(source, "rb"))
+    if hasattr(source, "read"):
+        # Caller-supplied IOBase (or duck-typed file-like). httpx will read
+        # from it via .read(); the cast is structural since pyright can't
+        # infer "anything with .read" implies io.IOBase.
+        return cast(io.IOBase, source)
+    raise DaytonaError(f"Unsupported upload source: {type(source).__name__}")
+
+
+@final
+class _CountingUploadReader(io.RawIOBase):
+    """File-like wrapper that meters bytes flowing into httpx and honours cancellation
+    between chunks. ``read()`` is what httpx calls during multipart streaming, so the
+    cancellation check naturally interleaves with network progress."""
+
+    def __init__(
+        self,
+        source: io.IOBase,
+        on_progress: Callable[[UploadProgress], None] | None,
+        cancel_event: CancelEvent | None,
+        remote_path: str,
+    ) -> None:
+        super().__init__()
+        self._source = source
+        self._on_progress = on_progress
+        self._cancel_event = cancel_event
+        self._remote_path = remote_path
+        self._sent = 0
+
+    @override
+    def readable(self) -> bool:
+        return True
+
+    @override
+    def read(self, size: int = -1) -> bytes:
+        if self._cancel_event is not None and self._cancel_event.is_set():
+            raise DaytonaError(f"Upload cancelled: {self._remote_path}")
+        chunk = self._source.read(size)
+        if chunk:
+            self._sent += len(chunk)
+            if self._on_progress is not None:
+                self._on_progress(UploadProgress(bytes_sent=self._sent))
+        return chunk
+
+    @override
+    def readall(self) -> bytes:
+        return self.read(-1)
+root@bee7247a-5980-4279-830c-31166d303bb2:/home/user/myproject#

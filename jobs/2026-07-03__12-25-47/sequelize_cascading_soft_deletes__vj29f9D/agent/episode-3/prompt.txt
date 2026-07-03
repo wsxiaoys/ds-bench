@@ -1,0 +1,144 @@
+New Terminal Output:
+
+root@7e53669d-fdad-4744-a5eb-2ab3f1babc10:/home/user/myproject# cat > index.js << 'EOF'
+> const express = require('express');
+> const { Sequelize, DataTypes, Op } = require('sequelize');
+>
+> const sequelize = new Sequelize({
+>   dialect: 'sqlite',
+>   storage: 'database.sqlite',
+>   logging: false
+> });
+>
+> const User = sequelize.define('User', {
+>   username: {
+>     type: DataTypes.STRING,
+>     allowNull: false
+>   }
+> }, {
+>   paranoid: true
+> });
+>
+> const Post = sequelize.define('Post', {
+>   title: {
+>     type: DataTypes.STRING,
+>     allowNull: false
+>   }
+> }, {
+>   paranoid: true
+> });
+>
+> User.hasMany(Post, { foreignKey: 'userId' });
+> Post.belongsTo(User, { foreignKey: 'userId' });
+>
+> // Add hooks for cascading soft delete and restore
+> User.addHook('afterFind', async (results) => {
+>   if (!results) return;
+>   if (!Array.isArray(results)) results = [results];
+>   for (const instance of results) {
+>     if (instance && instance instanceof User && instance.deletedAt) {
+>       // Soft-delete cascade handled by hooks below
+>     }
+>   }
+> });
+>
+> // Override destroy to cascade soft delete
+> User.prototype.destroy = async function(options = {}) {
+>   // First soft-delete all posts belonging to this user
+>   const posts = await Post.findAll({ where: { userId: this.id }, paranoid: false });
+>   for (const post of posts) {
+>     if (!post.deletedAt) {
+>       await post.destroy({ hooks: true });
+>     }
+>   }
+>   // Then soft-delete the user itself
+>   return await Sequelize.Model.prototype.destroy.call(this, options);
+> };
+>
+> Post.prototype.destroy = async function(options = {}) {
+>   return await Sequelize.Model.prototype.destroy.call(this, options);
+> };
+>
+> User.prototype.restore = async function(options = {}) {
+>   // First restore all posts that were soft-deleted when the user was deleted
+>   // We need to find posts that are soft-deleted
+>   const posts = await Post.findAll({ where: { userId: this.id }, paranoid: false });
+>   for (const post of posts) {
+>     if (post.deletedAt) {
+>       await post.restore({ hooks: true });
+>     }
+>   }
+>   // Then restore the user itself
+>   return await Sequelize.Model.prototype.restore.call(this, options);
+> };
+>
+> const app = express();
+> app.use(express.json());
+>
+> app.post('/users', async (req, res) => {
+>   try {
+>     const user = await User.create({ username: req.body.username });
+>     res.status(201).json(user.toJSON());
+>   } catch (err) {
+>     res.status(400).json({ error: err.message });
+>   }
+> });
+>
+> app.post('/users/:id/posts', async (req, res) => {
+>   try {
+>     const user = await User.findByPk(req.params.id);
+>     if (!user) return res.status(404).json({ error: 'User not found' });
+>     const post = await Post.create({ title: req.body.title, userId: user.id });
+>     res.status(201).json(post.toJSON());
+>   } catch (err) {
+>     res.status(400).json({ error: err.message });
+>   }
+> });
+>
+> app.delete('/users/:id', async (req, res) => {
+>   try {
+>     const user = await User.findByPk(req.params.id);
+>     if (!user) return res.status(404).json({ error: 'User not found' });
+>     await user.destroy();
+>     res.status(200).json({ message: 'User soft-deleted' });
+>   } catch (err) {
+>     res.status(400).json({ error: err.message });
+>   }
+> });
+>
+> app.post('/users/:id/restore', async (req, res) => {
+>   try {
+>     const user = await User.findByPk(req.params.id, { paranoid: false });
+>     if (!user) return res.status(404).json({ error: 'User not found' });
+>     await user.restore();
+>     res.status(200).json({ message: 'User restored' });
+>   } catch (err) {
+>     res.status(400).json({ error: err.message });
+>   }
+> });
+>
+> app.get('/posts/:id', async (req, res) => {
+>   try {
+>     const post = await Post.findByPk(req.params.id);
+>     if (!post) return res.status(404).json({ error: 'Post not found' });
+>     res.status(200).json(post.toJSON());
+>   } catch (err) {
+>     res.status(400).json({ error: err.message });
+>   }
+> });
+>
+> sequelize.sync().then(() => {
+>   app.listen(3000, () => {
+>     console.log('Server running on port 3000');
+>   });
+> });
+> EOF
+root@7e53669d-fdad-4744-a5eb-2ab3f1babc10:/home/user/myproject# ls -la
+total 112
+drwxr-xr-x   1 root root   107 Jul  3 12:57 .
+drwxr-xr-x   1 root root    31 Jul  3 12:56 ..
+-rw-r--r--   1 root root  3777 Jul  3 12:57 index.js
+drwxr-xr-x 196 root root  8192 Jul  3 12:57 node_modules
+-rw-r--r--   1 root root 91196 Jul  3 12:57 package-lock.json
+-rw-r--r--   1 root root   286 Jul  3 12:56 package.json
+root@7e53669d-fdad-4744-a5eb-2ab3f1babc10:/home/user/myproject#

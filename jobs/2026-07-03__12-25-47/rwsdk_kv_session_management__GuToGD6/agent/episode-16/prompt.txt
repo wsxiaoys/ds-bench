@@ -1,0 +1,119 @@
+New Terminal Output:
+
+root@c1661206-6902-4f39-836a-3e352297cea7:/home/user/myproject# grep -rn 'globalThis' node_modules/rwsdk/dist/runtime/ | head -10
+node_modules/rwsdk/dist/runtime/render/assembleDocument.js:20:                    __html: `globalThis.__RWSDK_CONTEXT = ${JSON.stringify(clientContext)};if(!glo
+balThis.__webpack_require__){globalThis.__webpack_require__=function(id){throw new Error("rwsdk: __webpack_require__ called before client init for: "+id)};globa
+lThis.__webpack_require__.u=function(){}}`,
+node_modules/rwsdk/dist/runtime/render/renderDocumentHtmlStream.js:23:                    __html: `globalThis.__RWSDK_CONTEXT = ${JSON.stringify(clientContext)}
+;if(!globalThis.__webpack_require__){globalThis.__webpack_require__=function(id){throw new Error("rwsdk: __webpack_require__ called before client init for: "+id
+)};globalThis.__webpack_require__.u=function(){}}`,
+node_modules/rwsdk/dist/runtime/render/renderToStream.js:10:    if (!globalThis.__webpack_require__) {
+node_modules/rwsdk/dist/runtime/render/renderToStream.js:11:        globalThis.__webpack_require__ = ssrWebpackRequire;
+node_modules/rwsdk/dist/runtime/client/client.js:227:    globalThis.__rsc_callServer = callServer;
+node_modules/rwsdk/dist/runtime/client/client.js:228:    globalThis.__rw = {
+node_modules/rwsdk/dist/runtime/client/client.js:239:    if (globalThis.__FLIGHT_DATA) {
+node_modules/rwsdk/dist/runtime/client/navigation.js:76:        await globalThis.__rsc_callServer(null, null, "navigation");
+node_modules/rwsdk/dist/runtime/client/navigation.js:150:            await globalThis.__rsc_callServer(null, null, "navigation");
+node_modules/rwsdk/dist/runtime/client/navigation.js:199:    if (opts.cacheStorage && typeof globalThis !== "undefined") {
+root@c1661206-6902-4f39-836a-3e352297cea7:/home/user/myproject# cat node_modules/rwsdk/dist/runtime/lib/auth/session.js 2>/dev/null | head -100
+import { env } from "cloudflare:workers";
+import { ErrorResponse } from "../../error";
+const AUTH_SECRET_KEY = env.AUTH_SECRET_KEY ??
+    (import.meta.env.VITE_IS_DEV_SERVER
+        ? "development-secret-key-do-not-use-in-production"
+        : undefined);
+if (AUTH_SECRET_KEY === "") {
+    console.warn("AUTH_SECRET_KEY is set but empty. Please provide a non-empty secret key for session store security.");
+}
+if (!AUTH_SECRET_KEY) {
+    console.warn("AUTH_SECRET_KEY not set. Please set this environment variable to a secure random key for session store security.");
+}
+export const MAX_SESSION_DURATION = 14 * 24 * 60 * 60 * 1000; // 14 days
+const packSessionId = (parts) => {
+    return btoa([parts.unsignedSessionId, parts.signature].join(":"));
+};
+const unpackSessionId = (packed) => {
+    const [unsignedSessionId, signature] = atob(packed).split(":");
+    return { unsignedSessionId, signature };
+};
+const arrayBufferToHex = (buffer) => {
+    const array = new Uint8Array(buffer);
+    return Array.from(array)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+};
+export const createSessionCookie = ({ name, sessionId, maxAge, }) => {
+    const isViteDev = typeof import.meta.env !== "undefined" && import.meta.env.DEV;
+    return `${name}=${sessionId}; Path=/; HttpOnly; ${isViteDev ? "" : "Secure; "}SameSite=Lax${maxAge != null
+        ? `; Max-Age=${maxAge === true ? MAX_SESSION_DURATION / 1000 : maxAge}`
+        : ""}`;
+};
+export const signSessionId = async ({ unsignedSessionId, secretKey, }) => {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey("raw", encoder.encode(secretKey), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const signatureArrayBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(unsignedSessionId));
+    return arrayBufferToHex(signatureArrayBuffer);
+};
+export const generateSessionId = async ({ secretKey, }) => {
+    const unsignedSessionId = crypto.randomUUID();
+    const signature = await signSessionId({ unsignedSessionId, secretKey });
+    return packSessionId({ unsignedSessionId, signature });
+};
+export const isValidSessionId = async ({ sessionId, secretKey, }) => {
+    try {
+        const { unsignedSessionId, signature } = unpackSessionId(sessionId);
+        const computedSignature = await signSessionId({
+            unsignedSessionId,
+            secretKey,
+        });
+        return computedSignature === signature;
+    }
+    catch {
+        return false;
+    }
+};
+export const defineSessionStore = ({ cookieName = "session_id", createCookie = createSessionCookie, secretKey = AUTH_SECRET_KEY, get, set, unset, }) => {
+    if (!secretKey) {
+        throw new Error("No secret key provided for session store");
+    }
+    const getSessionIdFromCookie = (request) => {
+        const cookieHeader = request.headers.get("Cookie");
+        if (!cookieHeader)
+            return undefined;
+        for (const cookie of cookieHeader.split(";")) {
+            const trimmedCookie = cookie.trim();
+            const separatorIndex = trimmedCookie.indexOf("=");
+            if (separatorIndex === -1)
+                continue;
+            const key = trimmedCookie.slice(0, separatorIndex);
+            const value = trimmedCookie.slice(separatorIndex + 1);
+            if (key === cookieName) {
+                return value;
+            }
+        }
+    };
+    const load = async (request) => {
+        const sessionId = getSessionIdFromCookie(request);
+        if (!sessionId) {
+            return null;
+        }
+        if (!(await isValidSessionId({ sessionId, secretKey }))) {
+            throw new ErrorResponse(401, "Invalid session id");
+        }
+        try {
+            return await get(sessionId);
+        }
+        catch (error) {
+            throw new ErrorResponse(401, "Invalid session id");
+        }
+    };
+    const save = async (responseHeaders, sessionInputData, { maxAge } = {}) => {
+        const sessionId = await generateSessionId({ secretKey });
+        await set(sessionId, sessionInputData);
+        responseHeaders.set("Set-Cookie", createCookie({ name: cookieName, sessionId, maxAge }));
+    };
+    const remove = async (request, responseHeaders) => {
+        const sessionId = getSessionIdFromCookie(request);
+        if (sessionId) {
+            await unset(sessionId);
+root@c1661206-6902-4f39-836a-3e352297cea7:/home/user/myproject#

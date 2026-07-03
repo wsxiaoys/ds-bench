@@ -1,0 +1,115 @@
+New Terminal Output:
+
+root@97c5c4c0-869e-45e9-beba-01256e290bbb:~# grep -n 'class EventClock\|class TumblingWindower\|def fold_window\|def collect_window' /usr/local/lib/python3.12/d
+ist-packages/bytewax/operators/windowing.py
+360:class EventClock(Clock[V, _EventClockState]):
+896:class TumblingWindower(Windower[_SlidingWindowerState]):
+1388:def collect_window(
+1397:def collect_window(
+1407:def collect_window(
+1417:def collect_window(
+1427:def collect_window(
+1437:def collect_window(
+1718:def fold_window(
+root@97c5c4c0-869e-45e9-beba-01256e290bbb:~# cat /usr/local/lib/python3.12/dist-packages/bytewax/connectors/files.py | head -100
+"""Connectors for local text files."""
+
+import os
+from csv import DictReader
+from pathlib import Path
+from typing import Any, Callable, Dict, Iterator, List, Optional, Union
+from zlib import adler32
+
+from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition, batch
+from bytewax.outputs import FixedPartitionedSink, StatefulSinkPartition
+from typing_extensions import override
+
+
+def _get_path_dev(path: Path) -> str:
+    return hex(path.stat().st_dev)
+
+
+def _readlines(f) -> Iterator[str]:
+    """Turn a file into a generator of lines but support `tell`.
+
+    Python files don't support `tell` to learn the offset if you use
+    them in iterator mode via `next`, so re-create that iterator using
+    `readline`.
+
+    """
+    while True:
+        line = f.readline()
+        if len(line) <= 0:
+            break
+        yield line
+
+
+def _strip_n(s: str) -> str:
+    return s.rstrip("\n")
+
+
+class _FileSourcePartition(StatefulSourcePartition[str, int]):
+    def __init__(self, path: Path, batch_size: int, resume_state: Optional[int]):
+        self._f = open(path, "rt")
+        if resume_state is not None:
+            self._f.seek(resume_state)
+        it = map(_strip_n, _readlines(self._f))
+        self._batcher = batch(it, batch_size)
+
+    @override
+    def next_batch(self) -> List[str]:
+        return next(self._batcher)
+
+    @override
+    def snapshot(self) -> int:
+        return self._f.tell()
+
+    @override
+    def close(self) -> None:
+        self._f.close()
+
+
+class DirSource(FixedPartitionedSource[str, int]):
+    """Read all files in a filesystem directory line-by-line.
+
+    The directory must exist on at least one worker. Each worker can
+    have unique files at overlapping paths if each worker mounts a
+    distinct filesystem. Tries to read only one instance of each
+    unique file in the whole cluster by deduplicating paths by
+    filesystem ID. See `get_fs_id` argument to adjust this.
+
+    Unique files are the unit of parallelism; only one worker will
+    read each unique file. Thus, lines from different files are
+    interleaved.
+
+    Can support exactly-once processing.
+
+    """
+
+    def __init__(
+        self,
+        dir_path: Path,
+        glob_pat: str = "*",
+        batch_size: int = 1000,
+        get_fs_id: Callable[[Path], str] = _get_path_dev,
+    ):
+        """Init.
+
+        :arg dir_path: Path to directory.
+
+        :arg glob_pat: Pattern of files to read from the directory.
+            Defaults to `"*"` or all files.
+
+        :arg batch_size: Number of lines to read per batch. Defaults
+            to 1000.
+
+        :arg get_fs_id: Called with the directory and must return a
+            consistent (across workers and restarts) unique ID for the
+            filesystem of that directory. Defaults to using
+            {py:obj}`os.stat_result.st_dev`.
+
+            If you know all workers have access to identical files,
+            you can have this return a constant: `lambda _dir:
+            "SHARED"`.
+
+root@97c5c4c0-869e-45e9-beba-01256e290bbb:~#

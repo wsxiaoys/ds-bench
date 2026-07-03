@@ -1,0 +1,94 @@
+New Terminal Output:
+
+root@12705142-6aa2-4620-a7d6-08e290ecf8c5:/home/user/bytewax_project# cat > /tmp/run_debug2.py << 'EOF'
+> import sys
+> sys.path.insert(0, '/home/user/bytewax_project')
+> import leaderboard
+> import json
+> import heapq
+>
+> # Monkey-patch topk_step to add prints
+> original_build = leaderboard.build_dataflow
+>
+> import bytewax.operators as op
+> from bytewax.dataflow import Dataflow
+>
+> def build_with_debug(input_path, k):
+>     flow = Dataflow("leaderboard")
+>     raw = op.input("in", flow, leaderboard.JSONLSource(input_path))
+>     parsed = op.map("parse", raw, lambda line: json.loads(line))
+>     keyed = op.key_on("by_player", parsed, lambda ev: ev["player_id"])
+>     def max_score(state, ev):
+>         score = ev['score']
+>         if state is None or score > state:
+>             new_state = score
+>         else:
+>             new_state = state
+>         print(f'max_score: key={ev["player_id"]}, score={score}, new_state={new_state}, return value=({new_state}, ({ev["player_id"]}, {new_state}))')
+>         return (new_state, (ev['player_id'], new_state))
+>     player_max = op.stateful_map("player_max", keyed, max_score)
+>     routed = op.key_on("to_global", player_max, lambda _x: "GLOBAL")
+>     def topk_step(state, item):
+>         print(f'topk_step: received item={item!r}, type={type(item).__name__}')
+>         player_id, score = item
+>         heap = state
+>         if heap is None:
+>             heap = []
+>         current = {pid: sc for sc, pid in heap}
+>         if player_id in current:
+>             if score > current[player_id]:
+>                 heap = [(s, p) for (s, p) in heap if p != player_id]
+>                 heapq.heapify(heap)
+>             else:
+>                 return (heap, leaderboard._heap_to_sorted_list(heap))
+>         if len(heap) < k:
+>             heapq.heappush(heap, (score, player_id))
+>         else:
+>             if score > heap[0][0]:
+>                 heapq.heapreplace(heap, (score, player_id))
+>         result = (heap, leaderboard._heap_to_sorted_list(heap))
+>         print(f'topk_step: returning value={result[1]!r}')
+>         return result
+>     topk_stream = op.stateful_map("topk", routed, topk_step)
+>     values = op.map_value("extract", topk_stream, lambda v: v)
+>     op.output("out", values, leaderboard.CollectSink())
+>     return flow
+>
+> leaderboard.build_dataflow = build_with_debug
+> flow = build_with_debug('/tmp/test_input.jsonl', 3)
+> from bytewax.testing import run_main
+> run_main(flow)
+> EOF
+root@12705142-6aa2-4620-a7d6-08e290ecf8c5:/home/user/bytewax_project# python3 /tmp/run_debug2.py 2>&1 | head -40
+max_score: key=alice, score=100, new_state=100, return value=(100, (alice, 100))
+max_score: key=alice, score=150, new_state=150, return value=(150, (alice, 150))
+max_score: key=alice, score=50, new_state=150, return value=(150, (alice, 150))
+max_score: key=bob, score=50, new_state=50, return value=(50, (bob, 50))
+max_score: key=bob, score=80, new_state=80, return value=(80, (bob, 80))
+max_score: key=charlie, score=75, new_state=75, return value=(75, (charlie, 75))
+max_score: key=charlie, score=60, new_state=75, return value=(75, (charlie, 75))
+max_score: key=dave, score=200, new_state=200, return value=(200, (dave, 200))
+max_score: key=dave, score=250, new_state=250, return value=(250, (dave, 250))
+max_score: key=eve, score=90, new_state=90, return value=(90, (eve, 90))
+max_score: key=frank, score=30, new_state=30, return value=(30, (frank, 30))
+topk_step: received item=('alice', ('alice', 100)), type=tuple
+topk_step: returning value=[('alice', ('alice', 100))]
+topk_step: received item=('alice', ('alice', 150)), type=tuple
+topk_step: returning value=[('alice', ('alice', 150))]
+topk_step: received item=('alice', ('alice', 150)), type=tuple
+topk_step: received item=('bob', ('bob', 50)), type=tuple
+topk_step: returning value=[('bob', ('bob', 50)), ('alice', ('alice', 150))]
+topk_step: received item=('bob', ('bob', 80)), type=tuple
+topk_step: returning value=[('bob', ('bob', 80)), ('alice', ('alice', 150))]
+topk_step: received item=('charlie', ('charlie', 75)), type=tuple
+topk_step: returning value=[('charlie', ('charlie', 75)), ('bob', ('bob', 80)), ('alice', ('alice', 150))]
+topk_step: received item=('charlie', ('charlie', 75)), type=tuple
+topk_step: received item=('dave', ('dave', 200)), type=tuple
+topk_step: returning value=[('dave', ('dave', 200)), ('charlie', ('charlie', 75)), ('bob', ('bob', 80))]
+topk_step: received item=('dave', ('dave', 250)), type=tuple
+topk_step: returning value=[('dave', ('dave', 250)), ('charlie', ('charlie', 75)), ('bob', ('bob', 80))]
+topk_step: received item=('eve', ('eve', 90)), type=tuple
+topk_step: returning value=[('eve', ('eve', 90)), ('dave', ('dave', 250)), ('charlie', ('charlie', 75))]
+topk_step: received item=('frank', ('frank', 30)), type=tuple
+topk_step: returning value=[('frank', ('frank', 30)), ('eve', ('eve', 90)), ('dave', ('dave', 250))]
+root@12705142-6aa2-4620-a7d6-08e290ecf8c5:/home/user/bytewax_project#

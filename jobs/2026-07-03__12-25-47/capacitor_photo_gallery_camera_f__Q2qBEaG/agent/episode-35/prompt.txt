@@ -1,0 +1,95 @@
+New Terminal Output:
+
+root@9b52c3d6-12b0-4f75-a43c-30b78228fa01:/tmp# cat > /tmp/test_prefs.py << 'EOF'
+> import asyncio
+> from playwright.async_api import async_playwright
+> import base64
+> import os
+> import re
+>
+> JPEG_B64 = (
+>     "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB"
+>     "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB/9sAQwEBAQEBAQEBAQEBAQEB"
+>     "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB/8AA"
+>     "QECAwQFBgcICQoL/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9o"
+>     "ADAMBAAIRAxEAPwBVAAH//9k="
+> )
+>
+> def make_jpeg():
+>     b64 = JPEG_B64 + "=" * (-len(JPEG_B64) % 4)
+>     jpeg_bytes = base64.b64decode(b64)
+>     path = '/tmp/test3.jpg'
+>     with open(path, 'wb') as f:
+>         f.write(jpeg_bytes)
+>     return path
+>
+> async def main():
+>     jpeg_path = make_jpeg()
+>
+>     async with async_playwright() as p:
+>         browser = await p.chromium.launch(headless=True, args=['--no-sandbox'])
+>         context = await browser.new_context()
+>         page = await context.new_page()
+>
+>         await page.goto('http://127.0.0.1:4173/')
+>         await page.wait_for_load_state('networkidle')
+>
+>         # Capture 2 photos
+>         for i in range(2):
+>             async with page.expect_file_chooser() as fc_info:
+>                 click_task = asyncio.create_task(page.click('#capture-btn'))
+>             file_chooser = await fc_info.value
+>             await file_chooser.set_files(jpeg_path)
+>             await click_task
+>
+>             await page.wait_for_function(
+>                 f"() => document.getElementById('capture-status').textContent === 'saved'",
+>                 timeout=15000
+>             )
+>             print(f"Captured photo {i+1}")
+>             await asyncio.sleep(0.5)
+>
+>         photos = await page.evaluate("window.gallery.listPhotos()")
+>         print(f"Photos after 2 captures: {photos}")
+>         assert len(photos) == 2
+>
+>         # Check the Preferences storage in IndexedDB
+>         prefs = await page.evaluate("""async () => {
+>             return new Promise((resolve, reject) => {
+>                 const req = indexedDB.open('CapacitorPreferences');
+>                 req.onsuccess = () => {
+>                     const db = req.result;
+>                     const tx = db.transaction('Preferences', 'readonly');
+>                     const store = tx.objectStore('Preferences');
+>                     const all = store.getAll();
+>                     all.onsuccess = () => resolve(all.result);
+>                     all.onerror = () => reject(all.error);
+>                 };
+>                 req.onerror = () => reject(req.error);
+>             });
+>         }""")
+>         print(f"Preferences: {prefs}")
+>
+>         # Now delete the first photo
+>         first = photos[0]
+>         await page.evaluate(f"window.gallery.deletePhoto({first!r})")
+>         photos_after = await page.evaluate("window.gallery.listPhotos()")
+>         print(f"Photos after deleting first: {photos_after}")
+>         assert len(photos_after) == 1
+>
+>         # Try to delete non-existent path - should still update index
+>         await page.evaluate("window.gallery.deletePhoto('photos/does-not-exist.jpeg')")
+>         photos_after2 = await page.evaluate("window.gallery.listPhotos()")
+>         print(f"Photos after deleting non-existent: {photos_after2}")
+>         assert len(photos_after2) == 1, f"Expected 1, got {len(photos_after2)}"
+>
+>         await browser.close()
+>         print("=== ALL ADVANCED TESTS PASSED ===")
+>
+> asyncio.run(main())
+> EOF
+root@9b52c3d6-12b0-4f75-a43c-30b78228fa01:/tmp# python3 /tmp/test_prefs.py
+Captured photo 1
+Captured photo 2
+Photos after 2 captures: ['photos/2026-07-03T13:32:17.837Z.jpeg', 'photos/2026-07-03T13:32:18.435Z.jpeg']
+

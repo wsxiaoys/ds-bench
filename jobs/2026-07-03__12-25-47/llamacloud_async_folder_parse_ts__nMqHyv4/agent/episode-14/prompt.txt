@@ -1,0 +1,92 @@
+New Terminal Output:
+
+//# sourceMappingURL=index.d.ts.maproot@1cc2f34a-37df-43e7-8fc4-e7edc7b51b89:/home/user/myproject# mkdir -p outputs
+root@1cc2f34a-37df-43e7-8fc4-e7edc7b51b89:/home/user/myproject# cat > parse.ts << 'EOF'
+> import fs from 'node:fs';
+> import path from 'node:path';
+> import { fileURLToPath } from 'node:url';
+> import pLimit from 'p-limit';
+> import LlamaCloud from '@llamaindex/llama-cloud';
+>
+> const __filename = fileURLToPath(import.meta.url);
+> const __dirname = path.dirname(__filename);
+>
+> const INPUTS_DIR = path.join(__dirname, 'inputs');
+> const OUTPUTS_DIR = path.join(__dirname, 'outputs');
+> const LOG_PATH = path.join(__dirname, 'output.log');
+> const RUN_ID_PATH = '/logs/artifacts/run-id';
+>
+> async function main(): Promise<void> {
+>   const runId = fs.readFileSync(RUN_ID_PATH, 'utf8').trim();
+>
+>   if (!fs.existsSync(OUTPUTS_DIR)) {
+>     fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
+>   }
+>
+>   const pdfFiles = fs
+>     .readdirSync(INPUTS_DIR)
+>     .filter((f) => f.toLowerCase().endsWith('.pdf'))
+>     .sort();
+>
+>   if (pdfFiles.length === 0) {
+>     console.error('No PDF files found in', INPUTS_DIR);
+>     process.exit(1);
+>   }
+>
+>   const client = new LlamaCloud({ apiKey: process.env.LLAMA_CLOUD_API_KEY });
+>
+>   const limit = pLimit(2);
+>
+>   const logLines: string[] = [];
+>
+>   const tasks = pdfFiles.map((pdfName) =>
+>     limit(async () => {
+>       const basename = path.basename(pdfName, path.extname(pdfName));
+>       const inputPath = path.join(INPUTS_DIR, pdfName);
+>       const outputPath = path.join(OUTPUTS_DIR, `${basename}.md`);
+>       const externalFileId = `${runId}-${basename}`;
+>
+>       console.log(`[${pdfName}] uploading (external_file_id=${externalFileId})...`);
+>       const uploaded = await client.files.create({
+>         file: fs.createReadStream(inputPath),
+>         purpose: 'parse',
+>         external_file_id: externalFileId,
+>       });
+>
+>       console.log(`[${pdfName}] parsing (file_id=${uploaded.id})...`);
+>       const result = await client.parsing.parse({
+>         file_id: uploaded.id,
+>         tier: 'cost_effective',
+>         version: 'latest',
+>         expand: ['markdown'],
+>       });
+>
+>       const pages = result.markdown?.pages ?? [];
+>       const joined = pages
+>         .map((p) => (p as { markdown?: string }).markdown ?? '')
+>         .join('\n\n---\n\n');
+>
+>       fs.writeFileSync(outputPath, joined, 'utf8');
+>
+>       const logLine = `Parsed: ${pdfName} | pages: ${pages.length}`;
+>       logLines.push(logLine);
+>       console.log(logLine);
+>
+>       return logLine;
+>     }),
+>   );
+>
+>   await Promise.all(tasks);
+>
+>   fs.writeFileSync(LOG_PATH, logLines.join('\n') + '\n', 'utf8');
+>   console.log(`Wrote ${logLines.length} log lines to ${LOG_PATH}`);
+> }
+>
+> main().catch((err) => {
+>   console.error('Fatal error:', err);
+>   process.exit(1);
+> });
+> EOF
+root@1cc2f34a-37df-43e7-8fc4-e7edc7b51b89:/home/user/myproject# ls -la parse.ts
+-rw-r--r-- 1 root root 2512 Jul  3 14:27 parse.ts
+root@1cc2f34a-37df-43e7-8fc4-e7edc7b51b89:/home/user/myproject#

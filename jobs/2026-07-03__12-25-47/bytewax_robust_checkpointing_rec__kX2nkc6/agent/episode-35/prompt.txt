@@ -1,0 +1,98 @@
+New Terminal Output:
+
+root@7f555f06-22fe-4fd0-95e4-d30ab2919f63:/tmp/test_bytewax# cat > /home/user/bytewax_recovery/dataflow.py << 'PYEOF'
+> """Bytewax dataflow that maintains running maximum per key with recovery."""
+>
+> import csv
+> from pathlib import Path
+> from typing import List, Optional
+>
+> from bytewax.connectors.files import FileSink
+> from bytewax.dataflow import Dataflow
+> from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
+> import bytewax.operators as op
+>
+>
+> class _CsvPartition(StatefulSourcePartition[dict, int]):
+>     def __init__(self, path: Path, resume_state: Optional[int]):
+>         self._path = path
+>         self._f = open(path, "rt", newline="")
+>         self._reader = csv.DictReader(self._f)
+>         self._consumed = 0
+>         self._exhausted = False
+>         if resume_state is not None:
+>             for _ in range(resume_state):
+>                 try:
+>                     next(self._reader)
+>                     self._consumed += 1
+>                 except StopIteration:
+>                     self._exhausted = True
+>                     break
+>
+>     def next_batch(self) -> List[dict]:
+>         if self._exhausted:
+>             raise StopIteration()
+>         batch = []
+>         try:
+>             while True:
+>                 row = next(self._reader)
+>                 batch.append(row)
+>         except StopIteration:
+>             self._exhausted = True
+>         self._consumed += len(batch)
+>         if not batch:
+>             raise StopIteration()
+>         return batch
+>
+>     def snapshot(self) -> int:
+>         return self._consumed
+>
+>     def close(self) -> None:
+>         try:
+>             self._f.close()
+>         except Exception:
+>             pass
+>
+>
+> class CsvSource(FixedPartitionedSource[dict, int]):
+>     """CSV file source. The partition key is the file path, so a different
+>     input file across resumes is naturally handled."""
+>
+>     def __init__(self, path):
+>         self._path = Path(path)
+>
+>     def list_parts(self) -> List[str]:
+>         if self._path.exists():
+>             return [str(self._path)]
+>         return []
+>
+>     def build_part(self, step_id: str, for_part: str, resume_state: Optional[int]):
+>         return _CsvPartition(Path(for_part), resume_state)
+>
+>
+> def _running_max(state, item):
+>     value = int(item["value"])
+>     if state is None:
+>         new_state = value
+>     elif state >= value:
+>         new_state = state
+>     else:
+>         new_state = value
+>     return (new_state, new_state)
+>
+>
+> def build_flow(input_file: str, output_file: str) -> Dataflow:
+>     flow = Dataflow("running_max_recovery")
+>     inp = CsvSource(input_file)
+>     s = op.input("in", flow, inp)
+>     keyed = op.key_on("key", s, lambda item: item["key"])
+>     maxed = op.stateful_map("running_max", keyed, _running_max)
+>
+>     # FileSink needs (key, value) tuples where value is a string.
+>     formatted = op.map_value("format", maxed, lambda v: f"{v}")
+>     op.output("out", formatted, FileSink(Path(output_file)))
+>     return flow
+> PYEOF
+root@7f555f06-22fe-4fd0-95e4-d30ab2919f63:/tmp/test_bytewax# rm -rf /tmp/rec1 /tmp/test_bytewax/output1.csv && bash /home/user/bytewax_recovery/run.sh /tmp/test
+_bytewax/input1.csv /tmp/test_bytewax/output1.csv /tmp/rec1 2>&1 | tail -20
+root@7f555f06-22fe-4fd0-95e4-d30ab2919f63:/tmp/test_bytewax#

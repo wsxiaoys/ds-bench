@@ -1,0 +1,75 @@
+New Terminal Output:
+
+root@fffd77b8-bb2f-4ce3-a952-a12f1d1f4aa4:/home/user/bytewax_project# cat > /home/user/bytewax_project/pipeline.py << 'EOF'
+> import json
+> from bytewax import operators as op
+> from bytewax.connectors.files import FileSource
+> from bytewax.connectors.stdio import StdOutSink
+> from bytewax.dataflow import Dataflow
+>
+> flow = Dataflow("multi_stage_agg")
+>
+> # Stage 0: Read input.jsonl line by line and parse JSON
+> inp = op.input(
+>     "input",
+>     flow,
+>     FileSource("input.jsonl"),
+> )
+>
+> # Parse each line (string) into a dict
+> parsed = op.map("parse_json", inp, lambda line: json.loads(line))
+>
+> # Stage 1: Local Aggregation by sensor_id
+> # Map dict to (sensor_id, val) tuple to create a KeyedStream
+> keyed = op.map("key_on_sensor", parsed, lambda rec: (rec["sensor_id"], rec["val"]))
+>
+> # Use fold_final for finite stream aggregation
+> local_sums = op.fold_final(
+>     "local_sum",
+>     keyed,
+>     lambda: 0,
+>     lambda acc, val: acc + val,
+> )
+>
+> # Stage 2: Global Aggregation
+> # Re-key all items to "global"
+> global_keyed = op.key_on("rekey_global", local_sums, lambda item: "global")
+>
+> # Compute the grand total
+> grand_total = op.fold_final(
+>     "global_sum",
+>     global_keyed,
+>     lambda: 0,
+>     lambda acc, val: acc + val,
+> )
+>
+> # Output to stdout
+> op.output("stdout", grand_total, StdOutSink())
+> EOF
+root@fffd77b8-bb2f-4ce3-a952-a12f1d1f4aa4:/home/user/bytewax_project# python -m bytewax.run pipeline:flow
+thread '<unnamed>' panicked at src/operators.rs:764:33:
+Box<dyn Any>
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py", line 1036, in on_batch
+    new_ws, discard = self.logic.on_item(v)
+                      ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py", line 1931, in on_item
+    self.state = self.folder(self.state, value)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/bytewax_project/pipeline.py", line 40, in <lambda>
+    lambda acc, val: acc + val,
+                     ~~~~^~~~~
+TypeError: unsupported operand type(s) for +: 'int' and 'tuple'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/usr/local/lib/python3.12/dist-packages/bytewax/run.py", line 355, in <module>
+    cli_main(**kwargs)
+bytewax.errors.BytewaxRuntimeError: (src/operators.rs:786:50): error calling `StatefulBatchLogic.on_batch` in step "multi_stage_agg.global_sum.stateful.stateful
+_batch" for key "global"
+root@fffd77b8-bb2f-4ce3-a952-a12f1d1f4aa4:/home/user/bytewax_project#

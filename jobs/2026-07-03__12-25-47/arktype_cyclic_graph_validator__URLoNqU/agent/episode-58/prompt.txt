@@ -1,0 +1,89 @@
+New Terminal Output:
+
+root@7ee7584e-120a-4071-aef1-3942a7656c5a:/home/user/myproject# ls -la src/ cli.ts && echo '---' && cat src/validator.ts
+-rw-r--r-- 1 root root 1134 Jul  3 12:31 cli.ts
+
+src/:
+total 4
+drwxr-xr-x 2 root root   34 Jul  3 12:28 .
+drwxr-xr-x 1 root root   43 Jul  3 12:31 ..
+-rw-r--r-- 1 root root 2043 Jul  3 12:29 validator.ts
+---
+import { scope, type } from "arktype";
+
+/**
+ * Recursive schema definitions for Node and Graph.
+ *
+ * `Node` references itself via `edges`, which is what requires the use of
+ * `scope({...}).export()` instead of a single inline `type({...})`.
+ *
+ * Cross-node structural constraints (unique ids, edge target existence,
+ * rootId existence) are enforced via `.narrow(...)` predicates attached to
+ * the `Graph` type.
+ */
+const graphModule = scope({
+  Node: {
+    id: "number.integer >= 0",
+    label: "1 <= string <= 40",
+    edges: "Node[]",
+  },
+  Graph: {
+    rootId: "number.integer >= 0",
+    nodes: "1 <= Node[] <= 1000",
+  },
+})
+  .export();
+
+const Node = graphModule.Node;
+const Graph = graphModule.Graph.narrow((g, ctx) => {
+  if (typeof g !== "object" || g === null) {
+    return ctx.mustBe("an object");
+  }
+  const graph = g as {
+    rootId: number;
+    nodes: Array<{ id: number; edges: Array<{ id: number }> }>;
+  };
+  const ids = new Set<number>();
+  for (const n of graph.nodes) {
+    if (ids.has(n.id)) {
+      return ctx.mustBe("a graph with unique node ids");
+    }
+    ids.add(n.id);
+  }
+  if (!ids.has(graph.rootId)) {
+    return ctx.mustBe("a graph whose rootId exists in nodes");
+  }
+  const stack: Array<{ id: number; edges: Array<{ id: number }> }> = [
+    ...graph.nodes,
+  ];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    for (const edge of current.edges) {
+      if (!ids.has(edge.id)) {
+        return ctx.mustBe(
+          "a graph where every edge target id exists in nodes"
+        );
+      }
+    }
+  }
+  return true;
+});
+
+export type Graph = typeof Graph.infer;
+export type Node = typeof Node.infer;
+
+/**
+ * Validate an unknown input against the `Graph` schema.
+ * Returns the validated `Graph` on success, throws an `Error` on failure.
+ */
+export function validateGraph(input: unknown): Graph {
+  const result = Graph(input);
+  if (result instanceof type.errors) {
+    throw new Error(result.summary);
+  }
+  if (result instanceof Error) {
+    throw result;
+  }
+  return result as Graph;
+}
+root@7ee7584e-120a-4071-aef1-3942a7656c5a:/home/user/myproject#

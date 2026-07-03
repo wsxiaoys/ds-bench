@@ -1,0 +1,204 @@
+New Terminal Output:
+
+root@fd46e839-9a1c-4b52-988f-8895dd07436c:/home/user/myproject# cat /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/view_test.go | head -200
+package core_test
+
+import (
+        "encoding/json"
+        "fmt"
+        "slices"
+        "testing"
+
+        "github.com/pocketbase/dbx"
+        "github.com/pocketbase/pocketbase/core"
+        "github.com/pocketbase/pocketbase/tests"
+)
+
+func ensureNoTempViews(app core.App, t *testing.T) {
+        var total int
+
+        err := app.DB().Select("count(*)").
+                From("sqlite_schema").
+                AndWhere(dbx.HashExp{"type": "view"}).
+                AndWhere(dbx.NewExp(`[[name]] LIKE '%\_temp\_%' ESCAPE '\'`)).
+                Limit(1).
+                Row(&total)
+        if err != nil {
+                t.Fatalf("Failed to check for temp views: %v", err)
+        }
+
+        if total > 0 {
+                t.Fatalf("Expected all temp views to be deleted, got %d", total)
+        }
+}
+
+func TestDeleteView(t *testing.T) {
+        t.Parallel()
+
+        app, _ := tests.NewTestApp()
+        defer app.Cleanup()
+
+        scenarios := []struct {
+                viewName    string
+                expectError bool
+        }{
+                {"", true},
+                {"demo1", true},    // not a view table
+                {"missing", false}, // missing or already deleted
+                {"view1", false},   // existing
+                {"VieW1", false},   // view names are case insensitives
+        }
+
+        for i, s := range scenarios {
+                err := app.DeleteView(s.viewName)
+
+                hasErr := err != nil
+                if hasErr != s.expectError {
+                        t.Errorf("[%d - %q] Expected hasErr %v, got %v (%v)", i, s.viewName, s.expectError, hasErr, err)
+                }
+        }
+
+        ensureNoTempViews(app, t)
+}
+
+func TestSaveView(t *testing.T) {
+        t.Parallel()
+
+        app, _ := tests.NewTestApp()
+        defer app.Cleanup()
+
+        scenarios := []struct {
+                scenarioName  string
+                viewName      string
+                query         string
+                expectError   bool
+                expectColumns []string
+        }{
+                {
+                        "empty name and query",
+                        "",
+                        "",
+                        true,
+                        nil,
+                },
+                {
+                        "empty name",
+                        "",
+                        "select * from " + core.CollectionNameSuperusers,
+                        true,
+                        nil,
+                },
+                {
+                        "empty query",
+                        "123Test",
+                        "",
+                        true,
+                        nil,
+                },
+                {
+                        "invalid query",
+                        "123Test",
+                        "123 456",
+                        true,
+                        nil,
+                },
+                {
+                        "missing table",
+                        "123Test",
+                        "select id from missing",
+                        true,
+                        nil,
+                },
+                {
+                        "non select query",
+                        "123Test",
+                        "drop table " + core.CollectionNameSuperusers,
+                        true,
+                        nil,
+                },
+                {
+                        "multiple select queries",
+                        "123Test",
+                        "select *, count(id) as c  from " + core.CollectionNameSuperusers + "; select * from demo1;",
+                        true,
+                        nil,
+                },
+                {
+                        "try to break the parent parenthesis",
+                        "123Test",
+                        "select *, count(id) as c  from `" + core.CollectionNameSuperusers + "`)",
+                        true,
+                        nil,
+                },
+                {
+                        "simple select query (+ trimmed semicolon)",
+                        "123Test",
+                        ";select *, count(id) as c  from " + core.CollectionNameSuperusers + ";",
+                        false,
+                        []string{
+                                "id", "created", "updated",
+                                "password", "tokenKey", "email",
+                                "emailVisibility", "verified",
+                                "c",
+                        },
+                },
+                {
+                        "update old view with new query",
+                        "123Test",
+                        "select 1 as test from " + core.CollectionNameSuperusers,
+                        false,
+                        []string{"test"},
+                },
+        }
+
+        for _, s := range scenarios {
+                t.Run(s.scenarioName, func(t *testing.T) {
+                        err := app.SaveView(s.viewName, s.query)
+
+                        hasErr := err != nil
+                        if hasErr != s.expectError {
+                                t.Fatalf("Expected hasErr %v, got %v (%v)", s.expectError, hasErr, err)
+                        }
+
+                        if hasErr {
+                                return
+                        }
+
+                        infoRows, err := app.TableInfo(s.viewName)
+                        if err != nil {
+                                t.Fatalf("Failed to fetch table info for %s: %v", s.viewName, err)
+                        }
+
+                        if len(s.expectColumns) != len(infoRows) {
+                                t.Fatalf("Expected %d columns, got %d", len(s.expectColumns), len(infoRows))
+                        }
+
+                        for _, row := range infoRows {
+                                if !slices.Contains(s.expectColumns, row.Name) {
+                                        t.Fatalf("Missing %q column in %v", row.Name, s.expectColumns)
+                                }
+                        }
+                })
+        }
+
+        ensureNoTempViews(app, t)
+}
+
+func TestCreateViewFieldsWithDiscardedNestedTransaction(t *testing.T) {
+        t.Parallel()
+
+        app, _ := tests.NewTestApp()
+        defer app.Cleanup()
+
+        app.RunInTransaction(func(txApp core.App) error {
+                _, err := txApp.CreateViewFields("select id from missing")
+                if err == nil {
+                        t.Fatal("Expected error, got nil")
+                }
+
+                return nil
+        })
+
+        ensureNoTempViews(app, t)
+}
+root@fd46e839-9a1c-4b52-988f-8895dd07436c:/home/user/myproject#

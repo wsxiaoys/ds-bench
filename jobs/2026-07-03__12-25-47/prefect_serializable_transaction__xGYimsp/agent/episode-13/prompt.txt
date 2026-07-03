@@ -1,0 +1,65 @@
+New Terminal Output:
+
+root@4df94416-4441-4be4-9af0-da5992a1b188:/home/user/prefect-project# sed -n '440,500p' /usr/local/lib/python3.12/dist-packages/prefect/results.py
+
+    Attributes:
+        result_storage: The storage for result records. If not provided, the default
+            result storage will be used.
+        metadata_storage: The storage for result record metadata. If not provided,
+            the metadata will be stored alongside the results.
+        lock_manager: The lock manager to use for locking result records. If not provided,
+            the store cannot be used in transactions with the SERIALIZABLE isolation level.
+        cache_result_in_memory: Whether to cache results in memory.
+        serializer: The serializer to use for results.
+        storage_key_fn: The function to generate storage keys.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(arbitrary_types_allowed=True)
+
+    result_storage: Optional[WritableFileSystem] = Field(default=None)
+    metadata_storage: Annotated[
+        Union[
+            Annotated[WritableFileSystem, Tag("WritableFileSystem")],
+            Annotated[NullFileSystem, Tag("NullFileSystem")],
+            Annotated[None, Tag("None")],
+        ],
+        Discriminator(result_storage_discriminator),
+    ] = Field(default=None)
+    lock_manager: Optional[LockManager] = Field(default=None)
+    cache_result_in_memory: bool = Field(default=True)
+    serializer: Serializer = Field(default_factory=get_default_result_serializer)
+    storage_key_fn: Callable[[], str] = Field(default=DEFAULT_STORAGE_KEY_FN)
+    cache: LRUCache[str, "ResultRecord[Any]"] = Field(default_factory=default_cache)
+
+    @property
+    def result_storage_block_id(self) -> UUID | None:
+        if self.result_storage is None:
+            return None
+        return getattr(self.result_storage, "_block_document_id", None)
+
+    @classmethod
+    async def _from_metadata(cls, metadata: ResultRecordMetadata) -> "ResultRecord[R]":
+        """
+        Create a result record from metadata.
+
+        Will use the result record metadata to fetch data via a result store.
+
+        Args:
+            metadata: The metadata to create the result record from.
+
+        Returns:
+            ResultRecord: The result record.
+        """
+        if metadata.storage_block_id is None:
+            storage_block = None
+        else:
+            storage_block = await aresolve_result_storage(metadata.storage_block_id)
+        store = cls(result_storage=storage_block, serializer=metadata.serializer)
+        if metadata.storage_key is None:
+            raise ValueError(
+                "storage_key is required to hydrate a result record from metadata"
+            )
+        result = await store.aread(metadata.storage_key)
+        return result
+
+root@4df94416-4441-4be4-9af0-da5992a1b188:/home/user/prefect-project#

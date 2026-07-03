@@ -1,0 +1,134 @@
+Current terminal state:
+New Terminal Output:
+
+root@b7b46852-f286-449e-87b4-7d418a907f23:/home/user/myproject# cat /home/user/myproject/classify.py
+#!/usr/bin/env python3
+"""Classify a single PDF document using the LlamaCloud Classifier.
+
+Usage:
+    python3 classify.py <path-to-pdf>
+
+The script uploads the file to LlamaCloud with purpose="classify", runs the
+classify job in FAST mode against three fixed rules (invoice, receipt,
+contract), and prints a single line of JSON to stdout containing the
+classified `type`, the `confidence` score and the resolved absolute file
+path. Exits with status 0 on success and non-zero on any error.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+from llama_cloud import LlamaCloud
+
+
+# The three classification rules, in the exact order required by the task.
+RULES = [
+    {
+        "type": "invoice",
+        "description": (
+            "documents that contain an invoice number, invoice date, "
+            "bill-to section, and line items with totals."
+        ),
+    },
+    {
+        "type": "receipt",
+        "description": (
+            "short purchase receipts, typically from POS systems, with "
+            "merchant, items and total, often a single page."
+        ),
+    },
+    {
+        "type": "contract",
+        "description": (
+            "multi-section legal agreement with parties, terms, and "
+            "signature lines."
+        ),
+    },
+]
+
+
+def classify_file(client: LlamaCloud, file_path: Path) -> dict:
+    """Upload `file_path` and run the classify job, returning the JSON payload."""
+    # 1. Upload the file to LlamaCloud.
+    uploaded = client.files.create(file=str(file_path), purpose="classify")
+    file_id = uploaded.id
+
+    # 2. Run the classify job (uploads, polls, returns results in one call).
+    response = client.classifier.classify(
+        file_ids=[file_id],
+        rules=RULES,
+        mode="FAST",
+    )
+
+    items = getattr(response, "items", None) or []
+    if not items:
+        raise RuntimeError("classifier returned no items")
+
+    item = items[0]
+    result = getattr(item, "result", None)
+    if result is None:
+        raise RuntimeError("classifier item has no result")
+
+    classified_type = getattr(result, "type", None)
+    confidence = getattr(result, "confidence", None)
+    if classified_type is None or confidence is None:
+        raise RuntimeError("classifier result missing type or confidence")
+
+    return {
+        "type": classified_type,
+        "confidence": confidence,
+        "file": str(file_path.resolve()),
+    }
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Classify a PDF document with LlamaCloud Classifier."
+    )
+    parser.add_argument(
+        "file",
+        type=Path,
+        help="Local path to a PDF document to classify.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Fail fast if the API key is missing.
+    if not os.environ.get("LLAMA_CLOUD_API_KEY"):
+        print(
+            "error: LLAMA_CLOUD_API_KEY environment variable is not set",
+            file=sys.stderr,
+        )
+        return 2
+
+    args = parse_args(argv)
+    file_path: Path = args.file
+
+    if not file_path.is_file():
+        print(f"error: file not found: {file_path}", file=sys.stderr)
+        return 2
+
+    client = LlamaCloud()
+
+    try:
+        payload = classify_file(client, file_path)
+    except Exception as exc:  # noqa: BLE001 - report any failure as exit 1.
+        print(f"error: classification failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(json.dumps(payload))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+root@b7b46852-f286-449e-87b4-7d418a907f23:/home/user/myproject#
+
+
+Are you sure you want to mark the task as complete? This will trigger your solution to be graded and you won't be able to make any further corrections. If so, include "task_complete": true in your JSON response again.

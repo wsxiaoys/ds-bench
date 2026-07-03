@@ -1,0 +1,154 @@
+New Terminal Output:
+
+root@e369da02-1477-4415-b2ba-ee2ffac342a5:/home/user/myproject# cat /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/tools/router/event.go | head -150
+package router
+
+import (
+        "encoding/json"
+        "encoding/xml"
+        "errors"
+        "io"
+        "io/fs"
+        "net"
+        "net/http"
+        "net/netip"
+        "path/filepath"
+        "strings"
+
+        "github.com/pocketbase/pocketbase/tools/filesystem"
+        "github.com/pocketbase/pocketbase/tools/hook"
+        "github.com/pocketbase/pocketbase/tools/picker"
+        "github.com/pocketbase/pocketbase/tools/store"
+)
+
+var ErrUnsupportedContentType = NewBadRequestError("Unsupported Content-Type", nil)
+var ErrInvalidRedirectStatusCode = NewInternalServerError("Invalid redirect status code", nil)
+var ErrFileNotFound = NewNotFoundError("File not found", nil)
+
+const IndexPage = "index.html"
+
+// Event specifies based Route handler event that is usually intended
+// to be embedded as part of a custom event struct.
+//
+// NB! It is expected that the Response and Request fields are always set.
+type Event struct {
+        Response http.ResponseWriter
+        Request  *http.Request
+
+        hook.Event
+
+        data store.Store[string, any]
+}
+
+// RWUnwrapper specifies that an http.ResponseWriter could be "unwrapped"
+// (usually used with [http.ResponseController]).
+type RWUnwrapper interface {
+        Unwrap() http.ResponseWriter
+}
+
+// Written reports whether the current response has already been written.
+//
+// This method always returns false if e.ResponseWritter doesn't implement the WriteTracker interface
+// (all router package handlers receives a ResponseWritter that implements it unless explicitly replaced with a custom one).
+func (e *Event) Written() bool {
+        written, _ := getWritten(e.Response)
+        return written
+}
+
+// Status reports the status code of the current response.
+//
+// This method always returns 0 if e.Response doesn't implement the StatusTracker interface
+// (all router package handlers receives a ResponseWritter that implements it unless explicitly replaced with a custom one).
+func (e *Event) Status() int {
+        status, _ := getStatus(e.Response)
+        return status
+}
+
+// Flush flushes buffered data to the current response.
+//
+// Returns [http.ErrNotSupported] if e.Response doesn't implement the [http.Flusher] interface
+// (all router package handlers receives a ResponseWritter that implements it unless explicitly replaced with a custom one).
+func (e *Event) Flush() error {
+        return http.NewResponseController(e.Response).Flush()
+}
+
+// IsTLS reports whether the connection on which the request was received is TLS.
+func (e *Event) IsTLS() bool {
+        return e.Request.TLS != nil
+}
+
+// SetCookie is an alias for [http.SetCookie].
+//
+// SetCookie adds a Set-Cookie header to the current response's headers.
+// The provided cookie must have a valid Name.
+// Invalid cookies may be silently dropped.
+func (e *Event) SetCookie(cookie *http.Cookie) {
+        http.SetCookie(e.Response, cookie)
+}
+
+// RemoteIP returns the IP address of the client that sent the request.
+//
+// IPv6 addresses are returned expanded.
+// For example, "2001:db8::1" becomes "2001:0db8:0000:0000:0000:0000:0000:0001".
+//
+// Note that if you are behind reverse proxy(ies), this method returns
+// the IP of the last connecting proxy.
+func (e *Event) RemoteIP() string {
+        ip, _, _ := net.SplitHostPort(e.Request.RemoteAddr)
+        parsed, _ := netip.ParseAddr(ip)
+        return parsed.StringExpanded()
+}
+
+// FindUploadedFiles extracts all form files of "key" from a http request
+// and returns a slice with filesystem.File instances (if any).
+func (e *Event) FindUploadedFiles(key string) ([]*filesystem.File, error) {
+        if e.Request.MultipartForm == nil {
+                err := e.Request.ParseMultipartForm(DefaultMaxMemory)
+                if err != nil {
+                        return nil, err
+                }
+        }
+
+        if e.Request.MultipartForm == nil || e.Request.MultipartForm.File == nil || len(e.Request.MultipartForm.File[key]) == 0 {
+                return nil, http.ErrMissingFile
+        }
+
+        result := make([]*filesystem.File, 0, len(e.Request.MultipartForm.File[key]))
+
+        for _, fh := range e.Request.MultipartForm.File[key] {
+                file, err := filesystem.NewFileFromMultipart(fh)
+                if err != nil {
+                        return nil, err
+                }
+
+                result = append(result, file)
+        }
+
+        return result, nil
+}
+
+// Store
+// -------------------------------------------------------------------
+
+// Get retrieves single value from the current event data store.
+func (e *Event) Get(key string) any {
+        return e.data.Get(key)
+}
+
+// GetAll returns a copy of the current event data store.
+func (e *Event) GetAll() map[string]any {
+        return e.data.GetAll()
+}
+
+// Set saves single value into the current event data store.
+func (e *Event) Set(key string, value any) {
+        e.data.Set(key, value)
+}
+
+// SetAll saves all items from m into the current event data store.
+func (e *Event) SetAll(m map[string]any) {
+        for k, v := range m {
+                e.Set(k, v)
+        }
+}
+root@e369da02-1477-4415-b2ba-ee2ffac342a5:/home/user/myproject#

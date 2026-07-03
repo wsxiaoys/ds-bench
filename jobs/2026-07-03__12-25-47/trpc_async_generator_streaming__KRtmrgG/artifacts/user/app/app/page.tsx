@@ -1,0 +1,69 @@
+'use client';
+
+import { useState } from 'react';
+import { trpc } from './_components/TRPCProvider';
+
+export default function Home() {
+  const [input, setInput] = useState('');
+  const [response, setResponse] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const utils = trpc.useUtils();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isStreaming) return;
+
+    setResponse('');
+    setIsStreaming(true);
+
+    try {
+      const iterable = await utils.client.chat.query(input);
+      let accumulated = '';
+      for await (const char of iterable) {
+        accumulated += char;
+        setResponse(accumulated);
+      }
+    } catch (err) {
+      console.error('Error during streaming:', err);
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black min-h-screen p-8">
+      <main className="flex flex-col w-full max-w-3xl gap-8">
+        <h1 className="text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
+          tRPC v11 Streaming Chat
+        </h1>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex gap-2">
+            <input
+              id="chat-input"
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type a message..."
+              disabled={isStreaming}
+              className="flex-1 px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-900 text-black dark:text-zinc-50"
+            />
+            <button
+              id="chat-submit"
+              type="submit"
+              disabled={isStreaming || !input.trim()}
+              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isStreaming ? 'Streaming...' : 'Send'}
+            </button>
+          </div>
+          <div
+            id="chat-response"
+            className="min-h-[200px] p-4 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-900 text-black dark:text-zinc-50 whitespace-pre-wrap"
+          >
+            {response || (isStreaming ? 'Streaming response...' : 'Response will appear here')}
+          </div>
+        </form>
+      </main>
+    </div>
+  );
+}

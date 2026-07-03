@@ -1,0 +1,58 @@
+import { route } from "./src/router.js";
+
+async function readStdin(): Promise<string> {
+return new Promise((resolve, reject) => {
+let data = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => (data += chunk));
+process.stdin.on("end", () => resolve(data));
+process.stdin.on("error", (err) => reject(err));
+});
+}
+
+async function main(): Promise<void> {
+const raw = await readStdin();
+const trimmed = raw.trim();
+if (trimmed.length === 0) {
+process.exit(0);
+return;
+}
+
+let parsed: unknown;
+try {
+parsed = JSON.parse(trimmed);
+} catch (err) {
+console.log(`ERR ${(err as Error).message}`);
+process.exit(0);
+return;
+}
+
+if (
+parsed === null ||
+typeof parsed !== "object" ||
+!Array.isArray((parsed as { events?: unknown }).events)
+) {
+console.log("ERR expected an object with an events array");
+process.exit(0);
+return;
+}
+
+const events = (parsed as { events: unknown[] }).events;
+
+for (const event of events) {
+try {
+const out = route(event);
+console.log(out);
+} catch (err) {
+console.log(`ERR ${(err as Error).message}`);
+break;
+}
+}
+
+process.exit(0);
+}
+
+main().catch((err) => {
+console.log(`ERR ${(err as Error).message}`);
+process.exit(0);
+});

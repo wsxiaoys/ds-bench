@@ -1,0 +1,243 @@
+New Terminal Output:
+
+root@be5de8b4-2ef7-4b40-aa15-0c4ba857c283:~# cd /home/user/fraud_detection
+root@be5de8b4-2ef7-4b40-aa15-0c4ba857c283:/home/user/fraud_detection# cat > run.py << 'EOF'
+> #!/usr/bin/env python3
+> """Bytewax Fraud Detection State Machine.
+>
+> Reads user events from a JSONlines file, tracks each user's state using a
+> state machine implemented with Bytewax's stateful_map operator, and emits
+> fraud alerts to an output JSONlines file when suspicious activity is
+> detected.
+> """
+> import argparse
+> import json
+> import sys
+> from typing import Dict, Iterable, List, Optional, Tuple
+>
+> from bytewax.dataflow import Dataflow
+> from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
+> from bytewax.outputs import StatelessSinkPartition, Sink
+> import bytewax.operators as op
+> from bytewax.execution import run_main
+>
+>
+> # ---------- Constants ----------
+> LOGGED_OUT = "LOGGED_OUT"
+> LOGGED_IN = "LOGGED_IN"
+> SUSPICIOUS = "SUSPICIOUS"
+>
+> LARGE_TRANSACTION_THRESHOLD = 1000
+> LARGE_TX_WINDOW_SECONDS = 300
+> LARGE_TX_COUNT_THRESHOLD = 3
+>
+>
+> # ---------- Custom Source ----------
+> class JSONLinesSource(FixedPartitionedSource):
+>     """Reads JSON objects (one per line) from a single file."""
+>
+>     def __init__(self, path: str):
+>         self._path = path
+>
+>     def list_parts(self) -> List[str]:
+>         return ["single"]
+>
+>     def build_part(
+>         self,
+>         step_id: str,
+>         for_part: str,
+>         resume_state: Optional[int],
+>     ) -> StatefulSourcePartition:
+>         return _JSONLinesPartition(self._path, resume_state)
+>
+>
+> class _JSONLinesPartition(StatefulSourcePartition[int, int]):
+>     """Reads the file line by line. `resume_state` is the next line index."""
+>
+>     def __init__(self, path: str, start_index: Optional[int]):
+>         self._path = path
+>         # Defer opening until first call to avoid issues in __init__
+>         self._index = start_index if start_index is not None else 0
+>         self._done = start_index is not None and False
+>         self._lines: Optional[List[str]] = None
+>
+>     def _ensure_loaded(self) -> None:
+>         if self._lines is None:
+>             with open(self._path, "r", encoding="utf-8") as f:
+>                 self._lines = [line for line in f.read().splitlines() if line.strip()]
+>
+>     def next_batch(self) -> Iterable[Tuple[int, dict]]:
+>         self._ensure_loaded()
+>         assert self._lines is not None
+>         if self._index >= len(self._lines):
+>             raise StopIteration()
+>         # Read one line at a time so the snapshot is precise.
+>         line = self._lines[self._index]
+>         self._index += 1
+>         try:
+>             item = json.loads(line)
+>         except json.JSONDecodeError as exc:
+>             raise ValueError(
+>                 f"Invalid JSON on line {self._index} of {self._path}: {line!r}"
+>             ) from exc
+>         yield (self._index - 1, item)
+>
+>     def snapshot(self) -> int:
+>         return self._index
+>
+>
+> # ---------- Custom Sink ----------
+> class JSONLinesSink(Sink):
+>     """Writes one JSON object per line to a single output file."""
+>
+>     def __init__(self, path: str):
+>         self._path = path
+>
+>     def list_parts(self) -> List[str]:
+>         return ["single"]
+>
+>     def build_part(
+>         self,
+>         step_id: str,
+>         for_part: str,
+>         resume_state: Optional[int],
+>     ) -> StatelessSinkPartition:
+>         return _JSONLinesSinkPartition(self._path)
+>
+>
+> class _JSONLinesSinkPartition(StatelessSinkPartition):
+>     def __init__(self, path: str):
+>         self._path = path
+>         self._fh = open(self._path, "w", encoding="utf-8")
+>
+>     def write_batch(self, items: List[dict]) -> None:
+>         for item in items:
+>             self._fh.write(json.dumps(item) + "\n")
+>         self._fh.flush()
+>
+>     def close(self) -> None:
+>         try:
+>             self._fh.close()
+>         except Exception:
+>             pass
+>
+>
+> # ---------- State Machine ----------
+> def initial_state() -> dict:
+>     return {
+>         "state": LOGGED_OUT,
+>         "login_time": None,
+>         "large_tx_count": 0,
+>     }
+>
+>
+> def update_state(state: Optional[dict], event: dict) -> Tuple[dict, Optional[dict]]:
+>     """Apply the event to the state, returning (new_state, alert_or_None).
+>
+>     State is treated as immutable: we build a brand new dict each call.
+>     """
+>     if state is None:
+>         state = initial_state()
+>
+>     event_type = event.get("event_type")
+>     timestamp = event.get("timestamp")
+>     amount = event.get("amount", 0) or 0
+>
+>     # Always honor logout immediately.
+>     if event_type == "logout":
+>         new_state = initial_state()
+>         return new_state, None
+>
+>     if event_type == "login":
+>         new_state = {
+>             "state": LOGGED_IN,
+>             "login_time": timestamp,
+>             "large_tx_count": 0,
+>         }
+>         return new_state, None
+>
+>     if event_type == "transaction":
+>         current = state["state"]
+>         login_time = state["login_time"]
+>
+>         # If we're not currently logged in (LOGGED_OUT) or the login window
+>         # has expired (>300 seconds since login), the transaction is ignored
+>         # and we reset to LOGGED_OUT.
+>         if current == LOGGED_OUT or login_time is None or timestamp - login_time > LARGE_TX_WINDOW_SECONDS:
+>             new_state = initial_state()
+>             return new_state, None
+>
+>         # We are within the 300-second login window.
+>         new_large_tx_count = state["large_tx_count"]
+>         new_status = current
+>
+>         if amount >= LARGE_TRANSACTION_THRESHOLD:
+>             new_large_tx_count += 1
+>             new_status = SUSPICIOUS
+>
+>         new_state = {
+>             "state": new_status,
+>             "login_time": login_time,
+>             "large_tx_count": new_large_tx_count,
+>         }
+>
+>         # Did we just cross the fraud threshold?
+>         if new_large_tx_count >= LARGE_TX_COUNT_THRESHOLD:
+>             alert = {"user_id": event["user_id"], "alert": "FRAUD_ALERT"}
+>             # Reset to LOGGED_OUT after emitting the alert.
+>             reset_state = initial_state()
+>             return reset_state, alert
+>
+>         return new_state, None
+>
+>     # Unknown event types are ignored; state is unchanged.
+>     return dict(state), None
+>
+>
+> # ---------- Dataflow ----------
+> def build_dataflow(input_path: str, output_path: str) -> Dataflow:
+>     flow = Dataflow("fraud_detection")
+>
+>     raw = op.input("input", flow, JSONLinesSource(input_path))
+>
+>     # Key by user_id so that state is maintained per user.
+>     keyed = op.key_on("key_user", raw, lambda kv: kv[1]["user_id"])
+>
+>     # Value is the event payload.
+>     events = op.map("value_only", keyed, lambda kv: kv[1])
+>
+>     # Stateful map: state machine per user.
+>     alerts = op.stateful_map("fraud_state", events, update_state)
+>
+>     # Keep only the alert value (None events are dropped at the sink).
+>     def to_sink(kv):
+>         alert = kv[1]
+>         return alert
+>
+>     only_alerts = op.filter("drop_none", alerts, lambda kv: kv[1] is not None)
+>     cleaned = op.map("to_alert", only_alerts, to_sink)
+>
+>     op.output("alerts_out", cleaned, JSONLinesSink(output_path))
+>     return flow
+>
+>
+> def main(argv: Optional[List[str]] = None) -> int:
+>     parser = argparse.ArgumentParser(description="Bytewax Fraud Detection")
+>     parser.add_argument("--input", required=True, help="Input JSONlines file")
+>     parser.add_argument("--output", required=True, help="Output JSONlines file")
+>     args = parser.parse_args(argv)
+>
+>     flow = build_dataflow(args.input, args.output)
+>     run_main(flow)
+>     return 0
+>
+>
+> if __name__ == "__main__":
+>     sys.exit(main())
+> EOF
+root@be5de8b4-2ef7-4b40-aa15-0c4ba857c283:/home/user/fraud_detection# ls -la
+total 8
+drwxr-xr-x 1 root root   28 Jul  3 12:51 .
+drwxr-xr-x 1 root root   37 Jul  3 12:49 ..
+-rw-r--r-- 1 root root 7210 Jul  3 12:51 run.py
+root@be5de8b4-2ef7-4b40-aa15-0c4ba857c283:/home/user/fraud_detection#

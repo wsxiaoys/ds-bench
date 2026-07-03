@@ -1,0 +1,28 @@
+
+
+{
+  "analysis": "OK, so the middleware code path: if there are middlewares, the handler is wrapped. The execute calls handler at index==chain.length. So the handler should be called once via middleware path, but only once. Hmm.\n\nWait - the log shows my handler is called twice. The first time with the request, then again at the same instant. This means there might be TWO things calling the handler. Looking back at the original code:\n\n```js\nif (h.apiRoute.raw) {\n    return {\n      ...h.apiRoute,\n      handler: (...) => {\n        ...\n        if (middlewares.length === 0) {\n          return toResponse(h.apiRoute.handler(rawReq, rawResp));\n        }\n        const handler = async () => {\n          return h.apiRoute.handler(rawReq, rawResp);\n        };\n        const mwRequest = new MiddlewareRequest(undefined, rawReq, rawResp);\n        return invokeMiddlewareChain(req, mwRequest, middlewares, handler);\n      }\n    };\n}\n```\n\nSo the outer wrapper is called and either calls `h.apiRoute.handler(rawReq, rawResp)` directly or via middleware. There should only be one call. \n\nWait - maybe there is some issue with how I'm seeing things. Looking at the console output, the GRAPHQL call seems to hang or return undefined. Let me check if maybe this is a behavior where the same handler module is being imported twice. Look at the bundle output earlier - it had `var gateways = []; var handlers = [];` and then `registerGateways(gateways); registerHandlers(handlers);`. This is just one point of registration.\n\nWait, let me look again at the log:\n- HANDLER START\n- NON-GET REQUEST POST\n- CONTENT-TYPE: application/json\n- Reading JSON body\n- PAYLOAD: {\"query\":\"{ hello }\"}\n- QUERY: { hello }\n- CALLING GRAPHQL\n- HANDLER START   <-- THIS IS THE PROBLEM!\n- No req or resp\n- RESULT: undefined\n- ENDED RESP\n\nThe handler is called twice! Once with proper args, once with no args. Then RESULT is undefined (because the second call returned undefined because no req/resp).\n\nMaybe Encore's runtime calls the raw handler twice in some way. Actually wait - what if there's an OPTIONS preflight or CORS check that's making a second call? But that wouldn't explain why my handler is called. The request still has no req/resp.\n\nMaybe the issue is that the request body is consumed twice. After my handler reads the body, it can't be read again. Let me check if there's something.\n\nActually, looking at this more carefully - maybe there's some external factor like Encore doing a test or something. Let me try the simple test again to confirm.",
+  "plan": "Test with the simple version that worked before.",
+  "commands": [
+    {
+      "keystrokes": "cat > hello/graphql.ts << 'EOF'\nimport { api } from \"encore.dev/api\";\n\nexport const graphql = api.raw(\n  { expose: true, method: \"*\", path: \"/graphql\" },\n  async (req: any, resp: any) => {\n    console.log(\"HANDLER START\", !!req, !!resp);\n    try {\n      if (!req || !resp) return;\n      console.log(\"ABOUT TO WRITE\");\n      resp.statusCode = 200;\n      resp.setHeader(\"Content-Type\", \"application/json\");\n      resp.end(JSON.stringify({ ok: true, msg: \"test\" }));\n      console.log(\"WROTE\");\n    } catch (err) {\n      console.log(\"ERR:\", err);\n    }\n  }\n);\nEOF\n",
+      "duration": 0.2
+    },
+    {
+      "keystrokes": "encore run > /tmp/encore.log 2>&1 &\n",
+      "duration": 1.0
+    },
+    {
+      "keystrokes": "sleep 10\n",
+      "duration": 12.0
+    },
+    {
+      "keystrokes": "curl -si -X POST http://127.0.0.1:4000/graphql -d '{\"query\":\"test\"}'\n",
+      "duration": 3.0
+    },
+    {
+      "keystrokes": "tail -10 /tmp/encore.log\n",
+      "duration": 0.1
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+New Terminal Output:
+
+root@c8818bd6-01f7-42b1-b5d4-256d02be6eeb:/home/user/uptime# cat > monitor/events.ts << 'EOF'
+> import { Topic } from "encore.dev/pubsub";
+>
+> export interface CheckEvent {
+>   siteId: number;
+>   url: string;
+> }
+>
+> export const checkTopic = new Topic<CheckEvent>("check-site", {
+>   deliveryGuarantee: "at-least-once",
+> });
+> EOF
+root@c8818bd6-01f7-42b1-b5d4-256d02be6eeb:/home/user/uptime# cat > monitor/monitor.ts << 'EOF'
+> import { api, APIError } from "encore.dev";
+> import { SQLDatabase } from "encore.dev/storage/sqldb";
+> import { checkTopic } from "./events";
+> import { db } from "./db";
+>
+> interface AddSiteRequest {
+>   url: string;
+> }
+>
+> interface Site {
+>   id: number;
+>   url: string;
+>   is_up: boolean;
+> }
+>
+> interface ListSitesResponse {
+>   sites: Site[];
+> }
+>
+> // POST /site
+> export const addSite = api(
+>   { method: "POST", path: "/site", expose: true },
+>   async (req: AddSiteRequest): Promise<Site> => {
+>     if (!req.url || typeof req.url !== "string") {
+>       throw APIError.invalidArgument("url is required");
+>     }
+>     const row = await db.queryRow<Site>`
+>       INSERT INTO sites (url, is_up)
+>       VALUES (${req.url}, FALSE)
+>       RETURNING id, url, is_up
+>     `;
+>     if (!row) {
+>       throw APIError.internal("failed to insert site");
+>     }
+>     return row;
+>   },
+> );
+>
+> // GET /site
+> export const listSites = api(
+>   { method: "GET", path: "/site", expose: true },
+>   async (): Promise<ListSitesResponse> => {
+>     const rows: Site[] = [];
+>     for await (const row of db.query<Site>`SELECT id, url, is_up FROM sites ORDER BY id`) {
+>       rows.push(row);
+>     }
+>     return { sites: rows };
+>   },
+> );
+>
+> // POST /check
+> export const triggerCheck = api(
+>   { method: "POST", path: "/check", expose: true },
+>   async (): Promise<{ ok: boolean }> => {
+>     for await (const row of db.query<Site>`SELECT id, url FROM sites`) {
+>       await checkTopic.publish({ siteId: row.id, url: row.url });
+>     }
+>     return { ok: true };
+>   },
+> );
+> EOF
+root@c8818bd6-01f7-42b1-b5d4-256d02be6eeb:/home/user/uptime# cat > monitor/checker.ts << 'EOF'
+> import { Subscription } from "encore.dev/pubsub";
+> import { db } from "./db";
+> import { checkTopic, CheckEvent } from "./events";
+>
+> new Subscription(checkTopic, "check-site", {
+>   handler: async (event: CheckEvent) => {
+>     let isUp = false;
+>     try {
+>       const controller = new AbortController();
+>       const timeout = setTimeout(() => controller.abort(), 10000);
+>       const res = await fetch(event.url, { method: "GET", signal: controller.signal });
+>       clearTimeout(timeout);
+>       isUp = res.status >= 200 && res.status < 300;
+>     } catch (err) {
+>       isUp = false;
+>     }
+>     await db.exec`
+>       UPDATE sites SET is_up = ${isUp} WHERE id = ${event.siteId}
+>     `;
+>   },
+> });
+> EOF
+root@c8818bd6-01f7-42b1-b5d4-256d02be6eeb:/home/user/uptime# ls -la monitor/
+total 16
+drwxr-xr-x 3 root root  114 Jul  3 13:26 .
+drwxr-xr-x 4 root root  142 Jul  3 13:26 ..
+-rw-r--r-- 1 root root  679 Jul  3 13:26 checker.ts
+-rw-r--r-- 1 root root  138 Jul  3 13:26 db.ts
+-rw-r--r-- 1 root root  216 Jul  3 13:26 events.ts
+drwxr-xr-x 2 root root   90 Jul  3 13:26 migrations
+-rw-r--r-- 1 root root 1481 Jul  3 13:26 monitor.ts
+root@c8818bd6-01f7-42b1-b5d4-256d02be6eeb:/home/user/uptime#

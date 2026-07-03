@@ -1,0 +1,135 @@
+New Terminal Output:
+
+root@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cat /usr/local/lib/python3.12/dist-packages/bytewax/connectors/files.py | head -100
+"""Connectors for local text files."""
+
+import os
+from csv import DictReader
+from pathlib import Path
+from typing import Any, Callable, Dict, Iterator, List, Optional, Union
+from zlib import adler32
+
+from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition, batch
+from bytewax.outputs import FixedPartitionedSink, StatefulSinkPartition
+from typing_extensions import override
+
+
+def _get_path_dev(path: Path) -> str:
+    return hex(path.stat().st_dev)
+
+
+def _readlines(f) -> Iterator[str]:
+    """Turn a file into a generator of lines but support `tell`.
+
+    Python files don't support `tell` to learn the offset if you use
+    them in iterator mode via `next`, so re-create that iterator using
+    `readline`.
+
+    """
+    while True:
+        line = f.readline()
+        if len(line) <= 0:
+            break
+        yield line
+
+
+def _strip_n(s: str) -> str:
+    return s.rstrip("\n")
+
+
+class _FileSourcePartition(StatefulSourcePartition[str, int]):
+    def __init__(self, path: Path, batch_size: int, resume_state: Optional[int]):
+        self._f = open(path, "rt")
+        if resume_state is not None:
+            self._f.seek(resume_state)
+        it = map(_strip_n, _readlines(self._f))
+        self._batcher = batch(it, batch_size)
+
+    @override
+    def next_batch(self) -> List[str]:
+        return next(self._batcher)
+
+    @override
+    def snapshot(self) -> int:
+        return self._f.tell()
+
+    @override
+    def close(self) -> None:
+        self._f.close()
+
+
+class DirSource(FixedPartitionedSource[str, int]):
+    """Read all files in a filesystem directory line-by-line.
+
+    The directory must exist on at least one worker. Each worker can
+    have unique files at overlapping paths if each worker mounts a
+    distinct filesystem. Tries to read only one instance of each
+    unique file in the whole cluster by deduplicating paths by
+    filesystem ID. See `get_fs_id` argument to adjust this.
+
+    Unique files are the unit of parallelism; only one worker will
+    read each unique file. Thus, lines from different files are
+    interleaved.
+
+    Can support exactly-once processing.
+
+    """
+
+    def __init__(
+        self,
+        dir_path: Path,
+        glob_pat: str = "*",
+        batch_size: int = 1000,
+        get_fs_id: Callable[[Path], str] = _get_path_dev,
+    ):
+        """Init.
+
+        :arg dir_path: Path to directory.
+
+        :arg glob_pat: Pattern of files to read from the directory.
+            Defaults to `"*"` or all files.
+
+        :arg batch_size: Number of lines to read per batch. Defaults
+            to 1000.
+
+        :arg get_fs_id: Called with the directory and must return a
+            consistent (across workers and restarts) unique ID for the
+            filesystem of that directory. Defaults to using
+            {py:obj}`os.stat_result.st_dev`.
+
+            If you know all workers have access to identical files,
+            you can have this return a constant: `lambda _dir:
+            "SHARED"`.
+
+root@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# grep -n 'def ' /usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py | head -30
+83:def _identity(x: X) -> X:
+87:def _untyped_none() -> Any:
+91:def _get_system_utc() -> datetime:
+104:def branch(
+112:def branch(
+120:def branch(
+180:def flat_map_batch(
+195:    def batch_mapper(batch):
+241:def input(  # noqa: A001
+292:def _default_debug_inspector(step_id: str, item: Any, epoch: int, worker: int) -> None:
+297:def inspect_debug(
+343:def merge(
+351:def merge(
+360:def merge(
+370:def merge(
+381:def merge(
+388:def merge(
+395:def merge(
+450:def output(step_id: str, up: Stream[X], sink: Sink[X]) -> None:
+498:def redistribute(step_id: str, up: Stream[X]) -> Stream[X]:
+606:        def __init__(self):
+609:        def on_batch(self, batch):
+622:        def snapshot(self):
+626:        def restore(self, snapshot):
+707:    def on_batch(self, values: List[V]) -> Tuple[Iterable[W], bool]:
+722:    def on_notify(self) -> Tuple[Iterable[W], bool]:
+734:    def on_eof(self) -> Tuple[Iterable[W], bool]:
+749:    def notify_at(self) -> Optional[datetime]:
+770:    def snapshot(self) -> S:
+796:def stateful_batch(
+root@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~#

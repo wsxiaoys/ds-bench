@@ -1,0 +1,57 @@
+New Terminal Output:
+
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:~/project# cat > /tmp/test2.py << 'PYEOF'
+> """Test with actual JSON input."""
+> import json
+> from datetime import datetime, timedelta, timezone
+> from pathlib import Path
+> from bytewax.dataflow import Dataflow
+> import bytewax.operators as op
+> from bytewax.operators.windowing import EventClock, SlidingWindower, fold_window
+> from bytewax.testing import TestingSource, run_main
+>
+> flow = Dataflow("test")
+>
+> data = [
+>     json.dumps({"sensor_id": "a", "time": "2026-01-01T00:00:10Z", "temp": 20.0}),
+>     json.dumps({"sensor_id": "a", "time": "2026-01-01T00:00:25Z", "temp": 22.0}),
+> ]
+>
+> inp = op.input("in", flow, TestingSource(data))
+> parsed = op.map("parse", inp, lambda l: json.loads(l))
+> keyed = op.key_on("key", parsed, lambda x: x["sensor_id"])
+>
+> def to_event(item):
+>     t = item["time"]
+>     if t.endswith("Z"):
+>         t = t[:-1] + "+00:00"
+>     return {"sensor_id": item["sensor_id"], "temp": float(item["temp"]), "time": datetime.fromisoformat(t)}
+>
+> events = op.map_value("to_event", keyed, to_event)
+>
+> clock = EventClock(ts_getter=lambda e: e["time"], wait_for_system_duration=timedelta(0))
+> windower = SlidingWindower(length=timedelta(seconds=60), offset=timedelta(seconds=30), align_to=datetime(2026,1,1,tzinfo=timezone.utc))
+>
+> windowed = fold_window("fold", events, clock, windower,
+>                        builder=lambda: {"count":0, "sum":0.0, "sumsq":0.0},
+>                        folder=lambda acc, e: (acc.update({"count":acc["count"]+1, "sum":acc["sum"]+e["temp"], "sumsq":acc["sumsq"]+e["temp"]**2}) or acc),
+>                        merger=lambda a, b: {"count":a["count"]+b["count"], "sum":a["sum"]+b["sum"], "sumsq":a["sumsq"]+b["sumsq"]})
+>
+> op.inspect("down", windowed.down)
+> op.inspect("meta", windowed.meta)
+>
+> joined = op.join("join", windowed.down, windowed.meta)
+> op.inspect("joined", joined)
+>
+> run_main(flow)
+> PYEOF
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:~/project# cd /tmp && python3 test2.py 2>&1 | head -30
+test.down: ('a', (-1, {'count': 2, 'sum': 42.0, 'sumsq': 884.0}))
+test.down: ('a', (0, {'count': 2, 'sum': 42.0, 'sumsq': 884.0}))
+test.meta: ('a', (-1, WindowMetadata(open_time=datetime.datetime(2025, 12, 31, 23, 59, 30, tzinfo=datetime.timezone.utc), close_time=datetime.datetime(2026, 1,
+1, 0, 0, 30, tzinfo=datetime.timezone.utc), merged_ids=set())))
+test.meta: ('a', (0, WindowMetadata(open_time=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.timezone.utc), close_time=datetime.datetime(2026, 1, 1, 0, 1,
+tzinfo=datetime.timezone.utc), merged_ids=set())))
+test.joined: ('a', ((0, {'count': 2, 'sum': 42.0, 'sumsq': 884.0}), (-1, WindowMetadata(open_time=datetime.datetime(2025, 12, 31, 23, 59, 30, tzinfo=datetime.ti
+mezone.utc), close_time=datetime.datetime(2026, 1, 1, 0, 0, 30, tzinfo=datetime.timezone.utc), merged_ids=set()))))
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:/tmp#

@@ -1,0 +1,194 @@
+New Terminal Output:
+
+//# sourceMappingURL=context.d.ts.maproot@0dcfc132-eb47-42f2-86b8-089f836b7d75:/home/user/myproject# cd /home/user/myproject
+root@0dcfc132-eb47-42f2-86b8-089f836b7d75:/home/user/myproject# cat > tsconfig.json << 'EOF'
+> {
+>   "compilerOptions": {
+>     "target": "ES2020",
+>     "module": "commonjs",
+>     "lib": ["ES2020"],
+>     "outDir": "./dist",
+>     "rootDir": "./src",
+>     "strict": true,
+>     "esModuleInterop": true,
+>     "skipLibCheck": true,
+>     "forceConsistentCasingInFileNames": true,
+>     "resolveJsonModule": true,
+>     "declaration": false,
+>     "sourceMap": false
+>   },
+>   "include": ["src/**/*"],
+>   "exclude": ["node_modules", "dist"]
+> }
+> EOF
+root@0dcfc132-eb47-42f2-86b8-089f836b7d75:/home/user/myproject# mkdir -p src
+root@0dcfc132-eb47-42f2-86b8-089f836b7d75:/home/user/myproject# cat > src/main.ts << 'MAINEOF'
+> import AlchemystAI from '@alchemystai/sdk';
+> import * as fs from 'fs';
+>
+> interface CLIArgs {
+>   group: string;
+> }
+>
+> function parseArgs(argv: string[]): CLIArgs {
+>   const args: CLIArgs = { group: '' };
+>   for (let i = 0; i < argv.length; i++) {
+>     const a = argv[i];
+>     if (a === '--group') {
+>       const v = argv[i + 1];
+>       if (!v) throw new Error('Missing value for --group');
+>       args.group = v;
+>       i++;
+>     } else if (a.startsWith('--group=')) {
+>       args.group = a.slice('--group='.length);
+>     }
+>   }
+>   if (!args.group) {
+>     throw new Error('Usage: node dist/main.js --group <group_name>');
+>   }
+>   return args;
+> }
+>
+> function loadRunId(path: string): string {
+>   if (!fs.existsSync(path)) {
+>     throw new Error(`Run id file not found: ${path}`);
+>   }
+>   return fs.readFileSync(path, 'utf8').trim();
+> }
+>
+> function buildDocuments(runId: string) {
+>   return [
+>     {
+>       content:
+>         'Support guide: how to reset a customer account password, including MFA recovery steps.',
+>       metadata: {
+>         file_name: `support-faq-password-${runId}.txt`,
+>         group_name: ['support'],
+>         file_type: 'text/plain',
+>       },
+>     },
+>     {
+>       content:
+>         'Support guide: refund policy and how to issue partial refunds through the billing portal.',
+>       metadata: {
+>         file_name: `support-faq-refunds-${runId}.txt`,
+>         group_name: ['support'],
+>         file_type: 'text/plain',
+>       },
+>     },
+>     {
+>       content:
+>         'Engineering runbook: deploying the search service to Kubernetes via the Helm chart in infra/charts/search.',
+>       metadata: {
+>         file_name: `engineering-deploy-search-${runId}.md`,
+>         group_name: ['engineering'],
+>         file_type: 'text/markdown',
+>       },
+>     },
+>     {
+>       content:
+>         'Engineering postmortem: a brief investigation into an outage in the indexing pipeline on 2025-01-12.',
+>       metadata: {
+>         file_name: `engineering-postmortem-indexing-${runId}.md`,
+>         group_name: ['engineering'],
+>         file_type: 'text/markdown',
+>       },
+>     },
+>   ];
+> }
+>
+> async function addDocumentsIdempotently(
+>   client: AlchemystAI,
+>   documents: Array<{
+>     content?: string;
+>     metadata: Record<string, unknown>;
+>     [k: string]: unknown;
+>   }>
+> ): Promise<void> {
+>   for (const doc of documents) {
+>     try {
+>       // Per the task description: store documents with client.v1.context.add,
+>       // putting file_name and group_name (snake_case) under each document's metadata.
+>       await (client.v1.context as any).add({
+>         documents: [doc],
+>         context_type: 'resource',
+>         source: 'docs',
+>         scope: 'internal',
+>         metadata: doc.metadata,
+>       });
+>       // eslint-disable-next-line no-console
+>       console.error(`Seeded ${doc.metadata.file_name}`);
+>     } catch (err: any) {
+>       const status: number | undefined =
+>         err?.status ?? err?.statusCode ?? err?.response?.status;
+>       const message: string =
+>         err?.message ?? (typeof err === 'string' ? err : JSON.stringify(err));
+>       // Idempotency: tolerate 409 conflicts (duplicate file_name).
+>       if (status === 409 || /409|conflict|already/i.test(message)) {
+>         // eslint-disable-next-line no-console
+>         console.error(`Already exists, skipping: ${doc.metadata.file_name}`);
+>         continue;
+>       }
+>       throw err;
+>     }
+>   }
+> }
+>
+> async function searchByGroup(
+>   client: AlchemystAI,
+>   group: string
+> ): Promise<string[]> {
+>   const resp: any = await client.v1.context.search({
+>     query: 'document',
+>     minimum_similarity_threshold: 0,
+>     similarity_threshold: 1,
+>     scope: 'internal',
+>     metadata: 'true',
+>     // camelCase on search per the documented asymmetry
+>     body_metadata: { groupName: [group] },
+>   } as any);
+>
+>   const contexts: any[] = resp?.contexts ?? [];
+>   const names = new Set<string>();
+>   for (const c of contexts) {
+>     const md = c?.metadata;
+>     if (!md) continue;
+>     const fileName =
+>       md.file_name ?? md.fileName ?? md['file-name'] ?? md.file_name;
+>     if (typeof fileName === 'string' && fileName.length > 0) {
+>       names.add(fileName);
+>     }
+>   }
+>   return Array.from(names);
+> }
+>
+> async function main() {
+>   const args = parseArgs(process.argv.slice(2));
+>   const apiKey = process.env.ALCHEMYST_AI_API_KEY;
+>   if (!apiKey) {
+>     throw new Error('ALCHEMYST_AI_API_KEY env var is required');
+>   }
+>   const runId = loadRunId('/logs/artifacts/run-id');
+>
+>   const client = new AlchemystAI({ apiKey });
+>
+>   const documents = buildDocuments(runId);
+>   await addDocumentsIdempotently(client, documents);
+>
+>   const names = await searchByGroup(client, args.group);
+>   // Emit a single JSON array of strings on stdout.
+>   process.stdout.write(JSON.stringify(names) + '\n');
+> }
+>
+> main().catch((err) => {
+>   // eslint-disable-next-line no-console
+>   console.error('Error:', err && err.stack ? err.stack : err);
+>   process.exit(1);
+> });
+> MAINEOF
+root@0dcfc132-eb47-42f2-86b8-089f836b7d75:/home/user/myproject# ls -la src/
+total 8
+drwxr-xr-x 2 root root   29 Jul  3 13:15 .
+drwxr-xr-x 1 root root  127 Jul  3 13:15 ..
+-rw-r--r-- 1 root root 4795 Jul  3 13:15 main.ts
+root@0dcfc132-eb47-42f2-86b8-089f836b7d75:/home/user/myproject#

@@ -1,0 +1,63 @@
+New Terminal Output:
+
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:/tmp# cat > /tmp/test3.py << 'PYEOF'
+> """Test re-keying windowed.down and windowed.meta."""
+> import json
+> from datetime import datetime, timedelta, timezone
+> from pathlib import Path
+> from bytewax.dataflow import Dataflow
+> import bytewax.operators as op
+> from bytewax.operators.windowing import EventClock, SlidingWindower, fold_window
+> from bytewax.testing import TestingSource, run_main
+>
+> flow = Dataflow("test")
+>
+> data = [
+>     json.dumps({"sensor_id": "a", "time": "2026-01-01T00:00:10Z", "temp": 20.0}),
+>     json.dumps({"sensor_id": "a", "time": "2026-01-01T00:00:25Z", "temp": 22.0}),
+>     json.dumps({"sensor_id": "a", "time": "2026-01-01T00:00:40Z", "temp": 21.0}),
+> ]
+>
+> inp = op.input("in", flow, TestingSource(data))
+> parsed = op.map("parse", inp, lambda l: json.loads(l))
+> keyed = op.key_on("key", parsed, lambda x: x["sensor_id"])
+>
+> def to_event(item):
+>     t = item["time"]
+>     if t.endswith("Z"):
+>         t = t[:-1] + "+00:00"
+>     return {"sensor_id": item["sensor_id"], "temp": float(item["temp"]), "time": datetime.fromisoformat(t)}
+>
+> events = op.map_value("to_event", keyed, to_event)
+>
+> clock = EventClock(ts_getter=lambda e: e["time"], wait_for_system_duration=timedelta(0))
+> windower = SlidingWindower(length=timedelta(seconds=60), offset=timedelta(seconds=30), align_to=datetime(2026,1,1,tzinfo=timezone.utc))
+>
+> windowed = fold_window("fold", events, clock, windower,
+>                        builder=lambda: {"count":0, "sum":0.0, "sumsq":0.0},
+>                        folder=lambda acc, e: (acc.update({"count":acc["count"]+1, "sum":acc["sum"]+e["temp"], "sumsq":acc["sumsq"]+e["temp"]**2}) or acc),
+>                        merger=lambda a, b: {"count":a["count"]+b["count"], "sum":a["sum"]+b["sum"], "sumsq":a["sumsq"]+b["sumsq"]})
+>
+> # Re-key by (sensor_id, window_id) so we can join properly
+> # windowed.down items: (sensor_id, (window_id, value))
+> # windowed.meta items: (sensor_id, (window_id, WindowMetadata))
+>
+> down_rekeyed = op.key_on("down_rekey", windowed.down, lambda item: (item[0], item[1][0]))
+> meta_rekeyed = op.key_on("meta_rekey", windowed.meta, lambda item: (item[0], item[1][0]))
+>
+> op.inspect("down_rekey", down_rekeyed)
+> op.inspect("meta_rekey", meta_rekeyed)
+>
+> joined = op.join("join", down_rekeyed, meta_rekeyed)
+> op.inspect("joined", joined)
+>
+> run_main(flow)
+> PYEOF
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:/tmp# cd /tmp && python3 test3.py 2>&1 | head -30
+Traceback (most recent call last):
+  File "/tmp/test3.py", line 45, in <module>
+    op.inspect("down_rekey", down_rekeyed)
+  File "/usr/local/lib/python3.12/dist-packages/bytewax/dataflow.py", line 667, in fn
+    raise ValueError(msg)
+ValueError: step 'test.down_rekey' already exists; do you have two steps with the same ID?
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:/tmp#
