@@ -1,0 +1,111 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.4.0
+rootdir: /tests
+plugins: json-ctrf-0.5.2
+collected 2 items
+
+tests/test_final_state.py FF                                             [100%]
+
+=================================== FAILURES ===================================
+____________________________ test_deploy_log_exists ____________________________
+
+    def test_deploy_log_exists():
+        log_path = "/home/user/myproject/deploy.log"
+>       assert os.path.isfile(log_path), f"Deploy log not found at {log_path}"
+E       AssertionError: Deploy log not found at /home/user/myproject/deploy.log
+E       assert False
+E        +  where False = <function isfile at 0x73ab0d0ec220>('/home/user/myproject/deploy.log')
+E        +    where <function isfile at 0x73ab0d0ec220> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_final_state.py:7: AssertionError
+___________________________ test_convex_transactions ___________________________
+
+    def test_convex_transactions():
+        run_id = open("/logs/artifacts/run-id").read().strip()
+    
+        script_content = f"""
+    const {{ ConvexHttpClient }} = require("convex/browser");
+    const client = new ConvexHttpClient(process.env.CONVEX_URL);
+    
+    async function main() {{
+        const runId = "{run_id}";
+        const alice = `alice-${{runId}}`;
+        const bob = `bob-${{runId}}`;
+    
+        // 3. Create accounts
+        await client.mutation("accounts:createAccount", {{ name: alice, initialBalance: 100 }});
+        await client.mutation("accounts:createAccount", {{ name: bob, initialBalance: 50 }});
+    
+        // 4. Transfer 30 from alice to bob
+        await client.mutation("accounts:transfer", {{ fromName: alice, toName: bob, amount: 30 }});
+    
+        // 5. Verify balances
+        let aliceBalance = await client.query("accounts:getBalance", {{ name: alice }});
+        let bobBalance = await client.query("accounts:getBalance", {{ name: bob }});
+        if (aliceBalance !== 70) throw new Error(`Alice balance is ${{aliceBalance}}, expected 70`);
+        if (bobBalance !== 80) throw new Error(`Bob balance is ${{bobBalance}}, expected 80`);
+    
+        // 6. Transfer 100 from alice to bob (should fail)
+        let failed = false;
+        try {{
+            await client.mutation("accounts:transfer", {{ fromName: alice, toName: bob, amount: 100 }});
+        }} catch (e) {{
+            failed = true;
+        }}
+        if (!failed) throw new Error("Expected transfer of 100 to fail due to insufficient funds");
+    
+        // 7. Verify balances are rolled back
+        aliceBalance = await client.query("accounts:getBalance", {{ name: alice }});
+        bobBalance = await client.query("accounts:getBalance", {{ name: bob }});
+        if (aliceBalance !== 70) throw new Error(`Alice balance is ${{aliceBalance}}, expected 70`);
+        if (bobBalance !== 80) throw new Error(`Bob balance is ${{bobBalance}}, expected 80`);
+    
+        // 8. Transfer -10 (should fail)
+        failed = false;
+        try {{
+            await client.mutation("accounts:transfer", {{ fromName: alice, toName: bob, amount: -10 }});
+        }} catch (e) {{
+            failed = true;
+        }}
+        if (!failed) throw new Error("Expected transfer of -10 to fail");
+    }}
+    
+    main().catch(e => {{
+        console.error(e);
+        process.exit(1);
+    }});
+    """
+    
+        script_path = "/home/user/myproject/verify.js"
+        with open(script_path, "w") as f:
+            f.write(script_content)
+    
+        env = os.environ.copy()
+        subprocess.run(["npm", "install", "convex"], cwd="/home/user/myproject", capture_output=True)
+    
+        result = subprocess.run(
+            ["node", script_path],
+            cwd="/home/user/myproject",
+            env=env,
+            capture_output=True,
+            text=True
+        )
+    
+>       assert result.returncode == 0, f"Verification script failed: {result.stderr}\n{result.stdout}"
+E       AssertionError: Verification script failed: Error: [Request ID: aad733726eeb5a71] Server Error
+E         Could not find public function for 'accounts:createAccount'.
+E         
+E             at ConvexHttpClient.mutationInner (/home/user/myproject/node_modules/convex/dist/cjs/browser/http_client.js:312:15)
+E             at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+E             at async ConvexHttpClient.processMutationQueue (/home/user/myproject/node_modules/convex/dist/cjs/browser/http_client.js:325:24)
+E         
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['node', '/home/user/myproject/verify.js'], returncode=1, stdout='', stderr="Error: [Request ID:...exHttpClient.processMutationQueue (/home/user/myproject/node_modules/convex/dist/cjs/browser/http_client.js:325:24)\n").returncode
+
+tests/test_final_state.py:80: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_final_state.py::test_deploy_log_exists - AssertionError: De...
+FAILED tests/test_final_state.py::test_convex_transactions - AssertionError: ...
+============================== 2 failed in 4.56s ===============================

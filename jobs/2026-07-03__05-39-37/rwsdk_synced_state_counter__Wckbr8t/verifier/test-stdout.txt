@@ -1,0 +1,526 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.4.0
+rootdir: /tests
+plugins: xprocess-1.0.2, json-ctrf-0.5.2
+collected 3 items
+
+tests/test_final_state.py .FF                                            [100%]
+
+=================================== FAILURES ===================================
+______________________________ test_counter_route ______________________________
+
+self = <urllib3.connectionpool.HTTPConnectionPool object at 0x74a51cd2e1b0>
+conn = <HTTPConnection(host='localhost', port=5173) at 0x74a51d4f7950>
+method = 'GET', url = '/counter', body = None
+headers = {'User-Agent': 'python-requests/2.34.2', 'Accept-Encoding': 'gzip, deflate', 'Accept': '*/*', 'Connection': 'keep-alive'}
+retries = Retry(total=0, connect=None, read=False, redirect=None, status=None)
+timeout = Timeout(connect=30, read=30, total=None), chunked = False
+response_conn = <HTTPConnection(host='localhost', port=5173) at 0x74a51d4f7950>
+preload_content = False, decode_content = False, enforce_content_length = True
+
+    def _make_request(
+        self,
+        conn: BaseHTTPConnection,
+        method: str,
+        url: str,
+        body: _TYPE_BODY | None = None,
+        headers: typing.Mapping[str, str] | None = None,
+        retries: Retry | None = None,
+        timeout: _TYPE_TIMEOUT = _DEFAULT_TIMEOUT,
+        chunked: bool = False,
+        response_conn: BaseHTTPConnection | None = None,
+        preload_content: bool = True,
+        decode_content: bool = True,
+        enforce_content_length: bool = True,
+    ) -> BaseHTTPResponse:
+        """
+        Perform a request on a given urllib connection object taken from our
+        pool.
+    
+        :param conn:
+            a connection from one of our connection pools
+    
+        :param method:
+            HTTP request method (such as GET, POST, PUT, etc.)
+    
+        :param url:
+            The URL to perform the request on.
+    
+        :param body:
+            Data to send in the request body, either :class:`str`, :class:`bytes`,
+            an iterable of :class:`str`/:class:`bytes`, or a file-like object.
+    
+        :param headers:
+            Dictionary of custom headers to send, such as User-Agent,
+            If-None-Match, etc. If None, pool headers are used. If provided,
+            these headers completely replace any pool-specific headers.
+    
+        :param retries:
+            Configure the number of retries to allow before raising a
+            :class:`~urllib3.exceptions.MaxRetryError` exception.
+    
+            Pass ``None`` to retry until you receive a response. Pass a
+            :class:`~urllib3.util.retry.Retry` object for fine-grained control
+            over different types of retries.
+            Pass an integer number to retry connection errors that many times,
+            but no other types of errors. Pass zero to never retry.
+    
+            If ``False``, then retries are disabled and any exception is raised
+            immediately. Also, instead of raising a MaxRetryError on redirects,
+            the redirect response will be returned.
+    
+        :type retries: :class:`~urllib3.util.retry.Retry`, False, or an int.
+    
+        :param timeout:
+            If specified, overrides the default timeout for this one
+            request. It may be a float (in seconds) or an instance of
+            :class:`urllib3.util.Timeout`.
+    
+        :param chunked:
+            If True, urllib3 will send the body using chunked transfer
+            encoding. Otherwise, urllib3 will send the body using the standard
+            content-length form. Defaults to False.
+    
+        :param response_conn:
+            Set this to ``None`` if you will handle releasing the connection or
+            set the connection to have the response release it.
+    
+        :param preload_content:
+          If True, the response's body will be preloaded during construction.
+    
+        :param decode_content:
+            If True, will attempt to decode the body based on the
+            'content-encoding' header.
+    
+        :param enforce_content_length:
+            Enforce content length checking. Body returned by server must match
+            value of Content-Length header, if present. Otherwise, raise error.
+        """
+        self.num_requests += 1
+    
+        timeout_obj = self._get_timeout(timeout)
+        timeout_obj.start_connect()
+        conn.timeout = Timeout.resolve_default_timeout(timeout_obj.connect_timeout)
+    
+        try:
+            # Trigger any extra validation we need to do.
+            try:
+                self._validate_conn(conn)
+            except (SocketTimeout, BaseSSLError) as e:
+                self._raise_timeout(err=e, url=url, timeout_value=conn.timeout)
+                raise
+    
+        # _validate_conn() starts the connection to an HTTPS proxy
+        # so we need to wrap errors with 'ProxyError' here too.
+        except (
+            OSError,
+            NewConnectionError,
+            TimeoutError,
+            BaseSSLError,
+            CertificateError,
+            SSLError,
+        ) as e:
+            new_e: Exception = e
+            if isinstance(e, (BaseSSLError, CertificateError)):
+                new_e = SSLError(e)
+            # If the connection didn't successfully connect to it's proxy
+            # then there
+            if isinstance(
+                new_e, (OSError, NewConnectionError, TimeoutError, SSLError)
+            ) and (conn and conn.proxy and not conn.has_connected_to_proxy):
+                new_e = _wrap_proxy_error(new_e, conn.proxy.scheme)
+            raise new_e
+    
+        # conn.request() calls http.client.*.request, not the method in
+        # urllib3.request. It also calls makefile (recv) on the socket.
+        try:
+            conn.request(
+                method,
+                url,
+                body=body,
+                headers=headers,
+                chunked=chunked,
+                preload_content=preload_content,
+                decode_content=decode_content,
+                enforce_content_length=enforce_content_length,
+            )
+    
+        # We are swallowing BrokenPipeError (errno.EPIPE) since the server is
+        # legitimately able to close the connection after sending a valid response.
+        # With this behaviour, the received response is still readable.
+        except BrokenPipeError:
+            pass
+        except OSError as e:
+            # MacOS/Linux
+            # EPROTOTYPE and ECONNRESET are needed on macOS
+            # https://erickt.github.io/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/
+            # Condition changed later to emit ECONNRESET instead of only EPROTOTYPE.
+            if e.errno != errno.EPROTOTYPE and e.errno != errno.ECONNRESET:
+                raise
+    
+        # Reset the timeout for the recv() on the socket
+        read_timeout = timeout_obj.read_timeout
+    
+        if not conn.is_closed:
+            # In Python 3 socket.py will catch EAGAIN and return None when you
+            # try and read into the file pointer created by http.client, which
+            # instead raises a BadStatusLine exception. Instead of catching
+            # the exception and assuming all BadStatusLine exceptions are read
+            # timeouts, check for a zero timeout before making the request.
+            if read_timeout == 0:
+                raise ReadTimeoutError(
+                    self, url, f"Read timed out. (read timeout={read_timeout})"
+                )
+            conn.timeout = read_timeout
+    
+        # Receive the response from the server
+        try:
+>           response = conn.getresponse()
+
+usr/local/lib/python3.12/dist-packages/urllib3/connectionpool.py:534: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+usr/local/lib/python3.12/dist-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+usr/lib/python3.12/http/client.py:1448: in getresponse
+    response.begin()
+usr/lib/python3.12/http/client.py:336: in begin
+    version, status, reason = self._read_status()
+usr/lib/python3.12/http/client.py:297: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <socket.SocketIO object at 0x74a51ccb0a60>
+b = <memory at 0x74a51cb68400>
+
+    def readinto(self, b):
+        """Read up to len(b) bytes into the writable buffer *b* and return
+        the number of bytes read.  If the socket is non-blocking and no bytes
+        are available, None is returned.
+    
+        If *b* is non-empty, a 0 return value indicates that the connection
+        was shutdown at the other end.
+        """
+        self._checkClosed()
+        self._checkReadable()
+        if self._timeout_occurred:
+            raise OSError("cannot read from timed out object")
+        while True:
+            try:
+>               return self._sock.recv_into(b)
+E               TimeoutError: timed out
+
+usr/lib/python3.12/socket.py:707: TimeoutError
+
+The above exception was the direct cause of the following exception:
+
+self = <requests.adapters.HTTPAdapter object at 0x74a51cce7f20>
+request = <PreparedRequest [GET]>, stream = False, timeout = 30, verify = True
+cert = None, proxies = OrderedDict()
+
+    def send(
+        self,
+        request: PreparedRequest,
+        stream: bool = False,
+        timeout: _t.TimeoutType = None,
+        verify: _t.VerifyType = True,
+        cert: _t.CertType = None,
+        proxies: dict[str, str] | None = None,
+    ) -> Response:
+        """Sends PreparedRequest object. Returns Response object.
+    
+        :param request: The :class:`PreparedRequest <PreparedRequest>` being sent.
+        :param stream: (optional) Whether to stream the request content.
+        :param timeout: (optional) How long to wait for the server to send
+            data before giving up, as a float, or a :ref:`(connect timeout,
+            read timeout) <timeouts>` tuple.
+        :type timeout: float or tuple or urllib3 Timeout object
+        :param verify: (optional) Either a boolean, in which case it controls whether
+            we verify the server's TLS certificate, or a string, in which case it
+            must be a path to a CA bundle to use
+        :param cert: (optional) Any user-provided SSL certificate to be trusted.
+        :param proxies: (optional) The proxies dictionary to apply to the request.
+        :rtype: requests.Response
+        """
+    
+        assert _is_prepared(request)
+    
+        try:
+            conn = self.get_connection_with_tls_context(
+                request, verify, proxies=proxies, cert=cert
+            )
+        except LocationValueError as e:
+            raise InvalidURL(e, request=request)
+    
+        self.cert_verify(conn, request.url, verify, cert)
+        url = self.request_url(request, proxies)
+        self.add_headers(
+            request,
+            stream=stream,
+            timeout=timeout,
+            verify=verify,
+            cert=cert,
+            proxies=proxies,
+        )
+    
+        chunked = not (request.body is None or "Content-Length" in request.headers)
+    
+        if isinstance(timeout, tuple):
+            try:
+                connect, read = timeout
+                resolved_timeout = TimeoutSauce(connect=connect, read=read)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid timeout {timeout}. Pass a (connect, read) timeout tuple, "
+                    f"or a single float to set both timeouts to the same value."
+                )
+        elif isinstance(timeout, TimeoutSauce):
+            resolved_timeout = timeout
+        else:
+            resolved_timeout = TimeoutSauce(connect=timeout, read=timeout)
+    
+        try:
+>           resp = conn.urlopen(
+                method=request.method,
+                url=url,
+                body=request.body,  # type: ignore[arg-type]  # urllib3 stubs don't accept Iterable[bytes | str]
+                headers=request.headers,  # type: ignore[arg-type]  # urllib3#3072
+                redirect=False,
+                assert_same_host=False,
+                preload_content=False,
+                decode_content=False,
+                retries=self.max_retries,
+                timeout=resolved_timeout,
+                chunked=chunked,
+            )
+
+usr/local/lib/python3.12/dist-packages/requests/adapters.py:696: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+usr/local/lib/python3.12/dist-packages/urllib3/connectionpool.py:842: in urlopen
+    retries = retries.increment(
+usr/local/lib/python3.12/dist-packages/urllib3/util/retry.py:498: in increment
+    raise reraise(type(error), error, _stacktrace)
+usr/local/lib/python3.12/dist-packages/urllib3/util/util.py:39: in reraise
+    raise value
+usr/local/lib/python3.12/dist-packages/urllib3/connectionpool.py:788: in urlopen
+    response = self._make_request(
+usr/local/lib/python3.12/dist-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <urllib3.connectionpool.HTTPConnectionPool object at 0x74a51cd2e1b0>
+err = TimeoutError('timed out'), url = '/counter', timeout_value = 30
+
+    def _raise_timeout(
+        self,
+        err: BaseSSLError | OSError | SocketTimeout,
+        url: str,
+        timeout_value: _TYPE_TIMEOUT | None,
+    ) -> None:
+        """Is the error actually a timeout? Will raise a ReadTimeout or pass"""
+    
+        if isinstance(err, SocketTimeout):
+>           raise ReadTimeoutError(
+                self, url, f"Read timed out. (read timeout={timeout_value})"
+            ) from err
+E           urllib3.exceptions.ReadTimeoutError: HTTPConnectionPool(host='localhost', port=5173): Read timed out. (read timeout=30)
+
+usr/local/lib/python3.12/dist-packages/urllib3/connectionpool.py:367: ReadTimeoutError
+
+During handling of the above exception, another exception occurred:
+
+start_app = None
+
+    def test_counter_route(start_app):
+>       r = requests.get(f"{BASE_URL}/counter", timeout=30)
+
+tests/test_final_state.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+usr/local/lib/python3.12/dist-packages/requests/api.py:87: in get
+    return request("get", url, params=params, **kwargs)
+usr/local/lib/python3.12/dist-packages/requests/api.py:71: in request
+    return session.request(method=method, url=url, **kwargs)
+usr/local/lib/python3.12/dist-packages/requests/sessions.py:651: in request
+    resp = self.send(prep, **send_kwargs)
+usr/local/lib/python3.12/dist-packages/requests/sessions.py:784: in send
+    r = adapter.send(request, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <requests.adapters.HTTPAdapter object at 0x74a51cce7f20>
+request = <PreparedRequest [GET]>, stream = False, timeout = 30, verify = True
+cert = None, proxies = OrderedDict()
+
+    def send(
+        self,
+        request: PreparedRequest,
+        stream: bool = False,
+        timeout: _t.TimeoutType = None,
+        verify: _t.VerifyType = True,
+        cert: _t.CertType = None,
+        proxies: dict[str, str] | None = None,
+    ) -> Response:
+        """Sends PreparedRequest object. Returns Response object.
+    
+        :param request: The :class:`PreparedRequest <PreparedRequest>` being sent.
+        :param stream: (optional) Whether to stream the request content.
+        :param timeout: (optional) How long to wait for the server to send
+            data before giving up, as a float, or a :ref:`(connect timeout,
+            read timeout) <timeouts>` tuple.
+        :type timeout: float or tuple or urllib3 Timeout object
+        :param verify: (optional) Either a boolean, in which case it controls whether
+            we verify the server's TLS certificate, or a string, in which case it
+            must be a path to a CA bundle to use
+        :param cert: (optional) Any user-provided SSL certificate to be trusted.
+        :param proxies: (optional) The proxies dictionary to apply to the request.
+        :rtype: requests.Response
+        """
+    
+        assert _is_prepared(request)
+    
+        try:
+            conn = self.get_connection_with_tls_context(
+                request, verify, proxies=proxies, cert=cert
+            )
+        except LocationValueError as e:
+            raise InvalidURL(e, request=request)
+    
+        self.cert_verify(conn, request.url, verify, cert)
+        url = self.request_url(request, proxies)
+        self.add_headers(
+            request,
+            stream=stream,
+            timeout=timeout,
+            verify=verify,
+            cert=cert,
+            proxies=proxies,
+        )
+    
+        chunked = not (request.body is None or "Content-Length" in request.headers)
+    
+        if isinstance(timeout, tuple):
+            try:
+                connect, read = timeout
+                resolved_timeout = TimeoutSauce(connect=connect, read=read)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid timeout {timeout}. Pass a (connect, read) timeout tuple, "
+                    f"or a single float to set both timeouts to the same value."
+                )
+        elif isinstance(timeout, TimeoutSauce):
+            resolved_timeout = timeout
+        else:
+            resolved_timeout = TimeoutSauce(connect=timeout, read=timeout)
+    
+        try:
+            resp = conn.urlopen(
+                method=request.method,
+                url=url,
+                body=request.body,  # type: ignore[arg-type]  # urllib3 stubs don't accept Iterable[bytes | str]
+                headers=request.headers,  # type: ignore[arg-type]  # urllib3#3072
+                redirect=False,
+                assert_same_host=False,
+                preload_content=False,
+                decode_content=False,
+                retries=self.max_retries,
+                timeout=resolved_timeout,
+                chunked=chunked,
+            )
+    
+        except (ProtocolError, OSError) as err:
+            raise ConnectionError(err, request=request)
+    
+        except MaxRetryError as e:
+            if isinstance(e.reason, ConnectTimeoutError):
+                # TODO: Remove this in 3.0.0: see #2811
+                if not isinstance(e.reason, NewConnectionError):
+                    raise ConnectTimeout(e, request=request)
+    
+            if isinstance(e.reason, ResponseError):
+                raise RetryError(e, request=request)
+    
+            if isinstance(e.reason, _ProxyError):
+                raise ProxyError(e, request=request)
+    
+            if isinstance(e.reason, _SSLError):
+                # This branch is for urllib3 v1.22 and later.
+                raise SSLError(e, request=request)
+    
+            raise ConnectionError(e, request=request)
+    
+        except ClosedPoolError as e:
+            raise ConnectionError(e, request=request)
+    
+        except _ProxyError as e:
+            raise ProxyError(e)
+    
+        except (_SSLError, _HTTPError) as e:
+            if isinstance(e, _SSLError):
+                # This branch is for urllib3 versions earlier than v1.22
+                raise SSLError(e, request=request)
+            elif isinstance(e, ReadTimeoutError):
+>               raise ReadTimeout(e, request=request)
+E               requests.exceptions.ReadTimeout: HTTPConnectionPool(host='localhost', port=5173): Read timed out. (read timeout=30)
+
+usr/local/lib/python3.12/dist-packages/requests/adapters.py:742: ReadTimeout
+__________________________ test_browser_counter_flow ___________________________
+
+start_app = None
+
+    def test_browser_counter_flow(start_app):
+        reason = (
+            "Verify the RedwoodSDK realtime counter built on useSyncedState behaves like a "
+            "stateful client component with persistent server-side state."
+        )
+        truth = (
+            "Navigate to http://localhost:5173/counter. Locate the button labelled 'Reset' and click it. "
+            "Verify the visible text shows 'Count: 0'. Then locate the button labelled 'Increment' and click it three times. "
+            "Verify the visible text shows 'Count: 3'. Click the 'Reset' button again. "
+            "Verify the visible text now shows 'Count: 0'."
+        )
+        verifier = PochiVerifier()
+        result = verifier.verify(
+            reason=reason,
+            truth=truth,
+            use_browser_agent=True,
+            trajectory_dir="/logs/verifier/pochi/test_browser_counter_flow",
+        )
+>       assert result.status == "pass", f"Browser verification failed: {result.reason}"
+E       AssertionError: Browser verification failed: The browser sub-agent failed because the URL http://localhost:5173/counter was unreachable, resulting in a net::ERR_CONNECTION_REFUSED error.
+E       assert 'fail' == 'pass'
+E         - pass
+E         + fail
+
+tests/test_final_state.py:118: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+============================== [TEARDOWN: Begin] Captured rwsdk_dev logfile ==============================
+(skipped 14 already-printed lines)
+Killed
+
+============================== [TEARDOWN: End  ] Captured rwsdk_dev logfile ==============================
+==================================== PASSES ====================================
+____________________________ test_wrangler_bindings ____________________________
+---------------------------- Captured stdout setup -----------------------------
+/tests/.pytest_cache/d/.xprocess/rwsdk_dev$ npm run dev -- --host 0.0.0.0 --port 5173
+process 'rwsdk_dev' started pid=1429
+rwsdk_dev process startup detected
+============================== [STARTED: Begin] Captured rwsdk_dev logfile ==============================
+@@__xproc_block_delimiter__@@
+
+> @redwoodjs/starter@1.0.0 dev
+> vite dev --host 0.0.0.0 --port 5173
+
+
+… (rwsdk) Scanning for 'use client' and 'use server' directives...
+✔ (rwsdk) Done scanning for 'use client' and 'use server' directives.
+
+  VITE v8.1.3  ready in 3872 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://172.18.0.2:5173/
+  ➜  Debug:   http://localhost:5173/__debug
+
+============================== [STARTED: End  ] Captured rwsdk_dev logfile ==============================
+=========================== short test summary info ============================
+PASSED tests/test_final_state.py::test_wrangler_bindings
+FAILED tests/test_final_state.py::test_counter_route - requests.exceptions.Re...
+FAILED tests/test_final_state.py::test_browser_counter_flow - AssertionError:...
+=================== 2 failed, 1 passed in 108.28s (0:01:48) ====================

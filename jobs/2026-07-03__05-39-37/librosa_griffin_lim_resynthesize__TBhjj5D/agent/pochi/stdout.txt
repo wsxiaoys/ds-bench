@@ -1,0 +1,168 @@
+- Initializing MCP connections...
+You
+# Mel Spectrogram Resynthesis via Griffin-Lim ## Background Build a small analysis-resynthesis pipeline with `librosa`. The pipeline must analyze a single audio file into a 128-band log-power mel spectrogram and then reconstruct a time-domain waveform from that mel representation using Griffin-Lim phase recovery. The reconstruction must be reported alongside two objective fidelity metrics computed against the original waveform. ## Requirements - Read the input WAV file from `/home/user/input.wav` as a mono signal at its native sample rate. - Compute a 128-band power mel spectrogram and represent it in a log-power form suitable for storage / downstream use. - Resynthesize a waveform from the mel representation using Griffin-Lim phase estimation (either through the mel-to-audio convenience wrapper, or by inverting mel to STFT magnitude first and then running Griffin-Lim explicitly). - Write the reconstructed mono waveform to `/home/user/reconstructed.wav` at the same sample rate as the input. The total number of samples of the reconstructed audio must be within 2% of the input waveform length. - Compute two reconstruction quality metrics relative to the original waveform and write them, along with run metadata, to `/home/user/metrics.json`. The output `/home/user/metrics.json` must be a JSON object with the following exact schema: ```json { "spectral_convergence": number, "snr_db": number, "length_samples": integer, "sample_rate": integer, "n_mels": integer, "n_iter": integer } ``` Where: - `spectral_convergence` is the spectral convergence between the original and reconstructed waveforms, defined as `||abs(STFT_ref) - abs(STFT_recon)||_F / ||abs(STFT_ref)||_F` (using `n_fft = 2048` and `hop_length = 512` for the STFTs), and must be strictly less than 0.5. - `snr_db` is the signal-to-noise ratio in decibels, and must be strictly greater than 0.0 dB. - `length_samples` must equal the actual sample count of `/home/user/reconstructed.wav`. - `sample_rate` must equal the sample rate of `/home/user/reconstructed.wav`. - `n_mels` must be the number of mel bands used (at least 128). - `n_iter` must be the number of Griffin-Lim iterations used (at least 32). ## Implementation Hints - Verify all relevant signatures against the librosa 0.11.0 documentation; most spectral / inverse-spectral functions are keyword-only. - The convenience wrapper for the full pipeline is `librosa.feature.inverse.mel_to_audio`; the explicit two-step path is `librosa.feature.inverse.mel_to_stft` followed by `librosa.griffinlim`. Either approach is acceptable as long as the STFT analysis parameters used for inversion match those used during analysis. - Pick `hop_length`, `win_length`, and `n_iter` yourself; defaults from the docs are a reasonable starting point but the agent may tune them to satisfy the fidelity targets. Note that `n_iter` must be at least 32. - Make sure the reconstructed waveform length matches the input length closely; the inverse functions expose a `length` argument that can be used to enforce this. - For the SNR computation, treat the original waveform as the reference signal and the reconstruction as the reference plus reconstruction error; align lengths before subtracting. Specifically, use the formula: `10.0 * log10(sum(ref ** 2) / sum((ref - rec) ** 2))`. - For spectral convergence, compare magnitude STFTs of the original and the reconstruction computed with the same analysis parameters (`n_fft = 2048`, `hop_length = 512`).   
+
+Pochi
+💭 Thinking for 511 characters   
+📋 Updating todo list (4 items) ✔ 
+💫 Executing python3 --version && python3 -c "import librosa; print('librosa', librosa.__version__)" && python3 -c "import numpy; print('numpy', numpy.__version__)" && python3 -c "import soundfile; print('soundfile', soundfile.__version__)" ✔ 
+💫 Executing ls -la /home/user/ 2>/dev/null && echo "---" && python3 -c "import librosa; y,sr=librosa.load('/home/user/input.wav', sr=None, mono=True); print('sr',sr,'len',len(y), 'dur',len(y)/sr)" 2>&1 | head -20 ✔ 
+💭 Thinking for 423 characters   
+💫 Executing python3 -c "
+import inspect, librosa
+print('melspectrogram:', inspect.signature(librosa.feature.melspectrogram))
+print('mel_to_audio:', inspect.signature(librosa.feature.inverse.mel_to_audio))
+print('mel_to_stft:', inspect.signature(librosa.feature.inverse.mel_to_stft))
+print('griffinlim:', inspect.signature(librosa.griffinlim))
+print('power_to_db:', inspect.signature(librosa.power_to_db))
+print('db_to_power:', inspect.signature(librosa.db_to_power))
+print('stft:', inspect.signature(librosa.stft))
+" ✔ 
+💭 Thinking for 1030 characters   
+Now I'll write the pipelinescript.   
+✏️  Writing /home/user/resynth.py ✔ 
+📋 Updating todo list (4 items) ✔ 
+💫 Executing cd /home/user && python3 resynth.py 2>&1 ✔ 
+💭 Thinking for 6175 characters   
+Spectral convergence passes (0.459 < 0.5) but SNR is -3.58 dB (must be > 0). Let me diagnose amplitude/phase issues and tune.   
+💫 Executing cd /home/user && python3 -c "
+import numpy as np, librosa
+y, sr = librosa.load('input.wav', sr=None, mono=True)
+N_FFT=2048; HOP=512; N_MELS=128
+mel = librosa.feature.melspectrogram(y=y, sr=sr, n_fft=N_FFT, hop_length=HOP, power=2.0, n_mels=N_MELS)
+print('mel power range', mel.min(), mel.max())
+# invert via mel_to_stft then griffinlim
+S = librosa.feature.inverse.mel_to_stft(mel, sr=sr, n_fft=N_FFT, power=2.0)
+print('S range', S.min(), S.max())
+Sref = np.abs(librosa.stft(y, n_fft=N_FFT, hop_length=HOP))
+print('Sref range', Sref.min(), Sref.max())
+print('energy ratio S/Sref', np.linalg.norm(S)/np.linalg.norm(Sref))
+for it in [32,64,128,256]:
+    yr = librosa.griffinlim(S, n_iter=it, hop_length=HOP, n_fft=N_FFT, length=len(y))
+    L=min(len(y),len(yr)); ref=y[:L].astype(np.float64); rec=yr[:L].astype(np.float64)
+    sc = np.linalg.norm(np.abs(librosa.stft(ref,n_fft=N_FFT,hop_length=HOP))-np.abs(librosa.stft(rec,n_fft=N_FFT,hop_length=HOP)),'fro')/np.linalg.norm(np.abs(librosa.stft(ref,n_fft=N_FFT,hop_length=HOP)),'fro')
+    snr = 10*np.log10(np.sum(ref**2)/np.sum((ref-rec)**2))
+    print(f'iter={it} SC={sc:.4f} SNR={snr:.3f} amp_ratio={np.sqrt(np.sum(rec**2)/np.sum(ref**2)):.3f}')
+" 2>&1 | grep -v Warning ✔ 
+💭 Thinking for 2934 characters   
+💫 Executing cd /home/user && python3 -c "
+import numpy as np, librosa
+y, sr = librosa.load('input.wav', sr=None, mono=True)
+N_FFT=2048; HOP=512
+Sref = np.abs(librosa.stft(y, n_fft=N_FFT, hop_length=HOP))
+# Griffin-Lim from the TRUE magnitude (best case for phase recovery)
+for it in [32,64,128,256]:
+    yr = librosa.griffinlim(Sref, n_iter=it, hop_length=HOP, n_fft=N_FFT, length=len(y))
+    L=min(len(y),len(yr)); ref=y[:L].astype(np.float64); rec=yr[:L].astype(np.float64)
+    sc = np.linalg.norm(np.abs(librosa.stft(ref,n_fft=N_FFT,hop_length=HOP))-np.abs(librosa.stft(rec,n_fft=N_FFT,hop_length=HOP)),'fro')/np.linalg.norm(np.abs(librosa.stft(ref,n_fft=N_FFT,hop_length=HOP)),'fro')
+    snr = 10*np.log10(np.sum(ref**2)/np.sum((ref-rec)**2))
+    print(f'TRUE-mag iter={it} SC={sc:.4f} SNR={snr:.3f}')
+" 2>&1 | grep -v Warning ✔ 
+💭 Thinking for 2597 characters   
+Even with the true STFT magnitude, Griffin-Lim gives negative SNR — this is a phase-recovery limitation. Let me examine the input signal and try standard Griffin-Lim (momentum=0) and otherinits.   
+💫 Executing cd /home/user && python3 -c "
+import numpy as np, librosa
+y, sr = librosa.load('input.wav', sr=None, mono=True)
+print('y stats: min',y.min(),'max',y.max(),'rms',np.sqrt(np.mean(y**2)),'std',y.std())
+print('first 20 samples:', y[:20])
+# REDACTEDcorr / periodicity
+ac = np.correlate(y[:4096], y[:4096], 'full')[4095:4095+600]
+print('REDACTEDcorr peaks around (samples):', np.argmax(ac[50:])+50, '-> Hz', sr/(np.argmax(ac[50:])+50))
+# spectral centroid
+S=np.abs(librosa.stft(y,n_fft=2048,hop_length=512))
+sc=np.mean(librosa.feature.spectral_centroid(S=S,sr=sr))
+print('mean spectral centroid Hz', sc)
+print('duration', len(y)/sr)
+" 2>&1 | grep -v Warning ✔ 
+💫 Executing cd /home/user && python3 -c "
+import numpy as np, librosa
+y, sr = librosa.load('input.wav', sr=None, mono=True)
+N_FFT=2048; HOP=512
+Sref = np.abs(librosa.stft(y, n_fft=N_FFT, hop_length=HOP))
+for mom in [0.0, 0.9, 0.99]:
+  for init in ['random']:
+    yr = librosa.griffinlim(Sref, n_iter=64, hop_length=HOP, n_fft=N_FFT, length=len(y), momentum=mom, init=init)
+    L=min(len(y),len(yr)); ref=y[:L].astype(np.float64); rec=yr[:L].astype(np.float64)
+    snr = 10*np.log10(np.sum(ref**2)/np.sum((ref-rec)**2))
+    print(f'mom={mom} init={init} SNR={snr:.3f}')
+" 2>&1 | grep -v Warning ✔ 
+💭 Thinking for 3290 characters   
+💫 Executing cd /home/user && python3 -c "
+import inspect, librosa
+src = inspect.getsource(librosa.griffinlim)
+print(src[:2500])
+" ✔ 
+💫 Executing cd /home/user && python3 -c "
+import inspect, librosa
+src = inspect.getsource(librosa.griffinlim)
+print(src[2500:6000])
+" ✔ 
+💫 Executing cd /home/user && python3 -c "
+import inspect, librosa
+src = inspect.getsource(librosa.griffinlim)
+print(src[6000:9000])
+" ✔ 
+💭 Thinking for 3292 characters   
+💫 Executing cd /home/user && python3 -c "
+import numpy as np, librosa
+y, sr = librosa.load('input.wav', sr=None, mono=True)
+N_FFT=2048; HOP=512
+Sref = np.abs(librosa.stft(y, n_fft=N_FFT, hop_length=HOP))
+print('=== TRUE magnitude, sweep init/momentum/iter/seed ===')
+best=None
+for init in ['random', None]:
+  for mom in [0.0, 0.9, 0.99]:
+    for it in [32, 64, 128]:
+      for seed in [0,1,2,3,4]:
+        yr = librosa.griffinlim(Sref, n_iter=it, hop_length=HOP, n_fft=N_FFT, length=len(y), momentum=mom, init=init, random_state=seed)
+        L=min(len(y),len(yr)); ref=y[:L].astype(np.float64); rec=yr[:L].astype(np.float64)
+        snr = 10*np.log10(np.sum(ref**2)/np.sum((ref-rec)**2))
+        if best is None or snr>best[0]:
+            best=(snr,init,mom,it,seed)
+        if snr>0: print(f'init={init} mom={mom} it={it} seed={seed} SNR={snr:.3f} ***')
+print('BEST', best)
+" 2>&1 | grep -v Warning ✔ 
+💭 Thinking for 4011 characters   
+Even with the true magnitude, best Griffin-Lim SNR is -0.30 dB. Let me check whether optimal amplitude scaling of the reconstruction can push SNR above 0.   
+💫 Executing cd /home/user && python3 -c "
+import numpy as np, librosa
+y, sr = librosa.load('input.wav', sr=None, mono=True)
+N_FFT=2048; HOP=512; N_MELS=128
+mel = librosa.feature.melspectrogram(y=y, sr=sr, n_fft=N_FFT, hop_length=HOP, power=2.0, n_mels=N_MELS)
+S = librosa.feature.inverse.mel_to_stft(mel, sr=sr, n_fft=N_FFT, power=2.0)
+ref=y.astype(np.float64)
+print('=== MEL-inverted magnitude, optimal amplitude scaling ===')
+for init in ['random', None]:
+  for mom in [0.0, 0.9]:
+    for it in [32,64,128]:
+      for seed in [0,1,2]:
+        yr = librosa.griffinlim(S, n_iter=it, hop_length=HOP, n_fft=N_FFT, length=len(y), momentum=mom, init=init, random_state=seed)
+        rec=yr.astype(np.float64)
+        # optimal alpha = <ref,rec>/<rec,rec>
+        alpha = np.dot(ref,rec)/np.dot(rec,rec)
+        snr_raw = 10*np.log10(np.sum(ref**2)/np.sum((ref-rec)**2))
+        snr_opt = 10*np.log10(np.sum(ref**2)/np.sum((ref-alpha*rec)**2))
+        if snr_opt>0 or snr_raw>0:
+            print(f'init={init} mom={mom} it={it} seed={seed} SNR_raw={snr_raw:.3f} SNR_opt={snr_opt:.3f} alpha={alpha:.4f}')
+" 2>&1 | grep -v Warning ✔ 
+💭 Thinking for 10050 characters   
+The best Griffin-Lim SNR is -0.30 dB even with perfect magnitude. Let me examine the signal structure more deeply — it may be highly periodic, which helps phaserecovery.   
+💫 Executing cd /home/user && python3 -c "
+import numpy as np, librosa
+y, sr = librosa.load('input.wav', sr=None, mono=True)
+N_FFT=2048; HOP=512
+Sref = np.abs(librosa.stft(y, n_fft=N_FFT, hop_length=HOP))
+# harmonic peaks
+spec = np.mean(Sref[:,100:120], axis=1)  # a mid frame
+peaks = np.argsort(spec)[-12:][::-1]
+freqs = peaks*sr/N_FFT
+print('top spec bins (Hz):', np.round(np.sort(freqs),1))
+print('fundamental ~361 Hz; harmonics?', np.round(freqs/361,2))
+# Is it stationary? check rms over time
+for t in [0,1,2,3,4]:
+    seg = y[int(t*sr):int((t+0.5)*sr)]
+    print(f't={t} rms={np.sqrt(np.mean(seg**2)):.5f} max={np.max(np.abs(seg)):.5f}')
+# zero crossing / periodicity
+print('unique abs values in first 1000 samples:', len(np.unique(np.abs(y[:1000]))))
+print('signal is quantized to:', np.max(np.abs(y)))
+" 2>&1 | grep -v Warning ✔ 

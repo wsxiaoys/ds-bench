@@ -1,0 +1,225 @@
+- Initializing MCP connections...
+You
+# Query Expansion with WordNet and LanceDB Native FTS ## Background Lexical search (BM25 / full-text search) is brittle: a query for `car` will not find documents that mention `REDACTEDmobile` or `motorcar` instead, even though they describe the same concept. A classic, well-understood remedy is **query expansion**: each query term is enriched with its synonyms before the lexical engine runs. In this task you will combine two off-the-shelf components: - **WordNet** (the static lexical database shipped with `nltk`) as the synonym source. - **LanceDB native FTS** (`use_tantivy=False`) as the lexical search engine. The corpus is a fixed set of 100 short English documents that has been seeded into a LanceDB table for you at container build time. The corpus is hand-crafted so that several documents use words like `REDACTEDmobile`, `motorcar`, or `vehicle` but never mention `car`, while a smaller set uses `car` explicitly. A plain FTS search for `car` therefore misses the synonym-only documents — your expanded pipeline must recover them. ## Requirements - Implement a Python module at `/home/user/myproject/solution.py` that exposes a callable `expanded_search(query: str, k: int = 10) -> list[int]`. - Open the pre-seeded LanceDB database at the path provided in the `LANCEDB_URI` environment variable (a directory under `/app/lancedb_data`) and use the table whose name is provided in the `LANCEDB_TABLE` environment variable. - Build a **native** LanceDB FTS index on the `content` column (`use_tantivy=False`). The index must be created if it does not yet exist; calling `expanded_search` more than once must not error. - For each whitespace-separated token in `query`, look up WordNet synonyms (lowercased), keep at most **3** synonyms per token, and only keep synonyms that are a single token (i.e. no `_` or whitespace in the WordNet lemma name). The original query term must also remain in the expansion. - Construct an `OR`/`SHOULD` boolean FTS query over the expansion (you may use a space-separated terms query, `MatchQuery(...) | MatchQuery(...)`, or `BooleanQuery([(Occur.SHOULD, ...), ...])`). - Return the **top-k document IDs**, ordered by FTS score descending, as a list of Python `int`. ## Implementation Hints - Install the WordNet and OMW-1.4 corpora at build time with `python3 -c "import nltk; nltk.download('wordnet'); nltk.download('omw-1.4')"`. WordNet is a lexical database, **not** a model — no inference is required and no network access is needed at runtime. - Useful entrypoints: `from nltk.corpus import wordnet as wn`; `wn.synonyms(token)` returns synonyms grouped by sense, `wn.synsets(token)` returns the synsets directly. Either is acceptable. - For LanceDB native FTS use `table.create_fts_index("content", use_tantivy=False, replace=False)` once, then `table.search(<query>, query_type="fts").limit(k).to_list()` (or the `MatchQuery`/`BooleanQuery` builders) for retrieval. - The schema of the seeded table is `{ id: int64, content: string }`. Document IDs are integers `0..99`. - Lowercase the query before expansion. Do **not** add or remove any other words; the verifier compares behaviour against the plain `table.search(query, query_type="fts")` baseline.   
+
+Pochi
+💭 Thinking for 338 characters   
+I'll start by exploring the environment to understand the setup, then implement the solution.   
+📂 Listing files in /home/user/myproject ✔ 
+💫 Executing echo "LANCEDB_URI=$LANCEDB_URI" && echo "LANCEDB_TABLE=$LANCEDB_TABLE" && echo "PYTHONPATH=$PYTHONPATH" && which python3 && python3 --version ✔ 
+💫 Executing python3 -c "import lancedb; print('lancedb', lancedb.__version__)" 2>&1; python3 -c "import nltk; print('nltk', nltk.__version__)" 2>&1; python3 -c "from nltk.corpus import wordnet as wn; print(wn.synonyms('car'))" 2>&1 ✔ 
+💫 Executing ls -la /app/lancedb_data 2>&1; python3 -c "
+import lancedb, os
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+print('tables:', db.table_names())
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+print('count:', t.count_rows())
+print('schema:', t.schema)
+rows = t.to_list()[:3]
+for r in rows: print(r)
+" 2>&1 ✖ "Command exited with code 1"
+💫 Executing python3 -c "
+import lancedb, os
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+rows = t.search().limit(3).to_list()
+for r in rows: print(r)
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+import lancedb, os
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+# try creating native fts index
+try:
+    t.create_fts_index('content', use_tantivy=False, replace=False)
+    print('index created/exists')
+except Exception as e:
+    print('create err:', type(e).__name__, e)
+res = t.search('car', query_type='fts').limit(10).to_list()
+print('plain car search:', [(r['id'], r.get('_distance', r.get('_relevance_score'))) for r in res])
+" 2>&1 ✔ 
+💭 Thinking for 380 characters   
+💫 Executing python3 -c "
+import lancedb, os
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+res = t.search('car', query_type='fts').limit(10).to_list()
+import json
+print(json.dumps(res, indent=2)[:2000])
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+import lancedb, os
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+rows = t.search().limit(100).to_list()
+for r in rows:
+    c = r['content'].lower()
+    if any(w in c for w in ['REDACTEDmobile','motorcar','vehicle']):
+        print(r['id'], r['content'])
+" 2>&1 ✔ 
+💭 Thinking for 329 characters   
+💫 Executing python3 -c "
+import lancedb, os
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+# test space-separated OR query
+res = t.search('car REDACTEDmobile motorcar REDACTED', query_type='fts').limit(20).to_list()
+print('space-separated OR:')
+for r in res: print(r['id'], round(r['_score'],3), r['content'][:60])
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+import lancedb
+from lancedb.query import *
+import inspect
+# find MatchQuery, BooleanQuery, Occur
+for name in dir(lancedb.query):
+    obj = getattr(lancedb.query, name)
+    if any(k in name for k in ['Match','Boolean','Occur','Query']):
+        print(name, obj)
+" 2>&1; echo '---'; python3 -c "
+from lancedb.query import MatchQuery, BooleanQuery, Occur
+import inspect
+print(inspect.signature(MatchQuery))
+print(inspect.signature(BooleanQuery))
+print(list(Occur))
+" 2>&1 ✔ 
+💭 Thinking for 5223 characters   
+Let me test the `BooleanQuery`/`MatchQuery` approach to confirmit works:   
+💫 Executing python3 -c "
+import lancedb, os
+from lancedb.query import MatchQuery, BooleanQuery, Occur
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+terms = ['car','REDACTEDmobile','motorcar','REDACTED']
+q = BooleanQuery([(Occur.SHOULD, MatchQuery(term, 'content')) for term in terms])
+res = t.search(q, query_type='fts').limit(20).to_list()
+print('BooleanQuery SHOULD:')
+for r in res: print(r['id'], round(r['_score'],3), r['content'][:50])
+" 2>&1 ✔ 
+💭 Thinking for 1686 characters   
+💫 Executing python3 -c "
+import lancedb, os
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+rows = t.search().limit(100).to_list()
+import re
+for r in rows:
+    c = r['content'].lower()
+    for w in ['motorcar','vehicle','REDACTED ']:
+        if w in c:
+            print(r['id'], r['content'])
+" 2>&1; echo '---synonyms car---'; python3 -c "
+from nltk.corpus import wordnet as wn
+print(wn.synonyms('car'))
+print('synsets:', [s.name() for s in wn.synsets('car')])
+" ✔ 
+💭 Thinking for 2875 characters   
+Both approaches work and surface the REDACTEDmobile-only documents. Now I'll write the solutionmodule.   
+📋 Updating todo list (2 items) ✔ 
+✏️  Writing /home/user/myproject/solution.py ✔ 
+Now let me verify the solution thoroughly:   
+💫 Executing cd /home/user/myproject && python3 -c "
+from solution import expanded_search, _expand_query, _wordnet_synonyms
+print('synonyms(car):', _wordnet_synonyms('car'))
+print('expand(car):', _expand_query('car'))
+print()
+# expanded search for 'car' should surface REDACTEDmobile docs (6-13) that baseline misses
+res = expanded_search('car', k=20)
+print('expanded_search(car, 20):', res)
+print()
+# baseline
+import lancedb, os
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+base = [r['id'] for r in t.search('car', query_type='fts').limit(20).to_list()]
+print('baseline(car):', base)
+print('REDACTEDmobile docs recovered:', sorted(set(res)-set(base)))
+" ✔ 
+The expansion recovers all 8 REDACTEDmobile-only documents. Now let me verify idempotency (multiple calls), baseline parity for non-synonym queries, and edgecases:   
+💫 Executing cd /home/user/myproject && python3 -c "
+from solution import expanded_search, _expand_query
+
+# Idempotency: calling repeatedly must not error
+r1 = expanded_search('car', k=5)
+r2 = expanded_search('car', k=5)
+r3 = expanded_search('car', k=5)
+print('idempotent:', r1 == r2 == r3, r1)
+
+# Single-token query with no synonyms -> behaves like baseline
+import lancedb, os
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+for q in ['airport', 'highway', 'morning', 'xyzzy']:
+    exp = expanded_search(q, k=10)
+    base = [r['id'] for r in t.search(q, query_type='fts').limit(10).to_list()]
+    print(f'{q!r}: exp={exp} base={base} match={exp==base}')
+
+# Multi-token query
+print()
+print('expand(fast car):', _expand_query('fast car'))
+print('expanded_search(fast car, 10):', expanded_search('fast car', 10))
+
+# Empty query edge case
+print('expanded_search(\"\", 5):', expanded_search('', 5))
+
+# k larger than results
+print('expanded_search(car, 100):', expanded_search('car', 100))
+" ✔ 
+💭 Thinking for 2431 characters   
+Let me sanity-check the `'morning'` case — expansion legitimately differs from baseline when WordNet synonymsexist:   
+💫 Executing cd /home/user/myproject && python3 -c "
+from solution import _wordnet_synonyms, _expand_query
+print('morning synonyms:', _wordnet_synonyms('morning'))
+print('expand(morning):', _expand_query('morning'))
+import lancedb, os
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+rows = {r['id']: r['content'] for r in t.search().limit(100).to_list()}
+print('doc 49:', rows.get(49))
+print('doc 15:', rows.get(15))
+print('doc 95:', rows.get(95))
+# verify scores are descending for morning expansion
+res = t.search(' '.join(_expand_query('morning')), query_type='fts').limit(10).to_list()
+print('scores:', [(r['id'], round(r['_score'],3)) for r in res])
+" ✔ 
+💭 Thinking for 823 characters   
+All behavior is correct: `morning`→`aurora` legitimately surfaces doc 49 (WordNet synonym). Let me confirm return types are native `int` and scores descend:   
+💫 Executing cd /home/user/myproject && python3 -c "
+from solution import expanded_search
+res = expanded_search('car', k=10)
+print('types:', [type(x).__name__ for x in res])
+print('all int:', all(isinstance(x, int) for x in res))
+print('result:', res)
+# confirm descending score order via raw query
+import lancedb, os
+from lancedb.query import BooleanQuery, MatchQuery, Occur
+db = lancedb.connect(os.environ['LANCEDB_URI'])
+t = db.open_table(os.environ['LANCEDB_TABLE'])
+terms=['car','REDACTED','REDACTEDmobile','machine']
+q=BooleanQuery([(Occur.SHOULD, MatchQuery(x,'content')) for x in terms])
+r=t.search(q, query_type='fts').limit(10).to_list()
+scores=[round(x['_score'],3) for x in r]
+print('scores:', scores, 'descending:', scores==sorted(scores, reverse=True))
+" ✔ 
+All checks pass. Let me mark the todos complete.   
+📋 Updating todo list (2 items) ✔ 
+🎉 Task Completed
+Implemented `/home/user/myproject/solution.py` exposing `expanded_search(query: str, k: int = 10) -> list[int]`.
+
+## How it works
+1. **Connect once** (cached via `lru_cache`) to the LanceDB at `LANCEDB_URI`, opening table `LANCEDB_TABLE`.
+2. **Create the native FTS index** on `content` with `use_tantivy=False, replace=False`, swallowing the "already exists" error so repeated calls never error.
+3. **Expand the query**: lowercase, whitespace-split; for each token collect WordNet synonyms via `wn.synonyms`, keeping only single-token lemmas (no `_`/whitespace), de-duplicated, capped at **3** synonyms. The original token is always kept first.
+4. **Build a SHOULD/OR boolean FTS query** — `BooleanQuery([(Occur.SHOULD, MatchQuery(term, "content")) for term in terms])` — and run `table.search(q, query_type="fts").limit(k)`.
+5. **Return top-k IDs** as native Python `int`, ordered by FTS score descending.
+
+## Verified behavior
+- `expanded_search("car")` recovers all 8 REDACTEDmobile-only documents (IDs 6–13) that the plain baseline `table.search("car")` misses — `REDACTEDmobile` is kept as a synonym.
+- Queries with **no WordNet synonyms** (`airport`, `highway`, `xyzzy`) return results identical to the plain FTS baseline.
+- Queries **with** synonyms legitimately add synonym-matching docs (e.g. `morning`→`aurora` surfaces the aurora document).
+- Calling `expanded_search` multiple times is idempotent (no errors).
+- Empty query and `k` larger than the result set are handled gracefully.
+- Returned IDs are native `int`, and scores are strictly descending (ties among equal scores are unordered, as expected).
+
+The WordNet/`omw-1.4` corpora were already available in the environment (`nltk` 3.9.4, `lancedb` 0.25.3); no runtime network access is needed.   
+  
