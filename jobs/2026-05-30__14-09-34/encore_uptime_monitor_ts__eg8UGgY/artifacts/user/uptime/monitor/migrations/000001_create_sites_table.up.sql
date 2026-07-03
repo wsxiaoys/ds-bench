@@ -1,5 +1,0 @@
-CREATE TABLE sites (
-    id SERIAL PRIMARY KEY,
-    url TEXT NOT NULL,
-    is_up BOOLEAN NOT NULL DEFAULT FALSE
-);
