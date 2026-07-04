@@ -25,6 +25,8 @@ type TaskTrial = {
 	};
 	browser_verification_cases?: string[];
 	artifacts?: ArtifactNode[];
+	has_pochi_trajectory?: boolean;
+	has_agent_trajectory?: boolean;
 };
 
 type ArtifactNode = {
@@ -274,6 +276,38 @@ async function main() {
 		const artifactsDir = path.join(jobsDir, jobName, trialName, "artifacts");
 		const artifacts = await readArtifactTree(artifactsDir, "artifacts");
 
+		// Detect trajectory file types
+		const pochiTrajectoryPath = path.join(
+			jobsDir,
+			jobName,
+			trialName,
+			"agent",
+			"pochi",
+			"trajectory.jsonl",
+		);
+		let hasPochiTrajectory = false;
+		try {
+			await fs.access(pochiTrajectoryPath);
+			hasPochiTrajectory = true;
+		} catch (_e) {
+			// file doesn't exist
+		}
+
+		const agentTrajectoryPath = path.join(
+			jobsDir,
+			jobName,
+			trialName,
+			"agent",
+			"trajectory.json",
+		);
+		let hasAgentTrajectory = false;
+		try {
+			await fs.access(agentTrajectoryPath);
+			hasAgentTrajectory = true;
+		} catch (_e) {
+			// file doesn't exist
+		}
+
 		tasks[taskName].trials.push({
 			task_name: taskName,
 			job_name: jobName,
@@ -298,6 +332,8 @@ async function main() {
 			},
 			browser_verification_cases: browserVerificationCases,
 			artifacts: artifacts.length > 0 ? artifacts : undefined,
+			has_pochi_trajectory: hasPochiTrajectory || undefined,
+			has_agent_trajectory: hasAgentTrajectory || undefined,
 		});
 	}
 
