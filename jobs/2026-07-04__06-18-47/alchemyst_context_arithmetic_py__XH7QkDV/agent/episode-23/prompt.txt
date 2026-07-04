@@ -1,0 +1,267 @@
+New Terminal Output:
+
+root@64f400a2-f29a-498e-bb39-278b36d691ec:/home/user/myproject# cat > /home/user/myproject/main.py << 'PYEOF'
+> #!/usr/bin/env python3
+> """
+> Context Arithmetic (Intersection) demo CLI using Alchemyst AI Python SDK.
+>
+> On every invocation this CLI:
+> 1. Reads the per-run id from /logs/artifacts/run-id.
+> 2. Removes any documents previously ingested under that run id (idempotent reruns).
+> 3. Ingests 3 documents whose `group_name` arrays overlap so the intersection
+>    semantics of Context Arithmetic can be verified.
+> 4. Performs `client.v1.context.search(...)` filtered by
+>    `body_metadata={"group_name": [<groups from --groups>]}` and prints the
+>    matching documents as a single JSON array to stdout.
+> """
+>
+> from __future__ import annotations
+>
+> import argparse
+> import datetime as _dt
+> import json
+> import os
+> import sys
+> import time
+> from pathlib import Path
+> from typing import Any, Dict, List
+>
+> from alchemyst_ai import AlchemystAI
+>
+> RUN_ID_FILE = Path("/logs/artifacts/run-id")
+>
+>
+> def read_run_id() -> str:
+>     return RUN_ID_FILE.read_text().strip()
+>
+>
+> def parse_args() -> List[str]:
+>     parser = argparse.ArgumentParser(
+>         description="Demonstrate Context Arithmetic (group_name intersection)."
+>     )
+>     parser.add_argument(
+>         "--groups",
+>         nargs="+",
+>         required=True,
+>         help="One or more group names to AND-filter on (intersection semantics).",
+>     )
+>     return list(parser.parse_args().groups)
+>
+>
+> def make_client() -> AlchemystAI:
+>     api_key = os.environ.get("ALCHEMYST_AI_API_KEY")
+>     if not api_key:
+>         print(
+>             "ERROR: ALCHEMYST_AI_API_KEY environment variable is not set.",
+>             file=sys.stderr,
+>         )
+>         sys.exit(1)
+>     return AlchemystAI(api_key=api_key)
+>
+>
+> def build_documents(run_id: str, last_modified: str) -> List[Dict[str, Any]]:
+>     """Build the three overlapping documents."""
+>     docs = [
+>         {
+>             "content": (
+>                 f"# Document A ({run_id})\n\n"
+>                 "Engineering v1 release notes: new deployment pipeline, "
+>                 "observability dashboards, and on-call rotations for the "
+>                 "platform team. Marker: docA."
+>             ),
+>             "metadata": {
+>                 "file_name": f"docA-{run_id}.md",
+>                 "file_size": 1.0,
+>                 "file_type": "text/markdown",
+>                 "last_modified": last_modified,
+>                 "group_name": ["eng", "v1"],
+>             },
+>         },
+>         {
+>             "content": (
+>                 f"# Document B ({run_id})\n\n"
+>                 "Engineering v2 changelog: refactored auth, switched to the new "
+>                 "build system, upgraded the database driver. Marker: docB."
+>             ),
+>             "metadata": {
+>                 "file_name": f"docB-{run_id}.md",
+>                 "file_size": 1.0,
+>                 "file_type": "text/markdown",
+>                 "last_modified": last_modified,
+>                 "group_name": ["eng", "v2"],
+>             },
+>         },
+>         {
+>             "content": (
+>                 f"# Document C ({run_id})\n\n"
+>                 "Public-facing docs v1: user guide, installation, and FAQ for "
+>                 "the initial GA release. Marker: docC."
+>             ),
+>             "metadata": {
+>                 "file_name": f"docC-{run_id}.md",
+>                 "file_size": 1.0,
+>                 "file_type": "text/markdown",
+>                 "last_modified": last_modified,
+>                 "group_name": ["docs", "v1"],
+>             },
+>         },
+>     ]
+>     return docs
+>
+>
+> def ingest_documents(client: AlchemystAI, run_id: str, source: str) -> None:
+>     """Delete any previously-ingested docs for this run, then add the three docs."""
+>     last_modified = _dt.datetime.utcnow().isoformat() + "Z"
+>
+>     # Best-effort cleanup so reruns with the same run-id don't 409.
+>     for fname in (
+>         f"docA-{run_id}.md",
+>         f"docB-{run_id}.md",
+>         f"docC-{run_id}.md",
+>     ):
+>         try:
+>             client.v1.context.delete(
+>                 organization_id="default",
+>                 source=source,
+>                 by_doc=True,
+>                 user_id=fname,
+>             )
+>         except Exception as exc:  # noqa: BLE001
+>             print(f"[cleanup] delete {fname}: {exc}", file=sys.stderr)
+>
+>     documents = build_documents(run_id, last_modified)
+>
+>     # Try batch add first; if any failure, fall back to per-doc ingestion.
+>     batch_meta = {
+>         "file_name": f"batch-{run_id}.md",
+>         "file_size": 1.0,
+>         "file_type": "text/markdown",
+>         "last_modified": last_modified,
+>         "group_name": ["eng", "v1", "v2", "docs"],
+>     }
+>     try:
+>         client.v1.context.add(
+>             context_type="resource",
+>             documents=documents,
+>             scope="internal",
+>             source=source,
+>             metadata=batch_meta,
+>         )
+>         print(f"[ingest] batch add ok ({len(documents)} docs)", file=sys.stderr)
+>     except Exception as exc:  # noqa: BLE001
+>         print(
+>             f"[ingest] batch add failed ({exc}); falling back to per-doc",
+>             file=sys.stderr,
+>         )
+>         for doc in documents:
+>             try:
+>                 client.v1.context.add(
+>                     context_type="resource",
+>                     documents=[doc],
+>                     scope="internal",
+>                     source=source,
+>                     metadata=doc["metadata"],
+>                 )
+>             except Exception as inner_exc:  # noqa: BLE001
+>                 print(
+>                     f"[ingest] per-doc add failed for "
+>                     f"{doc['metadata'].get('file_name')}: {inner_exc}",
+>                     file=sys.stderr,
+>                 )
+>
+>
+> def run_search(
+>     client: AlchemystAI, groups: List[str], source: str, run_id: str
+> ) -> List[Dict[str, Any]]:
+>     """Perform the filtered search and return deduplicated matches."""
+>     query = (
+>         "engineering platform deployment release notes and public "
+>         "documentation user guide"
+>     )
+>
+>     expected_files = {
+>         f"docA-{run_id}.md",
+>         f"docB-{run_id}.md",
+>         f"docC-{run_id}.md",
+>     }
+>
+>     matches: List[Dict[str, Any]] = []
+>     seen: set[str] = set()
+>     last_response: Any = None
+>
+>     # Short bounded retry loop: vector indexing can take a moment to settle.
+>     for attempt in range(8):
+>         try:
+>             response = client.v1.context.search(
+>                 query=query,
+>                 minimum_similarity_threshold=0.1,
+>                 similarity_threshold=0.99,
+>                 metadata="true",
+>                 body_metadata={"group_name": groups},
+>                 scope="internal",
+>                 user_id=source,
+>             )
+>         except Exception as exc:  # noqa: BLE001
+>             print(f"[search] attempt {attempt + 1} failed: {exc}", file=sys.stderr)
+>             time.sleep(1.5)
+>             continue
+>
+>         last_response = response
+>         contexts = getattr(response, "contexts", None) or []
+>         # Filter to only documents that belong to this run id (namespace safety).
+>         run_contexts = [
+>             c for c in contexts
+>             if _ctx_file_name(c) in expected_files
+>         ]
+>         if run_contexts:
+>             break
+>         time.sleep(1.5)
+>
+>     if last_response is not None:
+>         contexts = getattr(last_response, "contexts", None) or []
+>         for ctx in contexts:
+>             fn = _ctx_file_name(ctx)
+>             if fn in expected_files and fn not in seen:
+>                 seen.add(fn)
+>                 matches.append({"file_name": fn})
+>
+>     return matches
+>
+>
+> def _ctx_file_name(ctx: Any) -> str:
+>     meta = getattr(ctx, "metadata", None)
+>     if meta is None:
+>         return ""
+>     if hasattr(meta, "model_dump"):
+>         meta = meta.model_dump()
+>     elif hasattr(meta, "dict"):
+>         meta = meta.dict()
+>     if not isinstance(meta, dict):
+>         return ""
+>     return meta.get("file_name") or meta.get("fileName") or ""
+>
+>
+> def main() -> int:
+>     groups = parse_args()
+>     run_id = read_run_id()
+>     source = f"docs-{run_id}"
+>
+>     print(f"[start] run_id={run_id} groups={groups} source={source}", file=sys.stderr)
+>
+>     client = make_client()
+>     ingest_documents(client, run_id=run_id, source=source)
+>     matches = run_search(client, groups=groups, source=source, run_id=run_id)
+>
+>     # Final JSON array on the last line of stdout.
+>     sys.stdout.write(json.dumps(matches, indent=2))
+>     sys.stdout.write("\n")
+>     return 0
+>
+>
+> if __name__ == "__main__":
+>     raise SystemExit(main())
+> PYEOF
+root@64f400a2-f29a-498e-bb39-278b36d691ec:/home/user/myproject# python3 -c "import ast; ast.parse(open('/home/user/myproject/main.py').read())" && echo 'Syntax
+OK'
+Syntax OK
+root@64f400a2-f29a-498e-bb39-278b36d691ec:/home/user/myproject#
