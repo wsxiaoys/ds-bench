@@ -215,7 +215,7 @@ function ReasoningBlock({ content }: { content: string }) {
 			</button>
 			{expanded && (
 				<div className="border-border/30 border-t px-3 py-2">
-					<pre className="whitespace-pre-wrap wrap-break-word font-mono text-[11px] text-amber-800/90 dark:text-amber-200/80">
+					<pre className="wrap-break-word whitespace-pre-wrap font-mono text-[11px] text-amber-800/90 dark:text-amber-200/80">
 						{content}
 					</pre>
 				</div>
@@ -283,7 +283,7 @@ function UserStep({ step, showAvatar }: { step: Step; showAvatar: boolean }) {
 				<div className="rounded-lg border border-border/40 bg-muted/10 px-3 py-2.5">
 					{isLong && !expanded ? (
 						<>
-							<p className="whitespace-pre-wrap wrap-break-word text-foreground/80 text-xs leading-5">
+							<p className="wrap-break-word whitespace-pre-wrap text-foreground/80 text-xs leading-5">
 								{step.message.slice(0, 500)}…
 							</p>
 							<button
@@ -296,7 +296,7 @@ function UserStep({ step, showAvatar }: { step: Step; showAvatar: boolean }) {
 						</>
 					) : (
 						<>
-							<p className="whitespace-pre-wrap wrap-break-word text-foreground/80 text-xs leading-5">
+							<p className="wrap-break-word whitespace-pre-wrap text-foreground/80 text-xs leading-5">
 								{step.message}
 							</p>
 							{isLong && (
@@ -362,7 +362,7 @@ function AgentStep({ step, showAvatar }: { step: Step; showAvatar: boolean }) {
 					{/* Main message */}
 					{step.message && (
 						<div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5">
-							<p className="whitespace-pre-wrap wrap-break-word text-foreground/85 text-xs leading-5">
+							<p className="wrap-break-word whitespace-pre-wrap text-foreground/85 text-xs leading-5">
 								{step.message}
 							</p>
 						</div>
