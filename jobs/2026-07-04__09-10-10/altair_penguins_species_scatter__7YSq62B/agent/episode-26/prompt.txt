@@ -1,0 +1,103 @@
+New Terminal Output:
+
+root@c15896a3-783f-4de8-a6c9-ea5b5f70c6bb:/home/user/myproject# sed -n '910,1010p' /usr/local/lib/python3.12/dist-packages/altair/utils/core.py
+                # Don't force validation here; some objects won't be valid until
+                # they're created in the context of a chart.
+                return tp.from_dict(obj, validate=False)
+            except jsonschema.ValidationError:
+                # our attempts at finding the correct class have failed
+                return obj
+        else:
+            warnings.warn(f"Unrecognized encoding channel {encoding!r}", stacklevel=1)
+            return obj
+
+    def infer_encoding_types(self, kwargs: dict[str, Any], /):
+        return {
+            encoding: self._wrap_in_channel(obj, encoding)
+            for encoding, obj in kwargs.items()
+            if obj is not Undefined
+        }
+
+
+def _init_channel_to_name():
+    """
+    Construct a dictionary of channel type to encoding name.
+
+    Note
+    ----
+    The return type is not expressible using annotations, but is used
+    internally by `mypy`/`pyright` and avoids the need for type ignores.
+
+    Returns
+    -------
+        mapping: dict[type[`<subclass of FieldChannelMixin and SchemaBase>`] | type[`<subclass of ValueChannelMixin and SchemaBase>`] | type[`<subclass of Datum
+ChannelMixin and SchemaBase>`], str]
+    """
+    from altair.vegalite.v6.schema import channels as ch
+
+    mixins = ch.FieldChannelMixin, ch.ValueChannelMixin, ch.DatumChannelMixin
+
+    return {
+        c: c._encoding_name
+        for c in ch.__dict__.values()
+        if isinstance(c, type) and issubclass(c, mixins) and issubclass(c, SchemaBase)
+    }
+
+
+def _invert_group_channels(
+    m: dict[type[SchemaBase], str], /
+) -> dict[str, dict[_ChannelType, type[SchemaBase]]]:
+    """Grouped inverted index for `_ChannelCache.channel_to_name`."""
+
+    def _reduce(it: Iterator[tuple[type[Any], str]]) -> Any:
+        """
+        Returns a 1-2 item dict, per channel.
+
+        Never includes `datum`, as it is never utilized in `wrap_in_channel`.
+        """
+        item: dict[Any, type[SchemaBase]] = {}
+        for tp, _ in it:
+            name = tp.__name__
+            if name.endswith("Datum"):
+                continue
+            elif name.endswith("Value"):
+                sub_key = "value"
+            else:
+                sub_key = "field"
+            item[sub_key] = tp
+        return item
+
+    grouper = groupby(m.items(), itemgetter(1))
+    return {k: _reduce(chans) for k, chans in grouper}
+
+
+def infer_encoding_types(args: tuple[Any, ...], kwargs: dict[str, Any]):
+    """
+    Infer typed keyword arguments for args and kwargs.
+
+    Parameters
+    ----------
+    args : Sequence
+        Sequence of function args
+    kwargs : MutableMapping
+        Dict of function kwargs
+
+    Returns
+    -------
+    kwargs : dict
+        All args and kwargs in a single dict, with keys and types
+        based on the channels mapping.
+    """
+    cache = _ChannelCache.from_cache()
+    # First use the mapping to convert args to kwargs based on their types.
+    for arg in args:
+        el = next(iter(arg), None) if isinstance(arg, (list, tuple)) else arg
+        encoding = cache.get_encoding(type(el))
+        if encoding not in kwargs:
+            kwargs[encoding] = arg
+        else:
+            msg = f"encoding {encoding!r} specified twice."
+            raise ValueError(msg)
+
+    return cache.infer_encoding_types(kwargs)
+root@c15896a3-783f-4de8-a6c9-ea5b5f70c6bb:/home/user/myproject#

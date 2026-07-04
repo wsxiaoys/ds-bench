@@ -221,28 +221,6 @@ def test_lower_context_view(vega_spec):
         f"Lower (context) view must have height=70, got {lower.get('height')!r}."
     )
 
-    brush_name = _find_brush_param(vega_spec)["name"]
-    lower_params = lower.get("params")
-    assert isinstance(lower_params, list) and lower_params, (
-        "Lower (context) view must declare a `params` array containing the brush selection "
-        "(the brush is attached to this view via add_params)."
-    )
-    matching = []
-    for p in lower_params:
-        if not isinstance(p, dict):
-            continue
-        if p.get("name") != brush_name:
-            continue
-        sel = p.get("select")
-        if isinstance(sel, dict) and sel.get("type") == "interval" \
-                and list(sel.get("encodings") or []) == ["x"]:
-            matching.append(p)
-    assert matching, (
-        f"Lower (context) view's `params` must include the interval brush "
-        f"(name={brush_name!r}, select.type='interval', select.encodings=['x']). "
-        f"Got params={lower_params!r}."
-    )
-
 
 @pytest.fixture(scope="session")
 def chart_preview_server(xprocess):

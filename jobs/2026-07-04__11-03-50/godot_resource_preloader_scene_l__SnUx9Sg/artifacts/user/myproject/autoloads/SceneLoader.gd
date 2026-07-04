@@ -1,0 +1,52 @@
+extends Node
+
+signal progress_updated(fraction)
+signal load_completed(scene)
+signal load_failed(reason)
+
+var _state: int = 0
+var _thread_path: String = ""
+var _thread_progress_array: Array = []
+var _poll_accum: float = 0.0
+var _poll_interval: float = 0.03
+
+func start_load(path: String) -> bool:
+	if _state == 1:
+		return false
+	_thread_path = path
+	_thread_progress_array = [0.0]
+	var err: int = ResourceLoader.load_threaded_request(path)
+	if err != OK:
+		_state = 0
+		load_failed.emit("ResourceLoader error: %d" % err)
+		return true
+	_state = 1
+	_poll_accum = _poll_interval
+	return true
+
+func _process(delta: float) -> void:
+	if _state != 1:
+		return
+	_poll_accum += delta
+	if _poll_accum < _poll_interval:
+		return
+	_poll_accum = 0.0
+	var status: int = ResourceLoader.load_threaded_get_status(_thread_path, _thread_progress_array)
+	var fraction: float = float(_thread_progress_array[0])
+	fraction = clamp(fraction, 0.0, 1.0)
+	progress_updated.emit(fraction)
+	if status == ResourceLoader.THREAD_LOAD_LOADED:
+		var res: Resource = ResourceLoader.load_threaded_get(_thread_path)
+		_state = 2
+		load_completed.emit(res)
+	elif status == ResourceLoader.THREAD_LOAD_FAILED or status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+		_state = 0
+		load_failed.emit("Thread load failed: %d" % status)
+
+func cancel() -> void:
+	if _state == 1:
+		_state = 0
+		_thread_path = ""
+
+func is_loading() -> bool:
+	return _state == 1
