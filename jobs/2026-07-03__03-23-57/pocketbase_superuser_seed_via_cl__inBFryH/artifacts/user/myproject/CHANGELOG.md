@@ -610,7 +610,7 @@ There are a lot of changes but to highlight some of the most notable ones:
 - Support for custom user request activity log attributes.
 - One-Time Password (OTP) auth method (_via email code_).
 - Multi-Factor Authentication (MFA) support (_currently requires any 2 different auth methods to be used_).
-- Support for Record "proxy/projection" in preparation for the planned REDACTEDgeneration of typed Go record models.
+- Support for Record "proxy/projection" in preparation for the planned autogeneration of typed Go record models.
 - Linear OAuth2 provider ([#5909](https://github.com/pocketbase/pocketbase/pull/5909); thanks @chnfyi).
 - WakaTime OAuth2 provider ([#5829](https://github.com/pocketbase/pocketbase/pull/5829); thanks @tigawanna).
 - Notion OAuth2 provider ([#4999](https://github.com/pocketbase/pocketbase/pull/4999); thanks @s-li1).

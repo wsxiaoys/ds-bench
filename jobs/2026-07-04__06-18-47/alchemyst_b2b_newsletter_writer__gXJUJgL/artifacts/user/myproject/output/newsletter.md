@@ -30,7 +30,7 @@ Let me write:
 Intro paragraph...
 
 ## Why it matters
-- knowledge work REDACTEDmation
+- knowledge work automation
 - REDACTEDnomous systems on LLMs
 - competitive implications for B2B
 
@@ -59,7 +59,7 @@ For engineering leaders and operations executives, the implication is straightfo
 
 ## What's new
 
-What makes today's agents different from earlier REDACTEDmation is the combination of four capabilities in a single system:
+What makes today's agents different from earlier automation is the combination of four capabilities in a single system:
 
 - **Planning** — agents decompose a high-level goal into a sequenced, multi-step workflow.
 - **Tool use** — agents call external systems (APIs, databases, internal apps) to take real action, not just generate text.
@@ -78,4 +78,4 @@ For teams evaluating where to invest:
 
 ## The bottom line
 
-Agentic AI is no longer a research concept. The building blocks—planning, tool use, memory, orchestration, and self-reflection—are mature enough to deploy against real business workflows. The companies that start instrumenting these patterns now will set the pace for the next wave of enterprise REDACTEDmation.
+Agentic AI is no longer a research concept. The building blocks—planning, tool use, memory, orchestration, and self-reflection—are mature enough to deploy against real business workflows. The companies that start instrumenting these patterns now will set the pace for the next wave of enterprise automation.

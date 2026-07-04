@@ -1,0 +1,125 @@
+New Terminal Output:
+
+root@5505aa7a-252d-4872-9331-bfeb231e637e:/home/user/myproject# cat > /home/user/myproject/subscribe.js <<'EOF'
+> #!/usr/bin/env node
+> 'use strict';
+>
+> const PocketBase = require('pocketbase');
+>
+> function parseArgs(argv) {
+>   const args = {};
+>   for (let i = 0; i < argv.length; i++) {
+>     const a = argv[i];
+>     if (a === '--chat' || a === '-c') {
+>       args.chat = argv[++i];
+>     } else if (a.startsWith('--chat=')) {
+>       args.chat = a.substring('--chat='.length);
+>     }
+>   }
+>   return args;
+> }
+>
+> async function main() {
+>   const args = parseArgs(process.argv.slice(2));
+>   if (!args.chat) {
+>     process.stderr.write('Usage: node subscribe.js --chat <chatId>\n');
+>     process.exit(2);
+>   }
+>
+>   const url = process.env.PB_URL || 'http://127.0.0.1:8090';
+>   const email = process.env.PB_ADMIN_EMAIL;
+>   const password = process.env.PB_ADMIN_PASSWORD;
+>
+>   if (!email || !password) {
+>     process.stderr.write('Missing PB_ADMIN_EMAIL or PB_ADMIN_PASSWORD env vars\n');
+>     process.exit(2);
+>   }
+>
+>   const pb = new PocketBase(url);
+>
+>   // Disable REDACTED-cancellation so we can control the lifecycle explicitly.
+>   pb.REDACTEDCancellation(false);
+>
+>   let shuttingDown = false;
+>   let unsubscribe = null;
+>
+>   const shutdown = async (code) => {
+>     if (shuttingDown) return;
+>     shuttingDown = true;
+>     try {
+>       if (typeof unsubscribe === 'function') {
+>         try {
+>           unsubscribe();
+>         } catch (e) {
+>           process.stderr.write('unsubscribe error: ' + (e && e.message ? e.message : e) + '\n');
+>         }
+>       }
+>     } finally {
+>       process.exit(typeof code === 'number' ? code : 0);
+>     }
+>   };
+>
+>   // Enforce a hard 3-second shutdown deadline.
+>   process.on('SIGTERM', () => { shutdown(0); });
+>   process.on('SIGINT', () => { shutdown(0); });
+>
+>   // Belt-and-braces: never let unhandled errors/rejections kill the process silently.
+>   process.on('uncaughtException', (err) => {
+>     process.stderr.write('uncaughtException: ' + (err && err.stack ? err.stack : err) + '\n');
+>     shutdown(1);
+>   });
+>   process.on('unhandledRejection', (reason) => {
+>     process.stderr.write('unhandledRejection: ' + (reason && reason.stack ? reason.stack : reason) + '\n');
+>   });
+>
+>   try {
+>     await pb.admins.authWithPassword(email, password);
+>   } catch (err) {
+>     process.stderr.write('Auth failed: ' + (err && err.message ? err.message : err) + '\n');
+>     process.exit(1);
+>   }
+>
+>   // Server-side filter so we only get events for the requested chat.
+>   // Escape single quotes in the chat id so a malicious value can't break out
+>   // of the filter string literal.
+>   const safeChat = String(args.chat).replace(/'/g, "\\'");
+>   const filter = `chat = '${safeChat}'`;
+>
+>   try {
+>     unsubscribe = await pb.collection('messages').subscribe('*', (event) => {
+>       // event.action is one of 'create' | 'update' | 'delete'.
+>       // event.record contains the record fields.
+>       const payload = {
+>         action: event.action,
+>         record: event.record,
+>       };
+>       // Write a single JSON line and flush immediately so consumers can
+>       // react in real-time.
+>       process.stdout.write(JSON.stringify(payload) + '\n');
+>     }, {
+>       filter: filter,
+>       // Expand the chat field (already part of the record) just to be safe.
+>       fields: 'id,chat,body',
+>     });
+>   } catch (err) {
+>     process.stderr.write('Subscribe failed: ' + (err && err.message ? err.message : err) + '\n');
+>     process.exit(1);
+>   }
+>
+>   // Keep the process alive.
+> }
+>
+> main().catch((err) => {
+>   process.stderr.write('Fatal: ' + (err && err.stack ? err.stack : err) + '\n');
+>   process.exit(1);
+> });
+> EOF
+root@5505aa7a-252d-4872-9331-bfeb231e637e:/home/user/myproject# ls -la /home/user/myproject/
+total 12
+drwxr-xr-x 1 root root  111 Jul  4 11:57 .
+drwxr-xr-x 1 root root   50 Jul  3 12:40 ..
+drwxr-xr-x 3 root root   62 Jul  4 11:56 node_modules
+-rw-r--r-- 1 root root  561 Jul  4 11:56 package-lock.json
+-rw-r--r-- 1 root root  298 Jul  4 11:56 package.json
+-rw-r--r-- 1 root root 3416 Jul  4 11:57 subscribe.js
+root@5505aa7a-252d-4872-9331-bfeb231e637e:/home/user/myproject#

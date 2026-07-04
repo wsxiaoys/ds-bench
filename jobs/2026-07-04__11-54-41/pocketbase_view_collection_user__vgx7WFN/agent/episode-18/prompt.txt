@@ -1,0 +1,130 @@
+New Terminal Output:
+
+root@bad99288-44a9-472f-bff2-d7501681cf33:/home/user/myproject# sed -n '235,360p' /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/view.go
+        if len(p.tables) > 0 {
+                mainTable = p.tables[0]
+        }
+
+        for _, col := range p.columns {
+                colLower := strings.ToLower(col.original)
+
+                // pk (always assume text field for now)
+                if col.alias == FieldNameId {
+                        result[col.alias] = &queryField{
+                                field: &TextField{
+                                        Name:       col.alias,
+                                        System:     true,
+                                        Required:   true,
+                                        PrimaryKey: true,
+                                        Pattern:    `^[a-z0-9]+$`,
+                                },
+                        }
+                        continue
+                }
+
+                // numeric aggregations
+                if strings.HasPrefix(colLower, "count(") || strings.HasPrefix(colLower, "total(") {
+                        result[col.alias] = &queryField{
+                                field: &NumberField{
+                                        Name: col.alias,
+                                },
+                        }
+                        continue
+                }
+
+                castMatch := castRegex.FindStringSubmatch(colLower)
+
+                // numeric casts
+                if len(castMatch) == 2 {
+                        switch castMatch[1] {
+                        case "real", "integer", "int", "decimal", "numeric":
+                                result[col.alias] = &queryField{
+                                        field: &NumberField{
+                                                Name: col.alias,
+                                        },
+                                }
+                                continue
+                        case "text":
+                                result[col.alias] = &queryField{
+                                        field: &TextField{
+                                                Name: col.alias,
+                                        },
+                                }
+                                continue
+                        case "boolean", "bool":
+                                result[col.alias] = &queryField{
+                                        field: &BoolField{
+                                                Name: col.alias,
+                                        },
+                                }
+                                continue
+                        }
+                }
+
+                parts := strings.Split(col.original, ".")
+
+                var fieldName string
+                var collection *Collection
+
+                if len(parts) == 2 {
+                        fieldName = parts[1]
+                        collection = collections[parts[0]]
+                } else {
+                        fieldName = parts[0]
+                        collection = collections[mainTable.alias]
+                }
+
+                // fallback to the default field
+                if collection == nil {
+                        result[col.alias] = &queryField{
+                                field: defaultViewField(col.alias),
+                        }
+                        continue
+                }
+
+                if fieldName == "*" {
+                        return nil, errors.New("dynamic column names are not supported")
+                }
+
+                // find the first field by name (case insensitive)
+                var field Field
+                for _, f := range collection.Fields {
+                        if strings.EqualFold(f.GetName(), fieldName) {
+                                field = f
+                                break
+                        }
+                }
+
+                // fallback to the default field
+                if field == nil {
+                        result[col.alias] = &queryField{
+                                field:      defaultViewField(col.alias),
+                                collection: collection,
+                        }
+                        continue
+                }
+
+                // convert to relation since it is an id reference
+                if strings.EqualFold(fieldName, FieldNameId) {
+                        result[col.alias] = &queryField{
+                                field: &RelationField{
+                                        Name:         col.alias,
+                                        MaxSelect:    1,
+                                        CollectionId: collection.Id,
+                                },
+                                collection: collection,
+                        }
+                        continue
+                }
+
+                // we fetch a brand new collection object to avoid using reflection
+                // or having a dedicated Clone method for each field type
+                tempCollection, err := app.FindCollectionByNameOrId(collection.Id)
+                if err != nil {
+                        return nil, err
+                }
+
+                clone := tempCollection.Fields.GetById(field.GetId())
+                if clone == nil {
+                        return nil, fmt.Errorf("missing expected field %q (%q) in collection %q", field.GetName(), field.GetId(), tempCollection.Name)
+root@bad99288-44a9-472f-bff2-d7501681cf33:/home/user/myproject#

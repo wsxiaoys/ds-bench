@@ -1,4 +1,4 @@
-"""Prefect flow run state REDACTEDmations using state change hooks.
+"""Prefect flow run state automations using state change hooks.
 
 This script demonstrates how to attach state change hooks to Prefect flows
 to perform side effects (e.g., logging) when a flow run changes state.

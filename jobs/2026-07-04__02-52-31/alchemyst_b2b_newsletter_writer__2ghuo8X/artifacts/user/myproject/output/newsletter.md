@@ -9,7 +9,7 @@ Recent advancements in AI agents have introduced enhanced functionalities that i
 ## What to do next
 To leverage the potential of AI agents, businesses should consider the following steps:
 
-1. **Assess Current Workflows**: Identify areas within your organization that could benefit from REDACTEDmation through AI agents.
+1. **Assess Current Workflows**: Identify areas within your organization that could benefit from automation through AI agents.
 2. **Invest in Training**: Equip your team with the necessary skills in prompt engineering and understanding of LLMs to effectively interact with and utilize AI agents.
 3. **Explore RAG and Vector Databases**: Investigate the use of retrieval-augmented generation (RAG) and vector databases to enhance the capabilities of your AI agents, ensuring they have access to relevant information for informed decision-making.
 
