@@ -39,7 +39,7 @@ type TrialEntry = {
 	browser_verification_cases?: string[];
 	artifacts?: ArtifactNode[];
 	has_pochi_trajectory?: boolean;
-	has_agent_trajectory?: boolean;
+	has_harbor_trajectory?: boolean;
 };
 
 function formatStartTime(jobName: string): string {
@@ -334,7 +334,7 @@ export default async function TrajectoryRoutePage({
 		trialEntry &&
 		(trialEntry.has_pochi_trajectory === true ||
 			(trialEntry.has_pochi_trajectory === undefined &&
-				!trialEntry.has_agent_trajectory))
+				!trialEntry.has_harbor_trajectory))
 			? buildClipUrl(
 					trialEntry.job_name,
 					trialEntry.trial_name,
@@ -342,7 +342,7 @@ export default async function TrajectoryRoutePage({
 				)
 			: null;
 
-	const agentTrajectoryUrl = trialEntry?.has_agent_trajectory
+	const agentTrajectoryUrl = trialEntry?.has_harbor_trajectory
 		? buildRawGithubContentUrl(
 				trialEntry.job_name,
 				trialEntry.trial_name,

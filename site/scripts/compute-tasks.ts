@@ -26,7 +26,7 @@ type TaskTrial = {
 	browser_verification_cases?: string[];
 	artifacts?: ArtifactNode[];
 	has_pochi_trajectory?: boolean;
-	has_agent_trajectory?: boolean;
+	has_harbor_trajectory?: boolean;
 };
 
 type ArtifactNode = {
@@ -333,7 +333,7 @@ async function main() {
 			browser_verification_cases: browserVerificationCases,
 			artifacts: artifacts.length > 0 ? artifacts : undefined,
 			has_pochi_trajectory: hasPochiTrajectory || undefined,
-			has_agent_trajectory: hasAgentTrajectory || undefined,
+			has_harbor_trajectory: hasAgentTrajectory || undefined,
 		});
 	}
 
