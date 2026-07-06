@@ -296,6 +296,11 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		[allTrialsFlat],
 	);
 
+	const allAgents = useMemo(
+		() => Array.from(new Set(allTrialsFlat.map((tr) => tr.agent))),
+		[allTrialsFlat],
+	);
+
 	const allTags = useMemo(() => {
 		const tags = new Set<string>();
 
@@ -321,40 +326,22 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			const [model, agentStr] = combo.split(" (");
 			const agent = agentStr.slice(0, -1);
 
-			if (selectedModels.length !== 1) {
-				if (selectedModels.length > 0 && !selectedModels.includes(model))
-					return false;
-			}
+			if (selectedModels.length > 0 && !selectedModels.includes(model))
+				return false;
 
 			if (
 				selectedAgents.length > 0 &&
-				!selectedAgents.includes(agent.toLowerCase())
+				!selectedAgents.includes(agent)
 			)
 				return false;
 			return true;
 		});
 
-		if (selectedModels.length === 1) {
-			const selectedModel = selectedModels[0];
-			combos.sort((a, b) => {
-				const aModel = a.split(" (")[0];
-				const bModel = b.split(" (")[0];
-				const aIsSelected = aModel === selectedModel;
-				const bIsSelected = bModel === selectedModel;
-				if (aIsSelected && !bIsSelected) return -1;
-				if (!aIsSelected && bIsSelected) return 1;
-				return a.localeCompare(b);
-			});
-		}
-
 		return combos;
 	}, [
 		allCombos,
-		selectedModels.includes,
-		selectedModels.length,
-		selectedAgents.includes,
-		selectedModels[0],
-		selectedAgents.length,
+		selectedModels,
+		selectedAgents,
 	]);
 
 	const noTrials = activeCombos.length === 0;
@@ -394,8 +381,6 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			.map((task) => {
 				const comboMap: Record<string, CompactTrial> = {};
 				let hasMatchingTrial = false;
-				let selectedModelMatchesStatus = false;
-				let hasSelectedModelTrial = false;
 
 				task.trials.forEach((trial) => {
 					const comboKey = `${trial.model} (${trial.agent})`;
@@ -418,31 +403,11 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 						}
 					}
 
-					if (
-						selectedModels.length === 1 &&
-						trial.model === selectedModels[0]
-					) {
-						hasSelectedModelTrial = true;
-						if (matchesStatus) {
-							selectedModelMatchesStatus = true;
-						}
-					}
-
-					if (selectedModels.length === 1) {
-						comboMap[comboKey] = trial;
-					} else if (matchesStatus) {
+					if (matchesStatus) {
 						comboMap[comboKey] = trial;
 						hasMatchingTrial = true;
 					}
 				});
-
-				if (selectedModels.length === 1) {
-					if (selectedStatuses.length > 0) {
-						hasMatchingTrial = selectedModelMatchesStatus;
-					} else {
-						hasMatchingTrial = hasSelectedModelTrial;
-					}
-				}
 
 				const comboTrials = Object.values(comboMap);
 				const avgDuration =
@@ -679,6 +644,19 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 							}}
 							className="w-full sm:w-auto sm:min-w-45"
 						/>
+
+						{allAgents.length > 0 && (
+							<MultiSelect
+								title="Agents"
+								options={allAgents}
+								selected={selectedAgents}
+								onChange={(vals) => {
+									setSelectedAgents(vals);
+									updateParams({ agent: vals });
+								}}
+								className="w-full sm:w-auto sm:min-w-45"
+							/>
+						)}
 
 						{allTags.length > 0 && (
 							<MultiSelect

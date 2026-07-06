@@ -79,6 +79,7 @@ export default function LeaderboardTable({
 		process.env.NODE_ENV === "development",
 	);
 	const [searchQuery, setSearchQuery] = useState("");
+	const [agentQuery, setAgentQuery] = useState("");
 
 	useEffect(() => {
 		const isDev =
@@ -104,8 +105,15 @@ export default function LeaderboardTable({
 			);
 		}
 
+		if (agentQuery) {
+			const query = agentQuery.toLowerCase();
+			processedData = processedData.filter((item) =>
+				item.agent.toLowerCase().includes(query),
+			);
+		}
+
 		return processedData;
-	}, [data, searchQuery, devMode]);
+	}, [data, searchQuery, agentQuery, devMode]);
 
 	return (
 		<>
@@ -128,6 +136,17 @@ export default function LeaderboardTable({
 						<Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 						<input
 							type="text"
+							placeholder="Search agents..."
+							value={agentQuery}
+							onChange={(e) => setAgentQuery(e.target.value)}
+							className="w-full rounded-lg border border-border bg-card py-2 pr-4 pl-9 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary/20 sm:w-64"
+						/>
+					</div>
+
+					<div className="relative w-full sm:w-auto">
+						<Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+						<input
+							type="text"
 							placeholder="Search models..."
 							value={searchQuery}
 							onChange={(e) => setSearchQuery(e.target.value)}
@@ -143,7 +162,8 @@ export default function LeaderboardTable({
 					<table className="w-full whitespace-nowrap text-left text-sm">
 						<thead className="border-border border-b bg-secondary/50 font-medium text-muted-foreground">
 							<tr>
-								<th className="w-[40%] px-4 py-3 sm:px-6 sm:py-4">Model</th>
+								<th className="w-[25%] px-4 py-3 sm:px-6 sm:py-4">Model</th>
+								<th className="w-[15%] px-4 py-3 sm:px-6 sm:py-4">Agent</th>
 								<th className="w-[15%] px-4 py-3 text-center sm:px-6 sm:py-4">
 									Passed
 								</th>
@@ -159,7 +179,7 @@ export default function LeaderboardTable({
 							{filteredData.length === 0 ? (
 								<tr>
 									<td
-										colSpan={4}
+										colSpan={5}
 										className="px-4 py-8 text-center text-muted-foreground sm:px-6"
 									>
 										No results found matching your search.
@@ -193,6 +213,9 @@ export default function LeaderboardTable({
 													)}
 												</span>
 											</div>
+										</td>
+										<td className="px-4 py-3 text-muted-foreground sm:px-6 sm:py-4">
+											{row.agent}
 										</td>
 										<td className="px-4 py-3 text-center font-mono text-muted-foreground sm:px-6 sm:py-4">
 											{row.passedEvals}
