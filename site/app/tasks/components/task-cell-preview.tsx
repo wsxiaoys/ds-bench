@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, X as XIcon } from "lucide-react";
+import { AlertTriangle, Check, Clock, X as XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { CompactTrial } from "./tasks-page-client";
@@ -72,8 +72,14 @@ function CellPreviewContent({ trial }: { trial: CompactTrial | null }) {
 			<div className="mb-3 flex items-center gap-2 border-border/50 border-b pb-3">
 				{trial.error ? (
 					<>
-						<AlertTriangle className="h-4 w-4 text-red-500" />
-						<span className="font-medium text-red-500">Error</span>
+						{trial.error === "AgentTimeoutError" ? (
+							<Clock className="h-4 w-4 text-red-400" />
+						) : (
+							<AlertTriangle className="h-4 w-4 text-red-400" />
+						)}
+						<span className="font-medium text-red-400">
+							{typeof trial.error === "string" ? trial.error : "Error"}
+						</span>
 					</>
 				) : trial.passed ? (
 					<>
