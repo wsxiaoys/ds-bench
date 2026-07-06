@@ -8,8 +8,8 @@ import pytest
 
 PROJECT_DIR = "/home/user/loader_project"
 DB_DIR = os.path.join(PROJECT_DIR, "lance_db")
-CSV_PATH = "/app/data/articles.csv"
-RUN_ID = os.environ.get("ZEALT_RUN_ID", "local")
+CSV_PATH = "/home/user/articles.csv"
+RUN_ID = open("/logs/artifacts/run-id").read().strip()
 TABLE_NAME = f"articles_{RUN_ID}"
 
 QUERY_A = (

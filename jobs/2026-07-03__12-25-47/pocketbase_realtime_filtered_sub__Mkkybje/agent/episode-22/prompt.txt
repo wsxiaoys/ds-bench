@@ -1,0 +1,97 @@
+New Terminal Output:
+
+root@971e17d1-9bc3-4343-86cb-ffcdbd2870f8:/home/user/myproject# cat > /home/user/myproject/subscribe.js <<'JSEOF'
+> #!/usr/bin/env node
+> 'use strict';
+>
+> // Install the global EventSource polyfill for Node.js before loading pocketbase.
+> require('eventsource');
+>
+> const PocketBase = require('pocketbase/cjs');
+>
+> function parseArgs(argv) {
+>   const args = { chat: null };
+>   for (let i = 0; i < argv.length; i++) {
+>     const a = argv[i];
+>     if (a === '--chat') {
+>       args.chat = argv[i + 1];
+>       i++;
+>     } else if (a.startsWith('--chat=')) {
+>       args.chat = a.slice('--chat='.length);
+>     }
+>   }
+>   return args;
+> }
+>
+> const args = parseArgs(process.argv.slice(2));
+> if (!args.chat) {
+>   process.stderr.write('Usage: node subscribe.js --chat <chatId>\n');
+>   process.exit(1);
+> }
+>
+> const pb = new PocketBase('http://127.0.0.1:8090');
+> pb.REDACTEDCancellation(false);
+>
+> let unsubFn = null;
+> let exiting = false;
+>
+> function writeLine(obj) {
+>   try {
+>     const line = JSON.stringify(obj);
+>     process.stdout.write(line + '\n');
+>   } catch (e) {
+>     process.stderr.write('Failed to serialize event: ' + (e && e.message) + '\n');
+>   }
+> }
+>
+> function shutdown(signal) {
+>   if (exiting) return;
+>   exiting = true;
+>   process.stderr.write('Received ' + signal + ', shutting down\n');
+>   try {
+>     if (unsubFn && typeof unsubFn === 'function') {
+>       try { unsubFn(); } catch (e) { /* ignore */ }
+>     }
+>     try { pb.realtime.disconnect(); } catch (e) { /* ignore */ }
+>   } finally {
+>     setTimeout(() => process.exit(0), 100).unref();
+>   }
+> }
+>
+> process.on('SIGTERM', () => shutdown('SIGTERM'));
+> process.on('SIGINT', () => shutdown('SIGINT'));
+> process.on('uncaughtException', (e) => {
+>   process.stderr.write('Uncaught exception: ' + (e && e.stack ? e.stack : e) + '\n');
+> });
+> process.on('unhandledRejection', (e) => {
+>   process.stderr.write('Unhandled rejection: ' + (e && e.stack ? e.stack : e) + '\n');
+> });
+>
+> (async () => {
+>   try {
+>     await pb.admins.authWithPassword(process.env.PB_ADMIN_EMAIL, process.env.PB_ADMIN_PASSWORD);
+>   } catch (e) {
+>     process.stderr.write('Auth failed: ' + (e && e.message ? e.message : e) + '\n');
+>     process.exit(1);
+>   }
+>
+>   const safeChat = String(args.chat).replace(/'/g, "\\'");
+>   const filter = "chat='" + safeChat + "'";
+>
+>   try {
+>     unsubFn = await pb.collection('messages').subscribe('*', function (e) {
+>       if (!e) return;
+>       const record = e.record || {};
+>       writeLine({ action: e.action, record: record });
+>     }, { filter: filter });
+>   } catch (e) {
+>     process.stderr.write('Subscribe failed: ' + (e && e.message ? e.message : e) + '\n');
+>     process.exit(1);
+>   }
+>
+>   process.stderr.write('Subscribed to messages with filter: ' + filter + '\n');
+> })();
+> JSEOF
+root@971e17d1-9bc3-4343-86cb-ffcdbd2870f8:/home/user/myproject# cd /home/user/myproject && node --check subscribe.js && echo 'Syntax OK'
+Syntax OK
+root@971e17d1-9bc3-4343-86cb-ffcdbd2870f8:/home/user/myproject#

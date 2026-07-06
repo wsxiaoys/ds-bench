@@ -10,9 +10,9 @@ A subtle and well-documented quirk of the TypeScript SDK (`@alchemystai/sdk`) is
 Your job is to build a small Node.js + TypeScript CLI that demonstrates this behavior end-to-end against the real Alchemyst service.
 
 ## Requirements
-- Build a rerunnable Node.js TypeScript CLI located at `/home/user/myproject` that compiles to `dist/main.js`.
+- Build a rerunnable Node.js TypeScript CLI located at `/home/user/myproject` that compiles to `dist/main.js`. The project must ship a build step so that `npm install && npm run build` produces `dist/main.js`.
 - On each run, the CLI must (in order):
-  1. Connect to Alchemyst using the `ALCHEMYST_AI_API_KEY` environment variable via the `@alchemystai/sdk` package.
+  1. Connect to Alchemyst using the `ALCHEMYST_AI_API_KEY` environment variable via the `@alchemystai/sdk` package and call the real Alchemyst service (no mocks or hardcoded results).
   2. Ingest a fixed seed corpus of 4 documents with overlapping `group_name` metadata.
   3. Perform a Context Arithmetic intersection search constrained to the groups passed on the command line.
   4. Print the matched documents to stdout as a single JSON array (and nothing else on stdout before/after the JSON array).
@@ -24,13 +24,17 @@ Your job is to build a small Node.js + TypeScript CLI that demonstrates this beh
 - Each ingested document must use a stable `file_name` metadata of the form `<KEY>-<run-id>.md` (e.g., `ENG_V1_DOC-<run-id>.md`) so the CLI can be rerun safely without 409 conflicts.
 - The CLI must accept its filter groups as positional arguments after `--groups`. Example: `node dist/main.js --groups eng v1`.
 - The search must use the camelCase TypeScript SDK form: `metadata: { groupName: [...] }`.
-- Each printed result object must contain at least the field `key` (the embedded document key, e.g., `ENG_V1_DOC`). It may also contain other fields (e.g., `content`, `file_name`), but `key` is required.
+- Each printed result object must contain at least the field `key` (the embedded document key, e.g., `ENG_V1_DOC`). It may also contain other fields (e.g., `content`, `file_name`), but `key` is required. The returned set must be deduplicated by `key` (i.e., each `key` appears at most once in the array even if multiple chunks match).
 - Re-running the CLI with the same `/logs/artifacts/run-id` must not crash on 409 conflicts. The CLI is responsible for handling existing documents (e.g., by deleting them first or by tolerating duplicate-add errors) and finishing successfully.
 
 ## Implementation Hints
 - Read `/logs/artifacts/run-id` from the environment and append it to every `file_name` to keep parallel runs isolated and avoid `409 Conflict` errors when re-adding documents.
 - The TypeScript SDK is parameter-asymmetric: use **`group_name`** (snake_case) inside `metadata` for `v1.context.add`, and use **`groupName`** (camelCase) inside `metadata` for `v1.context.search`.
-- For intersection semantics, pass the *full* list of CLI groups as the `groupName` array in a single search call. The engine will return only documents that belong to **every** group in the list.
+- For intersection semantics, pass the *full* list of CLI groups as the `groupName` array in a single search call. The engine will return only documents that belong to **every** group in the list (i.e., the returned `key` set must equal exactly the set of seed documents whose `group_name` is a superset of the CLI groups). For example:
+  - `--groups eng v1` ⇒ only `ENG_V1_DOC`.
+  - `--groups eng` ⇒ exactly `ENG_V1_DOC` and `ENG_V2_DOC`.
+  - `--groups v1` ⇒ exactly `ENG_V1_DOC` and `PRODUCT_V1_DOC`.
+  - `--groups eng product` ⇒ empty array `[]`.
 - Choose a `similarity_threshold` low enough (e.g., around 0.1) so the semantic filter does not accidentally exclude valid intersection members during verification. Use a broad query string that loosely matches every seed document.
 - Embed the `key` (e.g., `ENG_V1_DOC`) literally in each document's content so you can map a returned context chunk back to one of the 4 seed documents, even after chunking.
 - Print exactly one JSON array on stdout. Send any logs or progress messages to stderr so the verifier can `JSON.parse` stdout cleanly.
@@ -38,18 +42,4 @@ Your job is to build a small Node.js + TypeScript CLI that demonstrates this beh
   - Context Arithmetic: https://getalchemystai.com/docs/advanced/context-arithmetic.md
   - Quickstart (group_name vs groupName): https://getalchemystai.com/docs/getting-started/quickstart.md
   - TypeScript tutorial: https://getalchemystai.com/docs/tutorials/typescript-agent.md
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Command: `node dist/main.js --groups <group1> [<group2> ...]`
-- The project ships a build step so that `npm install && npm run build` produces `dist/main.js`.
-- Input argument format: one or more group names passed as positional arguments after the literal `--groups` flag.
-- Stdout format: a single JSON array. Each element is an object with at minimum a string field `key` whose value is one of `ENG_V1_DOC`, `ENG_V2_DOC`, `PRODUCT_V1_DOC`, `PRODUCT_V2_DOC`. The returned set must be deduplicated by `key` (i.e., each `key` appears at most once in the array even if multiple chunks match).
-- Intersection semantics: the returned `key` set must equal exactly the set of seed documents whose `group_name` is a superset of the CLI groups. For example:
-  - `--groups eng v1` ⇒ only `ENG_V1_DOC`.
-  - `--groups eng` ⇒ exactly `ENG_V1_DOC` and `ENG_V2_DOC`.
-  - `--groups v1` ⇒ exactly `ENG_V1_DOC` and `PRODUCT_V1_DOC`.
-  - `--groups eng product` ⇒ empty array `[]`.
-- The CLI must be safely rerunnable with the same `/logs/artifacts/run-id` (no fatal 409 errors).
-- The CLI must read the Alchemyst API key from the `ALCHEMYST_AI_API_KEY` environment variable and call the real Alchemyst service (no mocks or hardcoded results).
 

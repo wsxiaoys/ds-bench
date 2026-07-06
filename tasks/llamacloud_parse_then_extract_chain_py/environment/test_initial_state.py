@@ -43,6 +43,6 @@ def test_llama_cloud_api_key_env_set():
     assert value, "LLAMA_CLOUD_API_KEY environment variable is not set in the container."
 
 
-def test_zealt_run_id_env_set():
-    value = os.environ.get("ZEALT_RUN_ID")
-    assert value, "ZEALT_RUN_ID environment variable is not set in the container."
+def test_run_id_set():
+    value = open("/logs/artifacts/run-id").read().strip()
+    assert value, "RUN_ID is not set in the container."

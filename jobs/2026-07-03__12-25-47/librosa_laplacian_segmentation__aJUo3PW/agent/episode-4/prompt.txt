@@ -1,0 +1,199 @@
+New Terminal Output:
+
+root@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# cat > /home/user/segment.py << 'PYEOF'
+> import json
+> import numpy as np
+> import librosa
+> from sklearn.cluster import AgglomerativeClustering
+>
+d> AUDIO_PATH = '/home/user/input.wav'
+> OUT_PATH = '/home/user/segments.json'
+>
+> # --- Load audio ---
+> y, sr = librosa.load(AUDIO_PATH, sr=22050, mono=True)
+> duration = float(len(y) / sr)
+>
+> # --- Beat tracking ---
+> tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+> beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+> print(f'tempo={tempo} n_beats={len(beat_frames)} duration={duration}')
+>
+> # --- Tonal feature (chroma_cqt) ---
+> chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+> # Beat-synchronous aggregation
+> chroma_sync = librosa.util.sync(chroma, beat_frames, aggregate=np.median)
+>
+> # --- Recurrence / self-similarity ---
+> # Use a wider context to capture structure
+> R = librosa.segment.recurrence_matrix(
+>     chroma_sync,
+>     mode='affinity',
+>     metric='cosine',
+>     sparse=False,
+> )
+> # Enhance diagonals
+eg> R_path = librosa.segment.path_enhance(R, n_segments=int(np.ceil(len(beat_frames) / 7.0)))
+>
+> # --- Sequential / local affinity ---
+> # Local affinity: penalize distance to diagonal
+> n = chroma_sync.shape[1]
+eg)
+> seq = np.zeros((n, n), dtype=np.float64)
+n> band = 7  # half-bandwidth
+> for i in range(n):
+n>     lo = max(0, i - band)
+>     hi = min(n, i + band + 1)
+>     d = np.abs(np.arange(lo, hi) - i)
+>     seq[i, lo:hi] = np.exp(-(d ** 2) / (2.0 * (band / 2.0) ** 2))
+>
+> # Combine repetition (path-enhanced) with sequential affinity
+> alpha = 0.5
+> A = alpha * R_path + (1.0 - alpha) * seq
+> np.fill_diagonal(A, 1.0)
+> # Symmetrize
+> A = 0.5 * (A + A.T)
+>
+> # --- Symmetric normalized graph Laplacian ---
+> deg = A.sum(axis=1)
+> with np.errstate(divide='ignore'):
+>     d_inv_sqrt = np.where(deg > 0, 1.0 / np.sqrt(deg), 0.0)
+> D_inv_sqrt = np.diag(d_inv_sqrt)
+> L = np.eye(n) - D_inv_sqrt @ A @ D_inv_sqrt
+>
+> # Bottom K eigenvectors (smallest eigenvalues)
+> K = 5
+> eigvals, eigvecs = np.linalg.eigh(L)
+> idx_sort = np.argsort(eigvals)
+> eigvals = eigvals[idx_sort]
+> eigvecs = eigvecs[:, idx_sort]
+> # Skip the first trivial eigenvector (eigval ~ 0)
+> emb = eigvecs[:, 1:K+1]
+> # Row-normalize embedding
+> row_norm = np.linalg.norm(emb, axis=1, keepdims=True)
+> row_norm = np.where(row_norm > 0, row_norm, 1.0)
+> emb_norm = emb / row_norm
+>
+N> # --- Agglomerative clustering ---
+> # Choose number of clusters. We want at least 3 segments and reuse of labels.
+> # Use librosa.segment.agglomerative on the chroma_sync directly with cosine
+> # to get a hierarchical segmentation that often yields A/B/A patterns.
+> # That function returns boundary frame indices.
+> boundary_frames = librosa.segment.agglomerative(chroma_sync, n_clusters=3)
+> # This gives frame indices of segment boundaries (not including last frame).
+> print('boundary_frames:', boundary_frames)
+>
+> # Convert boundary frames to beat indices
+> # boundary_frames are frame indices into chroma_sync (== beat indices)
+> beats_per_segment = []
+> prev = 0
+> for bf in boundary_frames:
+>     beats_per_segment.append((prev, int(bf)))
+>     prev = int(bf)
+> beats_per_segment.append((prev, n))
+> print('beats_per_segment:', beats_per_segment)
+>
+> # Now, assign a label to each segment such that segments with similar
+> # chroma content reuse labels (A/B/A pattern).
+> # Compute mean chroma per segment and cluster these mean vectors.
+> seg_means = []
+> for (s, e) in beats_per_segment:
+>     if e > s:
+>         seg_means.append(chroma_sync[:, s:e].mean(axis=1))
+>     else:
+>         seg_means.append(chroma_sync[:, s])
+> seg_means = np.stack(seg_means, axis=0)
+> # Cluster segment means into a small number of label types
+> n_label_types = min(3, len(seg_means))
+> seg_labels = AgglomerativeClustering(
+>     n_clusters=n_label_types, metric='cosine', linkage='average'
+> ).fit_predict(seg_means)
+> # Map numeric labels to uppercase letters in order of first appearance
+> letters = []
+> seen = {}
+> for lab in seg_labels:
+>     if lab not in seen:
+>         seen[lab] = chr(ord('A') + len(seen))
+>     letters.append(seen[lab])
+> print('seg_labels (raw):', seg_labels, 'letters:', letters)
+>
+> # --- Build time intervals from beat indices ---
+> # Use beat_times (in seconds). For each beat-range, start = beat_times[s]
+> # and end = beat_times[e-1] + beat_duration. Actually let's use the audio
+> # time grid from frames_to_time on beat_frames: but for end we want the
+> # next beat time (or audio duration for last segment).
+> segments = []
+> for (s, e), lab in zip(beats_per_segment, letters):
+>     if e > s:
+>         t_start = float(beat_times[s])
+>         if e < n:
+>             t_end = float(beat_times[e])
+>         else:
+>             t_end = duration
+>     else:
+>         continue
+>     segments.append({'start': t_start, 'end': t_end, 'label': lab})
+>
+> # Ensure first segment starts within 0.3s of 0 and last segment ends within 0.5s of duration
+> segments[0]['start'] = 0.0
+> segments[-1]['end'] = duration
+>
+> # Merge adjacent segments with same label
+> merged = []
+> for seg in segments:
+>     if merged and merged[-1]['label'] == seg['label']:
+>         merged[-1]['end'] = seg['end']
+>     else:
+>         merged.append(dict(seg))
+>
+> # Drop any segment shorter than 0.5s; if dropped, merge with neighbor
+> final = []
+> for seg in merged:
+>     dur = seg['end'] - seg['start']
+>     if dur <= 0.5:
+>         if final:
+>             final[-1]['end'] = seg['end']
+>         else:
+>             seg['start'] = 0.0
+>             final.append(seg)
+>     else:
+>         final.append(seg)
+>
+> # Ensure gaps between adjacent segments <= 0.3s and overlaps <= 0.05s.
+> # Bridge small gaps by snapping boundaries.
+> for i in range(1, len(final)):
+>     gap = final[i]['start'] - final[i-1]['end']
+>     if gap > 0.3:
+>         # Move boundary halfway
+>         mid = (final[i-1]['end'] + final[i]['start']) / 2.0
+>         final[i-1]['end'] = mid
+>         final[i]['start'] = mid
+>     elif gap < -0.05:
+>         # Overlap too big: shift boundary
+>         mid = (final[i-1]['end'] + final[i]['start']) / 2.0
+>         final[i-1]['end'] = mid
+>         final[i]['start'] = mid
+>
+> # Recheck min duration
+> final = [s for s in final if (s['end'] - s['start']) > 0.5]
+> # Reassign labels in order of appearance (so we always have A,B,... contiguous)
+> renamed = []
+> label_map = {}
+> for s in final:
+>     if s['label'] not in label_map:
+>         label_map[s['label']] = chr(ord('A') + len(label_map))
+>     renamed.append({'start': float(s['start']), 'end': float(s['end']), 'label': label_map[s['label']]})
+>
+> # Sort by start
+> renamed.sort(key=lambda x: x['start'])
+>
+> print('FINAL SEGMENTS:')
+> for s in renamed:
+>     print(f"  {s['start']:.3f} -> {s['end']:.3f}  {s['label']}  (dur={s['end']-s['start']:.3f})")
+>
+> with open(OUT_PATH, 'w') as f:
+>     json.dump(renamed, f, indent=2)
+> print('Wrote', OUT_PATH)
+> PYEOF
+root@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# echo "wrote script"
+wrote script
+root@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~#

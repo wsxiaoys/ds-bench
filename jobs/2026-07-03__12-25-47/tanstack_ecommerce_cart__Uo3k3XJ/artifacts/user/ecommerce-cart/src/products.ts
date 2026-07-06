@@ -1,0 +1,59 @@
+export interface Product {
+  id: number
+  name: string
+  description: string
+  price: number
+  image: string
+}
+
+export const mockProducts: Product[] = [
+  {
+    id: 1,
+    name: 'Wireless Headphones',
+    description: 'Premium noise-cancelling wireless headphones.',
+    price: 99.99,
+    image: 'https://picsum.photos/seed/headphones/200/200',
+  },
+  {
+    id: 2,
+    name: 'Mechanical Keyboard',
+    description: 'RGB mechanical keyboard with blue switches.',
+    price: 129.99,
+    image: 'https://picsum.photos/seed/keyboard/200/200',
+  },
+  {
+    id: 3,
+    name: 'Gaming Mouse',
+    description: 'High-DPI gaming mouse with 8 programmable buttons.',
+    price: 49.99,
+    image: 'https://picsum.photos/seed/mouse/200/200',
+  },
+  {
+    id: 4,
+    name: '4K Monitor',
+    description: '27-inch 4K UHD IPS monitor with HDR support.',
+    price: 349.99,
+    image: 'https://picsum.photos/seed/monitor/200/200',
+  },
+  {
+    id: 5,
+    name: 'USB-C Hub',
+    description: '7-in-1 USB-C hub with HDMI, USB 3.0, and SD card reader.',
+    price: 39.99,
+    image: 'https://picsum.photos/seed/usbhub/200/200',
+  },
+  {
+    id: 6,
+    name: 'Webcam HD',
+    description: '1080p HD webcam with built-in microphone.',
+    price: 59.99,
+    image: 'https://picsum.photos/seed/webcam/200/200',
+  },
+]
+
+// Mock API: simulates network request with a delay
+export async function fetchProducts(): Promise<Product[]> {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(mockProducts), 300)
+  })
+}

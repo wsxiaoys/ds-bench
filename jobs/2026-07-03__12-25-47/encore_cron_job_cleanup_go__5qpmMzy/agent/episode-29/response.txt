@@ -1,0 +1,20 @@
+
+
+{
+  "analysis": "Now I understand. To use NewDatabase, I should store the result in a package-level variable. Then the encore compiler captures which database. Or there's a `Named` function. The package-level Exec/Query/ExecTx etc are deprecated for use within services using NewDatabase. So I should use `db.Exec`, `db.Query` from the returned *Database variable. Let me update the code to use that pattern.",
+  "plan": "Update db.go to assign the database to a variable like `db`, then update records.go and cleanup.go to use `db.Exec` and `db.Query`.",
+  "commands": [
+    {
+      "keystrokes": "cat > cleanup/db.go << 'EOF'\npackage cleanup\n\nimport \"encore.dev/storage/sqldb\"\n\n//encore:service\nvar db = sqldb.NewDatabase(\"cleanup_db\", sqldb.DatabaseConfig{\n    Migrations: \"./migrations\",\n})\nEOF\n",
+      "duration": 0.2
+    },
+    {
+      "keystrokes": "cat > cleanup/records.go << 'EOF'\npackage cleanup\n\nimport (\n    \"context\"\n    \"time\"\n)\n\ntype Record struct {\n    ID        string    `json:\"id\"`\n    Data      string    `json:\"data\"`\n    CreatedAt time.Time `json:\"created_at\"`\n}\n\ntype InsertRecordParams struct {\n    ID        string    `json:\"id\"`\n    Data      string    `json:\"data\"`\n    CreatedAt time.Time `json:\"created_at\"`\n}\n\n//encore:api public method=POST path=/records\nfunc InsertRecord(ctx context.Context, p *InsertRecordParams) error {\n    rec := &Record{\n        ID:        p.ID,\n        Data:      p.Data,\n        CreatedAt: p.CreatedAt,\n    }\n    _, err := db.Exec(ctx, `\n        INSERT INTO records (id, data, created_at)\n        VALUES ($1, $2, $3)\n    `, rec.ID, rec.Data, rec.CreatedAt)\n    return err\n}\n\ntype ListRecordsResponse struct {\n    Records []*Record `json:\"records\"`\n}\n\n//encore:api public method=GET path=/records\nfunc ListRecords(ctx context.Context) (*ListRecordsResponse, error) {\n    rows, err := db.Query(ctx, `\n        SELECT id, data, created_at\n        FROM records\n        ORDER BY created_at DESC\n    `)\n    if err != nil {\n        return nil, err\n    }\n    defer rows.Close()\n\n    resp := &ListRecordsResponse{}\n    for rows.Next() {\n        rec := &Record{}\n        if err := rows.Scan(&rec.ID, &rec.Data, &rec.CreatedAt); err != nil {\n            return nil, err\n        }\n        resp.Records = append(resp.Records, rec)\n    }\n    if err := rows.Err(); err != nil {\n        return nil, err\n    }\n    return resp, nil\n}\nEOF\n",
+      "duration": 0.2
+    },
+    {
+      "keystrokes": "cat > cleanup/cleanup.go << 'EOF'\npackage cleanup\n\nimport (\n    \"context\"\n    \"time\"\n)\n\n//encore:api public method=POST path=/cleanup\nfunc Cleanup(ctx context.Context) error {\n    cutoff := time.Now().Add(-24 * time.Hour)\n    _, err := db.Exec(ctx, `\n        DELETE FROM records\n        WHERE created_at < $1\n    `, cutoff)\n    return err\n}\nEOF\n",
+      "duration": 0.2
+    }
+  ]
+}

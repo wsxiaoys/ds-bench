@@ -1,0 +1,16 @@
+
+
+{
+  "analysis": "Now I have the correct API:\n- `e.JSON(status int, data any) error` - takes int status code and data\n- `e.BadRequestError(message string, errData any) *ApiError` - takes message and errData\n- `e.InternalServerError(message string, errData any) *ApiError` - takes message and errData\n\nAlso `OnServe()` instead of `OnBeforeServe()`. Let me update the main.go file with the correct API.",
+  "plan": "Rewrite main.go with the correct API calls.",
+  "commands": [
+    {
+      "keystrokes": "cat > /home/user/myproject/main.go << 'EOF'\npackage main\n\nimport (\n\t\"context\"\n\t\"errors\"\n\t\"fmt\"\n\t\"log\"\n\t\"os\"\n\t\"strings\"\n\t\"time\"\n\n\t\"github.com/aws/aws-sdk-go-v2/aws\"\n\t\"github.com/aws/aws-sdk-go-v2/config\"\n\t\"github.com/aws/aws-sdk-go-v2/credentials\"\n\t\"github.com/aws/aws-sdk-go-v2/service/s3\"\n\t\"github.com/pocketbase/pocketbase\"\n\t\"github.com/pocketbase/pocketbase/core\"\n)\n\nfunc main() {\n\tapp := pocketbase.New()\n\n\tapp.OnServe().BindFunc(func(se *core.ServeEvent) error {\n\t\tse.Router.GET(\"/api/s3-presign\", func(e *core.RequestEvent) error {\n\t\t\tfilename := e.Request.URL.Query().Get(\"filename\")\n\t\t\tif strings.TrimSpace(filename) == \"\" {\n\t\t\t\treturn e.BadRequestError(\"filename query parameter is required\", nil)\n\t\t\t}\n\n\t\t\tregion := os.Getenv(\"AWS_REGION\")\n\t\t\taccessKey := os.Getenv(\"AWS_ACCESS_KEY_ID\")\n\t\t\tsecretKey := os.Getenv(\"AWS_SECRET_ACCESS_KEY\")\n\t\t\tbucket := os.Getenv(\"AWS_BUCKET\")\n\n\t\t\tif region == \"\" || accessKey == \"\" || secretKey == \"\" || bucket == \"\" {\n\t\t\t\treturn e.InternalServerError(\"missing AWS configuration environment variables\", nil)\n\t\t\t}\n\n\t\t\trunIDBytes, err := os.ReadFile(\"/logs/artifacts/run-id\")\n\t\t\tif err != nil {\n\t\t\t\treturn e.InternalServerError(fmt.Sprintf(\"failed to read run-id: %v\", err), nil)\n\t\t\t}\n\t\t\trunID := strings.TrimSpace(string(runIDBytes))\n\n\t\t\tkey := fmt.Sprintf(\"uploads/%s/%s\", runID, filename)\n\n\t\t\tcfg, err := config.LoadDefaultConfig(context.Background(),\n\t\t\t\tconfig.WithRegion(region),\n\t\t\t\tconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, \"\")),\n\t\t\t)\n\t\t\tif err != nil {\n\t\t\t\treturn e.InternalServerError(fmt.Sprintf(\"failed to load AWS config: %v\", err), nil)\n\t\t\t}\n\n\t\t\tclient := s3.NewFromConfig(cfg)\n\n\t\t\tpresignClient := s3.NewPresignClient(client)\n\n\t\t\trequest, err := presignClient.PresignPutObject(context.Background(), &s3.PutObjectInput{\n\t\t\t\tBucket: aws.String(bucket),\n\t\t\t\tKey:    aws.String(key),\n\t\t\t}, s3.WithPresignExpires(15*time.Minute))\n\t\t\tif err != nil {\n\t\t\t\treturn e.InternalServerError(fmt.Sprintf(\"failed to presign URL: %v\", err), nil)\n\t\t\t}\n\n\t\t\treturn e.JSON(200, map[string]string{\"url\": request.URL})\n\t\t})\n\n\t\treturn se.Next()\n\t})\n\n\tif err := app.Start(); err != nil {\n\t\tlog.Fatal(err)\n\t}\n\n\t_ = errors.New(\"\")\n}\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cd /home/user/myproject && go build -o myapp main.go\n",
+      "duration": 60.0
+    }
+  ]
+}

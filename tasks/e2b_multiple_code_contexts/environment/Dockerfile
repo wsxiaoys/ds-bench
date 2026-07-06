@@ -12,4 +12,11 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 RUN pip install e2b-code-interpreter pytest
 
 # Set working directory
-WORKDIR /workspace
+WORKDIR /home/user
+
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]

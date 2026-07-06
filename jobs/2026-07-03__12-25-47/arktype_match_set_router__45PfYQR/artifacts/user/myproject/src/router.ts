@@ -1,0 +1,38 @@
+import { match } from "arktype";
+
+/**
+ * Router constructed via ArkType's `match` pattern matcher.
+ *
+ * Cases:
+ *   1. bare `string`                 -> `text:<length>`
+ *   2. bare `number`                 -> `num:<value>`
+ *   3. `string[]`                    -> `list:<length>`
+ *   4. click (button target)         -> `btn:<target.id>`
+ *   5. click (link target, URL href) -> `link:<target.href>`
+ *   6. submit (formId + valid)       -> `submit:<formId>:<valid>`
+ *
+ * Anything else raises a `TraversalError` (default: "assert").
+ */
+export const route = match({})
+// 1) bare string -> text:<length>
+.case("string", (s) => `text:${s.length}`)
+// 2) bare number -> num:<value>
+.case("number", (n) => `num:${n}`)
+// 3) string[] -> list:<length>
+.case("string[]", (arr) => `list:${arr.length}`)
+// 4) click event with button target -> btn:<target.id>
+.case(
+{ kind: '"click"', target: { type: '"button"', id: "string" } },
+(e) => `btn:${e.target.id}`
+)
+// 5) click event with link target (requires valid URL href) -> link:<target.href>
+.case(
+{ kind: '"click"', target: { type: '"link"', href: "string.url" } },
+(e) => `link:${e.target.href}`
+)
+// 6) submit event with formId and valid -> submit:<formId>:<valid>
+.case(
+{ kind: '"submit"', payload: { formId: "string", valid: "boolean" } },
+(e) => `submit:${e.payload.formId}:${e.payload.valid}`
+)
+.default("assert");

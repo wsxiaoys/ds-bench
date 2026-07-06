@@ -22,60 +22,43 @@ A non-Reflex CLI helper `probe.py` at the project root must expose the same data
   - Supports editing a note's content and replacing its full tag set.
   - Supports deleting a note. Deleting a note must remove its link rows but MUST NOT delete the referenced tag rows.
   - Supports toggling tags into / out of `selected_tags`.
-- A CLI helper `probe.py` at the project root that uses the **same** `rx.Model` classes and the same database file, and exposes the contract documented under `Acceptance Criteria`.
+- A CLI helper `probe.py` at the project root (`/home/user/myproject/probe.py`) that uses the **same** `rx.Model` classes and the same database file (SQLite at `/home/user/myproject/reflex.db`). The CLI helper is invoked as `uv run python probe.py <subcommand> [args]`. Every subcommand must print exactly one JSON object on its own line on stdout (the verifier parses the last JSON object on stdout; extra log lines are tolerated). Exit code must be 0 on success and non-zero on failure. It must support the following subcommands:
+  - `counts`:
+    - Returns: `{"notes": <int>, "tags": <int>, "links": <int>}` reflecting `SELECT COUNT(*)` of the note, tag, and link tables.
+  - `ensure-tag --name <NAME>`:
+    - Creates a `Tag` row with `name == NAME` if and only if it does not already exist. Idempotent.
+    - Returns: `{"id": <int>, "name": <NAME>, "created": <bool>}`.
+  - `create --content <TXT> --tags <T1,T2,...>`:
+    - Creates one `Note` row. For each comma-separated tag name in `--tags`, attaches that `Tag` to the new note, creating the `Tag` row only if no row with that exact `name` already exists.
+    - `--tags` is optional. If absent or empty, the note is created without tags.
+    - Returns: `{"id": <int>, "content": <TXT>, "tags": [<sorted tag names>]}`.
+  - `list [--filter <T1,T2,...>]`:
+    - When `--filter` is missing or empty, returns all notes in ascending `id` order.
+    - When `--filter` has at least one tag, returns notes that have at least one tag in the filter (OR semantics), in ascending `id` order.
+    - Returns: `{"notes": [{"id": <int>, "content": <str>, "tags": [<sorted tag names>]}, ...]}`.
+  - `set-tags --id <N> --tags <T1,T2,...>`:
+    - Replaces the entire tag set of the note with id `N` with the comma-separated tags. Creates missing `Tag` rows as needed. Removes link rows for tags no longer attached. Never deletes `Tag` rows.
+    - Returns: `{"id": <N>, "tags": [<sorted tag names>]}`.
+  - `update --id <N> --content <TXT>`:
+    - Updates the `content` of the note with id `N`. Does not touch its tags.
+    - Returns: `{"id": <N>, "content": <TXT>}`.
+  - `delete --id <N>`:
+    - Deletes the note with id `N` and all its rows in the link table. Does NOT delete any `Tag` row.
+    - Returns: `{"id": <N>, "deleted": true}`.
+  - `all-tags`:
+    - Returns: `{"all_tags": [<sorted tag names that are attached to at least one note>]}`. Tag rows that exist in the `tag` table but are not currently attached to any note MUST NOT appear.
 
 ## Implementation Hints
 
+- The project path is `/home/user/myproject`.
 - Use the project setup flow from the research plan (`uv init`, `uv add reflex`, `uv run reflex init --template blank`, `uv run reflex db init/makemigrations/migrate`). Keep all Python deps inside the `uv`-managed virtual environment; the verifier will invoke Python through `uv run`.
+- The application should run on port `3000` (frontend) and `8000` (backend), and be startable using `uv run reflex run --loglevel info` from the project directory. The UI will be verified on `http://localhost:3000/`.
+- The database must be an SQLite database located at `/home/user/myproject/reflex.db`. After `uv run reflex db migrate`, the schema must contain:
+  - A `note` table (with at least `id` and `content` columns).
+  - A `tag` table (with at least `id` and `name` columns).
+  - A separate link table (e.g., `notetaglink` or any name) with exactly two columns which are FOREIGN KEYs into `note.id` and `tag.id`.
 - The link table is its own `rx.Model` with `table=True` and two `Field(..., foreign_key=...)` columns that together form the primary key. Wire the many-to-many with `sqlmodel.Relationship(back_populates=..., link_model=<LinkTable>)`.
 - For the filter UI, do not pre-filter on the backend just for display; perform the filter inside `rx.foreach` using `rx.cond` against `selected_tags` so the UX matches the requirements. (You may still query a sorted list of notes from the DB.)
 - For `all_tags`, use `@rx.var(cache=True)` and derive it from the same data the State already holds for notes (or read from DB) so it stays in sync after CRUD operations.
 - After you have finished developing, **kill all background servers** you started (e.g. `uv run reflex run`). The verifier starts the server itself.
-
-## Acceptance Criteria
-
-- Project path: `/home/user/myproject`
-- Start command: `cd /home/user/myproject && uv run reflex run --loglevel info`
-- Frontend port: `3000`
-- Backend port: `8000`
-- Database: SQLite at `/home/user/myproject/reflex.db`. After `uv run reflex db migrate`, the schema MUST contain:
-  - A `note` table (with at least `id` and `content` columns).
-  - A `tag` table (with at least `id` and `name` columns).
-  - A separate **link table** whose name is anything (e.g. `notetaglink`) that has exactly two columns which are FOREIGN KEYs into `note.id` and `tag.id`.
-- UI contract on `http://localhost:3000/`:
-  - The page renders without compile or runtime errors and returns valid HTML on a `GET /`.
-- CLI contract — `probe.py` at the project root, invoked as `cd /home/user/myproject && uv run python probe.py <subcommand> [args]`. Every subcommand MUST print exactly one JSON object on its own line on stdout (extra log lines are tolerated; the verifier parses the last JSON object on stdout). Exit code MUST be 0 on success and non-zero on failure.
-  - Subcommand `counts`:
-    - Returns: `{"notes": <int>, "tags": <int>, "links": <int>}` reflecting `SELECT COUNT(*)` of the note, tag, and link tables.
-  - Subcommand `ensure-tag --name <NAME>`:
-    - Creates a `Tag` row with `name == NAME` if and only if it does not already exist. Idempotent.
-    - Returns: `{"id": <int>, "name": <NAME>, "created": <bool>}`.
-  - Subcommand `create --content <TXT> --tags <T1,T2,...>`:
-    - Creates one `Note` row. For each comma-separated tag name in `--tags`, attaches that `Tag` to the new note, creating the `Tag` row only if no row with that exact `name` already exists.
-    - `--tags` is optional. If absent or empty, the note is created without tags.
-    - Returns: `{"id": <int>, "content": <TXT>, "tags": [<sorted tag names>]}`.
-  - Subcommand `list [--filter <T1,T2,...>]`:
-    - When `--filter` is missing or empty, returns all notes in ascending `id` order.
-    - When `--filter` has at least one tag, returns notes that have at least one tag in the filter (OR semantics), in ascending `id` order.
-    - Returns: `{"notes": [{"id": <int>, "content": <str>, "tags": [<sorted tag names>]}, ...]}`.
-  - Subcommand `set-tags --id <N> --tags <T1,T2,...>`:
-    - Replaces the entire tag set of the note with id `N` with the comma-separated tags. Creates missing `Tag` rows as needed. Removes link rows for tags no longer attached. Never deletes `Tag` rows.
-    - Returns: `{"id": <N>, "tags": [<sorted tag names>]}`.
-  - Subcommand `update --id <N> --content <TXT>`:
-    - Updates the `content` of the note with id `N`. Does not touch its tags.
-    - Returns: `{"id": <N>, "content": <TXT>}`.
-  - Subcommand `delete --id <N>`:
-    - Deletes the note with id `N` and all its rows in the link table. Does NOT delete any `Tag` row.
-    - Returns: `{"id": <N>, "deleted": true}`.
-  - Subcommand `all-tags`:
-    - Returns: `{"all_tags": [<sorted tag names that are attached to at least one note>]}`. Tag rows that exist in the `tag` table but are not currently attached to any note MUST NOT appear.
-- Many-to-many contract (verifier asserts via `probe.py` + sqlite):
-  - With no notes and two pre-existing tags `T1` and `T2` already inserted via `ensure-tag`, calling `create --content C --tags T1,T2` MUST add exactly 1 row to the note table, exactly 0 rows to the tag table, and exactly 2 rows to the link table — i.e. exactly **3 new rows total** across the 3 tables.
-  - With a note attached to tags `T1,T2`, calling `delete --id <N>` MUST remove the note row and both link rows for that note, but MUST leave both `Tag` rows in place.
-  - `all_tags` MUST equal the union of tag names currently attached to at least one note. After `delete`, any tag that was used only by that note is excluded; tags still used by other notes remain.
-- State / source-code contract:
-  - The Reflex app must define `selected_tags` as a base var on a State subclass, and `all_tags` as a cached computed var (`@rx.var(cache=True)` or `@rx.cached_var`) on that same State.
-  - The index page must use `rx.foreach` to render notes and `rx.cond` (anywhere within the render path) to filter them by `selected_tags`.
-  - The many-to-many MUST be implemented via an `rx.Model(table=True)` link-table class and `sqlmodel.Relationship(..., link_model=<that class>)` on both sides.
-- Background processes: After implementation, all `reflex run` (or other) background servers you started must be terminated before the verifier runs.
 

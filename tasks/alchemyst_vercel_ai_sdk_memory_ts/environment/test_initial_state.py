@@ -42,10 +42,10 @@ def test_home_user_exists():
     )
 
 
-def test_zealt_run_id_is_set():
-    run_id = os.environ.get("ZEALT_RUN_ID")
+def test_run_id_is_set():
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id, (
-        "Expected the ZEALT_RUN_ID environment variable to be set so that "
+        "Expected the RUN_ID to be set so that "
         "user/session identifiers can be namespaced per run."
     )
 

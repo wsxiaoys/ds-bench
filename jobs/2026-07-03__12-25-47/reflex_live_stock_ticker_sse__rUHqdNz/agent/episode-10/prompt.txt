@@ -1,0 +1,215 @@
+New Terminal Output:
+
+root@07c691a2-6b06-40da-895f-5897ed04fc25:/home/user/ticker_app# cat > ticker_app/ticker_app.py << 'PYEOF'
+> """Reflex stock-ticker dashboard.
+>
+> This module wires together:
+> - A `TickerState` that exposes the live price book to the browser.
+> - A long-running `@rx.event(background=True)` handler that mirrors the
+>   shared engine's ticks into the Reflex state every 500 ms.
+> - A `percent_change` cached computed var.
+> - A FastAPI sub-app (mounted via `api_transformer`) that exposes the
+>   headless REST surface used by the verifier.
+> """
+>
+> from __future__ import annotations
+>
+> import asyncio
+> from typing import Any, Dict
+>
+> import fastapi
+> import reflex as rx
+>
+> from .engine import SEEDS, SYMBOLS, engine
+>
+>
+> # ----------------------------------------------------------------------- state
+> class TickerState(rx.State):
+>     """Live state for the stock-ticker page."""
+>
+>     # Plain serializable base vars (visible to the UI).
+>     prices: Dict[str, float] = dict(SEEDS)
+>     seeds: Dict[str, float] = dict(SEEDS)
+>     running: bool = False
+>     update_count: int = 0
+>
+>     # Backend-only vars (underscore-prefixed, not serialized to the client).
+>     _loop_active: bool = False
+>
+>     # ---------------------------------------------------------------- computed
+>     @rx.var(cache=True)
+>     def percent_change(self) -> Dict[str, float]:
+>         """Per-symbol percent change vs. seed, rounded to 4 decimal places."""
+>         prices = self.prices
+>         seeds = self.seeds
+>         result: Dict[str, float] = {}
+>         for sym in SYMBOLS:
+>             seed = seeds.get(sym, SEEDS[sym])
+>             current = prices.get(sym, seed)
+>             if seed == 0:
+>                 result[sym] = 0.0
+>             else:
+>                 result[sym] = round((current - seed) / seed * 100.0, 4)
+>         return result
+>
+>     # ---------------------------------------------------------------- helpers
+>     def _pull_snapshot_into_state(self) -> None:
+>         """Copy the engine's current snapshot into the (non-background) base vars."""
+>         snap = engine.snapshot()
+>         self.prices = snap["prices"]
+>         self.seeds = snap["seeds"]
+>         self.running = bool(snap["running"])
+>         self.update_count = int(snap["update_count"])
+>
+>     # ---------------------------------------------------------------- handlers
+>     @rx.event
+>     async def start(self) -> Any:
+>         """UI Start handler. Drives the engine idempotently and kicks off the
+>         background event handler that mirrors ticks into State."""
+>         async with self:
+>             # Flip a backend-only flag so the background handler can no-op
+>             # if a previous loop is still running.
+>             if self._loop_active:
+>                 self._pull_snapshot_into_state()
+>                 return
+>             self._loop_active = True
+>
+>         # Ask the engine to start (it is itself idempotent).
+>         await engine.start()
+>
+>         # Make sure the UI sees the freshly-started engine state.
+>         async with self:
+>             self._pull_snapshot_into_state()
+>
+>         # Kick off the background mirror. The background handler itself
+>         # owns the idempotency guard around _loop_active.
+>         return TickerState.background_update
+>
+>     @rx.event
+>     async def stop(self) -> None:
+>         """UI Stop handler."""
+>         await engine.stop()
+>         async with self:
+>             self._loop_active = False
+>             self._pull_snapshot_into_state()
+>
+>     @rx.event(background=True)
+>     async def background_update(self) -> None:
+>         """Long-running background handler that mirrors the engine's ticks
+>         into the Reflex State. Owns the idempotency guard `_loop_active`.
+>         """
+>         async with self:
+>             if self._loop_active:
+>                 # Another mirror is already running. Yield to it.
+>                 return
+>             self._loop_active = True
+>
+>         try:
+>             # Run as long as the engine is running. We re-check the engine
+>             # status every iteration so that a stop issued via REST also
+>             # causes this loop to exit.
+>             while True:
+>                 await asyncio.sleep(engine.TICK_SECONDS)
+>                 snap = engine.snapshot()
+>                 async with self:
+>                     self.prices = snap["prices"]
+>                     self.update_count = int(snap["update_count"])
+>                     self.running = bool(snap["running"])
+>                 if not snap["running"]:
+>                     break
+>         finally:
+>             async with self:
+>                 self._loop_active = False
+>
+>
+> # ----------------------------------------------------------------------- UI
+> def _format_price(value: float) -> str:
+>     return f"${value:,.2f}"
+>
+>
+> def _format_percent(value: float) -> str:
+>     return f"{value:+.4f}%"
+>
+>
+> def index() -> rx.Component:
+>     return rx.container(
+>         rx.vstack(
+>             rx.heading("Live Stock Ticker", size="7"),
+>             rx.text(
+>                 rx.cond(
+>                     TickerState.running,
+>                     rx.text("Status: RUNNING", color="green", weight="bold"),
+>                     rx.text("Status: STOPPED", color="red", weight="bold"),
+>                 )
+>             ),
+>             rx.hstack(
+>                 rx.button("Start", on_click=TickerState.start, color_scheme="green"),
+>                 rx.button("Stop", on_click=TickerState.stop, color_scheme="red"),
+>                 spacing="4",
+>             ),
+>             rx.table.root(
+>                 rx.table.header(
+>                     rx.table.row(
+>                         rx.table.column_header_cell("Symbol"),
+>                         rx.table.column_header_cell("Price"),
+>                         rx.table.column_header_cell("Percent Change"),
+>                     )
+>                 ),
+>                 rx.table.body(
+>                     *[
+>                         rx.table.row(
+>                             rx.table.cell(rx.text(sym, weight="bold")),
+>                             rx.table.cell(rx.text(f"${SEEDS[sym]:,.2f}")),
+>                             rx.table.cell(
+>                                 rx.text(
+>                                     rx.cond(
+>                                         TickerState.prices[sym] != None,  # noqa: E711
+>                                         f"{TickerState.prices[sym] if False else 0}",
+>                                         "0",
+>                                     )
+>                                 )
+>                             ),
+>                         )
+>                         for sym in SYMBOLS
+>                     ]
+>                 ),
+>             ),
+>             spacing="4",
+>             padding="2em",
+>         )
+>     )
+>
+>
+> # ----------------------------------------------------------------------- API
+> api_app = fastapi.FastAPI(title="Ticker REST API")
+>
+>
+> @api_app.post("/api/ticker/start")
+> async def api_start() -> Dict[str, Any]:
+>     started = await engine.start()
+>     return {"running": engine.running, "started": started}
+>
+>
+> @api_app.post("/api/ticker/stop")
+> async def api_stop() -> Dict[str, Any]:
+>     await engine.stop()
+>     return {"running": engine.running}
+>
+>
+> @api_app.get("/api/ticker/snapshot")
+> async def api_snapshot() -> Dict[str, Any]:
+>     return engine.snapshot()
+>
+>
+> # ----------------------------------------------------------------------- app
+> app = rx.App(api_transformer=api_app)
+> app.add_page(index)
+> PYEOF
+root@07c691a2-6b06-40da-895f-5897ed04fc25:/home/user/ticker_app# ls -la ticker_app/
+total 20
+drwxr-xr-x 2 root root   63 Jul  3 12:48 .
+drwxr-xr-x 9 root root 4096 Jul  3 12:47 ..
+-rw-r--r-- 1 root root    0 Jul  3 12:47 __init__.py
+-rw-r--r-- 1 root root 5209 Jul  3 12:48 engine.py
+-rw-r--r-- 1 root root 7141 Jul  3 12:48 ticker_app.py
+root@07c691a2-6b06-40da-895f-5897ed04fc25:/home/user/ticker_app#

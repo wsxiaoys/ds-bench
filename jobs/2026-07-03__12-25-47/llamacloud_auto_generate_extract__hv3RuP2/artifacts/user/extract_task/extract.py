@@ -1,0 +1,139 @@
+import os
+import json
+import time
+from llama_cloud import LlamaCloud
+
+# Configuration
+TASK_DIR = "/home/user/extract_task"
+PDF_PATH = os.path.join(TASK_DIR, "data", "invoice.pdf")
+SCHEMA_PATH = os.path.join(TASK_DIR, "schema.json")
+RESULT_PATH = os.path.join(TASK_DIR, "result.json")
+LOG_PATH = os.path.join(TASK_DIR, "output.log")
+RUN_ID_PATH = "/logs/artifacts/run-id"
+
+# Read run-id
+with open(RUN_ID_PATH, "r") as f:
+    run_id = f.read().strip()
+print(f"Run ID: {run_id}")
+
+external_file_id = f"invoice-{run_id}.pdf"
+print(f"External file ID: {external_file_id}")
+
+# Initialize client
+client = LlamaCloud()
+
+# Step 1: Upload the PDF file
+print("\n=== Uploading PDF ===")
+with open(PDF_PATH, "rb") as f:
+    uploaded = client.files.create(
+        file=f,
+        purpose="extract",
+        external_file_id=external_file_id,
+    )
+print(f"Uploaded file: {uploaded}")
+file_id = uploaded.id
+print(f"File ID: {file_id}")
+
+# Step 2: Generate a schema using the prompt and the file
+print("\n=== Generating schema ===")
+prompt = (
+    "Extract structured information from this invoice. "
+    "Include the invoice number, the vendor or seller name, "
+    "the invoice date, the line items, the subtotal, the tax, "
+    "and the total amount."
+)
+generated = client.extract.generate_schema(
+    prompt=prompt,
+    file_id=file_id,
+    name=f"invoice-schema-{run_id}",
+)
+print(f"Generated: {generated}")
+print(f"Parameters type: {type(generated.parameters)}")
+
+# Get the data_schema from generated.parameters
+data_schema = generated.parameters.data_schema
+print(f"\nGenerated data schema: {json.dumps(data_schema, indent=2)}")
+
+# Save the schema
+with open(SCHEMA_PATH, "w") as f:
+    json.dump(data_schema, f, indent=2)
+print(f"\nSchema saved to {SCHEMA_PATH}")
+
+# Get top-level property names
+top_level_props = list(data_schema.get("properties", {}).keys())
+print(f"Top-level properties: {top_level_props}")
+
+# Step 3: Run extraction using the generated schema
+print("\n=== Running extraction ===")
+configuration = {
+    "data_schema": data_schema,
+    "extraction_target": "per_doc",
+    "tier": "agentic",
+}
+
+job = client.extract.create(
+    file_input=file_id,
+    configuration=configuration,
+)
+print(f"Created job: {job}")
+print(f"Job ID: {job.id}")
+job_id = job.id
+
+# Step 4: Wait for completion
+print("\n=== Waiting for completion ===")
+completed = client.extract.wait_for_completion(job_id=job_id, verbose=True)
+print(f"Completed job: {completed}")
+print(f"Status: {completed.status}")
+print(f"Extract result: {completed.extract_result}")
+
+# Save the extraction result
+extract_result = completed.extract_result
+if extract_result is None:
+    raise RuntimeError("extract_result is None")
+
+result_data = None
+# Try to convert to dict
+if hasattr(extract_result, "model_dump"):
+    result_data = extract_result.model_dump()
+elif hasattr(extract_result, "dict"):
+    result_data = extract_result.dict()
+elif isinstance(extract_result, dict):
+    result_data = extract_result
+else:
+    result_data = {"extract_result": str(extract_result)}
+
+# The extract result may have a 'data' or 'output' field
+print(f"\nResult data: {json.dumps(result_data, indent=2, default=str)}")
+
+# Try to extract the actual structured data
+final_result = None
+if "data" in result_data:
+    final_result = result_data["data"]
+elif "output" in result_data:
+    final_result = result_data["output"]
+elif "extracted_data" in result_data:
+    final_result = result_data["extracted_data"]
+else:
+    final_result = result_data
+
+print(f"\nFinal result: {json.dumps(final_result, indent=2, default=str)}")
+
+# Write the result
+with open(RESULT_PATH, "w") as f:
+    json.dump(final_result, f, indent=2, default=str)
+print(f"\nResult saved to {RESULT_PATH}")
+
+# Step 5: Write the log file
+log_lines = [
+    f"Schema fields: {','.join(top_level_props)}",
+    f"Job ID: {job_id}",
+    f"Status: COMPLETED",
+]
+with open(LOG_PATH, "w") as f:
+    f.write("\n".join(log_lines) + "\n")
+print(f"\nLog file written to {LOG_PATH}")
+print("\nLog contents:")
+with open(LOG_PATH, "r") as f:
+    print(f.read())
+
+print("\n=== TASK COMPLETE ===")

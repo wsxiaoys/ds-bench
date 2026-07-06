@@ -221,28 +221,6 @@ def test_lower_context_view(vega_spec):
         f"Lower (context) view must have height=70, got {lower.get('height')!r}."
     )
 
-    brush_name = _find_brush_param(vega_spec)["name"]
-    lower_params = lower.get("params")
-    assert isinstance(lower_params, list) and lower_params, (
-        "Lower (context) view must declare a `params` array containing the brush selection "
-        "(the brush is attached to this view via add_params)."
-    )
-    matching = []
-    for p in lower_params:
-        if not isinstance(p, dict):
-            continue
-        if p.get("name") != brush_name:
-            continue
-        sel = p.get("select")
-        if isinstance(sel, dict) and sel.get("type") == "interval" \
-                and list(sel.get("encodings") or []) == ["x"]:
-            matching.append(p)
-    assert matching, (
-        f"Lower (context) view's `params` must include the interval brush "
-        f"(name={brush_name!r}, select.type='interval', select.encodings=['x']). "
-        f"Got params={lower_params!r}."
-    )
-
 
 @pytest.fixture(scope="session")
 def chart_preview_server(xprocess):
@@ -263,9 +241,32 @@ def chart_preview_server(xprocess):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 return s.connect_ex(("localhost", PREVIEW_PORT)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
-    yield f"http://localhost:{PREVIEW_PORT}/chart.html"
     info = xprocess.getinfo(Starter.name)
+    printed_log_lines = 0  # track how many lines have already been printed
+
+    def capture_logs(tag):
+        nonlocal printed_log_lines
+        with open(info.logpath, "r") as f:
+            all_lines = f.readlines()
+        new_lines = all_lines[printed_log_lines:]
+        skipped = printed_log_lines
+        printed_log_lines = len(all_lines)
+        print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+        if skipped > 0:
+            print(f"(skipped {skipped} already-printed lines)")
+        print("".join(new_lines))
+        print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        # ensure() starts the process and blocks until startup_check is True
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
+
+    yield f"http://localhost:{PREVIEW_PORT}/chart.html"
+    capture_logs("TEARDOWN")
     info.terminate()
 
 

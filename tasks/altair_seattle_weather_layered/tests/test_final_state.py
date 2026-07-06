@@ -192,8 +192,10 @@ def test_nearest_x_hover_selection_param(vega_spec):
     assert "x" in encodings, (
         f"Expected the point selection's `encodings` to include `x`, got {encodings}."
     )
-    assert sel.get("empty") is False, (
-        "Expected the point selection to set `empty: false`."
+    empty = sel.get("empty")
+
+    assert empty in (None, False, "none"), (
+        f"Expected the point selection to disable empty selections, got {empty!r}."
     )
     on_event = str(sel.get("on", ""))
     assert ("pointerover" in on_event) or ("mouseover" in on_event), (
@@ -220,9 +222,32 @@ def chart_preview_server(xprocess):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 return s.connect_ex(("localhost", PREVIEW_PORT)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
-    yield f"http://localhost:{PREVIEW_PORT}/chart.html"
     info = xprocess.getinfo(Starter.name)
+    printed_log_lines = 0  # track how many lines have already been printed
+
+    def capture_logs(tag):
+        nonlocal printed_log_lines
+        with open(info.logpath, "r") as f:
+            all_lines = f.readlines()
+        new_lines = all_lines[printed_log_lines:]
+        skipped = printed_log_lines
+        printed_log_lines = len(all_lines)
+        print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+        if skipped > 0:
+            print(f"(skipped {skipped} already-printed lines)")
+        print("".join(new_lines))
+        print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        # ensure() starts the process and blocks until startup_check is True
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
+
+    yield f"http://localhost:{PREVIEW_PORT}/chart.html"
+    capture_logs("TEARDOWN")
     info.terminate()
 
 

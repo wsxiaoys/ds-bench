@@ -29,5 +29,5 @@ def test_apideck_collection_id_env():
     )
 
 
-def test_zealt_run_id_env():
-    assert os.environ.get("ZEALT_RUN_ID"), "ZEALT_RUN_ID env var is not set."
+def test_run_id():
+    assert open("/logs/artifacts/run-id").read().strip(), "RUN_ID is not set."

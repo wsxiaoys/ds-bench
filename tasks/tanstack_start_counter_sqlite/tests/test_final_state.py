@@ -1,13 +1,13 @@
 import json
 import os
 import re
-import signal
 import socket
 import subprocess
 import time
 
 import pytest
 import requests
+from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
 PORT = 47329
@@ -28,25 +28,6 @@ def _port_open(host: str, port: int, timeout: float = 1.0) -> bool:
             return True
         except OSError:
             return False
-
-
-def _wait_for_port_open(host: str, port: int, timeout_s: int) -> None:
-    deadline = time.time() + timeout_s
-    last_err = None
-    while time.time() < deadline:
-        if _port_open(host, port, timeout=0.5):
-            # also wait until HTTP responds, not just TCP accept
-            try:
-                r = requests.get(f"http://{host}:{port}/api/counter", timeout=2)
-                if r.status_code < 500:
-                    return
-            except requests.RequestException as exc:
-                last_err = exc
-        time.sleep(0.5)
-    raise TimeoutError(
-        f"Port {host}:{port} did not become reachable within {timeout_s}s "
-        f"(last_err={last_err})"
-    )
 
 
 def _wait_for_port_close(host: str, port: int, timeout_s: int) -> None:
@@ -78,51 +59,91 @@ def _pick_start_command() -> list[str]:
     )
 
 
-def _spawn_server() -> subprocess.Popen:
+def _make_starter() -> type[ProcessStarter]:
+    cmd = _pick_start_command()
     env = os.environ.copy()
     env.setdefault("PORT", str(PORT))
     env.setdefault("HOST", "0.0.0.0")
     env.setdefault("NODE_ENV", "production")
-    cmd = _pick_start_command()
-    # Use a process group so we can terminate child workers reliably.
-    proc = subprocess.Popen(
-        cmd,
-        cwd=PROJECT_DIR,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
-    try:
-        _wait_for_port_open("127.0.0.1", PORT, START_TIMEOUT_SECONDS)
-    except Exception:
-        _terminate_server(proc)
-        raise
-    return proc
+
+    class Starter(ProcessStarter):
+        name = "counter_app"
+        args = cmd
+        env = os.environ.copy()
+        env.setdefault("PORT", str(PORT))
+        env.setdefault("HOST", "0.0.0.0")
+        env.setdefault("NODE_ENV", "production")
+        popen_kwargs = {
+            "cwd": PROJECT_DIR,
+            "text": True,
+        }
+        timeout = START_TIMEOUT_SECONDS
+        terminate_on_interrupt = True
+
+        def startup_check(self):
+            # Wait for TCP accept first, then confirm HTTP responds (not just
+            # that the socket is open) so we don't race the framework boot.
+            if not _port_open("127.0.0.1", PORT, timeout=0.5):
+                return False
+            try:
+                r = requests.get(COUNTER_URL, timeout=2)
+                return r.status_code < 500
+            except requests.RequestException:
+                return False
+
+    return Starter
 
 
-def _terminate_server(proc: subprocess.Popen) -> None:
-    if proc.poll() is not None:
-        return
-    try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        proc.terminate()
-    try:
-        proc.wait(timeout=15)
-    except subprocess.TimeoutExpired:
+class ServerManager:
+    """
+    Manages the app process lifecycle via xprocess. Confirms readiness with a
+    port + HTTP startup check and captures the server logfile on each
+    start/teardown so failures surface useful output.
+    """
+
+    def __init__(self, xprocess):
+        self.xprocess = xprocess
+        self.starter = _make_starter()
+        self._printed_log_lines = 0
+        self._info = None
+
+    def _capture_logs(self, tag: str) -> None:
+        info = self._info
+        if info is None:
+            return
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            proc.kill()
+            with open(info.logpath, "r") as f:
+                all_lines = f.readlines()
+        except OSError:
+            return
+        new_lines = all_lines[self._printed_log_lines:]
+        skipped = self._printed_log_lines
+        self._printed_log_lines = len(all_lines)
+        print(f"============================== [{tag}: Begin] Captured {self.starter.name} logfile ==============================")
+        if skipped > 0:
+            print(f"(skipped {skipped} already-printed lines)")
+        print("".join(new_lines))
+        print(f"============================== [{tag}: End  ] Captured {self.starter.name} logfile ==============================")
+
+    def start(self) -> None:
+        self._info = self.xprocess.getinfo(self.starter.name)
+        self._printed_log_lines = 0
+        started = False
         try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
+            # ensure() starts the process and blocks until startup_check is True
+            self.xprocess.ensure(self.starter.name, self.starter)
+            started = True
+        finally:
+            self._capture_logs("STARTED" if started else "FAILED")
+
+    def stop(self) -> None:
+        self._capture_logs("TEARDOWN")
+        if self._info is not None:
+            self._info.terminate()
+        try:
+            _wait_for_port_close("127.0.0.1", PORT, SHUTDOWN_TIMEOUT_SECONDS)
+        except TimeoutError:
             pass
-    try:
-        _wait_for_port_close("127.0.0.1", PORT, SHUTDOWN_TIMEOUT_SECONDS)
-    except TimeoutError:
-        pass
 
 
 def _ensure_dependencies_installed() -> None:
@@ -173,12 +194,13 @@ def _extract_count_from_html(body: str) -> int:
 
 
 @pytest.fixture(scope="module")
-def first_run():
+def first_run(xprocess):
     _ensure_dependencies_installed()
     _maybe_build()
-    proc = _spawn_server()
-    yield proc
-    _terminate_server(proc)
+    manager = ServerManager(xprocess)
+    manager.start()
+    yield manager
+    manager.stop()
 
 
 def test_node_available_runtime():
@@ -281,19 +303,16 @@ def test_persistence_across_restart(first_run):
     # Capture current count, then bounce the server.
     value_before = requests.get(COUNTER_URL, timeout=10).json()["count"]
 
-    _terminate_server(first_run)
-    # Confirm the port is fully released before relaunching.
-    _wait_for_port_close("127.0.0.1", PORT, SHUTDOWN_TIMEOUT_SECONDS)
+    # Stop the running server (also confirms the port is fully released).
+    first_run.stop()
 
-    proc2 = _spawn_server()
-    try:
-        value_after = requests.get(COUNTER_URL, timeout=10).json()["count"]
-        assert value_after == value_before, (
-            f"Counter value did not persist across restart: "
-            f"before={value_before}, after={value_after}"
-        )
-    finally:
-        _terminate_server(proc2)
+    # Relaunch and confirm the counter persisted.
+    first_run.start()
+    value_after = requests.get(COUNTER_URL, timeout=10).json()["count"]
+    assert value_after == value_before, (
+        f"Counter value did not persist across restart: "
+        f"before={value_before}, after={value_after}"
+    )
 
 
 def test_sqlite_database_file_exists():

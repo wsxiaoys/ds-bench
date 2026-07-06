@@ -1,30 +1,16 @@
 # Cascading Soft Deletes with Sequelize Hooks
 
 ## Background
-In Sequelize, the `paranoid` option allows for soft deletes (setting a `deletedAt` timestamp instead of physically removing the record). However, soft deletes do not automatically cascade to associated models. You need to implement an Express API using Sequelize and SQLite where deleting a parent record soft-deletes its children, and restoring the parent restores its children.
+In Sequelize, the `paranoid` option allows for soft deletes (setting a `deletedAt` timestamp instead of physically removing the record). However, soft deletes do not automatically cascade to associated models. Build an Express API backed by Sequelize and SQLite where deleting a parent record also soft-deletes its children, and restoring the parent restores those children.
 
 ## Requirements
-- Create an Express.js application with a SQLite database using Sequelize.
-- Define two models: `User` and `Post`.
-- A `User` has many `Post`s, and a `Post` belongs to a `User`.
-- Both models must have `paranoid: true` enabled.
-- Implement a cascading soft delete: When a `User` is soft-deleted, all their associated `Post`s must also be soft-deleted.
-- Implement a cascading restore: When a `User` is restored, all their associated `Post`s must also be restored.
-- Expose REST API endpoints to create users, create posts, delete users, restore users, and fetch posts.
-
-## Implementation Hints
-- Use Sequelize model hooks (`afterDestroy` and `afterRestore`) on the `User` model to perform operations on the associated `Post` records.
-- Ensure that when querying for posts to delete or restore, you handle the `paranoid` scope correctly so you can find soft-deleted posts when restoring.
-- Use `sequelize.sync({ force: true })` during app startup to initialize the SQLite database schema.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Start command: node index.js
-- Port: 3000
-- API Endpoints:
-  - POST `/users`: Accepts `{"username": string}` and returns 201 with the created user object (must include `id`).
-  - POST `/users/:id/posts`: Accepts `{"title": string}` and returns 201 with the created post object (must include `id`).
-  - DELETE `/users/:id`: Soft-deletes the user and their posts, returning 200 OK.
-  - POST `/users/:id/restore`: Restores the soft-deleted user and their posts, returning 200 OK.
-  - GET `/posts/:id`: Returns 200 with the post object if it exists and is not soft-deleted. Returns 404 if the post does not exist or is soft-deleted.
-
+- Build an Express.js application backed by a Sequelize/SQLite database, located at `/home/user/myproject` and started with `node index.js` listening on port `3000`.
+- Define two paranoid models, `User` and `Post`, with a one-to-many association (`User` has many `Post`s; `Post` belongs to a `User`).
+- Soft-deleting a `User` must also soft-delete every `Post` that belongs to that user.
+- Restoring a previously soft-deleted `User` must also restore every `Post` that was cascaded with it.
+- Expose the following JSON REST endpoints:
+  - `POST /users` — create a user from `{"username": string}`; respond with `201` and the user object (including its `id`).
+  - `POST /users/:id/posts` — create a post for the given user from `{"title": string}`; respond with `201` and the post object (including its `id`).
+  - `DELETE /users/:id` — soft-delete the user (and cascade to their posts); respond with `200`.
+  - `POST /users/:id/restore` — restore the user (and cascade to their posts); respond with `200`.
+  - `GET /posts/:id` — respond with `200` and the post object when the post exists and is not soft-deleted, or `404` otherwise.

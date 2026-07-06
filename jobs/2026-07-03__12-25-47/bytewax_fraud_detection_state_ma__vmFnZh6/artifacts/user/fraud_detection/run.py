@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Bytewax Fraud Detection State Machine.
+
+Reads user events from a JSONlines file, tracks each user's state using a
+state machine implemented with Bytewax's stateful_map operator, and emits
+fraud alerts to an output JSONlines file when suspicious activity is
+detected.
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Optional, Tuple
+
+from bytewax.dataflow import Dataflow
+from bytewax.connectors.files import FileSink, FileSource
+import bytewax.operators as op
+from bytewax.testing import run_main
+
+
+# ---------- Constants ----------
+LOGGED_OUT = "LOGGED_OUT"
+LOGGED_IN = "LOGGED_IN"
+SUSPICIOUS = "SUSPICIOUS"
+
+LARGE_TRANSACTION_THRESHOLD = 1000
+LARGE_TX_WINDOW_SECONDS = 300
+LARGE_TX_COUNT_THRESHOLD = 3
+
+
+# ---------- State Machine ----------
+def initial_state() -> dict:
+    return {
+        "state": LOGGED_OUT,
+        "login_time": None,
+        "large_tx_count": 0,
+    }
+
+
+def update_state(state: Optional[dict], event: dict) -> Tuple[dict, Optional[dict]]:
+    """Apply the event to the state, returning (new_state, alert_or_None).
+
+    State is treated as immutable: a brand new dict is built on each call.
+    """
+    if state is None:
+        state = initial_state()
+
+    event_type = event.get("event_type")
+    timestamp = event.get("timestamp")
+    amount = event.get("amount", 0) or 0
+
+    # Logout always resets the user immediately.
+    if event_type == "logout":
+        return initial_state(), None
+
+    if event_type == "login":
+        new_state = {
+            "state": LOGGED_IN,
+            "login_time": timestamp,
+            "large_tx_count": 0,
+        }
+        return new_state, None
+
+    if event_type == "transaction":
+        current = state["state"]
+        login_time = state["login_time"]
+
+        # If the user is not currently logged in, or the login window has
+        # expired (>300 seconds since login), the transaction is ignored
+        # and the user is reset to LOGGED_OUT.
+        if (
+            current == LOGGED_OUT
+            or login_time is None
+            or timestamp - login_time > LARGE_TX_WINDOW_SECONDS
+        ):
+            return initial_state(), None
+
+        new_large_tx_count = state["large_tx_count"]
+        new_status = current
+
+        if amount >= LARGE_TRANSACTION_THRESHOLD:
+            new_large_tx_count += 1
+            new_status = SUSPICIOUS
+
+        new_state = {
+            "state": new_status,
+            "login_time": login_time,
+            "large_tx_count": new_large_tx_count,
+        }
+
+        if new_large_tx_count >= LARGE_TX_COUNT_THRESHOLD:
+            alert = {"user_id": event["user_id"], "alert": "FRAUD_ALERT"}
+            return initial_state(), alert
+
+        return new_state, None
+
+    # Unknown events are ignored; state remains unchanged (immutable copy).
+    return dict(state), None
+
+
+# ---------- Dataflow ----------
+def build_dataflow(input_path: str, output_path: str) -> Dataflow:
+    flow = Dataflow("fraud_detection")
+
+    # Read raw lines from the input file.
+    raw_lines = op.input("input", flow, FileSource(Path(input_path)))
+
+    # Parse each line into a dict, dropping any blank lines.
+    parsed = op.map("parse_json", raw_lines, lambda line: json.loads(line))
+
+    # Key by user_id so that state is maintained per user.
+    keyed = op.key_on("key_user", parsed, lambda event: event["user_id"])
+
+    # Run the state machine. stateful_map returns (new_state, alert_or_None).
+    processed = op.stateful_map("fraud_state", keyed, update_state)
+
+    # Drop the (key, None) tuples, keep only alerts.
+    only_alerts = op.filter("drop_none", processed, lambda kv: kv[1] is not None)
+
+    # Strip the key so the sink only sees the alert dict.
+    alert_values = op.map("strip_key", only_alerts, lambda kv: kv[1])
+
+    # Serialize the alert dict to a JSON string for the file sink.
+    keyed_alerts = op.key_on("alert_key", alert_values, lambda alert: alert["user_id"])
+    serialized = op.map("to_json_str", keyed_alerts, lambda kv: (kv[0], json.dumps(kv[1])))
+
+    op.output("alerts_out", serialized, FileSink(Path(output_path)))
+    return flow
+
+
+def main(argv: Optional[list] = None) -> int:
+    parser = argparse.ArgumentParser(description="Bytewax Fraud Detection")
+    parser.add_argument("--input", required=True, help="Input JSONlines file")
+    parser.add_argument("--output", required=True, help="Output JSONlines file")
+    args = parser.parse_args(argv)
+
+    flow = build_dataflow(args.input, args.output)
+    run_main(flow)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

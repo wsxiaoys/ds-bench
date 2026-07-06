@@ -1,0 +1,20 @@
+
+
+{
+  "analysis": "Now I have enough info. Let me create the parse script.",
+  "plan": "Create the parse script that:\n1. Reads PDFs from inputs/\n2. Uses p-limit to cap concurrency at 2\n3. Uploads each file with external_file_id tag\n4. Calls parse with tier=cost_effective, version=latest, expand=['markdown']\n5. Writes markdown to outputs/\n6. Writes log to output.log",
+  "commands": [
+    {
+      "keystrokes": "mkdir -p outputs\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cat > parse.ts << 'EOF'\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport { fileURLToPath } from 'node:url';\nimport pLimit from 'p-limit';\nimport LlamaCloud from '@llamaindex/llama-cloud';\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst INPUTS_DIR = path.join(__dirname, 'inputs');\nconst OUTPUTS_DIR = path.join(__dirname, 'outputs');\nconst LOG_PATH = path.join(__dirname, 'output.log');\nconst RUN_ID_PATH = '/logs/artifacts/run-id';\n\nasync function main(): Promise<void> {\n  const runId = fs.readFileSync(RUN_ID_PATH, 'utf8').trim();\n\n  if (!fs.existsSync(OUTPUTS_DIR)) {\n    fs.mkdirSync(OUTPUTS_DIR, { recursive: true });\n  }\n\n  const pdfFiles = fs\n    .readdirSync(INPUTS_DIR)\n    .filter((f) => f.toLowerCase().endsWith('.pdf'))\n    .sort();\n\n  if (pdfFiles.length === 0) {\n    console.error('No PDF files found in', INPUTS_DIR);\n    process.exit(1);\n  }\n\n  const client = new LlamaCloud({ apiKey: process.env.LLAMA_CLOUD_API_KEY });\n\n  const limit = pLimit(2);\n\n  const logLines: string[] = [];\n\n  const tasks = pdfFiles.map((pdfName) =>\n    limit(async () => {\n      const basename = path.basename(pdfName, path.extname(pdfName));\n      const inputPath = path.join(INPUTS_DIR, pdfName);\n      const outputPath = path.join(OUTPUTS_DIR, `${basename}.md`);\n      const externalFileId = `${runId}-${basename}`;\n\n      console.log(`[${pdfName}] uploading (external_file_id=${externalFileId})...`);\n      const uploaded = await client.files.create({\n        file: fs.createReadStream(inputPath),\n        purpose: 'parse',\n        external_file_id: externalFileId,\n      });\n\n      console.log(`[${pdfName}] parsing (file_id=${uploaded.id})...`);\n      const result = await client.parsing.parse({\n        file_id: uploaded.id,\n        tier: 'cost_effective',\n        version: 'latest',\n        expand: ['markdown'],\n      });\n\n      const pages = result.markdown?.pages ?? [];\n      const joined = pages\n        .map((p) => (p as { markdown?: string }).markdown ?? '')\n        .join('\\n\\n---\\n\\n');\n\n      fs.writeFileSync(outputPath, joined, 'utf8');\n\n      const logLine = `Parsed: ${pdfName} | pages: ${pages.length}`;\n      logLines.push(logLine);\n      console.log(logLine);\n\n      return logLine;\n    }),\n  );\n\n  await Promise.all(tasks);\n\n  fs.writeFileSync(LOG_PATH, logLines.join('\\n') + '\\n', 'utf8');\n  console.log(`Wrote ${logLines.length} log lines to ${LOG_PATH}`);\n}\n\nmain().catch((err) => {\n  console.error('Fatal error:', err);\n  process.exit(1);\n});\nEOF\n",
+      "duration": 0.2
+    },
+    {
+      "keystrokes": "ls -la parse.ts\n",
+      "duration": 0.1
+    }
+  ]
+}

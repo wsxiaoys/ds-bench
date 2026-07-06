@@ -37,7 +37,7 @@ def deploy_convex():
     assert deploy_result.returncode == 0, f"Convex deployment failed: {deploy_result.stderr}\n{deploy_result.stdout}"
 
 def test_pagination():
-    run_id = os.environ.get("ZEALT_RUN_ID", "default-run-id")
+    run_id = open("/logs/artifacts/run-id").read().strip()
 
     # 1. Insert 5 messages
     for i in range(1, 6):

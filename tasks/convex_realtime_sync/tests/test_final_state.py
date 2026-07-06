@@ -16,7 +16,7 @@ def start_app(xprocess):
     """
     Starts the npm service using xprocess. Confirms readiness via port check.
     """
-    
+
     # Run npm install first to ensure dependencies are present
     if os.path.exists(PROJECT_DIR):
         subprocess.run(["npm", "install"], cwd=PROJECT_DIR, check=True)
@@ -36,16 +36,41 @@ def start_app(xprocess):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 return s.connect_ex(("localhost", 5173)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
+    info = xprocess.getinfo(Starter.name)
+    printed_log_lines = 0  # track how many lines have already been printed
+
+    def capture_logs(tag):
+        nonlocal printed_log_lines
+        with open(info.logpath, "r") as f:
+            all_lines = f.readlines()
+        new_lines = all_lines[printed_log_lines:]
+        skipped = printed_log_lines
+        printed_log_lines = len(all_lines)
+        print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+        if skipped > 0:
+            print(f"(skipped {skipped} already-printed lines)")
+        print("".join(new_lines))
+        print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        # ensure() starts the process and blocks until startup_check is True
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
+
 
     yield
 
-    info = xprocess.getinfo(Starter.name)
+    capture_logs("TEARDOWN")
     info.terminate()
 
 def test_collaborative_counter(start_app, browser_verifier):
-    run_id = os.environ.get("ZEALT_RUN_ID", "default-run-id")
-    
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    env = os.environ.copy()
+    env["RUN_ID"] = run_id
+
     reason = "The application should feature a collaborative counter that updates in real-time across multiple clients."
     truth = f"""
     1. Open a new browser tab (Tab 1) and navigate to http://localhost:5173.

@@ -23,11 +23,11 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 
-# Prepare /workspace with a rhythmic ~15s clip at 22050 Hz mono. The clip is
+# Prepare /home/user with a rhythmic ~15s clip at 22050 Hz mono. The clip is
 # derived from a librosa example (Brahms - Hungarian Dance #5, distributed via
 # the librosa example pack and downloaded by pooch). The example is fetched
 # once at build time so the task environment has no runtime network dependency.
-RUN mkdir -p /workspace && \
+RUN mkdir -p /home/user && \
     python3 -c "import librosa, soundfile as sf; y, sr = librosa.load(librosa.ex('choice'), sr=22050, mono=True, duration=15.0); sf.write('/home/user/input.wav', y, sr, subtype='PCM_16')" && \
     test -s /home/user/input.wav
 

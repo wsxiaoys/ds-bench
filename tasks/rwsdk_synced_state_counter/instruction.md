@@ -11,12 +11,5 @@ A RedwoodSDK project is pre-installed at `/home/user/myapp`. Build a globally sh
   - A `<button data-testid="inc-btn">Increment</button>` button that calls `setCount((c) => c + 1)` on click.
   - A `<button data-testid="reset-btn">Reset</button>` button that calls `setCount(0)` on click.
 - Implement `GET /counter` as a server route that renders a page including the `SharedCounter` client component.
-
-## Acceptance Criteria
-- Project path: /home/user/myapp
-- Start command: npm run dev -- --host 0.0.0.0 --port 5173
-- Port: 5173
-- `wrangler.jsonc` must contain the `SYNCED_STATE_SERVER` Durable Object binding and the SQLite migration tag `v1` referencing `SyncedStateServer`.
-- `GET /counter` returns HTML containing the text `Count:` and a button labelled `Increment` (must be the client component).
-- Browser verification: on http://localhost:5173/counter, after clicking `Reset` then `Increment` three times, the text `Count: 3` is visible. Clicking `Reset` again returns the page to `Count: 0`.
+- The development server can be started with `npm run dev -- --host 0.0.0.0 --port 5173` on port `5173`.
 

@@ -93,7 +93,7 @@ def test_log_file_contains_ticket_id():
 
 
 def test_exactly_one_v2_ticket_exists_for_run():
-    run_id = _required_env("ZEALT_RUN_ID")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     ticket_id_from_log = _read_ticket_id_from_log()
     tickets = _list_all_tickets()
     matching_v2 = [t for t in tickets if _subject_matches(t.get("subject"), MARKER_V2, run_id)]
@@ -108,7 +108,7 @@ def test_exactly_one_v2_ticket_exists_for_run():
 
 
 def test_no_v1_ticket_remains_for_run():
-    run_id = _required_env("ZEALT_RUN_ID")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     tickets = _list_all_tickets()
     matching_v1 = [t for t in tickets if _subject_matches(t.get("subject"), MARKER_V1, run_id)]
     assert matching_v1 == [], (
@@ -119,7 +119,7 @@ def test_no_v1_ticket_remains_for_run():
 
 
 def test_ticket_subject_and_description_via_get():
-    run_id = _required_env("ZEALT_RUN_ID")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     ticket_id = _read_ticket_id_from_log()
     collection_id = _required_env("APIDECK_ISSUE_TRACKING_COLLECTION_ID")
     url = (

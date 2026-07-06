@@ -1,0 +1,338 @@
+New Terminal Output:
+
+root@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# ls /usr/local/lib/python3.12/dist-packages/bytewax/
+__pycache__                               _bytewax.pyi  _utils.py   dataflow.py  inputs.py  outputs.py  recovery.py  testing.py  visualize.py
+_bytewax.cpython-312-x86_64-linux-gnu.so  _metrics.py   connectors  errors.py    operators  py.typed    run.py       tracing.py
+root@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# cat /usr/local/lib/python3.12/dist-packages/bytewax/inputs.py
+"""Low-level input interfaces and input helpers.
+
+If you want pre-built connectors for various external systems, see
+{py:obj}`bytewax.connectors`.
+
+"""
+
+import asyncio
+import queue
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from itertools import islice
+from typing import (
+    Callable,
+    Generic,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Type,
+    cast,
+)
+
+from bytewax._bytewax import AbortExecution
+from typing_extensions import AsyncIterable, TypeVar, override
+
+__all__ = [
+    "AbortExecution",
+    "DynamicSource",
+    "FixedPartitionedSource",
+    "S",
+    "SimplePollingSource",
+    "Sn",
+    "Source",
+    "StatefulSourcePartition",
+    "StatelessSourcePartition",
+    "X",
+    "batch",
+    "batch_async",
+    "batch_getter",
+    "batch_getter_ex",
+]
+
+X = TypeVar("X")
+"""Type emitted by a {py:obj}`Source`."""
+
+
+S = TypeVar("S")
+"""Type of state snapshots."""
+
+
+Sn = TypeVar("Sn", default=None)
+"""Type of state snapshots but defaults to `None`."""
+
+
+class Source(ABC, Generic[X]):  # noqa: B024
+    """A location to read input items from.
+
+    Base class for all input sources. Do not subclass this.
+
+    If you want to implement a custom connector, instead subclass one
+    of the specific source sub-types below in this module.
+
+    """
+
+    pass
+
+
+class StatefulSourcePartition(ABC, Generic[X, S]):
+    """Input partition that maintains state of its position."""
+
+    @abstractmethod
+    def next_batch(self) -> Iterable[X]:
+        """Attempt to get the next batch of input items.
+
+        This must participate in a kind of cooperative multi-tasking,
+        never blocking but returning an empty list if there are no
+        items to emit yet.
+
+        :returns: Items immediately ready. May be empty if no new
+            items.
+
+        :raises StopIteration: When the source is complete.
+
+        """
+        ...
+
+    def next_awake(self) -> Optional[datetime]:
+        """When to next attempt to get input items.
+
+        {py:obj}`next_batch` will not be called until the most
+        recently returned time has past.
+
+        This will be called upon initialization of the source and
+        after {py:obj}`next_batch`, but also possibly at other times.
+        Multiple times are not stored; you must return the next awake
+        time on every call, if any.
+
+        If this returns `None`, {py:obj}`next_batch` will be called
+        immediately unless the previous batch had no items, in which
+        case there is a 1 millisecond delay.
+
+        Use this instead of {py:obj}`time.sleep` in
+        {py:obj}`next_batch`.
+
+        :returns: Next awake time or `None` to indicate REDACTEDmatic
+            behavior.
+
+        """
+        return None
+
+    @abstractmethod
+    def snapshot(self) -> S:
+        """Snapshot the position of the next read of this partition.
+
+        This will be returned to you via the `resume_state` parameter
+        of your input builder.
+
+        Be careful of "off by one" errors in resume state. This should
+        return a state that, when built into a partition, resumes
+        reading _after the last read item_, not any of the same items
+        that {py:obj}`next_batch` last returned.
+
+        This is guaranteed to never be called after {py:obj}`close`.
+
+        :returns: Resume state.
+
+        """
+        ...
+
+    def close(self) -> None:
+        """Cleanup this partition when the dataflow completes.
+
+        This is not guaranteed to be called. It will only be called
+        when the dataflow finishes on finite input. It will not be
+        called during an abrupt or abort shutdown.
+
+        """
+        return
+
+
+class FixedPartitionedSource(Source[X], Generic[X, S]):
+    """An input source with a fixed number of independent partitions.
+
+    Will maintain the state of each source and re-build using it
+    during resume. If the source supports seeking, this input can
+    support exactly-once processing.
+
+    Each partition must contain unique data. If you re-read the same data
+    in multiple partitions, the dataflow will process these duplicate
+    items.
+
+    """
+
+    @abstractmethod
+    def list_parts(self) -> List[str]:
+        """List all local partitions this worker has access to.
+
+        You do not need to list all partitions globally.
+
+        :returns: Local partition keys.
+
+        """
+        ...
+
+    @abstractmethod
+    def build_part(
+        self,
+        step_id: str,
+        for_part: str,
+        resume
+[... output limited to 10000 bytes; 70 interior bytes omitted ...]
+, batch_size))
+        if len(batch) <= 0:
+            return
+        yield batch
+
+
+def batch_getter(
+    getter: Callable[[], X], batch_size: int, yield_on: Optional[X] = None
+) -> Iterator[List[X]]:
+    """Batch from a getter function that might not return an item.
+
+     Use this to easily generate batches of items for a partition's
+    `next_batch` method.
+
+    :arg getter: Function to call to get the next item. Should raise
+        {py:obj}`StopIteration` on EOF.
+
+    :arg batch_size: Maximum number of items to yield in a batch.
+
+    :arg yield_on: Sentinel value that indicates that there are no
+            more items yet, and to return the current batch. Defaults
+            to `None`.
+
+    :yields: The next gathered batch of items.
+
+    """
+    while True:
+        batch: List[X] = []
+        while len(batch) < batch_size:
+            try:
+                item = getter()
+                if item != yield_on:
+                    batch.append(item)
+                else:
+                    break
+            except StopIteration:
+                yield batch
+                return
+        yield batch
+
+
+def batch_getter_ex(
+    getter: Callable[[], X], batch_size: int, yield_ex: Type[Exception] = queue.Empty
+) -> Iterator[List[X]]:
+    """Batch from a getter function that raises on no items yet.
+
+     Use this to easily generate batches of items for a partitions's
+    `next_batch` method.
+
+    :arg getter: Function to call to get the next item. Should raise
+        {py:obj}`StopIteration` on EOF.
+
+    :arg batch_size: Maximum number of items to return in a batch.
+
+    :arg yield_ex: Exception raised by `getter` that indicates that
+        there are no more items yet, and to return the current batch.
+        Defaults to {py:obj}`queue.Empty`.
+
+    :yields: The next gathered batch of items.
+
+    """
+    while True:
+        batch: List[X] = []
+        while len(batch) < batch_size:
+            try:
+                item = getter()
+                batch.append(item)
+            except yield_ex:
+                break
+            except StopIteration:
+                yield batch
+                return
+        yield batch
+
+
+def batch_async(
+    aib: AsyncIterable[X],
+    timeout: timedelta,
+    batch_size: int,
+    loop=None,
+) -> Iterator[List[X]]:
+    """Batch an async iterable synchronously up to a timeout.
+
+    This allows using an async iterator as an input source. The
+    `next_batch` method on a partition must never block, this allows
+    running an async iterator up to a timeout so that you correctly
+    cooperatively multitask with the rest of the dataflow.
+
+    :arg aib: The underlying source async iterable of items.
+
+    :arg timeout: Duration of time to repeatedly poll the source async
+        iterator for items.
+
+    :arg batch_size: Maximum number of items to yield in a batch, even
+        if the timeout has not been hit.
+
+    :arg loop: Custom `asyncio` run loop to use, if any.
+
+    :yields: The next gathered batch of items.
+
+        This function will take up to `timeout` time to yield, or
+        will return a list with length up to `max_len`.
+
+    """
+    # Ensure that we have the stateful iterator of the source.
+    ait = aib.__aiter__()
+
+    loop = loop if loop is not None else asyncio.new_event_loop()
+    task = None
+
+    async def anext_batch():
+        nonlocal task
+
+        batch = []
+        # Only try to gather this many items.
+        for _ in range(batch_size):
+            if task is None:
+
+                async def coro():
+                    return await ait.__anext__()
+
+                task = loop.create_task(coro())
+
+            try:
+                # Prevent the `wait_for` cancellation from
+                # stopping the `__anext__` task; usually all
+                # sub-tasks are cancelled too. It'll be re-used in
+                # the next batch.
+                next_item = await asyncio.shield(task)
+            except asyncio.CancelledError:
+                # Timeout was hit and thus return the batch
+                # immediately.
+                break
+            except StopAsyncIteration:
+                if len(batch) > 0:
+                    # Return a half-finished batch if we run out
+                    # of source items.
+                    break
+                else:
+                    # We can't raise `StopIteration` directly here
+                    # because it's part of the coro protocol and
+                    # would mess with this async function.
+                    raise
+
+            batch.append(next_item)
+            task = None
+        return batch
+
+    while True:
+        try:
+            # `wait_for` will raise `CancelledError` at the internal
+            # await point in `anext_batch` if the timeout is hit.
+            batch = loop.run_until_complete(
+                asyncio.wait_for(anext_batch(), timeout.total_seconds())
+            )
+            yield batch
+        except StopAsyncIteration:
+            return
+root@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~#

@@ -1,0 +1,171 @@
+New Terminal Output:
+nchanged.
+root@4ee094ad-84dd-40c1-99e6-773a4e8e5d51:~# cat > run.py << 'PYEOF'
+> """Bytewax stateful deduplication over a sliding 10-second window.
+>
+> Reads events from `input.jsonl`, groups by `user_id`, deduplicates per
+> `(user_id, event_id)` pair using a 10-second time window (inclusive at
+> exactly 10s), and writes the surviving events to `output.jsonl` in the
+> original relative order.
+> """
+>
+> import json
+> from datetime import datetime, timedelta
+> from pathlib import Path
+> from typing import Any, Dict, Iterable, Tuple
+>
+> from bytewax import operators as op
+> from bytewax.connectors.files import FileSource
+> from bytewax.dataflow import Dataflow
+> from bytewax.operators import StatefulLogic
+> from bytewax.outputs import DynamicSink, StatelessSinkPartition
+> from bytewax.testing import run_main
+> from typing_extensions import override
+>
+> WINDOW = timedelta(seconds=10)
+>
+>
+> def _parse_ts(s: Any) -> datetime:
+>     """Parse an ISO 8601 timestamp string into a tz-aware `datetime`."""
+>     if isinstance(s, datetime):
+>         return s
+>     if s.endswith("Z"):
+>         s = s[:-1] + "+00:00"
+>     return datetime.fromisoformat(s)
+>
+>
+> class DedupLogic(
+>     StatefulLogic[Dict[str, Any], Dict[str, Any], Dict[str, datetime]]
+> ):
+>     """Per-user_id event-id deduplication with a sliding 10s window.
+>
+>     State is a mapping `event_id -> last_emitted_datetime` for the
+>     current `user_id`. On every event:
+>
+>       1. Any `event_id` whose stored timestamp is older than 10 seconds
+>          from the current event's timestamp is dropped from the state
+>          so memory cannot grow without bound.
+>       2. If the same `event_id` was emitted within the last 10 seconds
+>          (inclusive of exactly 10s, i.e. `ts <= last + 10s`), the new
+>          event is dropped.
+>       3. Otherwise the event is emitted and the 10-second window is
+>          restarted for that `event_id`.
+>     """
+>
+>     def __init__(self, resume_state):
+>         # Map of event_id -> last emitted timestamp (datetime).
+>         self._state: Dict[str, datetime] = (
+>             dict(resume_state) if resume_state else {}
+>         )
+>
+>     def on_item(
+>         self, value: Dict[str, Any]
+>     ) -> Tuple[Iterable[Dict[str, Any]], bool]:
+>         event_id = value["event_id"]
+>         ts = _parse_ts(value["timestamp"])
+>
+>         # 1) Drop entries outside the sliding window (strictly older than
+>         #    10s from the current event's timestamp).
+>         stale = [
+>             eid for eid, last_ts in self._state.items()
+>             if ts - last_ts > WINDOW
+>         ]
+>         for eid in stale:
+>             del self._state[eid]
+>
+>         # 2) Deduplication check against the freshly-cleared state.
+>         prev_ts = self._state.get(event_id)
+>         if prev_ts is not None and ts <= prev_ts + WINDOW:
+>             # Duplicate within the window (or exactly at the boundary).
+>             return (iter(()), StatefulLogic.RETAIN)
+>
+>         # 3) Emit and (re)start the 10-second window for this event_id.
+>         self._state[event_id] = ts
+>         return (iter((value,)), StatefulLogic.RETAIN)
+>
+>     def snapshot(self) -> Dict[str, datetime]:
+>         # Must return an effectively immutable copy.
+>         return dict(self._state)
+>
+>
+> def _build_logic(resume_state):
+>     return DedupLogic(resume_state)
+>
+>
+> class _OrderedJsonlSinkPartition(StatelessSinkPartition[Any]):
+>     """Buffers items, then writes them sorted by an embedded sequence
+>     number so the resulting JSONL file preserves input ordering.
+>     """
+>
+>     def __init__(self, path: Path) -> None:
+>         self._path = path
+>         self._items: list = []
+>
+>     @override
+>     def write_batch(self, items) -> None:
+>         self._items.extend(items)
+>
+>     @override
+>     def close(self) -> None:
+>         self._items.sort(key=lambda it: it["__seq"])
+>         with self._path.open("wt") as f:
+>             for item in self._items:
+>                 item.pop("__seq", None)
+>                 f.write(json.dumps(item))
+>                 f.write("\n")
+>
+>
+> class OrderedJsonlSink(DynamicSink[Any]):
+>     """Custom sink that writes a JSONL file while preserving the order
+>     of items received from upstream."""
+>
+>     def __init__(self, path) -> None:
+>         self._path = path
+>
+>     @override
+>     def build(self, step_id, worker_index, worker_count):
+>         return _OrderedJsonlSinkPartition(Path(self._path))
+>
+>
+> def build_flow(input_path, output_path) -> Dataflow:
+>     flow = Dataflow("stateful_dedup")
+>
+>     # 1) Read raw lines from the input file.
+>     lines = op.input("input", flow, FileSource(str(input_path)))
+>
+>     # 2) Parse each JSON line into a dict, attaching a sequence number
+>     #    used later to recover input ordering after the keyed/stateful
+>     #    step (which may interleave keys across workers).
+>     counter = {"i": 0}
+>
+>     def _parse_with_seq(line):
+>         event = json.loads(line)
+>         event["__seq"] = counter["i"]
+>         counter["i"] += 1
+>         return event
+>
+>     parsed = op.map("parse_json", lines, _parse_with_seq)
+>
+>     # 3) Key by user_id so the per-key state is partitioned per user.
+>     keyed = op.key_on("key_user", parsed, lambda event: event["user_id"])
+>
+>     # 4) Apply stateful deduplication keyed on user_id.
+>     deduped = op.stateful("dedup", keyed, _build_logic)
+>
+>     # 5) Drop the key produced by `stateful` and forward the event dict.
+>     unkeyed = op.key_rm("unkey", deduped)
+>
+>     # 6) Write out as JSONL preserving input order.
+>     op.output("output", unkeyed, OrderedJsonlSink(output_path))
+>
+>     return flow
+>
+>
+> if __name__ == "__main__":
+>     run_main(build_flow(Path("input.jsonl"), Path("output.jsonl")))
+> PYEOF
+root@4ee094ad-84dd-40c1-99e6-773a4e8e5d51:~# rm -f output.jsonl && python3 run.py && cat output.jsonl
+{"user_id": "u1", "event_id": "e1", "timestamp": "2023-01-01T12:00:00.500000Z"}
+{"user_id": "u1", "event_id": "e1", "timestamp": "2023-01-01T12:00:10.500001Z"}
+{"user_id": "u1", "event_id": "e2", "timestamp": "2023-01-01T12:00:15.123456Z"}
+root@4ee094ad-84dd-40c1-99e6-773a4e8e5d51:~#

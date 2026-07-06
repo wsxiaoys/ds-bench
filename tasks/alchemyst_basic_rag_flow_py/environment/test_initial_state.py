@@ -27,9 +27,9 @@ def test_alchemyst_api_key_env_present():
     )
 
 
-def test_zealt_run_id_env_present():
-    """The ZEALT_RUN_ID environment variable must be available so the task can scope its resources."""
-    run_id = os.environ.get("ZEALT_RUN_ID")
+def test_run_id_present():
+    """The RUN_ID environment variable must be available so the task can scope its resources."""
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id, (
-        "ZEALT_RUN_ID must be set in the environment so the task can produce a unique file_name."
+        "RUN_ID must be set in file so the task can produce a unique file_name."
     )

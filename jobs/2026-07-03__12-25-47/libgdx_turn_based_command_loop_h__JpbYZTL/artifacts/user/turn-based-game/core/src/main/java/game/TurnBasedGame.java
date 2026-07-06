@@ -1,0 +1,225 @@
+package game;
+
+import com.badlogic.gdx.ApplicationListener;
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input;
+import com.badlogic.gdx.files.FileHandle;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Turn-based dungeon crawler core. Drives one turn per render tick, consuming a single
+ * command from the scripted input, mutating the world, and appending a line to the transcript.
+ */
+public class TurnBasedGame implements ApplicationListener {
+
+    private final FileHandle mapHandle;
+    private final FileHandle transcriptHandle;
+    private final ScriptedMockInput scriptedInput;
+
+    // World state
+    private int width;
+    private int height;
+    private int playerX;
+    private int playerY;
+    private final List<Item> items = new ArrayList<Item>();
+    private final List<String> inventory = new ArrayList<String>();
+
+    // Loop state
+    private int turn = 0;
+    private boolean shouldExit = false;
+    private boolean finished = false;
+    private boolean firstTick = true;
+
+    /** All transcript content is accumulated here and flushed in {@link #dispose()}. */
+    private final StringBuilder transcriptBuf = new StringBuilder();
+
+    public TurnBasedGame(FileHandle mapHandle,
+                         FileHandle transcriptHandle,
+                         ScriptedMockInput scriptedInput) {
+        this.mapHandle = mapHandle;
+        this.transcriptHandle = transcriptHandle;
+        this.scriptedInput = scriptedInput;
+    }
+
+    @Override
+    public void create() {
+        loadMap(mapHandle);
+    }
+
+    private void loadMap(FileHandle handle) {
+        String content = handle.readString("UTF-8");
+        List<String> tokens = new ArrayList<String>();
+        for (String line : content.split("\n")) {
+            int hashIdx = line.indexOf('#');
+            if (hashIdx >= 0) line = line.substring(0, hashIdx);
+            line = line.trim();
+            if (line.isEmpty()) continue;
+            for (String tok : line.split("\\s+")) {
+                if (!tok.isEmpty()) tokens.add(tok);
+            }
+        }
+        if (tokens.size() < 5) {
+            throw new IllegalArgumentException("Map file too small: " + tokens.size() + " tokens");
+        }
+        int idx = 0;
+        width = parseInt(tokens.get(idx++));
+        height = parseInt(tokens.get(idx++));
+        playerX = parseInt(tokens.get(idx++));
+        playerY = parseInt(tokens.get(idx++));
+        int itemCount = parseInt(tokens.get(idx++));
+        items.clear();
+        for (int i = 0; i < itemCount; i++) {
+            if (idx + 2 >= tokens.size()) break;
+            int ix = parseInt(tokens.get(idx++));
+            int iy = parseInt(tokens.get(idx++));
+            String name = tokens.get(idx++);
+            items.add(new Item(ix, iy, name));
+        }
+    }
+
+    private static int parseInt(String s) {
+        try { return Integer.parseInt(s); }
+        catch (NumberFormatException nfe) {
+            throw new IllegalArgumentException("Not an integer: '" + s + "'", nfe);
+        }
+    }
+
+    @Override
+    public void render() {
+        if (finished) return; // don't keep looping after the FINAL line was already written.
+        // Drive the scripted input on every tick.
+        scriptedInput.tick();
+
+        if (firstTick) {
+            firstTick = false;
+            if (!scriptedInput.hasCommand()) {
+                finish();
+                return;
+            }
+        }
+
+        if (!scriptedInput.hasCommand()) {
+            finish();
+            return;
+        }
+
+        String raw = scriptedInput.getCurrentCommand();
+        turn++;
+        applyCommand(raw);
+        writeTurnLine(raw);
+
+        if (shouldExit || raw.equals("QUIT")) {
+            finish();
+            return;
+        }
+    }
+
+    /** Mutate world state based on the current input key state for the active command. */
+    private void applyCommand(String raw) {
+        if (Gdx.input.isKeyJustPressed(Input.Keys.UP)) {
+            tryMove(0, 1);
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.DOWN)) {
+            tryMove(0, -1);
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT)) {
+            tryMove(1, 0);
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT)) {
+            tryMove(-1, 0);
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
+            pickUp();
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+            shouldExit = true;
+            return;
+        }
+        // Unknown command: no state change.
+    }
+
+    private void tryMove(int dx, int dy) {
+        int nx = playerX + dx;
+        int ny = playerY + dy;
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+            return; // rejected: stay in place.
+        }
+        playerX = nx;
+        playerY = ny;
+    }
+
+    private void pickUp() {
+        for (int i = 0; i < items.size(); i++) {
+            Item it = items.get(i);
+            if (it.x == playerX && it.y == playerY) {
+                inventory.add(it.name);
+                items.remove(i);
+                return;
+            }
+        }
+    }
+
+    private void writeTurnLine(String raw) {
+        StringBuilder sb = new StringBuilder(64);
+        sb.append("turn=").append(turn)
+          .append(" cmd=").append(raw)
+          .append(" pos=").append(playerX).append(',').append(playerY)
+          .append(" inv=");
+        for (int i = 0; i < inventory.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(inventory.get(i));
+        }
+        sb.append('\n');
+        transcriptBuf.append(sb.toString());
+    }
+
+    /** Emit the FINAL line exactly once, then ask libGDX to terminate the main loop. */
+    private void finish() {
+        if (finished) return;
+        finished = true;
+        StringBuilder sb = new StringBuilder(64);
+        sb.append("FINAL pos=").append(playerX).append(',').append(playerY).append(" inv=");
+        for (int i = 0; i < inventory.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(inventory.get(i));
+        }
+        sb.append(" turns=").append(turn).append('\n');
+        transcriptBuf.append(sb.toString());
+        Gdx.app.exit();
+    }
+
+    /** Flush the buffered transcript to disk via Gdx.files. */
+    @Override
+    public void dispose() {
+        // Append FINAL if for some reason finish() was never called.
+        if (!finished) finish();
+        transcriptHandle.writeString(transcriptBuf.toString(), false, "UTF-8");
+    }
+
+    @Override
+    public void pause() { }
+
+    @Override
+    public void resize(int width, int height) { }
+
+    @Override
+    public void resume() { }
+
+    private static final class Item {
+        final int x;
+        final int y;
+        final String name;
+        Item(int x, int y, String name) {
+            this.x = x;
+            this.y = y;
+            this.name = name;
+        }
+    }
+}

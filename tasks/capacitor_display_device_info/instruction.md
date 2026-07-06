@@ -24,15 +24,3 @@ A minimal Vite + TypeScript project has already been scaffolded for you at `/hom
 - The Device plugin works on the web target without any native runtime, so the production preview server is sufficient for verification.
 - Make sure the script that wires up the values is loaded as an ES module so that the dynamic import of `@capacitor/device` succeeds.
 
-## Acceptance Criteria
-- Project path: /home/user/myapp
-- Start command: `npm run preview -- --host 0.0.0.0 --port 4173`
-- Port: 4173
-- `npm run build` must complete without errors and produce a `dist/` directory containing `index.html`.
-- `capacitor.config.ts` (or `capacitor.config.json`) must exist at the project root with `appName` equal to `Device Demo`, `appId` equal to `com.example.devicedemo`, and `webDir` equal to `dist`.
-- `package.json` must list `@capacitor/core`, `@capacitor/cli`, and `@capacitor/device` as dependencies (any of `dependencies` or `devDependencies`).
-- `npx cap sync` executed after the production build must exit with status 0.
-- The served page at `http://localhost:4173/` must contain two visible elements with the HTML ids `device-platform` and `device-os`.
-- After the page loads in a Chromium-based browser, the text content of `#device-platform` must equal the string `web`.
-- After the page loads in a Chromium-based browser, the text content of `#device-os` must equal the same value returned by `await Device.getInfo()` for the `operatingSystem` field (one of `ios`, `android`, `windows`, `mac`, or `unknown`).
-

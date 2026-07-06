@@ -16,9 +16,3 @@ You need to build a webhook receiver using Convex HTTP actions. The webhook will
 - You will need an internal mutation to actually insert the data into the database from the HTTP action, as HTTP actions cannot mutate the database directly. Use `ctx.runMutation` inside the HTTP action.
 - Ensure your query function filters by `runId` so that concurrent test runs do not interfere with each other.
 
-## Acceptance Criteria
-- Project path: /home/user/project
-- Ensure the project is deployed to Convex.
-- The endpoint `POST <CONVEX_URL>/webhook` must accept JSON payloads with `payload` and `runId`.
-- The query function `get_webhook` must be callable and return the inserted data for a given `runId`.
-

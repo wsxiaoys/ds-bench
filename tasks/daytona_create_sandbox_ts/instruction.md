@@ -10,7 +10,7 @@ In this task you will write a small Node.js script that uses the Daytona TypeScr
 - Authenticate using the `DAYTONA_API_KEY` environment variable (already present in the environment).
 - Read `run-id` from `/logs/artifacts/run-id`.
 - Create a brand-new sandbox whose `name` is `create-sandbox-ts-${run-id}`.
-- After the sandbox is created, write its UUID to `/home/user/myproject/output.log` on a single line.
+- After the sandbox is created, write its UUID to `/home/user/myproject/output.log` on a single line with format: `Sandbox ID: <id>`.
 - After writing the log, delete the sandbox you just created so it does not consume quota.
 
 ## Implementation Hints
@@ -19,12 +19,3 @@ In this task you will write a small Node.js script that uses the Daytona TypeScr
 - Use `daytona.create({ name, language: 'typescript', ... })` to create the sandbox. The returned object exposes the sandbox's `id`.
 - Use `daytona.delete(sandbox)` (not `remove`) to remove the sandbox at the end.
 - Drive the script with `node`. You may use TypeScript with `tsx`/`ts-node` or plain JavaScript — both are acceptable.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Log file: /home/user/myproject/output.log
-- The sandbox is created on the real Daytona SaaS (`https://app.daytona.io/api`) via the `@daytonaio/sdk` TypeScript SDK.
-- The sandbox `name` must equal `create-sandbox-ts-${run-id}`, where `run-id` is read from `/logs/artifacts/run-id`.
-- `/home/user/myproject/output.log` must contain a single line matching the format: `Sandbox ID: <id>` where `<id>` is the UUID returned by the SDK for the created sandbox.
-- After the script finishes, the created sandbox has been deleted via the SDK.
-

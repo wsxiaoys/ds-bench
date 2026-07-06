@@ -149,7 +149,7 @@ def test_idempotent_rerun():
     assert result.returncode == 0, (
         f"Second invocation of `node dist/main.js --thresholds 0.5,0.7,0.9` exited "
         f"with {result.returncode}. The CLI must be idempotent under the same "
-        f"ZEALT_RUN_ID. stderr: {result.stderr}; stdout: {result.stdout}"
+        f"RUN_ID. stderr: {result.stderr}; stdout: {result.stdout}"
     )
     data = _parse_stdout_json(result.stdout, "idempotent rerun")
     _assert_result_schema(data, expected, "idempotent rerun")

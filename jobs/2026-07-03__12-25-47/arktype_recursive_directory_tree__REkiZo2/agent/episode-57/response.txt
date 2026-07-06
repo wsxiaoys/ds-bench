@@ -1,0 +1,12 @@
+
+
+{
+  "analysis": "'this' is unresolvable. Let me see when 'this' would be set in ctx.args. Looking back at InternalScope.parseOwnDefinitionFormat:\n```\nparseOwnDefinitionFormat(def, ctx) {\n    const isScopeAlias = ctx.alias && ctx.alias in this.aliases;\n    if (!isScopeAlias && !ctx.args)\n        ctx.args = { this: ctx.id };\n    const result = parseInnerDefinition(def, ctx);\n```\n\nSo when we parse the `container` alias, ctx.args gets `this: ctx.id`. The ctx.id is the registered id for `container`. So `this` resolves to the container node.\n\nBut for our recursive case, the issue might be that when we recursively parse `children: \"this[] | leaf[]\"`, we're inside parsing the container's schema. The ctx.args should still have `this: ctx.id`. But when parsing `this[]`, the `this` resolves to the container node, but then the array parser might call something that strips the ctx.args context.\n\nWait, looking at maybeParseReference again:\n```\nif (s.ctx.args?.[token]) {\n    const arg = s.ctx.args[token];\n    if (typeof arg !== \"string\")\n        return arg;\n    return s.ctx.$.node(\"alias\", { reference: arg }, { prereduced: true });\n}\n```\n\nIf `arg` is a string (ctx.id), it creates an alias node. If it's not a string (a node), it returns it directly. The issue might be in the caching - look at parseCache:\n```\nif (ctx.args && Object.keys(ctx.args).some(k => def.includes(k))) {\n    return parseString(def, ctx);\n}\nconst scopeCache = (parseCache[ctx.$.name] ??= {});\nreturn (scopeCache[def] ??= parseString(def, ctx));\n```\n\nSo when ctx.args has 'this', the string is parsed without caching. But wait, the issue might be deeper. Let me actually check what `ctx.id` is set to.",
+  "plan": "Let me debug what's happening.",
+  "commands": [
+    {
+      "keystrokes": "cat > /home/user/myproject/test_scope.ts << 'EOF'\nimport { scope } from \"arktype\";\n\nconst treeScope = scope({\n  // Inline (not function) - try this\n  node: {\n    name: \"string > 0\",\n    size: \"number.integer > 0?\",\n    children: \"this[]?\"\n  }\n});\n\nconsole.log(\"before export - resolved:\", treeScope.resolved);\nconsole.log(\"aliases:\", Object.keys(treeScope.aliases));\nconst exported = treeScope.export();\nconsole.log(\"after export:\", Object.keys(exported));\nEOF\nnpx tsx test_scope.ts\n",
+      "duration": 5.0
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+import json
+from datetime import datetime, timedelta, timezone
+from typing import Iterable, Optional
+
+import bytewax.operators as op
+from bytewax.connectors.stdio import StdOutSink
+from bytewax.dataflow import Dataflow
+from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
+from bytewax.operators.windowing import EventClock, TumblingWindower, fold_window
+
+# Load static product metadata at module load time.
+with open("products.json", "r") as _f:
+    PRODUCTS = json.load(_f)
+
+
+def _parse_timestamp(ts_str: str) -> datetime:
+    """Parse an ISO8601 timestamp string into a UTC-aware datetime."""
+    # Python's fromisoformat doesn't accept the trailing 'Z' before 3.11.
+    if ts_str.endswith("Z"):
+        ts_str = ts_str[:-1] + "+00:00"
+    dt = datetime.fromisoformat(ts_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+class JSONLinesSource(FixedPartitionedSource[dict, int]):
+    """A simple source that reads a JSON lines file as a stream of dicts."""
+
+    def __init__(self, path: str):
+        self._path = path
+
+    def list_parts(self) -> list[str]:
+        return ["singleton"]
+
+    def build_part(
+        self,
+        step_id: str,
+        for_part: str,
+        resume_state: Optional[int],
+    ) -> StatefulSourcePartition[dict, int]:
+        return _JSONLinesPartition(self._path, resume_state)
+
+
+class _JSONLinesPartition(StatefulSourcePartition[dict, int]):
+    def __init__(self, path: str, start_offset: Optional[int]):
+        self._path = path
+        self._offset = start_offset if start_offset is not None else 0
+
+    def next_batch(self) -> Iterable[dict]:
+        batch = []
+        with open(self._path, "r") as f:
+            f.seek(self._offset)
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                batch.append(json.loads(line))
+            self._offset = f.tell()
+        if not batch:
+            raise StopIteration()
+        return batch
+
+    def snapshot(self) -> int:
+        return self._offset
+
+
+flow = Dataflow("enrichment")
+
+# 1) Ingest transactions as a stream of dicts.
+raw = op.input("transactions", flow, JSONLinesSource("transactions.jsonl"))
+
+# 2) Parse timestamp into a UTC-aware datetime and enrich / filter.
+def parse_and_enrich(event: dict) -> Optional[tuple]:
+    product = PRODUCTS.get(event["product_id"])
+    if product is None:
+        return None
+    ts = _parse_timestamp(event["timestamp"])
+    revenue = product["price"] * event["quantity"]
+    return (product["category"], revenue, ts)
+
+parsed = op.filter_map("parse_and_enrich", raw, parse_and_enrich)
+
+# 3) Key by category.
+keyed = op.key_on("by_category", parsed, lambda e: e[0])
+
+# 4) Window with EventClock + 1-minute TumblingWindower aligned to the hour.
+clock = EventClock(
+    ts_getter=lambda e: e[2],
+    wait_for_system_duration=timedelta(seconds=0),
+)
+align_to = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+windower = TumblingWindower(length=timedelta(minutes=1), align_to=align_to)
+
+windowed = fold_window(
+    "revenue_per_category",
+    keyed,
+    clock,
+    windower,
+    builder=lambda: 0.0,
+    folder=lambda acc, x: acc + x[1],
+    merger=lambda a, b: a + b,
+)
+
+# 5) Join the aggregated values (down) with window metadata (meta) to
+# obtain the window start time.
+down = windowed.down
+meta = windowed.meta
+
+joined = op.join("join_down_meta", down, meta)
+# joined item structure:
+# (category, ((window_id, revenue), (window_id, WindowMetadata)))
+
+def format_output(item) -> str:
+    category, ((_window_id, revenue), (_window_id2, window_meta)) = item
+    window_start = window_meta.open_time.astimezone(timezone.utc)
+    window_start_str = window_start.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    return json.dumps(
+        {
+            "category": category,
+            "window_start": window_start_str,
+            "revenue": revenue,
+        }
+    )
+
+formatted = op.map("format_output", joined, format_output)
+
+# 6) Write to stdout.
+op.output("stdout", formatted, StdOutSink())

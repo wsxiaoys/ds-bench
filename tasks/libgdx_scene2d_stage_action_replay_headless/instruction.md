@@ -21,12 +21,7 @@ Your task is to build a small libGDX project that loads a Scene2D scene descript
 - Use `Locale.ROOT` (or equivalent) when formatting floating-point output so the decimal separator is always `.`.
 - Look at `HeadlessApplication`, `HeadlessApplicationConfiguration`, Scene2D `Actor`/`Action`, and `MoveByAction` in the libGDX javadoc / source for the contracts you need to satisfy.
 
-## Acceptance Criteria
-- Project path: /home/user/gdx-stage-sim
-- Command: `./gradlew --no-daemon -q run --args="<script-path> <output-path>"` from `/home/user/gdx-stage-sim`
-- The command must terminate on its own (no manual kill) with exit code 0.
-
-### Script file format (`<script-path>`)
+## Script File Format (`<script-path>`)
 - UTF-8 text file, one directive per line, LF line endings.
 - Lines starting with `#` are comments and are skipped.
 - Blank or whitespace-only lines are skipped.
@@ -38,20 +33,15 @@ Your task is to build a small libGDX project that loads a Scene2D scene descript
   - `actor <id> <x> <y>` — create an `Actor` with identifier `<id>` (alphanumeric/underscore, case-sensitive, unique within the file) at initial position `(<x>, <y>)`. The order of `actor` directives in the file defines the output order.
   - `moveby <id> <dx> <dy> <duration>` — queue a Scene2D `MoveByAction` (default linear interpolation) on the previously declared actor `<id>` that moves it by `(<dx>, <dy>)` over `<duration>` seconds (`>= 0`). At most one `moveby` directive may target any given actor in a given script.
 
-### Output file format (`<output-path>`)
+## Output File Format (`<output-path>`)
 - The program creates or overwrites the file.
 - UTF-8 encoding, LF line endings, one `<id>=<x>,<y>` line per declared actor, in the order the actors were declared in the script.
 - Each `<x>` and `<y>` is the actor's final position formatted with `%.6f` using `Locale.ROOT`.
 
-### Simulation semantics
+## Simulation Semantics
 - After `create()` completes, the listener performs exactly `ticks` ticks. On each tick it advances every actor's action queue by `dt` seconds (e.g., via `Actor.act(dt)` or `Group.act(dt)`). After the final tick the listener triggers application exit so the headless main loop terminates.
 - `ticks=0` is a valid input and must produce the initial positions unchanged in the output file.
 - An `actor` declared with no `moveby` directive must remain at its initial position throughout the simulation.
 - A `MoveByAction` of duration `D` reaches the full `(dx, dy)` displacement once the simulated time elapsed (`accumulated_dt`) reaches `D`; any remaining ticks must not move that actor further (Scene2D actions auto-remove on completion).
 - The output file must be flushed and the JVM must terminate within 60 seconds for any input with `ticks <= 50000`.
-
-### Implementation constraints (observable)
-- The build must declare a dependency on `com.badlogicgames.gdx:gdx-backend-headless:1.14.2`.
-- At least one source file in the project must reference `HeadlessApplication` (the headless backend bootstrap class).
-- At least one source file must reference the Scene2D package (`com.badlogic.gdx.scenes.scene2d`).
 

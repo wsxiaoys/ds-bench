@@ -1,0 +1,290 @@
+New Terminal Output:
+
+root@fc83f711-c5a7-4bc2-8d42-cbf3f0b65bee:~# grep -A 20 'extract_result: Union' /usr/local/lib/python3.12/dist-packages/llama_cloud/types/extract_v2_job.py
+    extract_result: Union[
+        Dict[str, Union[Dict[str, object], List[object], str, float, bool, None]],
+        List[Dict[str, Union[Dict[str, object], List[object], str, float, bool, None]]],
+        None,
+    ] = None
+    """Extracted data conforming to the data_schema.
+
+    Returns a single object for per_doc, or an array for per_page / per_table_row.
+    """
+
+    metadata: Optional[Metadata] = None
+    """Job-level metadata."""
+root@fc83f711-c5a7-4bc2-8d42-cbf3f0b65bee:~# cat /usr/local/lib/python3.12/dist-packages/llama_cloud/types/beta/extracted_data.py
+"""
+ExtractedData Types for Extraction Workflows
+
+This module provides typed wrappers for extraction workflow data,
+including field metadata, citations, confidence scores, and bounding boxes.
+
+Example Usage:
+    ```python
+    from llama_cloud.types.beta import ExtractedData, ExtractedFieldMetadata
+    from pydantic import BaseModel
+
+
+    class Person(BaseModel):
+        name: str
+        age: int
+
+
+    # Parse V2 extraction job into typed data
+    extracted = ExtractedData.from_extract_job(job, Person, status="pending_review")
+
+    # Access typed data and metadata
+    print(extracted.data.name)  # Type-safe access
+    print(extracted.field_metadata["name"].confidence)  # Field confidence
+    ```
+"""
+
+from __future__ import annotations
+
+from typing import (
+    Any,
+    Dict,
+    List,
+    Type,
+    Tuple,
+    Union,
+    Generic,
+    Literal,
+    TypeVar,
+    ClassVar,
+    Optional,
+    cast,
+)
+
+from pydantic import Field, BaseModel, ValidationError
+
+from ..._compat import PYDANTIC_V1, ConfigDict, GenericModel, model_parse, get_model_fields
+from ..extract_v2_job import ExtractV2Job
+
+if PYDANTIC_V1:
+    from pydantic import root_validator  # pyright: ignore[reportDeprecated]
+else:
+    from pydantic import model_validator
+
+__all__ = [
+    "BoundingBox",
+    "PageDimensions",
+    "FieldCitation",
+    "ExtractedFieldMetadata",
+    "ExtractedFieldMetaDataDict",
+    "parse_extracted_field_metadata",
+    "ExtractedData",
+    "InvalidExtractionData",
+    "calculate_overall_confidence",
+]
+
+# Type variable for extracted data (can be dict or Pydantic model)
+ExtractedT = TypeVar("ExtractedT", bound=Union[BaseModel, Dict[str, Any]])
+
+# Status types for extracted data workflow
+StatusType = Union[Literal["error", "accepted", "rejected", "pending_review"], str]
+
+
+class BoundingBox(BaseModel):
+    """Bounding box coordinates for a citation location on a page."""
+
+    x: float = Field(description="X coordinate of the bounding box origin")
+    y: float = Field(description="Y coordinate of the bounding box origin")
+    w: float = Field(description="Width of the bounding box")
+    h: float = Field(description="Height of the bounding box")
+
+
+class PageDimensions(BaseModel):
+    """Dimensions of a page in the source document."""
+
+    width: float = Field(description="Width of the page")
+    height: float = Field(description="Height of the page")
+
+
+class FieldCitation(BaseModel):
+    """Citation information linking an extracted field to its source location."""
+
+    page: Optional[int] = Field(None, description="The page number that the field occurred on")
+    matching_text: Optional[str] = Field(
+        None,
+        description="The original text this field's value was derived from",
+    )
+    bounding_boxes: Optional[List[BoundingBox]] = Field(
+        None,
+        description="Bounding boxes indicating where the citation appears on the page",
+    )
+    page_dimensions: Optional[PageDimensions] = Field(
+        None,
+        description="Dimensions of the page containing the citation",
+    )
+
+
+class ExtractedFieldMetadata(BaseModel):
+    """
+    Metadata for an extracted data field, such as confidence, and citation information.
+    """
+
+    reasoning: Optional[str] = Field(
+        None,
+        description="Symbol for how the citation/confidence was derived: 'INFERRED FROM TEXT', 'VERBATIM EXTRACTION'",
+    )
+    confidence: Optional[float] = Field(
+        None,
+        description="The confidence score for the field, combined with parsing confidence if applicable",
+    )
+    extraction_confidence: Optional[float] = Field(
+        None,
+        description="The confidence score for the field based on the extracted text only",
+    )
+    parsing_confidence: Optional[float] = Field(
+        None,
+        description="The confidence score for the field based on the parsing/OCR quality",
+    )
+    citation: Optional[List[FieldCitation]] = Field(
+        None,
+        description="The citation for the field, including page number and matching text",
+    )
+
+    # Forbid unknown keys to avoid swallowing nested dicts
+    if PYDANTIC_V1:
+
+        class Config:
+            extra = "forbid"
+    else:
+        model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")  # type: ignore[misc]
+
+
+Extract
+[... output limited to 10000 bytes; 70 interior bytes omitted ...]
+ file_id: Override the file ID (defaults to job.document_input_value)
+            status: Initial workflow status (default: "pending_review")
+            metadata: Additional application-specific metadata
+
+        Returns:
+            ExtractedData instance with validated, typed data
+
+        Raises:
+            InvalidExtractionData: If the extracted data doesn't match the schema.
+                The exception contains an ExtractedData[Dict] with status="error"
+                and the validation error in metadata.
+        """
+        resolved_file_id = file_id or job.file_input
+        resolved_file_name = file_name
+        job_id = job.id
+
+        # V2: extract_metadata.field_metadata.document_metadata
+        job_field_metadata: Dict[str, Any] = {}
+        if job.extract_metadata is not None:
+            field_meta = job.extract_metadata.field_metadata
+            if field_meta is not None:
+                doc_meta = field_meta.document_metadata
+                if isinstance(doc_meta, dict):
+                    job_field_metadata = cast(Dict[str, Any], doc_meta)
+
+        errors: Optional[str] = None
+        raw_errors = job_field_metadata.get("error")
+        if isinstance(raw_errors, str):
+            errors = raw_errors
+
+        try:
+            field_metadata = parse_extracted_field_metadata(job_field_metadata)
+        except ValidationError:
+            field_metadata = {}
+
+        try:
+            data: ExtractedT = model_parse(schema, job.extract_result)  # type: ignore[assignment, type-var]
+            return cls.create(
+                data=data,  # pyright: ignore[reportUnknownArgumentType]
+                status=status,
+                field_metadata=job_field_metadata,
+                file_id=resolved_file_id,
+                file_name=resolved_file_name,
+                file_hash=file_hash,
+                metadata={
+                    **({"field_errors": errors} if errors else {}),
+                    "job_id": job_id,
+                    **(metadata or {}),
+                },
+            )
+        except ValidationError as e:
+            raw_data: Dict[str, Any] = {}
+            if isinstance(job.extract_result, dict):
+                raw_data = cast(Dict[str, Any], job.extract_result)
+            invalid_item: ExtractedData[Dict[str, Any]] = ExtractedData[Dict[str, Any]].create(
+                data=raw_data,
+                status="error",
+                field_metadata=field_metadata,
+                metadata={"extraction_error": str(e), **(metadata or {})},
+                file_id=resolved_file_id,
+                file_name=resolved_file_name,
+                file_hash=file_hash,
+            )
+            raise InvalidExtractionData(invalid_item) from e
+
+
+class InvalidExtractionData(Exception):
+    """
+    Exception raised when the extracted data does not conform to the schema.
+
+    Contains an ExtractedData[Dict] instance with the raw data and error details
+    in the metadata field.
+    """
+
+    def __init__(self, invalid_item: ExtractedData[Dict[str, Any]]):
+        self.invalid_item = invalid_item
+        super().__init__("Not able to parse the extracted data, parsed invalid format")
+
+
+def calculate_overall_confidence(
+    metadata: ExtractedFieldMetaDataDict,
+) -> Optional[float]:
+    """
+    Calculate the overall confidence score for extracted data.
+
+    Computes the arithmetic mean of all confidence scores found in the
+    field metadata structure, recursively traversing nested dicts and lists.
+
+    Args:
+        metadata: Field metadata dict with nested ExtractedFieldMetadata objects
+
+    Returns:
+        Average confidence score, or None if no confidence values found
+    """
+    numerator, denominator = _calculate_overall_confidence_recursive(metadata)
+    if denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def _calculate_overall_confidence_recursive(
+    confidence: Union[ExtractedFieldMetadata, Dict[str, Any], List[Any], Any],
+) -> Tuple[float, int]:
+    """
+    Recursively calculate sum and count of confidence scores.
+    """
+    if isinstance(confidence, ExtractedFieldMetadata):
+        if confidence.confidence is not None:
+            return confidence.confidence, 1
+        else:
+            return 0.0, 0
+    if isinstance(confidence, dict):
+        conf_dict = cast(Dict[str, Any], confidence)
+        numerator: float = 0.0
+        denominator: int = 0
+        for value in conf_dict.values():
+            num, den = _calculate_overall_confidence_recursive(value)
+            numerator += num
+            denominator += den
+        return numerator, denominator
+    if isinstance(confidence, list):
+        conf_list = cast(List[Any], confidence)
+        numerator = 0.0
+        denominator = 0
+        for value in conf_list:
+            num, den = _calculate_overall_confidence_recursive(value)
+            numerator += num
+            denominator += den
+        return numerator, denominator
+    return 0.0, 0
+root@fc83f711-c5a7-4bc2-8d42-cbf3f0b65bee:~#

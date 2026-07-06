@@ -30,5 +30,5 @@ with open('/home/user/out2.txt', 'w') as f:
         f.write(out2)
 EOF
 
-cd /workspace
+cd /home/user
 python solve.py

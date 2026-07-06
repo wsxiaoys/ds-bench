@@ -25,7 +25,7 @@ def test_daytona_api_key_env_set():
     )
 
 
-def test_zealt_run_id_env_set():
-    assert os.environ.get("ZEALT_RUN_ID"), (
-        "ZEALT_RUN_ID environment variable must be set in the task environment."
+def test_run_id_set():
+    assert open("/logs/artifacts/run-id").read().strip(), (
+        "RUN_ID must be set in the task environment."
     )

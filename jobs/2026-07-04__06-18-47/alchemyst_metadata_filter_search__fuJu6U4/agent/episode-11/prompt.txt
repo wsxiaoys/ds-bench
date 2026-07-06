@@ -1,0 +1,152 @@
+New Terminal Output:
+
+root@a00704b1-2693-408e-8898-160d4774452b:/home/user/myproject# cat > src/main.ts << 'EOF'
+> import * as fs from 'fs';
+> import AlchemystAI from '@alchemystai/sdk';
+>
+> // Parse --group argument
+> function parseGroup(): string {
+>   const args = process.argv.slice(2);
+>   const idx = args.indexOf('--group');
+>   if (idx === -1 || idx + 1 >= args.length) {
+>     throw new Error('Missing required --group <group_name> argument');
+>   }
+>   const group = args[idx + 1];
+>   if (!group || typeof group !== 'string') {
+>     throw new Error('Invalid --group argument');
+>   }
+>   return group;
+> }
+>
+> async function main() {
+>   const apiKey = process.env.ALCHEMYST_AI_API_KEY;
+>   if (!apiKey) {
+>     throw new Error('ALCHEMYST_AI_API_KEY environment variable not set');
+>   }
+>
+>   const runId = fs.readFileSync('/logs/artifacts/run-id', 'utf8').trim();
+>   const group = parseGroup();
+>
+>   const client = new AlchemystAI({ apiKey });
+>
+>   // Define the four documents. Each carries its file_name and group_name
+>   // under its metadata (snake_case keys), suffixed with run-id to keep them
+>   // unique across concurrent runs.
+>   const docs: Array<Record<string, unknown>> = [
+>     {
+>       content:
+>         'Support doc 1: This is the first customer support runbook for handling ' +
+>         'billing disputes and refund workflows. It explains how to triage a ' +
+>         'billing complaint, identify the invoice, and process a refund or ' +
+>         'credit within the support queue.',
+>       file_name: `support-1-${runId}.txt`,
+>       group_name: ['support'],
+>     },
+>     {
+>       content:
+>         'Support doc 2: A second customer support document covering account ' +
+>         'recovery flows, password resets, and how support agents should escalate ' +
+>         'issues that require engineering intervention.',
+>       file_name: `support-2-${runId}.txt`,
+>       group_name: ['support'],
+>     },
+>     {
+>       content:
+>         'Engineering doc 1: A first engineering document describing the ' +
+>         'production service architecture, including how requests flow through ' +
+>         'the API gateway and the workers that handle context ingestion.',
+>       file_name: `engineering-1-${runId}.txt`,
+>       group_name: ['engineering'],
+>     },
+>     {
+>       content:
+>         'Engineering doc 2: A second engineering document explaining how the ' +
+>         'semantic search index is built, how similarity scores are computed, ' +
+>         'and how group-based metadata filtering is applied at query time.',
+>       file_name: `engineering-2-${runId}.txt`,
+>       group_name: ['engineering'],
+>     },
+>   ];
+>
+>   // Idempotent seeding. Adding the same file_name twice returns 409, so we
+>   // catch that error and continue without crashing on re-runs.
+>   for (const doc of docs) {
+>     try {
+>       const resp = await client.v1.context.add({
+>         documents: [doc as any],
+>         context_type: 'resource',
+>         source: 'docs',
+>         scope: 'internal',
+>       } as any);
+>       // eslint-disable-next-line no-console
+>       console.error(`[seed] added ${doc.file_name}: ${JSON.stringify(resp)}`);
+>     } catch (err: any) {
+>       const status = err?.status ?? err?.statusCode ?? err?.response?.status;
+>       const msg = err?.message ?? String(err);
+>       if (status === 409 || /409|conflict|already/i.test(msg)) {
+>         // eslint-disable-next-line no-console
+>         console.error(`[seed] ${doc.file_name} already exists, skipping`);
+>         continue;
+>       }
+>       throw err;
+>     }
+>   }
+>
+>   // Give the indexing pipeline a brief moment so newly added docs are
+>   // queryable on the very next request.
+>   await new Promise((r) => setTimeout(r, 1500));
+>
+>   // Metadata-filtered search using camelCase groupName (the asymmetry!).
+>   const searchResp: any = await client.v1.context.search({
+>     query: 'documents',
+>     scope: 'internal',
+>     metadata: { groupName: [group] },
+>   } as any);
+>
+>   const contexts: any[] = Array.isArray(searchResp?.contexts)
+>     ? searchResp.contexts
+>     : [];
+>
+>   const fileNames = new Set<string>();
+>   for (const c of contexts) {
+>     const meta = c?.metadata;
+>     if (!meta) continue;
+>     const candidates: unknown[] = [];
+>     if (typeof meta === 'object') {
+>       candidates.push((meta as any).file_name, (meta as any).fileName);
+>       if (Array.isArray((meta as any).file_name)) {
+>         candidates.push(...(meta as any).file_name);
+>       }
+>       if (Array.isArray((meta as any).fileName)) {
+>         candidates.push(...(meta as any).fileName);
+>       }
+>     } else if (typeof meta === 'string') {
+>       try {
+>         const parsed = JSON.parse(meta);
+>         candidates.push(parsed?.file_name, parsed?.fileName);
+>       } catch {
+>         /* ignore */
+>       }
+>     }
+>     for (const candidate of candidates) {
+>       if (typeof candidate === 'string') {
+>         fileNames.add(candidate);
+>       }
+>     }
+>   }
+>
+>   process.stdout.write(JSON.stringify([...fileNames]) + '\n');
+> }
+>
+> main().catch((err) => {
+>   // eslint-disable-next-line no-console
+>   console.error(err?.stack ?? err?.message ?? String(err));
+>   process.exit(1);
+> });
+> EOF
+root@a00704b1-2693-408e-8898-160d4774452b:/home/user/myproject# ls -la src/
+total 8
+drwxr-xr-x 2 root root   29 Jul  4 06:20 .
+drwxr-xr-x 1 root root  127 Jul  4 06:20 ..
+-rw-r--r-- 1 root root 4867 Jul  4 06:20 main.ts
+root@a00704b1-2693-408e-8898-160d4774452b:/home/user/myproject#

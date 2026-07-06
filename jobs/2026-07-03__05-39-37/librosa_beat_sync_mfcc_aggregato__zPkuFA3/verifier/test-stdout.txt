@@ -1,0 +1,95 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.4.0
+rootdir: /tests
+plugins: json-ctrf-0.5.2
+collected 6 items
+
+tests/test_final_state.py .....F                                         [100%]
+
+=================================== FAILURES ===================================
+___________________ test_mfcc_sync_matches_recomputed_median ___________________
+
+meta = {'beat_times_seconds': [0.06966, 0.487619, 0.928798, 1.369977, 1.811156, 2.229116, ...], 'hop_length': 512, 'n_mfcc': 20, 'sample_rate': 22050, ...}
+mfcc_sync = array([[-4.26837250e+02, -4.73005096e+02, -3.55556946e+02,
+        -4.42702484e+02, -4.47151428e+02, -4.28927155e+02,
+..., -6.99996591e-01,
+        -3.14066982e+00,  1.70011258e+00, -7.03489304e+00,
+        -5.51030159e+00]], dtype=float32)
+audio = (array([ 0.        ,  0.        ,  0.        , ..., -0.05044556,
+       -0.04824829, -0.04504395], shape=(330750,), dtype=float32), 22050, 15.0)
+
+    def test_mfcc_sync_matches_recomputed_median(meta, mfcc_sync, audio):
+        import librosa
+    
+        y, sr_actual, _ = audio
+        hop_length = int(meta["hop_length"])
+        sample_rate = int(meta["sample_rate"])
+        assert sample_rate == int(sr_actual), (
+            f"Recorded sample_rate ({sample_rate}) must equal the audio's native "
+            f"sample rate ({sr_actual})."
+        )
+    
+        beat_times = np.array([float(t) for t in meta["beat_times_seconds"]], dtype=np.float64)
+        beat_frames = librosa.time_to_frames(
+            beat_times, sr=sample_rate, hop_length=hop_length
+        )
+        beat_frames = np.asarray(beat_frames, dtype=int)
+    
+        mfcc = librosa.feature.mfcc(
+            y=y, sr=sample_rate, n_mfcc=20, hop_length=hop_length
+        )
+    
+        expected = None
+        for pad in (True, False):
+            try:
+                candidate = librosa.util.sync(
+                    mfcc, beat_frames, aggregate=np.median, pad=pad
+                )
+            except Exception:
+                continue
+            if candidate.shape == mfcc_sync.shape:
+                expected = np.asarray(candidate)
+                break
+    
+        assert expected is not None, (
+            f"Could not reproduce mfcc_sync shape {mfcc_sync.shape} via "
+            f"librosa.util.sync with pad in {{True, False}}; check the beat boundary "
+            f"convention recorded in beats.json."
+        )
+    
+        n_cols = mfcc_sync.shape[1]
+        diffs = np.abs(np.asarray(mfcc_sync, dtype=np.float64) - expected.astype(np.float64))
+        col_max_diff = diffs.max(axis=0)
+        matching = int(np.sum(col_max_diff <= 1e-3))
+        ratio = matching / float(n_cols)
+>       assert ratio >= 0.8, (
+            f"Only {matching}/{n_cols} ({ratio:.2%}) columns of mfcc_sync match the "
+            f"recomputed per-interval median within 1e-3; require >= 80%."
+        )
+E       AssertionError: Only 11/31 (35.48%) columns of mfcc_sync match the recomputed per-interval median within 1e-3; require >= 80%.
+E       assert 0.3548387096774194 >= 0.8
+
+tests/test_final_state.py:169: AssertionError
+=============================== warnings summary ===============================
+test_final_state.py::test_beat_times_within_audio_bounds
+  /usr/local/lib/python3.12/dist-packages/audioread/rawread.py:16: DeprecationWarning: 'aifc' is deprecated and slated for removal in Python 3.13
+    import aifc
+
+test_final_state.py::test_beat_times_within_audio_bounds
+  /usr/local/lib/python3.12/dist-packages/audioread/rawread.py:17: DeprecationWarning: 'audioop' is deprecated and slated for removal in Python 3.13
+    import audioop
+
+test_final_state.py::test_beat_times_within_audio_bounds
+  /usr/local/lib/python3.12/dist-packages/audioread/rawread.py:19: DeprecationWarning: 'sunau' is deprecated and slated for removal in Python 3.13
+    import sunau
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_final_state.py::test_meta_schema_and_types
+PASSED tests/test_final_state.py::test_beat_times_strictly_increasing
+PASSED tests/test_final_state.py::test_beat_times_within_audio_bounds
+PASSED tests/test_final_state.py::test_mfcc_sync_shape
+PASSED tests/test_final_state.py::test_mfcc_sync_column_count_matches_boundary_convention
+FAILED tests/test_final_state.py::test_mfcc_sync_matches_recomputed_median - ...
+=================== 1 failed, 5 passed, 3 warnings in 2.12s ====================

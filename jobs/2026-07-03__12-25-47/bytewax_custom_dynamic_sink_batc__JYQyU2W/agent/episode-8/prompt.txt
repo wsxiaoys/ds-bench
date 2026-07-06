@@ -1,0 +1,123 @@
+New Terminal Output:
+
+root@018f3f93-1e8d-4bf2-9ed6-81373c3c59c6:/home/user/bytewax-sink# cat > /home/user/bytewax-sink/run.py << 'EOF'
+> import json
+> import os
+>
+> from bytewax.dataflow import Dataflow
+> from bytewax.inputs import FixedPartitionedSource
+> from bytewax.outputs import DynamicSink, StatelessSinkPartition
+> from bytewax.operators import input, output
+> from bytewax.testing import TestingSource
+>
+>
+> # Read the run-id from the artifacts directory
+> RUN_ID_FILE = "/logs/artifacts/run-id"
+> with open(RUN_ID_FILE, "r") as f:
+>     RUN_ID = f.read().strip()
+>
+> # Output directory
+> OUTPUT_DIR = "/home/user/bytewax-sink/out"
+> os.makedirs(OUTPUT_DIR, exist_ok=True)
+>
+>
+> class JSONLRotatingPartition(StatelessSinkPartition):
+>     """A stateless sink partition that writes items to JSONL files with rotation.
+>
+>     Each file contains at most RECORDS_PER_FILE records. When the limit is reached,
+>     the file is closed and a new file with the next part number is opened.
+>     """
+>
+>     def __init__(self, run_id, worker_index, output_dir, records_per_file=20):
+>         self._run_id = run_id
+>         self._worker_index = worker_index
+>         self._output_dir = output_dir
+>         self._records_per_file = records_per_file
+>         self._part_number = 0
+>         self._records_in_current_file = 0
+>         self._current_file = None
+>
+>     def _current_path(self):
+>         return os.path.join(
+>             self._output_dir,
+>             f"output-{self._run_id}-worker-{self._worker_index}-part-{self._part_number}.jsonl",
+>         )
+>
+>     def _ensure_file(self):
+>         """Open a new file if one is not currently open."""
+>         if self._current_file is None:
+>             path = self._current_path()
+>             self._current_file = open(path, "a")
+>
+>     def _close_file(self):
+>         """Close the current file (if any) and reset state."""
+>         if self._current_file is not None:
+>             self._current_file.close()
+>             self._current_file = None
+>
+>     def _advance_part(self):
+>         """Move to the next part number."""
+>         self._close_file()
+>         self._part_number += 1
+>         self._records_in_current_file = 0
+>
+>     def write_batch(self, items):
+>         """Write items to the current file, rotating as needed."""
+>         for item in items:
+>             # If the current file is full, rotate to a new part
+>             if self._records_in_current_file >= self._records_per_file:
+>                 self._advance_part()
+>
+>             # Ensure a file is open
+>             self._ensure_file()
+>
+>             # Write the record
+>             record = {"worker": self._worker_index, "value": item}
+>             self._current_file.write(json.dumps(record) + "\n")
+>             self._records_in_current_file += 1
+>
+>             # If this write filled up the file, close it immediately
+>             if self._records_in_current_file >= self._records_per_file:
+>                 self._close_file()
+>                 # Prepare for the next part, but don't open a new file yet.
+>                 # We'll advance the part number when we actually need to write again.
+>                 # But the spec says we need to advance to next part number.
+>                 self._part_number += 1
+>                 self._records_in_current_file = 0
+>
+>     def close(self):
+>         """Close any open file when the partition is closed."""
+>         self._close_file()
+>
+>
+> class JSONLRotatingSink(DynamicSink):
+>     """A dynamic sink that writes items to rotating JSONL files per worker."""
+>
+>     def __init__(self, run_id, output_dir, records_per_file=20):
+>         self._run_id = run_id
+>         self._output_dir = output_dir
+>         self._records_per_file = records_per_file
+>
+>     def build(self, step_id, worker_index, worker_count):
+>         return JSONLRotatingPartition(
+>             run_id=self._run_id,
+>             worker_index=worker_index,
+>             output_dir=self._output_dir,
+>             records_per_file=self._records_per_file,
+>         )
+>
+>
+> # Create a list of 200 integers 0..199
+> items = list(range(200))
+>
+> # Build the dataflow
+> flow = Dataflow("jsonl-rotation")
+> inp = input("inp", flow, TestingSource(items))
+> output("out", inp, JSONLRotatingSink(RUN_ID, OUTPUT_DIR))
+> EOF
+root@018f3f93-1e8d-4bf2-9ed6-81373c3c59c6:/home/user/bytewax-sink# ls -la /home/user/bytewax-sink/
+total 4
+drwxr-xr-x 1 root root   20 Jul  3 13:27 .
+drwxr-xr-x 1 root root   26 Jul  3 13:26 ..
+-rw-r--r-- 1 root root 3967 Jul  3 13:27 run.py
+root@018f3f93-1e8d-4bf2-9ed6-81373c3c59c6:/home/user/bytewax-sink#

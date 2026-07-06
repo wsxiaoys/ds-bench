@@ -1,0 +1,143 @@
+New Terminal Output:
+
+root@5505aa7a-252d-4872-9331-bfeb231e637e:/home/user/myproject# cat > /home/user/myproject/subscribe.js <<'EOF'
+> #!/usr/bin/env node
+> 'use strict';
+>
+> // Node.js doesn't ship a global EventSource, but PocketBase's realtime
+> // (SSE) client expects one. Polyfill it via the `eventsource` package.
+> {
+>   const { EventSource } = require('eventsource');
+>   if (typeof globalThis.EventSource === 'undefined') {
+>     globalThis.EventSource = EventSource;
+>   }
+> }
+>
+> // pocketbase >=0.21 ships as ESM by default; the subpath `pocketbase/cjs`
+> // exposes a CommonJS build that exports the default `Client` class under
+> // `module.exports`, which we rename to `PocketBase` for clarity.
+> const PocketBase = require('pocketbase/cjs');
+>
+> function parseArgs(argv) {
+>   const args = {};
+>   for (let i = 0; i < argv.length; i++) {
+>     const a = argv[i];
+>     if (a === '--chat' || a === '-c') {
+>       args.chat = argv[++i];
+>     } else if (a.startsWith('--chat=')) {
+>       args.chat = a.substring('--chat='.length);
+>     }
+>   }
+>   return args;
+> }
+>
+> async function main() {
+>   const args = parseArgs(process.argv.slice(2));
+>   if (!args.chat) {
+>     process.stderr.write('Usage: node subscribe.js --chat <chatId>\n');
+>     process.exit(2);
+>   }
+>
+>   const url = process.env.PB_URL || 'http://127.0.0.1:8090';
+>   const email = process.env.PB_ADMIN_EMAIL;
+>   const password = process.env.PB_ADMIN_PASSWORD;
+>
+>   if (!email || !password) {
+>     process.stderr.write('Missing PB_ADMIN_EMAIL or PB_ADMIN_PASSWORD env vars\n');
+>     process.exit(2);
+>   }
+>
+>   const pb = new PocketBase(url);
+>
+>   // Disable REDACTED-cancellation so we can control the lifecycle explicitly.
+>   pb.REDACTEDCancellation(false);
+>
+>   let shuttingDown = false;
+>   let unsubscribe = null;
+>   let shutdownTimer = null;
+>
+>   const shutdown = async (code) => {
+>     if (shuttingDown) return;
+>     shuttingDown = true;
+>
+>     // Hard 3s deadline: even if cleanup hangs, still exit.
+>     if (!shutdownTimer) {
+>       shutdownTimer = setTimeout(() => {
+>         process.exit(typeof code === 'number' ? code : 0);
+>       }, 3000);
+>       if (shutdownTimer.unref) shutdownTimer.unref();
+>     }
+>
+>     try {
+>       if (typeof unsubscribe === 'function') {
+>         try {
+>           unsubscribe();
+>         } catch (e) {
+>           process.stderr.write('unsubscribe error: ' + (e && e.message ? e.message : e) + '\n');
+>         }
+>       }
+>     } finally {
+>       process.exit(typeof code === 'number' ? code : 0);
+>     }
+>   };
+>
+>   // Graceful shutdown on SIGTERM/SIGINT.
+>   process.on('SIGTERM', () => { shutdown(0); });
+>   process.on('SIGINT', () => { shutdown(0); });
+>
+>   // Don't let unhandled errors/rejections kill the process silently.
+>   process.on('uncaughtException', (err) => {
+>     process.stderr.write('uncaughtException: ' + (err && err.stack ? err.stack : err) + '\n');
+>     shutdown(1);
+>   });
+>   process.on('unhandledRejection', (reason) => {
+>     process.stderr.write('unhandledRejection: ' + (reason && reason.stack ? reason.stack : reason) + '\n');
+>   });
+>
+>   try {
+>     await pb.admins.authWithPassword(email, password);
+>   } catch (err) {
+>     process.stderr.write('Auth failed: ' + (err && err.message ? err.message : err) + '\n');
+>     process.exit(1);
+>   }
+>
+>   // Server-side filter so we only get events for the requested chat.
+>   // Escape single quotes in the chat id so a malicious value can't break
+>   // out of the filter string literal.
+>   const safeChat = String(args.chat).replace(/'/g, "\\'");
+>   const filter = `chat = '${safeChat}'`;
+>
+>   try {
+>     unsubscribe = await pb.collection('messages').subscribe('*', (event) => {
+>       // event.action is one of 'create' | 'update' | 'delete'.
+>       // event.record contains the record fields (id, chat, body, ...).
+>       const payload = {
+>         action: event.action,
+>         record: event.record,
+>       };
+>       // Write a single JSON line and flush immediately so consumers can
+>       // react in real-time.
+>       process.stdout.write(JSON.stringify(payload) + '\n');
+>     }, {
+>       filter: filter,
+>       fields: 'id,chat,body',
+>     });
+>   } catch (err) {
+>     process.stderr.write('Subscribe failed: ' + (err && err.message ? err.message : err) + '\n');
+>     process.exit(1);
+>   }
+>
+>   // Keep the process alive.
+> }
+>
+> main().catch((err) => {
+>   process.stderr.write('Fatal: ' + (err && err.stack ? err.stack : err) + '\n');
+>   process.exit(1);
+> });
+> EOF
+root@5505aa7a-252d-4872-9331-bfeb231e637e:/home/user/myproject# cd /home/user/myproject && node subscribe.js --chat chat-1 > /tmp/sub1.out 2> /tmp/sub1.err &
+[2] 2130
+root@5505aa7a-252d-4872-9331-bfeb231e637e:/home/user/myproject# echo "PID=$!"
+PID=2130
+root@5505aa7a-252d-4872-9331-bfeb231e637e:/home/user/myproject# sleep 3 && cat /tmp/sub1.err
+root@5505aa7a-252d-4872-9331-bfeb231e637e:/home/user/myproject#

@@ -1,0 +1,41 @@
+import { TraversalError } from "arktype";
+import { emit } from "./src/emit.js";
+
+async function main(): Promise<void> {
+  // Read all stdin
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (raw.length === 0) return;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    process.stdout.write(`ERR ${(e as Error).message}\n`);
+    return;
+  }
+
+  const args = (parsed as { args?: unknown }).args;
+  if (!Array.isArray(args)) {
+    process.stdout.write(`ERR args must be an array\n`);
+    return;
+  }
+
+  try {
+    // Call emit by spreading the args array, so each element is validated
+    // as a separate parameter by the tuple schema.
+    const result = (emit as (...a: unknown[]) => unknown)(...args);
+    process.stdout.write(`OK ${JSON.stringify(result)}\n`);
+  } catch (e) {
+    if (e instanceof TraversalError) {
+      process.stdout.write(`ERR ${e.message}\n`);
+    } else {
+      process.stdout.write(`ERR ${(e as Error).message}\n`);
+    }
+  }
+}
+
+main();

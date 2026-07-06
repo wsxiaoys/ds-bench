@@ -1,0 +1,105 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
+const sdk_1 = require("@daytonaio/sdk");
+/**
+ * Build a Daytona sandbox from a declarative Image, run a Python command that
+ * prints the installed `flask` and `click` versions, capture the stdout and
+ * write it to output.log on the host, then delete the sandbox.
+ */
+async function main() {
+    const apiKey = process.env.DAYTONA_API_KEY;
+    if (!apiKey) {
+        throw new Error("DAYTONA_API_KEY environment variable is not set");
+    }
+    // Read run-id from /logs/artifacts/run-id (trim any trailing whitespace/CR).
+    const runIdPath = "/logs/artifacts/run-id";
+    const runIdRaw = fs.readFileSync(runIdPath, "utf8");
+    const runId = runIdRaw.trim();
+    if (!runId) {
+        throw new Error(`run-id file at ${runIdPath} is empty`);
+    }
+    const sandboxName = `decl-ts-${runId}`;
+    const outputPath = path.join("/home/user/myproject", "output.log");
+    console.log(`Run ID:        ${runId}`);
+    console.log(`Sandbox name:  ${sandboxName}`);
+    console.log(`Output log:    ${outputPath}`);
+    // Build the declarative image: python:3.12 debian slim + flask and click.
+    const image = sdk_1.Image.debianSlim("3.12").pipInstall(["flask", "click"]);
+    const daytona = new sdk_1.Daytona({ apiKey });
+    let sandbox;
+    try {
+        console.log("Creating sandbox from declarative image (this may take a while)...");
+        // Pass the Image instance directly; timeout 0 = no timeout (build can be slow).
+        sandbox = await daytona.create({ image, name: sandboxName }, { timeout: 0 });
+        console.log(`Sandbox created with id: ${sandbox.id}`);
+        // Run the Python command inside the sandbox.
+        // Redirect stderr to /dev/null so .result contains only the two stdout
+        // print lines (Python emits DeprecationWarnings for __version__ on stderr).
+        const cmd = `python3 -c "import flask, click; print('flask', flask.__version__); print('click', click.__version__)" 2>/dev/null`;
+        console.log(`Executing command: ${cmd}`);
+        const response = await sandbox.process.executeCommand(cmd);
+        console.log(`Command exit code: ${response.exitCode}`);
+        console.log(`Command stdout:\n${response.result}`);
+        if (response.exitCode !== 0) {
+            throw new Error(`Command exited with code ${response.exitCode}. stdout: ${response.result}`);
+        }
+        // Capture both lines of stdout, in order, one line per print, verbatim.
+        // Ensure the output ends with a trailing newline.
+        const stdout = response.result;
+        const outputContent = stdout.endsWith("\n") ? stdout : stdout + "\n";
+        fs.writeFileSync(outputPath, outputContent, "utf8");
+        console.log(`Wrote output to ${outputPath}`);
+    }
+    finally {
+        // Always delete the sandbox, even on errors.
+        if (sandbox) {
+            try {
+                console.log("Deleting sandbox...");
+                await daytona.delete(sandbox);
+                console.log("Sandbox deleted.");
+            }
+            catch (deleteErr) {
+                console.error("Failed to delete sandbox:", deleteErr);
+            }
+        }
+    }
+}
+main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+});

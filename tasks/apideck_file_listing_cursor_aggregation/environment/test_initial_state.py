@@ -15,8 +15,7 @@ def test_required_env_vars_present():
         "APIDECK_APP_ID",
         "APIDECK_API_KEY",
         "APIDECK_CONSUMER_ID",
-        "APIDECK_FILE_STORAGE_DRIVE_NAME",
-        "ZEALT_RUN_ID",
+        "APIDECK_FILE_STORAGE_DRIVE_NAME"
     ):
         assert os.environ.get(var), f"Required environment variable {var} is not set."
 

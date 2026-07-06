@@ -14,8 +14,4 @@ Set up a standalone tRPC server using `@trpc/server/adapters/standalone` and `zo
 2. Install the required dependencies: `@trpc/server@next`, `zod`, `typescript`, `ts-node`, and `@types/node`.
 3. Create `server.ts` and implement the tRPC router and the standalone server.
 4. Ensure the server listens on port 3000.
-
-## Constraints
-- Project path: /home/user/project
-- Start command: npx ts-node server.ts
-- Port: 3000
+5. The verifier will start your application using the command `npx ts-node server.ts`.

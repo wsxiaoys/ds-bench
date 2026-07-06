@@ -1,0 +1,12 @@
+
+
+{
+  "analysis": "Same issue. The problem is that type.fn asserts the return value (which is a Promise object when the function is async) against the inner schema. We need the return type to be a Promise that resolves to the inner schema, OR we need to use a different return type.\n\nLet me reconsider. Looking at the type.d.ts:\n```\nexternalSignature extends Fn = (...args: applyElementLabels<distill.In<paramsT>, Parameters<internalSignature>>) => args extends readonly [...unknown[], \":\", unknown] ? distill.Out<returnT> : ReturnType<internalSignature>\n```\n\nWhen args has ':', it uses `distill.Out<returnT>`. So the external signature's return type comes from `distill.Out<returnT>`.\n\nFor a morph, `distill.Out` is the output type. So if I have a morph that takes a Promise and returns the resolved value, the external signature's return type would be the resolved value type. \n\nWait, but the implementation is async, so it returns a Promise. The type.fn will call the implementation and get back a Promise. Then it calls `returns.assert(returned)` on that Promise. The `returns` is the schema, and if `returns` is a morph that takes a Promise, it would work.\n\nLet me check what type `distill.Out<returnT>` gives us for a morph. Actually let me look at the typed signature with the morph approach to see what the wrapper's return type becomes.",
+  "plan": "Let me check the return type of the wrapper with morph approach.",
+  "commands": [
+    {
+      "keystrokes": "cat > /home/user/myproject/test_ark6.mjs << 'EOF'\nimport { type } from 'arktype';\n\nconst paramsType = type({ url: 'string.url', timeoutMs: '0 < number <= 10000', retries: '0 <= number <= 5' });\nconst innerSchema = type({ status: '100 <= number <= 599', body: 'string' });\n\nconst promiseSchema = type('Promise').pipe(async (p) => {\n  const v = await p;\n  const validated = innerSchema(v);\n  if (validated instanceof Error) throw validated;\n  return validated;\n});\n\nconst fetchWithTimeout = type.fn(\n  paramsType,\n  ':',\n  promiseSchema,\n)(async (params) => {\n  await new Promise(r => setTimeout(r, 10));\n  return { status: 200, body: 'ok' };\n});\n\nconsole.log('returns:', fetchWithTimeout.returns);\nconsole.log('expression:', fetchWithTimeout.expression);\nconsole.log('returns expression:', fetchWithTimeout.returns?.expression);\nEOF\ncd /home/user/myproject && node test_ark6.mjs\n",
+      "duration": 2.0
+    }
+  ]
+}

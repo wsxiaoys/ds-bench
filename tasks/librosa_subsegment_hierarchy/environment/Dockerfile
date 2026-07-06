@@ -23,12 +23,12 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 
-# Prepare /workspace with a ~25 s tonal example audio file that contains 4 audible
+# Prepare /home/user with a ~25 s tonal example audio file that contains 4 audible
 # coarse sections. We take the first ~25 seconds of "Dance of the Sugar Plum Fairy"
 # from the Nutcracker Suite (distributed via the librosa example pack), resampled
 # to mono 22050 Hz, and write it as /home/user/input.wav at image build time so the
 # task environment has no runtime network dependency.
-RUN mkdir -p /workspace && \
+RUN mkdir -p /home/user && \
     python3 -c "import librosa, soundfile as sf; y, sr = librosa.load(librosa.ex('nutcracker'), sr=22050, mono=True, duration=25.0); sf.write('/home/user/input.wav', y, sr, subtype='PCM_16')" && \
     test -s /home/user/input.wav
 

@@ -1,0 +1,104 @@
+New Terminal Output:
+
+root@6c78ebae-6327-4797-8ea3-b7042dcd8ca2:/home/user/myproject# sed -i 's|issues: result.issues.map((issue: { message: string }) => ({|issues: Array.from(result
+.issues).map((issue: { message: string }) => ({|' /home/user/myproject/server.ts
+root@6c78ebae-6327-4797-8ea3-b7042dcd8ca2:/home/user/myproject# grep -n 'issues:' /home/user/myproject/server.ts
+35:    readonly issues: ReadonlyArray<Issue>;
+66:          issues: Array.from(result.issues).map((issue: { message: string }) => ({
+root@6c78ebae-6327-4797-8ea3-b7042dcd8ca2:/home/user/myproject# rm -f /home/user/myproject/test_z*.ts
+root@6c78ebae-6327-4797-8ea3-b7042dcd8ca2:/home/user/myproject# cat /home/user/myproject/server.ts
+import express from "express";
+import { type } from "arktype";
+
+// Schema for POST /users body.
+//   username: alphanumeric string of length 3..20 (one bound per `|>` step).
+//   email: a well-formed email address.
+//   age: optional integer in [13, 120].
+const UserBodySchema = type({
+  username: "string.alphanumeric |> (string >= 3) |> (string <= 20)",
+  email: "string.email",
+  age: "number.integer |> (number >= 13) |> (number <= 120)?"
+});
+
+// Schema for GET /search query.
+//   Express delivers query values as strings, so `page` and `limit` must be
+//   coerced from strings to numbers via ArkType morphs (`string.numeric.parse`)
+//   composed with their numeric bounds using the `|>` declarative pipeline.
+const SearchQuerySchema = type({
+  q: "string >= 1 |> (string <= 100)",
+  page: "string.numeric.parse |> (number >= 1)",
+  limit: "string.numeric.parse |> (1 <= number <= 50)"
+});
+
+// Minimal structural typing for any object that satisfies the Standard Schema spec.
+//   Reference: https://standardschema.dev
+//   We deliberately avoid importing ArkType's internal type so the middleware
+//   remains vendor-agnostic.
+namespace StandardSchemaV1 {
+  export type Result<Output> = SuccessResult<Output> | FailureResult;
+  export interface SuccessResult<Output> {
+    readonly value: Output;
+    readonly issues?: undefined;
+  }
+  export interface FailureResult {
+    readonly issues: ReadonlyArray<Issue>;
+  }
+  export interface Issue {
+    readonly message: string;
+  }
+}
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+  readonly "~standard": {
+    readonly version: 1;
+    readonly vendor: string;
+    readonly validate: (
+      value: unknown
+    ) => StandardSchemaV1.Result<Output> | Promise<StandardSchemaV1.Result<Output>>;
+  };
+}
+
+// Reusable middleware factory that drives validation exclusively through the
+// Standard Schema interface (i.e. `schema["~standard"].validate(...)`).
+function validate(
+  source: "body" | "query",
+  schema: StandardSchemaV1
+) {
+  return async (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ): Promise<void> => {
+    try {
+      const result = await schema["~standard"].validate(req[source]);
+      if (result.issues) {
+        res.status(400).json({
+          issues: Array.from(result.issues).map((issue: { message: string }) => ({
+            message: issue.message
+          }))
+        });
+        return;
+      }
+      // Success: replace `req[source]` with the validated/coerced value.
+      (req as unknown as Record<string, unknown>)[source] = result.value;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+const app = express();
+app.use(express.json());
+
+app.post("/users", validate("body", UserBodySchema), (req, res) => {
+  res.status(201).json(req.body);
+});
+
+app.get("/search", validate("query", SearchQuerySchema), (req, res) => {
+  res.status(200).json(req.query);
+});
+
+app.listen(3000, () => {
+  console.log("Server listening on port 3000");
+});
+root@6c78ebae-6327-4797-8ea3-b7042dcd8ca2:/home/user/myproject#

@@ -8,8 +8,8 @@ Daytona Volumes are FUSE-based mounts that provide shared, persistent file stora
 - Read the `run-id` from `/logs/artifacts/run-id` and use it for all resource naming.
 - Get-or-create a Daytona Volume whose name is `vol-<run-id>`.
 - Create a fresh sandbox named `vol-py-<run-id>` that mounts the volume at `/data`.
-- Inside the sandbox, write a marker file to the mounted volume containing the text `persistent <run-id>`, then read it back.
-- Record the marker contents and the total number of Daytona volumes visible to your account in a log file.
+- Inside the sandbox, write a marker file at `/data/marker.txt` on the mounted volume containing the text `persistent <run-id>`, then read it back.
+- Record the marker contents and the total number of Daytona volumes visible to your account in a log file at `/home/user/myproject/output.log`.
 - Clean up by deleting the sandbox after the work is complete.
 
 ## Implementation Hints
@@ -18,13 +18,7 @@ Daytona Volumes are FUSE-based mounts that provide shared, persistent file stora
 - Use the sandbox `process.exec(...)` (or equivalent) interface to run shell commands inside the sandbox.
 - Use `daytona.volume.list()` to enumerate volumes for the count.
 - Do not mock any Daytona API; this task must talk to the real Daytona service.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Log file: /home/user/myproject/output.log
-- A Daytona Volume named `vol-<run-id>` (where `<run-id>` is the value of the `/logs/artifacts/run-id`) must exist in the Daytona account after the task runs.
-- The log file must contain exactly two lines (order does not matter), each on its own line:
+- The log file at `/home/user/myproject/output.log` must contain exactly two lines (order does not matter):
   - `Marker: <content>` where `<content>` is the exact text read back from `/data/marker.txt` inside the sandbox (expected: `persistent <run-id>`).
   - `VolumeCount: <n>` where `<n>` is the integer count returned by `daytona.volume.list()` (must be a positive integer).
-- The sandbox `vol-py-<run-id>` does not need to still exist at verification time; it MUST be deleted by the task.
 

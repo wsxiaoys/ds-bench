@@ -1,0 +1,129 @@
+New Terminal Output:
+
+root@3d379b3e-ff64-4863-a6a6-ce1714e102dd:~# cat > /home/user/myproject/parse_pdf.py << 'PYEOF'
+> import os
+> import sys
+> import httpx
+> from pathlib import Path
+> from llama_cloud import LlamaCloud
+>
+> INPUT_PDF = "/home/user/myproject/input.pdf"
+> OUTPUT_DIR = Path("/home/user/myproject/output")
+> MARKDOWN_PATH = OUTPUT_DIR / "markdown.md"
+> IMAGES_DIR = OUTPUT_DIR / "images"
+> LOG_PATH = OUTPUT_DIR / "output.log"
+>
+>
+> def main():
+>     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+>     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+>
+>     client = LlamaCloud()
+>
+>     # 1. Upload the PDF as a parse source file
+>     with open(INPUT_PDF, "rb") as f:
+>         uploaded = client.files.create(file=f, purpose="parse")
+>     print(f"Uploaded file id: {uploaded.id}", flush=True)
+>
+>     # 2. Submit a parse job with screenshots and markdown, polling until done.
+>     result = client.parsing.parse(
+>         tier="agentic",
+>         version="latest",
+>         file_id=uploaded.id,
+>         expand=["markdown", "images_content_metadata"],
+>         output_options={"images_to_save": ["screenshot"]},
+>     )
+>
+>     print(f"Parse job id: {result.job.id}", flush=True)
+>     print(f"Parse job status: {result.job.status}", flush=True)
+>
+>     # 3. Save the markdown text (concatenate per-page markdown).
+>     md_pages = []
+>     if result.markdown is not None:
+>         for page in result.markdown.pages:
+>             if getattr(page, "success", False):
+>                 md_pages.append(page.markdown)
+>             else:
+>                 print(f"  markdown page {getattr(page, 'page_number', '?')} failed: {getattr(page, 'error', '')}", flush=True)
+>     markdown_text = "\n\n".join(md_pages)
+>     MARKDOWN_PATH.write_text(markdown_text, encoding="utf-8")
+>
+>     # 4. Save the per-page screenshots. Match image metadata page by page.
+>     page_screenshots = []
+>     if result.images_content_metadata is not None:
+>         for img in result.images_content_metadata.images:
+>             if getattr(img, "category", None) == "screenshot":
+>                 page_screenshots.append(img)
+>
+>     # Sort screenshots by page number inferred from bbox/filename.
+>     # The filename is typically something like 'image_0.png', but we need to know
+>     # the page number. The ImagesContentMetadataImage doesn't directly carry a
+>     # page number; it carries a bbox. However, LlamaParse typically produces
+>     # screenshots in document order with filenames 'image_<n>.png'. We rely on
+>     # the order they come back, which should be page order for screenshots.
+>     page_screenshots.sort(key=lambda img: img.index)
+>
+>     image_count = 0
+>     with httpx.Client(timeout=60.0) as http:
+>         for page_idx, img in enumerate(page_screenshots, start=1):
+>             if not img.presigned_url:
+>                 print(f"  No presigned_url for {img.filename}", flush=True)
+>                 continue
+>             resp = http.get(img.presigned_url)
+>             resp.raise_for_status()
+>             out_path = IMAGES_DIR / f"page_{page_idx}.png"
+>             out_path.write_bytes(resp.content)
+>             image_count += 1
+>             print(f"  Wrote {out_path} ({len(resp.content)} bytes)", flush=True)
+>
+>     # 5. Write the log file.
+>     md_chars = len(markdown_text)
+>     log_lines = [
+>         f"Parse job ID: {result.job.id}",
+>         f"Markdown chars: {md_chars}",
+>         f"Image count: {image_count}",
+>     ]
+>     LOG_PATH.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+>     print(f"Wrote log to {LOG_PATH}", flush=True)
+>     print("DONE", flush=True)
+>
+>
+> if __name__ == "__main__":
+>     try:
+>         main()
+>     except Exception as e:
+>         print(f"ERROR: {e}", file=sys.stderr, flush=True)
+>         raise
+> PYEOF
+root@3d379b3e-ff64-4863-a6a6-ce1714e102dd:~# cat /home/user/myproject/parse_pdf.py | head -30
+import os
+import sys
+import httpx
+from pathlib import Path
+from llama_cloud import LlamaCloud
+
+INPUT_PDF = "/home/user/myproject/input.pdf"
+OUTPUT_DIR = Path("/home/user/myproject/output")
+MARKDOWN_PATH = OUTPUT_DIR / "markdown.md"
+IMAGES_DIR = OUTPUT_DIR / "images"
+LOG_PATH = OUTPUT_DIR / "output.log"
+
+
+def main():
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+    client = LlamaCloud()
+
+    # 1. Upload the PDF as a parse source file
+    with open(INPUT_PDF, "rb") as f:
+        uploaded = client.files.create(file=f, purpose="parse")
+    print(f"Uploaded file id: {uploaded.id}", flush=True)
+
+    # 2. Submit a parse job with screenshots and markdown, polling until done.
+    result = client.parsing.parse(
+        tier="agentic",
+        version="latest",
+        file_id=uploaded.id,
+        expand=["markdown", "images_content_metadata"],
+root@3d379b3e-ff64-4863-a6a6-ce1714e102dd:~#

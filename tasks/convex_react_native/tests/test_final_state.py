@@ -20,8 +20,8 @@ def start_app(xprocess):
         args = ["npx", "expo", "start", "--web", "--port", "8081"]
         env = os.environ.copy()
         env["EXPO_PUBLIC_CONVEX_URL"] = env.get("CONVEX_URL", "")
-        env["EXPO_PUBLIC_RUN_ID"] = env.get("ZEALT_RUN_ID", "test-run-id")
-        
+        env["EXPO_PUBLIC_RUN_ID"] = open("/logs/artifacts/run-id").read().strip()
+
         popen_kwargs = {
             "cwd": PROJECT_DIR,
             "text": True,
@@ -33,13 +33,36 @@ def start_app(xprocess):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 return s.connect_ex(("localhost", 8081)) == 0
 
-    xprocess.ensure(Starter.name, Starter)
-    yield
     info = xprocess.getinfo(Starter.name)
+    printed_log_lines = 0  # track how many lines have already been printed
+
+    def capture_logs(tag):
+        nonlocal printed_log_lines
+        with open(info.logpath, "r") as f:
+            all_lines = f.readlines()
+        new_lines = all_lines[printed_log_lines:]
+        skipped = printed_log_lines
+        printed_log_lines = len(all_lines)
+        print(f"============================== [{tag}: Begin] Captured {Starter.name} logfile ==============================")
+        if skipped > 0:
+            print(f"(skipped {skipped} already-printed lines)")
+        print("".join(new_lines))
+        print(f"============================== [{tag}: End  ] Captured {Starter.name} logfile ==============================")
+
+    started = False
+    try:
+        # ensure() starts the process and blocks until startup_check is True
+        xprocess.ensure(Starter.name, Starter)
+        started = True
+    finally:
+        capture_logs("STARTED" if started else "FAILED")
+
+    yield
+    capture_logs("TEARDOWN")
     info.terminate()
 
 def test_reactive_list(start_app, browser_verifier):
-    run_id = os.environ.get("ZEALT_RUN_ID", "test-run-id")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     task_text = f"Test Task {run_id}"
     reason = "The web application should load, allow adding a task, and reactively display the newly added task."
     truth = f"""

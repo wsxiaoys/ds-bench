@@ -1,0 +1,82 @@
+New Terminal Output:
+
+root@83fdef26-f5a1-4c44-abdc-b2bba8aff942:/home/user/myproject# echo '=== src/emit.ts ==='; cat src/emit.ts; echo '=== cli.ts ==='; cat cli.ts
+=== src/emit.ts ===
+import { type } from "arktype";
+
+// Define the payload object schema: { kind: string, data: unknown }
+const payloadSchema = type({ kind: "string", data: "unknown" });
+
+// Optional payload: payload object OR undefined
+const optionalPayload = payloadSchema.or("undefined");
+
+// Define emit as a type.fn-validated function with tuple-shaped parameters:
+//   [eventName, timestamp, payload?, ...tags]
+// where:
+//   - eventName: alphanumeric string, length 1..50
+//   - timestamp: non-negative integer
+//   - payload: optional object { kind: string, data: unknown }
+//   - tags: variadic strings, each with length 1..30
+export const emit = type.fn(
+  "1 <= string.alphanumeric <= 50",
+  "number % 1 >= 0",
+  [optionalPayload, "?"],
+  "...",
+  "1 <= string <= 30[]"
+)(
+  (eventName: string, timestamp: number, payload?: { kind: string; data: unknown }, ...tags: string[]) => {
+    // Build the event object, omitting payload when it is not provided.
+    const event: { name: string; timestamp: number; payload?: { kind: string; data: unknown }; tags: string[] } = {
+      name: eventName,
+      timestamp,
+      tags,
+    };
+    if (payload !== undefined) {
+      event.payload = payload;
+    }
+    return { ok: true, event };
+  },
+);
+=== cli.ts ===
+import { TraversalError } from "arktype";
+import { emit } from "./src/emit.js";
+
+async function main(): Promise<void> {
+  // Read all stdin
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (raw.length === 0) return;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    process.stdout.write(`ERR ${(e as Error).message}\n`);
+    return;
+  }
+
+  const args = (parsed as { args?: unknown }).args;
+  if (!Array.isArray(args)) {
+    process.stdout.write(`ERR args must be an array\n`);
+    return;
+  }
+
+  try {
+    // Call emit by spreading the args array, so each element is validated
+    // as a separate parameter by the tuple schema.
+    const result = (emit as (...a: unknown[]) => unknown)(...args);
+    process.stdout.write(`OK ${JSON.stringify(result)}\n`);
+  } catch (e) {
+    if (e instanceof TraversalError) {
+      process.stdout.write(`ERR ${e.message}\n`);
+    } else {
+      process.stdout.write(`ERR ${(e as Error).message}\n`);
+    }
+  }
+}
+
+main();
+root@83fdef26-f5a1-4c44-abdc-b2bba8aff942:/home/user/myproject#

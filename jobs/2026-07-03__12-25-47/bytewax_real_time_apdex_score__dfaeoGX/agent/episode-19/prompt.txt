@@ -1,0 +1,80 @@
+New Terminal Output:
+
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex# cat > /tmp/test_debug.py << 'EOF'
+> import json
+> import os
+> from datetime import datetime, timedelta, timezone
+> from bytewax.dataflow import Dataflow
+> import bytewax.operators as op
+> from bytewax.operators.windowing import EventClock, TumblingWindower, fold_window
+> from bytewax.testing import TestingSource, run_main
+>
+> INPUT_PATH = "input.jsonl"
+> OUTPUT_PATH = "output.jsonl"
+> WINDOW_LENGTH = timedelta(seconds=10)
+>
+> class Acc:
+>     __slots__ = ("s", "t", "f")
+>     def __init__(self):
+>         self.s = self.t = self.f = 0
+>     def add(self, rt):
+>         if rt <= 500: self.s += 1
+>         elif rt <= 2000: self.t += 1
+>         else: self.f += 1
+>         return self
+>     def merge(self, o):
+>         self.s += o.s; self.t += o.t; self.f += o.f
+>         return self
+>
+> def builder(): return Acc()
+> def folder(a, v): return a.add(v[1])
+> def merger(a, b): return a.merge(b)
+>
+> flow = Dataflow("d")
+> events = []
+> with open(INPUT_PATH) as fh:
+>     for line in fh:
+>         line = line.strip()
+>         if not line: continue
+>         r = json.loads(line)
+>         ts = datetime.fromisoformat(line[line.index('"timestamp"'):line.index(',')].split(': ',1)[1].strip('"'))
+>         # Simpler parse:
+>         ts = datetime.fromisoformat(r["timestamp"].replace("Z", "+00:00"))
+>         if ts.tzinfo is None: ts = ts.replace(tzinfo=timezone.utc)
+>         events.append((r["service"], int(r["response_time_ms"]), ts))
+> print("events:", events)
+>
+> up = op.input("in", flow, TestingSource(events))
+> keyed = op.key_on("k", up, lambda x: x[0])
+> clock = EventClock(ts_getter=lambda x: x[2], wait_for_system_duration=timedelta(0))
+> epoch = datetime.fromtimestamp(0, tz=timezone.utc)
+> align = events[0][2]
+> secs = int((align - epoch).total_seconds())
+> snapped = secs - (secs % 10)
+> align = epoch + timedelta(seconds=snapped)
+> win = TumblingWindower(length=WINDOW_LENGTH, align_to=align)
+> windowed = fold_window("w", keyed, clock, win, builder=builder, folder=folder, merger=merger)
+>
+> op.inspect("down", windowed.down)
+> op.inspect("meta", windowed.meta)
+>
+> run_main(flow)
+> EOF
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex# python /tmp/test_debug.py 2>&1 | head -50
+events: [('api', 100, datetime.datetime(2023, 1, 1, 12, 0, tzinfo=datetime.timezone.utc)), ('api', 600, datetime.datetime(2023, 1, 1, 12, 0, 2, tzinfo=datetime.
+timezone.utc)), ('api', 2500, datetime.datetime(2023, 1, 1, 12, 0, 5, tzinfo=datetime.timezone.utc)), ('api', 300, datetime.datetime(2023, 1, 1, 12, 0, 11, tzin
+fo=datetime.timezone.utc)), ('web', 400, datetime.datetime(2023, 1, 1, 12, 0, 12, tzinfo=datetime.timezone.utc)), ('web', 1500, datetime.datetime(2023, 1, 1, 12
+, 0, 14, tzinfo=datetime.timezone.utc)), ('api', 50, datetime.datetime(2023, 1, 1, 12, 0, 25, tzinfo=datetime.timezone.utc))]
+d.down: ('api', (0, <__main__.Acc object at 0x746c5b8ad900>))
+d.meta: ('api', (0, WindowMetadata(open_time=datetime.datetime(2023, 1, 1, 12, 0, tzinfo=datetime.timezone.utc), close_time=datetime.datetime(2023, 1, 1, 12, 0,
+ 10, tzinfo=datetime.timezone.utc), merged_ids=set())))
+d.down: ('api', (1, <__main__.Acc object at 0x746c5b8ad980>))
+d.meta: ('api', (1, WindowMetadata(open_time=datetime.datetime(2023, 1, 1, 12, 0, 10, tzinfo=datetime.timezone.utc), close_time=datetime.datetime(2023, 1, 1, 12
+, 0, 20, tzinfo=datetime.timezone.utc), merged_ids=set())))
+d.down: ('api', (2, <__main__.Acc object at 0x746c5b8adc80>))
+d.down: ('web', (1, <__main__.Acc object at 0x746c5b8adb00>))
+d.meta: ('api', (2, WindowMetadata(open_time=datetime.datetime(2023, 1, 1, 12, 0, 20, tzinfo=datetime.timezone.utc), close_time=datetime.datetime(2023, 1, 1, 12
+, 0, 30, tzinfo=datetime.timezone.utc), merged_ids=set())))
+d.meta: ('web', (1, WindowMetadata(open_time=datetime.datetime(2023, 1, 1, 12, 0, 10, tzinfo=datetime.timezone.utc), close_time=datetime.datetime(2023, 1, 1, 12
+, 0, 20, tzinfo=datetime.timezone.utc), merged_ids=set())))
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex#

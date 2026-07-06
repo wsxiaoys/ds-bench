@@ -29,28 +29,9 @@ The complete Android project must continue to compile cleanly through the Gradle
 - Use `PluginCall.getString("color")` to read the input color and `call.resolve(...)` (or `call.reject(...)` on bad input) for the result.
 - To change the navigation bar color you need an `int` color value. `android.graphics.Color.parseColor(String)` accepts a `#RRGGBB` string. The window method `setNavigationBarColor(int)` lives on the `Activity`'s `Window` (i.e. `getActivity().getWindow().setNavigationBarColor(...)`).
 - Window operations affect the UI; wrap the call in `getActivity().runOnUiThread(...)` so it is dispatched on the main thread.
-- The plugin's Java package must match the application package (`com.example.myapp`); place the source under `android/app/src/main/java/com/example/myapp/` so the existing Gradle source set picks it up.
+- The plugin's Java package must match the application package (`com.example.myapp`); implement the `NavBarPlugin` class in a file named `NavBarPlugin.java` under `android/app/src/main/java/com/example/myapp/` so the existing Gradle source set picks it up.
 - Register the plugin with `registerPlugin(NavBarPlugin.class)` inside `MainActivity.onCreate(Bundle savedInstanceState)` before the call to `super.onCreate(savedInstanceState)`.
 - For the TypeScript side, the `Style` enum exposes `Style.Dark` (light text for dark backgrounds) and `Style.Light` (dark text for light backgrounds). Pair each mode with a sensible hex background color for both the status bar (`StatusBar.setBackgroundColor`) and the navigation bar (`NavBar.setColor`).
 - The web frontend already has `@capacitor/core`, `@capacitor/status-bar`, and `@capacitor/app` installed under `node_modules`; you do not need to install additional packages.
-- The Android SDK, JDK, and the Gradle wrapper are pre-installed and pre-warmed inside the project; running `./gradlew` from `/home/user/myapp/android` will compile the project. Use the `--offline` flag whenever possible to avoid re-downloading dependencies.
-
-## Acceptance Criteria
-- Project path: `/home/user/myapp`
-- The Android project at `/home/user/myapp/android` must build successfully via:
-  - `cd /home/user/myapp/android && ./gradlew :app:assembleDebug --offline`
-- A Java source file implementing the plugin must exist at:
-  - `/home/user/myapp/android/app/src/main/java/com/example/myapp/NavBarPlugin.java`
-  - It must declare `package com.example.myapp;`.
-  - It must import `com.getcapacitor.Plugin`, `com.getcapacitor.PluginCall`, `com.getcapacitor.PluginMethod`, and `com.getcapacitor.annotation.CapacitorPlugin`.
-  - It must annotate the plugin class with `@CapacitorPlugin(name = "NavBar")`.
-  - It must declare a class named `NavBarPlugin` that `extends Plugin`.
-  - It must declare a single `@PluginMethod`-annotated method (with or without parentheses) named `setColor` that takes a `PluginCall` argument, reads the `color` string with `call.getString("color")`, calls `setNavigationBarColor(...)` on the hosting `Activity`'s `Window`, and resolves the call with `call.resolve(...)`.
-- `MainActivity` at `/home/user/myapp/android/app/src/main/java/com/example/myapp/MainActivity.java` must contain a `registerPlugin(NavBarPlugin.class)` call inside `onCreate(Bundle savedInstanceState)`.
-- A TypeScript module must exist at `/home/user/myapp/src/theme.ts` that:
-  - Imports `StatusBar` and `Style` from `'@capacitor/status-bar'`.
-  - Imports `App` from `'@capacitor/app'` and references both `App.getInfo` and `StatusBar.getInfo` from within the module.
-  - Imports `registerPlugin` from `'@capacitor/core'` and registers a plugin with the exact string literal `"NavBar"` (single or double quotes acceptable).
-  - Exports a named async function `applyTheme` that accepts a mode argument and references `Style.Dark`, `Style.Light`, `StatusBar.setStyle`, `StatusBar.setBackgroundColor`, and the custom `setColor` method of the registered `NavBar` plugin.
-- The compiled debug APK produced at `/home/user/myapp/android/app/build/outputs/apk/debug/app-debug.apk` must contain the `NavBarPlugin` class in its DEX (verifiable by listing classes inside the APK).
+- The Android SDK, JDK, and the Gradle wrapper are pre-installed and pre-warmed inside the project; running `./gradlew :app:assembleDebug --offline` from `/home/user/myapp/android` will compile the project. Use the `--offline` flag whenever possible to avoid re-downloading dependencies.
 

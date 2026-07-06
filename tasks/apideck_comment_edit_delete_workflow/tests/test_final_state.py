@@ -53,7 +53,7 @@ def _get_paginated(url: str) -> list:
 
 @pytest.fixture(scope="session")
 def run_id() -> str:
-    return _env("ZEALT_RUN_ID")
+    return open("/logs/artifacts/run-id").read().strip()
 
 
 @pytest.fixture(scope="session")

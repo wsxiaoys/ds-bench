@@ -6,52 +6,29 @@ You are building a small Godot 4 game module that demonstrates several core Godo
 Godot 4 (>= 4.3) is installed in the environment as the headless binary `godot`.
 
 ## Requirements
-- Build a 2D Godot 4 game with a `Player`, multiple `Coin`s, a `HUD` overlay, and a `Main` scene wiring them together.
-- The player must move with the arrow keys, controlled via `CharacterBody2D` and `move_and_slide()`.
-- Each coin must be an `Area2D` that, when its body is entered by the player, increments the inventory and removes itself.
-- The HUD must show the current coin count, and update in response to inventory signals (not by polling).
-- A global autoload singleton `Inventory` must hold the count and expose a small API.
-- The inventory must be persisted to disk (under `user://`) on application quit and restored on startup, so the count survives restarts.
+- **Project Location**: Create a valid Godot 4 project at `/home/user/coin_collector` (containing a `project.godot` at the root).
+- **File Layout & Scene Structure**:
+  - `project.godot`
+  - `autoloads/Inventory.gd`: Script for the global autoload singleton.
+  - `scenes/Player.tscn`: A scene with a root node of type `CharacterBody2D` named `Player` and an attached GDScript.
+  - `scenes/Coin.tscn`: A scene with a root node of type `Area2D` named `Coin` and an attached GDScript.
+  - `scenes/HUD.tscn`: A scene with a root node of type `CanvasLayer` named `HUD` and an attached GDScript.
+  - `scenes/Main.tscn`: A scene that instantiates the `Player`, the `HUD`, and at least one `Coin`.
+- **Player Movement**: The player must move with the arrow keys, controlled via `CharacterBody2D` and `move_and_slide()` inside `_physics_process`. Movement responds to standard `ui_left`/`ui_right`/`ui_up`/`ui_down` actions via `Input.get_axis`.
+- **Coin Collection**: Each coin must be an `Area2D` that declares a custom `signal collected`. When its `body_entered` signal is triggered by the player, the handler must call `Inventory.add_coin()` and then `queue_free()` to remove the coin.
+- **HUD Overlay**: The HUD must contain a `Label` child node whose text is updated to reflect the current coin count whenever `Inventory.coin_changed` is emitted (not by polling in `_process`).
+- **Inventory Autoload API**:
+  - Register the `Inventory` autoload singleton in `project.godot` under the `[autoload]` section as `Inventory="*res://autoloads/Inventory.gd"`.
+  - The `Inventory` script must implement the following API:
+    - `signal coin_changed(new_count: int)`: Emitted whenever the coin count changes (including when loaded).
+    - `add_coin()`: Method that increments the stored count by 1 and emits `coin_changed` with the new count.
+    - `get_count() -> int`: Method that returns the current coin count.
+    - `save()`: Method that writes the current count to `user://save.json` as JSON (an object containing the count field, e.g., `{"count": <int>}`).
+    - `load()`: Method that reads `user://save.json` (if present), restores the count, and emits `coin_changed` with the restored count.
+    - **Persistence**: On startup, the autoload must restore the count from `user://save.json` (by calling `load()`). On application quit (e.g., via `NOTIFICATION_WM_CLOSE_REQUEST` or equivalent quit handling), it must save the current count (by calling `save()`).
 
 ## Implementation Hints
 - Use Godot 4 scenes (`.tscn`) and GDScript (`.gd`). Stick to GDScript; do not use C# or GDExtension.
-- Register the `Inventory` autoload in `project.godot` under the `[autoload]` section using `Inventory="*res://autoloads/Inventory.gd"`.
 - Use `Input.get_axis("ui_left", "ui_right")` / `Input.get_axis("ui_up", "ui_down")` for movement, and `move_and_slide()` in `_physics_process`.
-- Use custom signals such as `signal coin_changed(new_count: int)` on the singleton and `signal collected` on the coin.
 - Use `FileAccess` with `JSON.stringify` / `JSON.parse_string` to persist to `user://save.json`.
-- Hook coin removal via the `body_entered` signal of the `Area2D`, calling the autoload API and then `queue_free()`.
-- Godot will run headless during verification. Make sure the project loads without errors using `godot --headless --path <project> --quit`.
-
-## Acceptance Criteria
-- Project path: /home/user/coin_collector
-- The project must be a valid Godot 4 project (contains a `project.godot` at the project root).
-- File layout (relative to project root):
-  - `project.godot`
-  - `autoloads/Inventory.gd`
-  - `scenes/Player.tscn` (plus an attached script)
-  - `scenes/Coin.tscn` (plus an attached script)
-  - `scenes/HUD.tscn` (plus an attached script)
-  - `scenes/Main.tscn`
-- Autoload: `project.godot` must register the autoload as `Inventory="*res://autoloads/Inventory.gd"` in the `[autoload]` section.
-- `Inventory` singleton API (GDScript):
-  - Method `add_coin()` increments the stored count by 1 and emits `coin_changed` with the new count.
-  - Method `get_count() -> int` returns the current count.
-  - Method `save()` writes the current count to `user://save.json` as JSON (an object containing the count field, e.g. `{ "count": <int> }`).
-  - Method `load()` reads `user://save.json` (if present), restores the count, and emits `coin_changed` with the restored count.
-  - Signal `coin_changed(new_count: int)`.
-  - Persistence: on startup, the autoload restores the count from `user://save.json`; on quit (`NOTIFICATION_WM_CLOSE_REQUEST` or equivalent quit handling), it saves the current count.
-- `Player.tscn`:
-  - Root node is a `CharacterBody2D` named `Player` with an attached GDScript.
-  - The script defines `_physics_process` and calls `move_and_slide()`.
-  - Movement responds to the standard `ui_left`/`ui_right`/`ui_up`/`ui_down` actions via `Input.get_axis`.
-- `Coin.tscn`:
-  - Root node is an `Area2D` named `Coin` with an attached GDScript.
-  - The script declares a custom `signal collected`.
-  - When a body enters the coin (`body_entered`), the handler calls `Inventory.add_coin()` and then `queue_free()`s the coin.
-- `HUD.tscn`:
-  - Root node is a `CanvasLayer` named `HUD`.
-  - Contains a `Label` whose text is updated to reflect the current coin count whenever `Inventory.coin_changed` is emitted (not by polling in `_process`).
-- `Main.tscn`:
-  - Instantiates the `Player`, the `HUD`, and at least one `Coin`.
-- The project must load cleanly under `godot --headless --path /home/user/coin_collector --quit` (exit code 0, no script parse errors).
-
+- Godot will run headless during verification. Make sure the project loads cleanly without errors and exits with code 0 using `godot --headless --path /home/user/coin_collector --quit` (no script parse errors).

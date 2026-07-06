@@ -1,0 +1,59 @@
+New Terminal Output:
+
+root@55045151-16e7-43aa-99ff-9ea571f30b2b:/home/user/myproject# cat main.go
+package main
+
+import (
+"log"
+
+"github.com/pocketbase/pocketbase"
+"github.com/pocketbase/pocketbase/core"
+"github.com/pocketbase/pocketbase/plugins/migratecmd"
+
+_ "myproject/migrations"
+)
+
+func main() {
+app := pocketbase.New()
+
+migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{
+Automigrate: false,
+})
+
+app.OnRecordCreateRequest("withdrawals").BindFunc(func(e *core.RecordRequestEvent) error {
+walletId := e.Record.GetString("wallet")
+amount := e.Record.GetFloat("amount")
+
+if walletId == "" || amount <= 0 {
+return e.BadRequestError("Invalid withdrawal payload", nil)
+}
+
+return app.RunInTransaction(func(txApp core.App) error {
+wallet, err := txApp.FindRecordById("wallets", walletId)
+if err != nil {
+return e.BadRequestError("Wallet not found", nil)
+}
+
+balance := wallet.GetFloat("balance")
+if balance < amount {
+return e.BadRequestError("Insufficient funds", nil)
+}
+
+wallet.Set("balance", balance-amount)
+if err := txApp.Save(wallet); err != nil {
+return err
+}
+
+// Repoint e.App at the transactional app so the default save chain
+// (triggered by e.Next()) runs inside the same transaction.
+e.App = txApp
+
+return e.Next()
+})
+})
+
+if err := app.Start(); err != nil {
+log.Fatal(err)
+}
+}
+root@55045151-16e7-43aa-99ff-9ea571f30b2b:/home/user/myproject#

@@ -11,8 +11,8 @@ OUTPUT_LOG = os.path.join(PROJECT_DIR, "output.log")
 
 @pytest.fixture(scope="session")
 def run_id():
-    value = os.environ.get("ZEALT_RUN_ID")
-    assert value, "ZEALT_RUN_ID environment variable must be set for verification."
+    value = open("/logs/artifacts/run-id").read().strip()
+    assert value, "RUN_ID must be set for verification."
     return value
 
 

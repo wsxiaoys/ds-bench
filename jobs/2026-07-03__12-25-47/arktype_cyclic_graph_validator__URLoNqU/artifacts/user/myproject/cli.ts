@@ -1,0 +1,38 @@
+import { validateGraph } from "./src/validator.js";
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function main(): Promise<void> {
+  const raw = await readStdin();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stdout.write(`INVALID: malformed JSON input: ${msg}\n`);
+    return;
+  }
+
+  if (typeof parsed !== "object" || parsed === null || !("graph" in parsed)) {
+    process.stdout.write("INVALID: input must be an object with a 'graph' property\n");
+    return;
+  }
+
+  const payload = parsed as { graph: unknown };
+  try {
+    const graph = validateGraph(payload.graph);
+    process.stdout.write("VALID\n");
+    process.stdout.write(JSON.stringify(graph) + "\n");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stdout.write(`INVALID: ${msg}\n`);
+  }
+}
+
+main();

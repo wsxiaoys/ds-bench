@@ -23,11 +23,11 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 
-# Prepare /workspace with a synthetic ~10s mono broadband signal at 22050 Hz.
+# Prepare /home/user with a synthetic ~10s mono broadband signal at 22050 Hz.
 # The signal mixes a log-frequency sweep across the full audible range with
 # band-limited noise so that all three transforms (STFT/CQT/VQT) have
 # non-trivial energy across their respective frequency grids.
-RUN mkdir -p /workspace && \
+RUN mkdir -p /home/user && \
     python3 - <<'PY' && \
     test -s /home/user/input.wav
 import numpy as np

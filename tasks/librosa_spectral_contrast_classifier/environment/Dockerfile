@@ -23,7 +23,7 @@ RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln 
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 RUN mkdir -p /home/user/train/speech /home/user/train/music /home/user/test && \
-    chmod -R 0755 /workspace
+    chmod -R 0755 /home/user
 
 # Pre-bake the labeled training set and the unlabeled test set into the image.
 # We use librosa's built-in example clips:

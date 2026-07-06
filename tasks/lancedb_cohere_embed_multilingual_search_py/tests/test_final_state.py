@@ -16,8 +16,8 @@ SOLUTION_PATH = os.path.join(PROJECT_DIR, "solution.py")
 
 
 def _table_name():
-    run_id = os.environ.get("ZEALT_RUN_ID", "").strip()
-    assert run_id, "ZEALT_RUN_ID must be set in the verifier environment."
+    run_id = open("/logs/artifacts/run-id").read().strip().strip()
+    assert run_id, "RUN_ID must be set in the verifier."
     return f"multilingual_{run_id}"
 
 

@@ -13,7 +13,7 @@ You will:
 - Read the current `run_id` from `/logs/artifacts/run-id` and trim trailing whitespace.
 - Derive the bucket name as `harbor-interop-${run_id}` and use that name verbatim everywhere. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
 - Step 1 (CLI): create the bucket with snapshots enabled in a single `tigris buckets create` invocation that includes `--enable-snapshots`.
-- Step 2 (CLI): set the object expiration TTL on that bucket to exactly 7 days using `tigris buckets set-ttl <bucket> --days 7`.
+- Step 2 (CLI): set the object expiration TTL on that bucket to exactly 7 days using.
 - Step 3 (SDK): create `/home/user/tigris-task/index.ts` that imports from `@tigrisdata/storage` and uses the `put` function to upload an object whose key is `manifest.json` and whose body is the literal JSON string `{"created_by":"cli","modified_by":"sdk","run":"<run_id>"}` (with `<run_id>` substituted from `/logs/artifacts/run-id`). The object's Content-Type should be `application/json`. The upload must target the new bucket via `config: { bucket: bucketName }`. Run the program with `tsx /home/user/tigris-task/index.ts`.
 - Step 4 (CLI): list the bucket contents with `tigris ls t3://harbor-interop-${run_id}/` and write stdout into `/home/user/tigris-task/bucket-listing.txt`. The listing file MUST mention the `manifest.json` key.
 
@@ -29,28 +29,7 @@ You will:
    tigris buckets create "$BUCKET" --enable-snapshots
    ```
 4. Apply a 7-day object expiration TTL:
-   ```bash
-   tigris buckets set-ttl "$BUCKET" --days 7
-   ```
-5. Create `/home/user/tigris-task/index.ts`. The project is already initialized — `package.json` declares `@tigrisdata/storage` and `tsx`, and `node_modules/` is pre-populated. Example outline:
-   ```typescript
-   import { readFile } from "node:fs/promises";
-   import { put } from "@tigrisdata/storage";
-
-   const runId = (await readFile("/logs/artifacts/run-id", "utf-8")).trim();
-   const bucket = `harbor-interop-${runId}`;
-   const body = JSON.stringify({ created_by: "cli", modified_by: "sdk", run: runId });
-
-   const { data, error } = await put("manifest.json", body, {
-     contentType: "application/json",
-     config: { bucket },
-   });
-   if (error) {
-     console.error("upload failed:", error);
-     process.exit(1);
-   }
-   console.log("uploaded", data);
-   ```
+5. Create `/home/user/tigris-task/index.ts`. The project is already initialized — `package.json` declares `@tigrisdata/storage` and `tsx`, and `node_modules/` is pre-populated.
 6. Run the SDK uploader:
    ```bash
    tsx /home/user/tigris-task/index.ts
@@ -60,18 +39,9 @@ You will:
    tigris ls "t3://${BUCKET}/" > /home/user/tigris-task/bucket-listing.txt
    ```
 
-## Constraints
-- Project path: `/home/user/tigris-task`
-- Source file: `/home/user/tigris-task/index.ts`
-- Listing file: `/home/user/tigris-task/bucket-listing.txt`
-- Bucket name MUST be `harbor-interop-${run_id}` (no other prefix or suffix), with `${run_id}` taken verbatim from `/logs/artifacts/run-id`. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the bucket name by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
-- Snapshots MUST be enabled at creation (`--enable-snapshots` on `tigris buckets create`). They cannot be enabled on an existing bucket.
-- The bucket TTL MUST be exactly 7 days (`tigris buckets set-ttl <bucket> --days 7`).
-- The uploaded object body MUST be exactly `{"created_by":"cli","modified_by":"sdk","run":"<run_id>"}` (no extra whitespace, key ordering as written here), with `<run_id>` substituted.
-- The CLI is pre-authenticated via the AWS-compatible environment bridge in `/etc/profile.d/tigris-auth.sh`. From a login shell the CLI works directly; from a non-login shell, source that file first or pass `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION=auto` inline.
-- Use the Tigris CLI (`tigris`) for bucket creation, TTL configuration, and final listing. Use the `@tigrisdata/storage` SDK from TypeScript for the manifest upload. Do not mix or substitute these (no AWS CLI, no raw HTTP, no `tigris cp`/`tigris put` for the manifest upload, no SDK for bucket creation/TTL).
+## Implementation Hints
+- The Tigris CLI is pre-authenticated via the AWS-compatible environment bridge in `/etc/profile.d/tigris-auth.sh`. From a login shell the CLI works directly; from a non-login shell, source that file first or pass `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION=auto` inline.
 - Do not hardcode credentials.
-- Leave the bucket and `manifest.json` in place after completion — the verifier inspects them and then cleans up.
 
 ## Integrations
 - Tigris Object Storage (real `https://t3.storage.dev` endpoint via the Tigris CLI and `@tigrisdata/storage` SDK).

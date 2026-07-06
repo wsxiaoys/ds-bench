@@ -1,0 +1,85 @@
+New Terminal Output:
+
+root@e369da02-1477-4415-b2ba-ee2ffac342a5:/home/user/myproject# cat /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/apis/record_auth_with_password.go
+| head -80
+package apis
+
+import (
+        "database/sql"
+        "errors"
+        "slices"
+        "strings"
+
+        validation "github.com/go-ozzo/ozzo-validation/v4"
+        "github.com/go-ozzo/ozzo-validation/v4/is"
+        "github.com/pocketbase/dbx"
+        "github.com/pocketbase/pocketbase/core"
+        "github.com/pocketbase/pocketbase/tools/dbutils"
+        "github.com/pocketbase/pocketbase/tools/list"
+)
+
+func recordAuthWithPassword(e *core.RequestEvent) error {
+        collection, err := findAuthCollection(e)
+        if err != nil {
+                return err
+        }
+
+        if !collection.PasswordAuth.Enabled {
+                return e.ForbiddenError("The collection is not configured to allow password authentication.", nil)
+        }
+
+        form := &authWithPasswordForm{}
+        if err = e.BindBody(form); err != nil {
+                return firstApiError(err, e.BadRequestError("An error occurred while loading the submitted data.", err))
+        }
+        if err = form.validate(collection); err != nil {
+                return firstApiError(err, e.BadRequestError("An error occurred while validating the submitted data.", err))
+        }
+
+        e.Set(core.RequestEventKeyInfoContext, core.RequestInfoContextPasswordAuth)
+
+        var foundRecord *core.Record
+        var foundErr error
+
+        if form.IdentityField != "" {
+                foundRecord, foundErr = findRecordByIdentityField(e.App, collection, form.IdentityField, form.Identity)
+        } else {
+                identityFields := collection.PasswordAuth.IdentityFields
+
+                // @todo consider removing with the stable release or moving it in the collection save
+                //
+                // prioritize email lookup to minimize breaking changes with earlier versions
+                if len(identityFields) > 1 && identityFields[0] != core.FieldNameEmail {
+                        identityFields = slices.Clone(identityFields)
+                        slices.SortStableFunc(identityFields, func(a, b string) int {
+                                if a == "email" {
+                                        return -1
+                                }
+                                if b == "email" {
+                                        return 1
+                                }
+                                return 0
+                        })
+                }
+
+                for _, name := range identityFields {
+                        if name == core.FieldNameEmail && is.EmailFormat.Validate(form.Identity) != nil {
+                                continue // no need to query the database if we know that the submitted value is not an email
+                        }
+
+                        foundRecord, foundErr = findRecordByIdentityField(e.App, collection, name, form.Identity)
+                        if foundErr == nil {
+                                break
+                        }
+                }
+        }
+
+        // ignore not found errors to allow custom record find implementations
+        if foundErr != nil && !errors.Is(foundErr, sql.ErrNoRows) {
+                return e.InternalServerError("", foundErr)
+        }
+
+        event := new(core.RecordAuthWithPasswordRequestEvent)
+        event.RequestEvent = e
+        event.Collection = collection
+root@e369da02-1477-4415-b2ba-ee2ffac342a5:/home/user/myproject#

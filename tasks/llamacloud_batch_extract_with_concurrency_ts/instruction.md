@@ -33,22 +33,10 @@ The pipeline must scale to many files without overwhelming the LlamaCloud API. Y
 
 ## Implementation Hints
 - Authenticate the client with the `LLAMA_CLOUD_API_KEY` environment variable (already set in the environment).
+- The TypeScript source must import from `@llamaindex/llama-cloud` (the official LlamaCloud v2 TS SDK) and `zod` to define the extraction schema.
 - Upload each file with `client.files.create({ file: fs.createReadStream(path), purpose: 'extract' })` to get a `dfl-...` file id.
 - Create extract jobs with `client.extract.create({ file_input: <file_id>, configuration: { data_schema: ..., extraction_target: 'per_doc', tier: 'cost_effective' } })` and poll with `client.extract.get(jobId)` until `job.status` is one of `COMPLETED`, `FAILED`, or `CANCELLED`.
 - A successful job exposes the extracted data on `job.extract_result`.
 - Order of entries in `results.json` does not matter — the verifier matches by `file`.
 - A `node_modules/` install is **not** preinstalled. Create whatever `package.json` you need and install the dependencies you choose.
-
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- Ensure the script is actually executed against the real LlamaCloud API and the artifacts exist.
-- Log file: `/home/user/myproject/output.log`
-- Output file: `/home/user/myproject/results.json`
-- The pipeline must process every `*.pdf` (case-insensitive) under `/home/user/myproject/invoices/` and emit exactly one entry per file in `results.json`.
-- Each `results.json` entry must follow the schema in the Requirements section. Successful entries must contain `data.vendor_name`, `data.invoice_number`, `data.total_amount` (number), and `data.currency` (string).
-- The log file must contain a final summary line matching the regex `^SUMMARY total=\d+ success=\d+ failed=\d+$`.
-- The same summary line must also be printed to stdout when the script runs.
-- The TypeScript source must invoke the official `@llamaindex/llama-cloud` v2 SDK (i.e. `import ... from '@llamaindex/llama-cloud'`) — the verifier will grep the source for this import.
-- The TypeScript source must contain a Zod schema (i.e. `import ... from 'zod'`) — the verifier will grep the source for this import.
-- The extraction must use the `cost_effective` tier (the string `'cost_effective'` must appear in the source).
 

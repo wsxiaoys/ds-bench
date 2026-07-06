@@ -62,7 +62,7 @@ def _paginate(url: str, headers: dict, params: dict | None = None) -> list[dict]
 
 @pytest.fixture(scope="module")
 def run_id() -> str:
-    return _get_env("ZEALT_RUN_ID")
+    return open("/logs/artifacts/run-id").read().strip()
 
 
 @pytest.fixture(scope="module")
@@ -111,7 +111,7 @@ def test_exactly_three_report_files_exist(matching_files, expected_file_names):
 def test_exactly_one_matching_ticket_exists(matching_tickets, run_id):
     assert len(matching_tickets) == 1, (
         f"Expected exactly 1 ticket whose subject contains both '{TICKET_MARKER}' and "
-        f"ZEALT_RUN_ID '{run_id}', got {len(matching_tickets)}."
+        f"RUN_ID '{run_id}', got {len(matching_tickets)}."
     )
 
 

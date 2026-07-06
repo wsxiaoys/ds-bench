@@ -28,7 +28,7 @@ def test_task_info_file_exists():
 
 def test_venv_directory_exists(sandbox_id):
     result = subprocess.run(
-        ["e2b", "sandbox", "exec", sandbox_id, "ls", "-d", "/home/user/venv"],
+        ["e2b", "sandbox", "exec", sandbox_id, "--", "ls", "-d", "/home/user/venv"],
         capture_output=True,
         text=True,
         env=env,
@@ -37,7 +37,7 @@ def test_venv_directory_exists(sandbox_id):
 
 def test_pandas_installed_in_venv(sandbox_id):
     result = subprocess.run(
-        ["e2b", "sandbox", "exec", sandbox_id, "/home/user/venv/bin/python", "-c", "import pandas"],
+        ["e2b", "sandbox", "exec", sandbox_id, "--", "/home/user/venv/bin/python", "-c", "import pandas"],
         capture_output=True,
         text=True,
         env=env,
@@ -46,7 +46,7 @@ def test_pandas_installed_in_venv(sandbox_id):
 
 def test_pandas_version_file(sandbox_id):
     result = subprocess.run(
-        ["e2b", "sandbox", "exec", sandbox_id, "cat", "/home/user/pandas_version.txt"],
+        ["e2b", "sandbox", "exec", sandbox_id, "--", "cat", "/home/user/pandas_version.txt"],
         capture_output=True,
         text=True,
         env=env,

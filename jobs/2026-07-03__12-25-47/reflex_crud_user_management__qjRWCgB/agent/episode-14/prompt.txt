@@ -1,0 +1,154 @@
+New Terminal Output:
+
+root@f9fc8de4-5a0a-4967-98d1-2f641efae7c6:/home/user/myproject# head -150 .venv/lib/python3.12/site-packages/reflex/model.py
+"""Database built into Reflex."""
+
+from __future__ import annotations
+
+import re
+from collections import defaultdict
+from contextlib import suppress
+from importlib.util import find_spec
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from reflex_base.config import get_config
+from reflex_base.environment import environment
+from reflex_base.utils import console
+from reflex_base.utils.serializers import serializer
+
+if TYPE_CHECKING:
+    from typing import TypeVar
+
+    import sqlalchemy
+    import sqlmodel
+
+    SQLModelOrSqlAlchemy = (
+        type[sqlmodel.SQLModel] | type[sqlalchemy.orm.DeclarativeBase]
+    )
+
+    SQLModelOrSqlAlchemyT = TypeVar("SQLModelOrSqlAlchemyT", bound=SQLModelOrSqlAlchemy)
+
+
+def _safe_db_url_for_logging(url: str) -> str:
+    """Remove username and password from the database URL for logging.
+
+    Args:
+        url: The database URL.
+
+    Returns:
+        The database URL with the username and password removed.
+    """
+    return re.sub(r"://[^@]+@", "://<username>:<password>@", url)
+
+
+def _print_db_not_available(*args, **kwargs):
+    msg = (
+        "Database is not available. Please install the required packages: "
+        "`pip install reflex[db]`."
+    )
+    raise ImportError(msg)
+
+
+class _ClassThatErrorsOnInit:
+    def __init__(self, *args, **kwargs):
+        _print_db_not_available(*args, **kwargs)
+
+
+if find_spec("sqlalchemy"):
+    import sqlalchemy
+    import sqlalchemy.exc
+    import sqlalchemy.ext.asyncio
+    import sqlalchemy.orm
+
+    _ENGINE: dict[str, sqlalchemy.engine.Engine] = {}
+    _ASYNC_ENGINE: dict[str, sqlalchemy.ext.asyncio.AsyncEngine] = {}
+
+    def get_engine_args(url: str | None = None) -> dict[str, Any]:
+        """Get the database engine arguments.
+
+        Args:
+            url: The database url.
+
+        Returns:
+            The database engine arguments as a dict.
+        """
+        kwargs: dict[str, Any] = {
+            # Print the SQL queries if the log level is INFO or lower.
+            "echo": environment.SQLALCHEMY_ECHO.get(),
+            # Check connections before returning them.
+            "pool_pre_ping": environment.SQLALCHEMY_POOL_PRE_PING.get(),
+            "pool_size": environment.SQLALCHEMY_POOL_SIZE.get(),
+            "max_overflow": environment.SQLALCHEMY_MAX_OVERFLOW.get(),
+            "pool_recycle": environment.SQLALCHEMY_POOL_RECYCLE.get(),
+            "pool_timeout": environment.SQLALCHEMY_POOL_TIMEOUT.get(),
+        }
+        conf = get_config()
+        url = url or conf.db_url
+        if url is not None and url.startswith("sqlite"):
+            # Needed for the admin dash on sqlite.
+            kwargs["connect_args"] = {"check_same_thread": False}
+        return kwargs
+
+    def get_engine(url: str | None = None) -> sqlalchemy.engine.Engine:
+        """Get the database engine.
+
+        Args:
+            url: the DB url to use.
+
+        Returns:
+            The database engine.
+
+        Raises:
+            ValueError: If the database url is None.
+        """
+        conf = get_config()
+        url = url or conf.db_url
+        if url is None:
+            msg = "No database url configured"
+            raise ValueError(msg)
+
+        global _ENGINE
+        if url in _ENGINE:
+            return _ENGINE[url]
+
+        if not environment.ALEMBIC_CONFIG.get().exists():
+            console.warn(
+                "Database is not initialized, run [bold]reflex db init[/bold] first.",
+                dedupe=True,
+            )
+        _ENGINE[url] = sqlalchemy.engine.create_engine(
+            url,
+            **get_engine_args(url),
+        )
+        return _ENGINE[url]
+
+    def create_all():
+        """Create all the tables."""
+        engine = get_engine()
+        ModelRegistry.get_metadata().create_all(engine)
+
+    def get_async_engine(url: str | None) -> sqlalchemy.ext.asyncio.AsyncEngine:
+        """Get the async database engine.
+
+        Args:
+            url: The database url.
+
+        Returns:
+            The async database engine.
+
+        Raises:
+            ValueError: If the async database url is None.
+        """
+        if url is None:
+            conf = get_config()
+            url = conf.async_db_url
+            if url is not None and conf.db_url is not None:
+                async_db_url_tail = url.partition("://")[2]
+                db_url_tail = conf.db_url.partition("://")[2]
+                if async_db_url_tail != db_url_tail:
+                    console.warn(
+                        f"async_db_url `{_safe_db_url_for_logging(url)}` "
+                        "should reference the same database as "
+                        f"db_url `{_safe_db_url_for_logging(conf.db_url)}`."
+                    )
+root@f9fc8de4-5a0a-4967-98d1-2f641efae7c6:/home/user/myproject#

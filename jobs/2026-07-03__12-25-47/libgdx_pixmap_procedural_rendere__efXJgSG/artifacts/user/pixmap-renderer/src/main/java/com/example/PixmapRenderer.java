@@ -1,0 +1,251 @@
+package com.example;
+
+import com.badlogic.gdx.ApplicationAdapter;
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.files.FileHandle;
+import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.graphics.PixmapIO;
+import com.badlogic.gdx.utils.GdxRuntimeException;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Headless libGDX ApplicationListener that reads a procedural drawing script
+ * and writes a PNG. All work is performed on the libGDX thread inside create().
+ */
+public class PixmapRenderer extends ApplicationAdapter {
+
+    private final String inputPath;
+    private final String outputPath;
+
+    private Pixmap pixmap;
+    private int width;
+    private int height;
+    private int commandCount = 0;
+    private volatile boolean exitRequested = false;
+    private volatile boolean summaryPrinted = false;
+
+    public PixmapRenderer(String inputPath, String outputPath) {
+        this.inputPath = inputPath;
+        this.outputPath = outputPath;
+    }
+
+    @Override
+    public void create() {
+        String summary = null;
+        try {
+            // Read script from absolute path; tokens are whitespace separated.
+            FileHandle scriptFile = Gdx.files.absolute(inputPath);
+            if (!scriptFile.exists()) {
+                throw new GdxRuntimeException("Input file not found: " + inputPath);
+            }
+
+            List<String> lines = new ArrayList<>();
+            BufferedReader br = null;
+            try {
+                br = new BufferedReader(
+                        new InputStreamReader(scriptFile.read(), StandardCharsets.UTF_8));
+                String line;
+                while ((line = br.readLine()) != null) {
+                    lines.add(line);
+                }
+            } catch (java.io.IOException ioe) {
+                throw new GdxRuntimeException(
+                        "Failed to read input file: " + ioe.getMessage(), ioe);
+            } finally {
+                if (br != null) {
+                    try {
+                        br.close();
+                    } catch (java.io.IOException ignored) {
+                    }
+                }
+            }
+
+            int cmdCount = 0;
+            boolean sized = false;
+            for (int idx = 0; idx < lines.size(); idx++) {
+                String raw = lines.get(idx);
+                String line = raw.trim();
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+                String[] tokens = line.split("\\s+");
+                String op = tokens[0].toUpperCase();
+
+                if (op.equals("SIZE")) {
+                    if (tokens.length != 3) {
+                        throw new GdxRuntimeException(
+                                "SIZE expects 2 arguments at line " + (idx + 1));
+                    }
+                    int w = Integer.parseInt(tokens[1]);
+                    int h = Integer.parseInt(tokens[2]);
+                    if (w <= 0 || h <= 0) {
+                        throw new GdxRuntimeException(
+                                "SIZE requires positive dimensions at line " + (idx + 1));
+                    }
+                    if (sized) {
+                        throw new GdxRuntimeException(
+                                "SIZE may only appear once; duplicate at line " + (idx + 1));
+                    }
+                    width = w;
+                    height = h;
+                    pixmap = new Pixmap(w, h, Pixmap.Format.RGBA8888);
+                    sized = true;
+                    continue;
+                }
+
+                if (!sized) {
+                    throw new GdxRuntimeException(
+                            "Encountered '" + op + "' before SIZE at line " + (idx + 1));
+                }
+
+                switch (op) {
+                    case "FILL": {
+                        if (tokens.length != 5) {
+                            throw new GdxRuntimeException(
+                                    "FILL expects 4 arguments at line " + (idx + 1));
+                        }
+                        int r = Integer.parseInt(tokens[1]);
+                        int g = Integer.parseInt(tokens[2]);
+                        int b = Integer.parseInt(tokens[3]);
+                        int a = Integer.parseInt(tokens[4]);
+                        pixmap.setColor(r / 255f, g / 255f, b / 255f, a / 255f);
+                        pixmap.fill();
+                        cmdCount++;
+                        break;
+                    }
+                    case "RECT": {
+                        if (tokens.length != 9) {
+                            throw new GdxRuntimeException(
+                                    "RECT expects 8 arguments at line " + (idx + 1));
+                        }
+                        int x = Integer.parseInt(tokens[1]);
+                        int y = Integer.parseInt(tokens[2]);
+                        int w = Integer.parseInt(tokens[3]);
+                        int h = Integer.parseInt(tokens[4]);
+                        int r = Integer.parseInt(tokens[5]);
+                        int g = Integer.parseInt(tokens[6]);
+                        int b = Integer.parseInt(tokens[7]);
+                        int a = Integer.parseInt(tokens[8]);
+                        pixmap.setColor(r / 255f, g / 255f, b / 255f, a / 255f);
+                        pixmap.fillRectangle(x, y, w, h);
+                        cmdCount++;
+                        break;
+                    }
+                    case "LINE": {
+                        if (tokens.length != 9) {
+                            throw new GdxRuntimeException(
+                                    "LINE expects 8 arguments at line " + (idx + 1));
+                        }
+                        int x1 = Integer.parseInt(tokens[1]);
+                        int y1 = Integer.parseInt(tokens[2]);
+                        int x2 = Integer.parseInt(tokens[3]);
+                        int y2 = Integer.parseInt(tokens[4]);
+                        int r = Integer.parseInt(tokens[5]);
+                        int g = Integer.parseInt(tokens[6]);
+                        int b = Integer.parseInt(tokens[7]);
+                        int a = Integer.parseInt(tokens[8]);
+                        pixmap.setColor(r / 255f, g / 255f, b / 255f, a / 255f);
+                        pixmap.drawLine(x1, y1, x2, y2);
+                        cmdCount++;
+                        break;
+                    }
+                    case "CIRCLE": {
+                        if (tokens.length != 8) {
+                            throw new GdxRuntimeException(
+                                    "CIRCLE expects 7 arguments at line " + (idx + 1));
+                        }
+                        int cx = Integer.parseInt(tokens[1]);
+                        int cy = Integer.parseInt(tokens[2]);
+                        int radius = Integer.parseInt(tokens[3]);
+                        int r = Integer.parseInt(tokens[4]);
+                        int g = Integer.parseInt(tokens[5]);
+                        int b = Integer.parseInt(tokens[6]);
+                        int a = Integer.parseInt(tokens[7]);
+                        pixmap.setColor(r / 255f, g / 255f, b / 255f, a / 255f);
+                        pixmap.fillCircle(cx, cy, radius);
+                        cmdCount++;
+                        break;
+                    }
+                    case "PIXEL": {
+                        if (tokens.length != 7) {
+                            throw new GdxRuntimeException(
+                                    "PIXEL expects 6 arguments at line " + (idx + 1));
+                        }
+                        int x = Integer.parseInt(tokens[1]);
+                        int y = Integer.parseInt(tokens[2]);
+                        int r = Integer.parseInt(tokens[3]);
+                        int g = Integer.parseInt(tokens[4]);
+                        int b = Integer.parseInt(tokens[5]);
+                        int a = Integer.parseInt(tokens[6]);
+                        pixmap.setColor(r / 255f, g / 255f, b / 255f, a / 255f);
+                        pixmap.drawPixel(x, y);
+                        cmdCount++;
+                        break;
+                    }
+                    default:
+                        throw new GdxRuntimeException(
+                                "Unknown command '" + tokens[0] + "' at line " + (idx + 1));
+                }
+            }
+
+            if (!sized) {
+                throw new GdxRuntimeException("Script is missing a SIZE command");
+            }
+
+            commandCount = cmdCount;
+
+            // Write PNG to absolute output path
+            FileHandle outFile = Gdx.files.absolute(outputPath);
+            java.io.File parent = outFile.file().getAbsoluteFile().getParentFile();
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
+            }
+            PixmapIO.writePNG(outFile, pixmap);
+            pixmap.dispose();
+            pixmap = null;
+
+            summary = "RENDER_OK width=" + width + " height=" + height
+                    + " commands=" + commandCount;
+        } catch (RuntimeException e) {
+            System.err.println("RENDER_ERROR: " + e.getMessage());
+            if (pixmap != null) {
+                pixmap.dispose();
+                pixmap = null;
+            }
+        }
+
+        if (summary != null && !summaryPrinted) {
+            summaryPrinted = true;
+            System.out.println(summary);
+            System.out.flush();
+        }
+
+        if (!exitRequested) {
+            exitRequested = true;
+            // Ask the headless loop to exit on the next iteration. The actual
+            // shutdown is performed by the launcher (main) joining the loop.
+            try {
+                Gdx.app.exit();
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    @Override
+    public void render() {
+        // create() prints the summary and requests exit; render() must be a no-op.
+    }
+
+    @Override
+    public void dispose() {
+        if (pixmap != null) {
+            pixmap.dispose();
+            pixmap = null;
+        }
+    }
+}

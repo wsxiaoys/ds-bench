@@ -1,0 +1,147 @@
+New Terminal Output:
+
+root@28cbb7b4-d5cb-4f52-b428-1bb541d6118d:/home/user/myproject# cat > /home/user/myproject/index.js << 'EOF'
+> const { Sequelize, DataTypes, Model } = require('sequelize');
+> const path = require('path');
+>
+> const sequelize = new Sequelize({
+>   dialect: 'sqlite',
+>   storage: path.join(__dirname, 'database.sqlite'),
+>   logging: false
+> });
+>
+> class User extends Model {}
+> class AuditLog extends Model {}
+>
+> User.init(
+>   {
+>     username: {
+>       type: DataTypes.STRING,
+>       unique: true
+>     },
+>     status: {
+>       type: DataTypes.STRING
+>     }
+>   },
+>   {
+>     sequelize,
+>     modelName: 'User'
+>   }
+> );
+>
+> AuditLog.init(
+>   {
+>     action: {
+>       type: DataTypes.STRING
+>     },
+>     username: {
+>       type: DataTypes.STRING
+>     }
+>   },
+>   {
+>     sequelize,
+>     modelName: 'AuditLog'
+>   }
+> );
+>
+> User.addHook('beforeCreate', async (user, options) => {
+>   await AuditLog.create(
+>     {
+>       action: 'Creating user',
+>       username: user.username
+>     },
+>     { transaction: options.transaction }
+>   );
+> });
+>
+> User.addHook('afterCreate', async (user, options) => {
+>   if (user.username === 'error_user') {
+>     throw new Error('Simulated failure');
+>   }
+> });
+>
+> async function initDB() {
+>   await sequelize.sync({ force: true });
+> }
+>
+> async function runFindOrCreate(username) {
+>   const transaction = await sequelize.transaction();
+>   try {
+>     const [user, created] = await User.findOrCreate({
+>       where: { username },
+>       defaults: { status: 'active' },
+>       transaction
+>     });
+>     await transaction.commit();
+>     return user;
+>   } catch (err) {
+>     await transaction.rollback();
+>     return err;
+>   }
+> }
+>
+> module.exports = {
+>   initDB,
+>   runFindOrCreate,
+>   User,
+>   AuditLog,
+>   sequelize
+> };
+> EOF
+root@28cbb7b4-d5cb-4f52-b428-1bb541d6118d:/home/user/myproject# rm -f /home/user/myproject/database.sqlite
+root@28cbb7b4-d5cb-4f52-b428-1bb541d6118d:/home/user/myproject# cat > /home/user/myproject/test.js << 'EOF'
+> const { initDB, runFindOrCreate, User, AuditLog, sequelize } = require('./index');
+>
+> (async () => {
+>   try {
+>     await initDB();
+>     console.log('DB initialized');
+>
+>     // Test successful user creation
+>     const user1 = await runFindOrCreate('alice');
+>     console.log('User1:', user1.username, user1.status);
+>
+>     // Test duplicate (should find, not create)
+>     const user1Again = await runFindOrCreate('alice');
+>     console.log('User1Again:', user1Again.username);
+>
+>     // Test error_user - should return error
+>     const errorResult = await runFindOrCreate('error_user');
+>     console.log('Error user result:', errorResult instanceof Error ? 'Error: ' + errorResult.message : 'User: ' + errorResult.username);
+>
+>     // Verify audit logs
+>     const auditLogs = await AuditLog.findAll();
+>     console.log('All audit logs:');
+>     auditLogs.forEach(log => {
+>       console.log(' -', log.action, log.username);
+>     });
+>
+>     const errorAuditLog = await AuditLog.findOne({ where: { username: 'error_user' } });
+>     console.log('Error user audit log exists?', errorAuditLog !== null);
+>
+>     // Test that user with error username is not in db
+>     const errorUser = await User.findOne({ where: { username: 'error_user' } });
+>     console.log('Error user in DB?', errorUser !== null);
+>
+>     // Test another successful user
+>     const user2 = await runFindOrCreate('bob');
+>     console.log('User2:', user2.username, user2.status);
+>
+>     await sequelize.close();
+>   } catch (err) {
+>     console.error('Test failed:', err);
+>     process.exit(1);
+>   }
+> })();
+> EOF
+root@28cbb7b4-d5cb-4f52-b428-1bb541d6118d:/home/user/myproject# node test.js
+DB initialized
+User1: alice active
+User1Again: alice
+Error user result: Error: Simulated failure
+All audit logs:
+ - Creating user alice
+Error user audit log exists? false
+Error user in DB? false
+User2: bob active
+root@28cbb7b4-d5cb-4f52-b428-1bb541d6118d:/home/user/myproject#

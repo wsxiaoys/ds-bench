@@ -21,9 +21,9 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
-# Node.js v22 (Capacitor v8 requires Node 22+).
+# Node.js v24 (Capacitor v8 requires Node 22+).
 # ---------------------------------------------------------------------------
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -114,13 +114,18 @@ RUN cd /home/user/myapp/android && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Capacitor v8 hybrid app with Android platform scaffolded under /home/user/myapp, with @capacitor/status-bar and @capacitor/app already installed, ready for adding a custom local Java Capacitor NavBar plugin and a TypeScript theme module."
 
+# Setup entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
 CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 
 # Container contents:
 #   - always required apt packages: curl wget ca-certificates git python3 python3-pip python3-pytest bash ripgrep
 #   - always required pip3 packages: pytest-json-ctrf
 #   - task-specific apt packages: unzip zip xz-utils openjdk-21-jdk-headless fontconfig file
-#   - Node.js v22 (Capacitor v8 requirement)
+#   - Node.js v24 (Capacitor v8 requirement)
 #   - Android command-line tools, platform-tools, platforms;android-35, build-tools;35.0.0
 #   - /home/user/myapp: Capacitor v8 project pre-initialized (web-dir=dist)
 #   - /home/user/myapp/android: native Android project scaffolded by `npx cap add android`

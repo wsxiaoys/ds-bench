@@ -1,0 +1,84 @@
+New Terminal Output:
+
+root@c58dab8b-5041-4da9-9075-31c228cf1f9a:/home/user/graphql-api# cat node_modules/encore.dev/internal/appinit/mod.ts | head -80
+import { isMainThread, Worker, workerData } from "node:worker_threads";
+import { Gateway } from "../../api/gateway";
+import { Middleware, MiddlewareRequest, HandlerResponse } from "../../api/mod";
+import { IterableSocket, IterableStream, Sink } from "../../api/stream";
+import { RawRequest, RawResponse } from "../../api/node_http";
+import { setCurrentRequest } from "../reqtrack/mod";
+import * as runtime from "../runtime/mod";
+import { fileURLToPath } from "node:url";
+import {
+  initGlobalMetricsBuffer,
+  setGlobalMetricsBuffer
+} from "../metrics/registry";
+
+export type Handler = {
+  apiRoute: runtime.ApiRoute;
+  middlewares: Middleware[];
+  endpointOptions: EndpointOptions;
+};
+
+export function registerHandlers(handlers: Handler[]) {
+  runtime.RT.registerHandlers(handlers.map((h) => transformHandler(h)));
+}
+
+export function registerTestHandler(handler: Handler) {
+  runtime.RT.registerTestHandler(transformHandler(handler));
+}
+
+export function registerGateways(gateways: Gateway[]) {
+  // This function exists to ensure gateways are imported and executed.
+  // It intentionally doesn't need to do anything.
+}
+
+export async function run(entrypoint: string) {
+  if (isMainThread) {
+    // Suppress Node.js's default signal handling. Without this, Node.js
+    // receives the signal and tears down the event loop (clearing timers,
+    // pending promises, etc.), which prevents in-flight request handlers from
+    // completing. The Rust runtime handles signals for graceful shutdown,
+    // including force-exit on a second signal.
+    process.on("SIGINT", () => {});
+    process.on("SIGTERM", () => {});
+    if (process.platform === "win32") {
+      // On Windows, Ctrl+Break delivers SIGBREAK and console close delivers SIGHUP.
+      process.on("SIGBREAK", () => {});
+      process.on("SIGHUP", () => {});
+    }
+
+    const metricsBuffer = initGlobalMetricsBuffer();
+    const workers: Worker[] = [];
+    const extraWorkers = runtime.RT.numWorkerThreads() - 1;
+    if (extraWorkers > 0) {
+      const path = fileURLToPath(entrypoint);
+      for (let i = 0; i < extraWorkers; i++) {
+        workers.push(
+          new Worker(path, {
+            workerData: { metricsBuffer }
+          })
+        );
+      }
+    }
+
+    // Resolves once the Rust runtime has requested a process exit: graceful
+    // shutdown completed (drained requests and pubsub, flushed traces and
+    // metrics), the shutdown deadline was exceeded, or the runtime crashed.
+    let exitCode: number;
+    try {
+      exitCode = await runtime.RT.runForever();
+    } catch (err) {
+      console.error("encore: runtime failed while awaiting shutdown:", err);
+      exitCode = 1;
+    }
+
+    // Exit from the main thread so Node tears down through its own orderly
+    // path (stdio flush, 'exit' handlers, env teardown). Exiting from a
+    // background thread instead runs exit-time teardown concurrently with
+    // live JS threads, which segfaults. Stop worker threads first so none
+    // of them executes JS while the process exits; if a worker is wedged
+    // (e.g. stuck in native code, so terminate() never settles), the
+    // Rust-side backstop that armed when the exit was requested still
+    // force-terminates the process.
+root@c58dab8b-5041-4da9-9075-31c228cf1f9a:/home/user/graphql-api#

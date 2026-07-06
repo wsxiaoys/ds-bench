@@ -1,0 +1,95 @@
+import json
+import numpy as np
+import soundfile as sf
+import librosa
+
+INPUT_PATH = "/home/user/input.wav"
+OUTPUT_WAV = "/home/user/reconstructed.wav"
+OUTPUT_JSON = "/home/user/metrics.json"
+
+# STFT parameters used for both analysis and metric computation
+N_FFT = 2048
+HOP_LENGTH = 512
+WIN_LENGTH = N_FFT  # default win_length is n_fft
+N_MELS = 128
+N_ITER = 256  # at least 32
+
+# 1) Load mono audio at native sample rate
+y, sr = librosa.load(INPUT_PATH, sr=None, mono=True)
+print(f"Loaded: sr={sr}, length={len(y)}")
+
+# 2) Compute 128-band power mel spectrogram (power=2.0)
+M = librosa.feature.melspectrogram(
+    y=y,
+    sr=sr,
+    n_fft=N_FFT,
+    hop_length=HOP_LENGTH,
+    win_length=WIN_LENGTH,
+    n_mels=N_MELS,
+    power=2.0,
+)
+print(f"Mel spectrogram shape: {M.shape}, range: {M.min():.3e}..{M.max():.3e}")
+
+# Log-power form (natural log of power). Add a small epsilon for numerical safety
+# but keep it small enough that exp/log round-trips are near-perfect.
+EPS = 1e-10
+M_log = np.log(M + EPS)
+print(f"Log-power range: {M_log.min():.3f}..{M_log.max():.3f}")
+
+# 3) Convert back to power mel for resynthesis (lossless round-trip)
+M_power = np.exp(M_log) - EPS
+# Clip tiny negatives from numerical noise
+M_power = np.clip(M_power, a_min=0.0, a_max=None)
+
+# Resynthesize via Griffin-Lim using the mel-to-audio wrapper
+y_rec = librosa.feature.inverse.mel_to_audio(
+    M=M_power,
+    sr=sr,
+    n_fft=N_FFT,
+    hop_length=HOP_LENGTH,
+    win_length=WIN_LENGTH,
+    n_iter=N_ITER,
+    length=len(y),
+)
+print(f"Reconstructed length: {len(y_rec)}")
+
+# 4) Write reconstructed WAV at same SR
+sf.write(OUTPUT_WAV, y_rec, sr, subtype="PCM_16")
+print(f"Wrote {OUTPUT_WAV}")
+
+# 5) Compute metrics
+# Align lengths
+min_len = min(len(y), len(y_rec))
+y_a = y[:min_len]
+y_r = y_rec[:min_len]
+
+# Spectral convergence: || |S_ref| - |S_rec| ||_F / || |S_ref| ||_F
+S_ref = librosa.stft(y_a, n_fft=N_FFT, hop_length=HOP_LENGTH, win_length=WIN_LENGTH)
+S_rec = librosa.stft(y_r, n_fft=N_FFT, hop_length=HOP_LENGTH, win_length=WIN_LENGTH)
+mag_ref = np.abs(S_ref)
+mag_rec = np.abs(S_rec)
+spectral_convergence = float(np.linalg.norm(mag_ref - mag_rec) / np.linalg.norm(mag_ref))
+print(f"Spectral convergence: {spectral_convergence}")
+
+# SNR: 10 * log10( sum(ref^2) / sum((ref - rec)^2) )
+ref_power = np.sum(y_a.astype(np.float64) ** 2)
+noise_power = np.sum((y_a - y_r).astype(np.float64) ** 2)
+snr_db = float(10.0 * np.log10(ref_power / noise_power))
+print(f"SNR (dB): {snr_db}")
+
+# Confirm reconstructed file sample count
+recon_read, recon_sr = sf.read(OUTPUT_WAV)
+length_samples = int(recon_read.shape[0])
+
+metrics = {
+    "spectral_convergence": spectral_convergence,
+    "snr_db": snr_db,
+    "length_samples": length_samples,
+    "sample_rate": int(recon_sr),
+    "n_mels": N_MELS,
+    "n_iter": N_ITER,
+}
+
+with open(OUTPUT_JSON, "w") as f:
+    json.dump(metrics, f, indent=2)
+print(f"Wrote {OUTPUT_JSON}: {metrics}")

@@ -1,0 +1,90 @@
+New Terminal Output:
+
+root@fe2d402a-d04e-42f6-acaa-37f2a76e979a:~# cat > /home/user/myproject/pb_hooks/rate_limit.pb.js << 'EOF'
+> /// <reference path="../pb_data/types.d.ts" />
+>
+> // Per-IP rate limiter for user signup endpoint.
+> // Limits POST /api/collections/users/records to 3 requests per 60 seconds per IP.
+> // On the 4th request within the window, returns 429 with Retry-After header
+> // and a JSON body containing a top-level `retryAfter` field.
+>
+> const RATE_LIMIT_WINDOW_MS = 60 * 1000;   // 60 seconds
+> const RATE_LIMIT_MAX = 3;                  // 3 requests allowed per window
+>
+> // In-memory map: IP -> array of request timestamps (ms), in chronological order.
+> const rateLimitStore = {};
+>
+> function getClientIp(e) {
+>     try {
+>         const ip = e.realIP();
+>         if (ip) {
+>             return ip;
+>         }
+>     } catch (_) {}
+>     try {
+>         return e.remoteIP();
+>     } catch (_) {
+>         return "unknown";
+>     }
+> }
+>
+> function pruneOldEntries(timestamps, now) {
+>     const cutoff = now - RATE_LIMIT_WINDOW_MS;
+>     let i = 0;
+>     while (i < timestamps.length && timestamps[i] <= cutoff) {
+>         i++;
+>     }
+>     if (i > 0) {
+>         timestamps.splice(0, i);
+>     }
+> }
+>
+> onRecordCreateRequest((e) => {
+>     // Only apply to the built-in users auth collection
+>     if (!e.collection || e.collection.name !== "users") {
+>         return;
+>     }
+>
+>     const ip = getClientIp(e);
+>     const now = Date.now();
+>
+>     let timestamps = rateLimitStore[ip];
+>     if (!timestamps) {
+>         timestamps = [];
+>         rateLimitStore[ip] = timestamps;
+>     }
+>
+>     pruneOldEntries(timestamps, now);
+>
+>     if (timestamps.length >= RATE_LIMIT_MAX) {
+>         // Compute when the oldest entry will fall out of the rolling window.
+>         const oldest = timestamps[0];
+>         const retryAfterMs = (oldest + RATE_LIMIT_WINDOW_MS) - now;
+>         let retryAfterSec = Math.ceil(retryAfterMs / 1000);
+>         if (retryAfterSec < 1) {
+>             retryAfterSec = 1;
+>         }
+>
+>         // Set the Retry-After header on the underlying response writer
+>         // BEFORE writing the response body.
+>         try {
+>             e.response.header().set("Retry-After", String(retryAfterSec));
+>             e.response.header().set("Content-Type", "application/json");
+>         } catch (_) {}
+>
+>         // Write a 429 JSON response with `retryAfter` at the top level.
+>         e.json(429, {
+>             status: 429,
+>             message: "Too many signup attempts. Please try again later.",
+>             retryAfter: retryAfterSec,
+>         });
+>
+>         // Stop further processing for this request.
+>         throw new ApiError(429, "stop", {});
+>     }
+>
+>     // Within limit: record this request and let it proceed.
+>     timestamps.push(now);
+> }, "users");
+> EOF
+root@fe2d402a-d04e-42f6-acaa-37f2a76e979a:~#

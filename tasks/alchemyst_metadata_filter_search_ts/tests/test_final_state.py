@@ -10,8 +10,8 @@ DIST_ENTRY = os.path.join(PROJECT_DIR, "dist", "main.js")
 
 
 def _run_id():
-    rid = os.environ.get("ZEALT_RUN_ID")
-    assert rid, "ZEALT_RUN_ID must be set in the verifier environment."
+    rid = open("/logs/artifacts/run-id").read().strip()
+    assert rid, "RUN_ID must be set in the verifier."
     return rid
 
 
@@ -144,7 +144,7 @@ def test_support_search_returns_only_support_documents(support_results):
     for name in file_names:
         assert rid in name, (
             f"Expected every returned file_name to be namespaced with the current "
-            f"ZEALT_RUN_ID={rid!r}, but got {name!r}."
+            f"RUN_ID={rid!r}, but got {name!r}."
         )
 
 
@@ -162,7 +162,7 @@ def test_engineering_search_returns_only_engineering_documents(engineering_resul
     for name in file_names:
         assert rid in name, (
             f"Expected every returned file_name to be namespaced with the current "
-            f"ZEALT_RUN_ID={rid!r}, but got {name!r}."
+            f"RUN_ID={rid!r}, but got {name!r}."
         )
 
 

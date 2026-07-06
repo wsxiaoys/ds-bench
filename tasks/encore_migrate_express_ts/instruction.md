@@ -23,11 +23,3 @@ Encore is an open-source backend framework for building type-safe distributed sy
 - The deployment may take about 2 minutes to complete.
 - Write the App ID to `/home/user/helloworld/app_id.log` in the format `App ID: <app_id>`.
 
-## Acceptance Criteria
-- Project path: /home/user/helloworld
-- Ensure the app is deployed to Encore Cloud.
-- Log file: /home/user/helloworld/app_id.log
-- The log file must contain the App ID in the format: `App ID: <app_id>`.
-- The deployed endpoint must be accessible at `https://staging-<app_id>.encr.app/greet/:name`.
-- A GET request to the deployed endpoint must return a JSON response with the correct greeting message.
-

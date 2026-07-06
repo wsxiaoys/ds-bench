@@ -7,8 +7,11 @@ Create a simple REST API for managing a list of books using Encore for Go and it
 - Create a new Encore application.
 - The application name must be `books-api-${run-id}`.
 - Implement a RESTful API with the following endpoints:
+  - POST `/books`: Add a new book.
+    - Request JSON body: `{"title": "string", "author": "string"}`
+    - Response JSON body: `{"id": number, "title": "string", "author": "string"}`
   - GET `/books`: List all books.
-  - POST `/books`: Add a new book (fields: `title`, `author`).
+    - Response JSON body: `[{"id": number, "title": "string", "author": "string"}]`
 - Store data in a PostgreSQL database using Encore's `sqldb` package.
 - Deploy the application to Encore Cloud.
 - Save the Encore App ID to a log file after deployment.
@@ -24,16 +27,5 @@ Create a simple REST API for managing a list of books using Encore for Go and it
   6. Commit your code and push to the Encore remote: `git push encore`.
   7. The deployed endpoint will be available at `https://staging-<app-id>.encr.app/`.
 - Use `encore.dev/storage/sqldb` to define the database and create a migration file (e.g., `1_create_tables.up.sql`) to create the `books` table.
-- Write the App ID to `/home/user/myproject/output.log`.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Ensure the application is deployed to Encore Cloud and the log artifact exists.
-- Log file: /home/user/myproject/output.log
-- The log file must contain the App ID in the format: `App ID: <app-id>`.
-- The deployed API must be accessible at `https://staging-<app-id>.encr.app/`.
-- The API must support POST `/books` to create a book and GET `/books` to list books.
-  - POST `/books` Request: `{"title": string, "author": string}`
-  - POST `/books` Response: `{"id": number, "title": string, "author": string}`
-  - GET `/books` Response: `[{"id": number, "title": string, "author": string}]`
+- Write the App ID to `/home/user/myproject/output.log` in the format: `App ID: <app-id>`.
 

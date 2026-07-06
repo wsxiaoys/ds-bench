@@ -58,7 +58,7 @@ def test_superuser_env_vars_present():
     )
 
 
-def test_zealt_run_id_present():
-    assert os.environ.get("ZEALT_RUN_ID"), (
-        "Environment variable ZEALT_RUN_ID is required to isolate parallel test runs."
+def test_run_id_present():
+    assert open("/logs/artifacts/run-id").read().strip(), (
+        "RUN_ID is required to isolate parallel test runs."
     )

@@ -1,0 +1,203 @@
+New Terminal Output:
+
+root@97c5c4c0-869e-45e9-beba-01256e290bbb:~# cat > run.py << 'EOF'
+> #!/usr/bin/env python3
+> """Tumbling Window OHLCV Aggregation using Bytewax."""
+>
+> import argparse
+> import json
+> from datetime import datetime, timedelta, timezone
+> from pathlib import Path
+> from typing import List, Tuple
+>
+> from bytewax.connectors.files import CSVSource
+> from bytewax.dataflow import Dataflow
+> import bytewax.operators as op
+> from bytewax.outputs import DynamicSink, StatelessSinkPartition
+> from bytewax.operators.windowing import EventClock, TumblingWindower, fold_window
+> from bytewax.run import cli_main
+> from typing_extensions import override
+>
+>
+> # Window alignment origin - the start of the epoch minute in UTC.
+> ALIGN_TO = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+> WINDOW_LENGTH = timedelta(minutes=1)
+>
+>
+> class _JsonlPartition(StatelessSinkPartition[str]):
+>     def __init__(self, path: Path):
+>         # Truncate the output file on start so we don't accumulate prior runs.
+>         self._f = open(path, "wt")
+>
+>     @override
+>     def write_batch(self, items: List[str]) -> None:
+>         for item in items:
+>             self._f.write(item)
+>             self._f.write("\n")
+>         self._f.flush()
+>
+>     @override
+>     def close(self) -> None:
+>         self._f.close()
+>
+>
+> class JsonlSink(DynamicSink[str]):
+>     """A simple JSON Lines file sink."""
+>
+>     def __init__(self, path: Path):
+>         self._path = path
+>
+>     @override
+>     def build(
+>         self, step_id: str, worker_index: int, worker_count: int
+>     ) -> _JsonlPartition:
+>         return _JsonlPartition(self._path)
+>
+>
+> def parse_iso8601(ts: str) -> datetime:
+>     """Parse an ISO 8601 timestamp string to a timezone-aware datetime."""
+>     if ts.endswith("Z"):
+>         ts = ts[:-1] + "+00:00"
+>     dt = datetime.fromisoformat(ts)
+>     if dt.tzinfo is None:
+>         dt = dt.replace(tzinfo=timezone.utc)
+>     return dt
+>
+>
+> def window_id_to_start(window_id: int) -> datetime:
+>     """Compute the start time of a window from its id."""
+>     return ALIGN_TO + WINDOW_LENGTH * window_id
+>
+>
+> def build_flow(input_path: Path, output_path: Path) -> Dataflow:
+>     """Build the Bytewax dataflow for OHLCV aggregation."""
+>     flow = Dataflow("ohlcv_1min")
+>
+>     # Read CSV file
+>     csv_source = CSVSource(input_path)
+>     inp = op.input("csv_in", flow, csv_source)
+>
+>     # Parse each row into a trade record with parsed types.
+>     parsed = op.map("parse", inp, lambda row: {
+>         "symbol": row["symbol"],
+>         "price": float(row["price"]),
+>         "volume": float(row["volume"]),
+>         "timestamp": parse_iso8601(row["timestamp"]),
+>     })
+>
+>     # Key the stream by symbol so windowing is per-symbol.
+>     keyed = op.key_on("key_symbol", parsed, lambda x: x["symbol"])
+>
+>     # Event-time clock driven by the trade timestamp.
+>     clock = EventClock(
+>         ts_getter=lambda x: x["timestamp"],
+>         wait_for_system_duration=timedelta(seconds=0),
+>     )
+>
+>     # 1-minute tumbling window aligned to minute boundaries (epoch).
+>     windower = TumblingWindower(
+>         length=WINDOW_LENGTH,
+>         align_to=ALIGN_TO,
+>     )
+>
+>     # OHLCV accumulator builder.
+>     def builder():
+>         return {
+>             "open": None,
+>             "high": None,
+>             "low": None,
+>             "close": None,
+>             "volume": 0.0,
+>         }
+>
+>     # Update OHLCV state with a new trade.
+>     def folder(acc, trade):
+>         price = trade["price"]
+>         if acc["open"] is None:
+>             acc["open"] = price
+>             acc["high"] = price
+>             acc["low"] = price
+>         else:
+>             if price > acc["high"]:
+>                 acc["high"] = price
+>             if price < acc["low"]:
+>                 acc["low"] = price
+>         acc["close"] = price
+>         acc["volume"] += trade["volume"]
+>         return acc
+>
+>     # Merge two partial accumulators (e.g. from parallel input sources).
+>     def merger(a, b):
+>         if a["open"] is None:
+>             return b
+>         if b["open"] is None:
+>             return a
+>         return {
+>             "open": a["open"],
+>             "high": max(a["high"], b["high"]),
+>             "low": min(a["low"], b["low"]),
+>             "close": b["close"],
+>             "volume": a["volume"] + b["volume"],
+>         }
+>
+>     windowed = fold_window(
+>         "ohlcv_fold",
+>         keyed,
+>         clock,
+>         windower,
+>         builder=builder,
+>         folder=folder,
+>         merger=merger,
+>     )
+>
+>     # `windowed.down` emits items shaped as: (symbol, (window_id, acc))
+>     def format_output(item: Tuple[str, Tuple[int, dict]]) -> str:
+>         symbol, (window_id, acc) = item
+>         window_start = window_id_to_start(window_id)
+>         record = {
+>             "window_start": window_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+>             "symbol": symbol,
+>             "open": acc["open"],
+>             "high": acc["high"],
+>             "low": acc["low"],
+>             "close": acc["close"],
+>             "volume": acc["volume"],
+>         }
+>         return json.dumps(record)
+>
+>     formatted = op.map("format", windowed.down, format_output)
+>
+>     # Write to a JSONL file using a custom DynamicSink.
+>     out_sink = JsonlSink(output_path)
+>     op.output("jsonl_out", formatted, out_sink)
+>
+>     return flow
+>
+>
+> def main():
+>     parser = argparse.ArgumentParser(
+>         description="Tumbling Window OHLCV Aggregation using Bytewax"
+>     )
+>     parser.add_argument(
+>         "--input",
+>         required=True,
+>         type=Path,
+>         help="Path to input CSV file with columns: timestamp,symbol,price,volume",
+>     )
+>     parser.add_argument(
+>         "--output",
+>         required=True,
+>         type=Path,
+>         help="Path to output JSONL file",
+>     )
+>     args = parser.parse_args()
+>
+>     flow = build_flow(args.input, args.output)
+>     cli_main(flow)
+>
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+root@97c5c4c0-869e-45e9-beba-01256e290bbb:~# python run.py --input input.csv --output output.jsonl
+root@97c5c4c0-869e-45e9-beba-01256e290bbb:~#

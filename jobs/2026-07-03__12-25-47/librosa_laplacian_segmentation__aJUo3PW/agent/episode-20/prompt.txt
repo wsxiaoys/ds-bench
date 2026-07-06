@@ -1,0 +1,226 @@
+New Terminal Output:
+
+root@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# cat > /home/user/segment.py << 'PYEOF'
+> import json
+> import numpy as np
+> import librosa
+> from sklearn.cluster import AgglomerativeClustering
+>
+> AUDIO_PATH = '/home/user/input.wav'
+> OUT_PATH = '/home/user/segments.json'
+>
+> # --- Load audio ---
+> y, sr = librosa.load(AUDIO_PATH, sr=22050, mono=True)
+> duration = float(len(y) / sr)
+>
+> # --- Beat tracking ---
+> onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+> tempo, beat_frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
+> beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+> print(f'tempo={tempo} n_beats={len(beat_frames)} duration={duration}')
+>
+> # --- Tonal feature (chroma_cqt) ---
+> chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+> chroma_sync = librosa.util.sync(chroma, beat_frames, aggregate=np.median)
+>
+> # --- Recurrence matrix + path enhancement ---
+> R = librosa.segment.recurrence_matrix(
+>     chroma_sync, mode='affinity', metric='cosine', sparse=False,
+> )
+> n = chroma_sync.shape[1]
+> n_seg_path = max(2, int(np.ceil(n / 7.0)))
+> R_path = librosa.segment.path_enhance(R, n_seg_path)
+>
+> # --- Sequential affinity ---
+> seq = np.zeros((n, n), dtype=np.float64)
+> band = 7
+> for i in range(n):
+>     lo = max(0, i - band)
+>     hi = min(n, i + band + 1)
+>     d = np.abs(np.arange(lo, hi) - i)
+>     seq[i, lo:hi] = np.exp(-(d ** 2) / (2.0 * (band / 2.0) ** 2))
+>
+.> alpha = 0.5
+> A = alpha * R_path + (1.0 - alpha) * seq
+> np.fill_diagonal(A, 1.0)
+> A = 0.5 * (A + A.T)
+>
+> # --- Symmetric normalized graph Laplacian ---
+> deg = A.sum(axis=1)
+> with np.errstate(divide='ignore'):
+>     d_inv_sqrt = np.where(deg > 0, 1.0 / np.sqrt(deg), 0.0)
+> D_inv_sqrt = np.diag(d_inv_sqrt)
+> L = np.eye(n) - D_inv_sqrt @ A @ D_inv_sqrt
+>
+> K = 5
+> eigvals, eigvecs = np.linalg.eigh(L)
+> idx_sort = np.argsort(eigvals)
+> eigvals = eigvals[idx_sort]
+> eigvecs = eigvecs[:, idx_sort]
+> emb = eigvecs[:, 1:K+1]
+> row_norm = np.linalg.norm(emb, axis=1, keepdims=True)
+> row_norm = np.where(row_norm > 0, row_norm, 1.0)
+> emb_norm = emb / row_norm
+>
+> # --- Cluster per-beat embeddings ---
+> n_label_types = 3
+> per_beat_labels = AgglomerativeClustering(
+>     n_clusters=n_label_types, metric='euclidean', linkage='average'
+> ).fit_predict(emb_norm)
+> print('label counts:', np.bincount(per_beat_labels))
+>
+> # --- Derive contiguous runs ---
+> runs = []
+> i = 0
+> while i < n:
+>     j = i
+>     while j < n and per_beat_labels[j] == per_beat_labels[i]:
+>         j += 1
+>     runs.append((i, j, int(per_beat_labels[i])))
+>     i = j
+> print('initial runs:', runs)
+>
+> # Merge tiny runs (< 3 beats) into neighbor with most similar mean chroma
+> while True:
+>     merged = False
+>     for k in range(len(runs)):
+>         s, e, lab = runs[k]
+>         if (e - s) < 3 and len(runs) > 1:
+>             this_mean = chroma_sync[:, s:e].mean(axis=1)
+>             best = -1
+>             best_sim = -np.inf
+>             for kk in [k-1, k+1]:
+>                 if 0 <= kk < len(runs):
+>                     ns, ne, nlab = runs[kk]
+>                     nm = chroma_sync[:, ns:ne].mean(axis=1)
+>                     sim = float(np.dot(this_mean, nm) / (np.linalg.norm(this_mean) * np.linalg.norm(nm) + 1e-12))
+>                     if sim > best_sim:
+>                         best_sim = sim
+>                         best = kk
+>             if best == k - 1:
+>                 ps, pe, plab = runs[k-1]
+>                 runs[k-1] = (ps, e, int(plab))
+>                 del runs[k]
+>             elif best == k + 1:
+>                 ns, ne, nlab = runs[k+1]
+>                 runs[k] = (s, ne, int(nlab))
+>                 del runs[k+1]
+>             else:
+>                 ps, pe, plab = runs[k-1]
+>                 runs[k-1] = (ps, e, int(plab))
+>                 del runs[k]
+>             merged = True
+>             break
+>     if not merged:
+>         break
+> print('after tiny merge:', runs)
+>
+> # --- Reassign labels so that runs with similar chroma content share the same letter ---
+> # Compute mean chroma per run
+> run_means = np.stack([chroma_sync[:, s:e].mean(axis=1) for (s, e, lab) in runs], axis=0)
+> # Normalize
+> rm_norms = np.linalg.norm(run_means, axis=1, keepdims=True)
+> rm_norms = np.where(rm_norms > 0, rm_norms, 1.0)
+> run_means_n = run_means / rm_norms
+> # Compute pairwise cosine similarity
+> sim_matrix = run_means_n @ run_means_n.T
+> # Cluster the runs themselves into label types based on chroma similarity
+> nr = len(runs)
+> if nr >= 2:
+>     # Use a threshold: merge runs with cosine sim > threshold
+>     # First, greedily assign letters
+>     letters = [None] * nr
+>     next_letter_idx = 0
+>     for k in range(nr):
+>         if letters[k] is not None:
+>             continue
+>         cur_letter = chr(ord('A') + next_letter_idx)
+>         next_letter_idx += 1
+>         letters[k] = cur_letter
+>         for kk in range(k+1, nr):
+>             if letters[kk] is None and sim_matrix[k, kk] > 0.85:
+>                 letters[kk] = cur_letter
+> else:
+>     letters = ['A'] * nr
+> print('letters per run:', letters)
+>
+> # --- Build time intervals ---
+> segments = []
+> for (s, e, lab), letter in zip(runs, letters):
+>     if e > s:
+>         t_start = float(beat_times[s])
+>         if e < n:
+>             t_end = float(beat_times[e])
+>         else:
+>             t_end = duration
+>         segments.append({'start': t_start, 'end': t_end, 'label': letter})
+>
+> segments[0]['start'] = 0.0
+> segments[-1]['end'] = duration
+>
+> # Merge adjacent segments with same label
+> merged = []
+> for seg in segments:
+>     if merged and merged[-1]['label'] == seg['label']:
+>         merged[-1]['end'] = seg['end']
+>     else:
+>         merged.append(dict(seg))
+>
+> # Drop / merge segments shorter than 0.5s
+> final = []
+> for seg in merged:
+>     dur = seg['end'] - seg['start']
+>     if dur <= 0.5:
+>         if final:
+>             final[-1]['end'] = seg['end']
+>         else:
+>             seg['start'] = 0.0
+>             final.append(seg)
+>     else:
+>         final.append(seg)
+>
+> # Bridge large gaps / overlaps
+> for i in range(1, len(final)):
+>     gap = final[i]['start'] - final[i-1]['end']
+>     if gap > 0.3:
+>         mid = (final[i-1]['end'] + final[i]['start']) / 2.0
+>         final[i-1]['end'] = mid
+>         final[i]['start'] = mid
+>     elif gap < -0.05:
+>         mid = (final[i-1]['end'] + final[i]['start']) / 2.0
+>         final[i-1]['end'] = mid
+>         final[i]['start'] = mid
+>
+> final = [s for s in final if (s['end'] - s['start']) > 0.5]
+>
+> renamed = []
+> label_map = {}
+> for s in final:
+>     if s['label'] not in label_map:
+>         label_map[s['label']] = chr(ord('A') + len(label_map))
+>     renamed.append({'start': float(s['start']), 'end': float(s['end']), 'label': label_map[s['label']]})
+>
+> renamed.sort(key=lambda x: x['start'])
+>
+> print('FINAL SEGMENTS:')
+> for s in renamed:
+>     print(f"  {s['start']:.3f} -> {s['end']:.3f}  {s['label']}  (dur={s['end']-s['start']:.3f})")
+>
+> with open(OUT_PATH, 'w') as f:
+>     json.dump(renamed, f, indent=2)
+> print('Wrote', OUT_PATH)
+> PYEOF
+root@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# echo done
+done
+root@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~# python3 /home/user/segment.py
+tempo=[89.10290948] n_beats=50 duration=33.0
+label counts: [19 18 14]
+initial runs: [(0, 18, 1), (18, 32, 2), (32, 51, 0)]
+after tiny merge: [(0, 18, 1), (18, 32, 2), (32, 51, 0)]
+letters per run: ['A', 'B', 'A']
+FINAL SEGMENTS:
+  0.000 -> 12.330  A  (dur=12.330)
+  12.330 -> 21.478  B  (dur=9.149)
+  21.478 -> 33.000  A  (dur=11.522)
+Wrote /home/user/segments.json
+root@c4161dc2-ada9-49cc-8b9e-0d9ae7705c95:~#

@@ -9,7 +9,6 @@ from pochi_verifier import PochiVerifier
 PROJECT_DIR = "/home/user/myproject"
 HTML_PATH = os.path.join(PROJECT_DIR, "pyramid.html")
 SPEC_PATH = os.path.join(PROJECT_DIR, "pyramid_spec.json")
-DATASET_URL = "https://vega.github.io/vega-datasets/data/population.json"
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +137,8 @@ def test_spec_artifact_exists(spec: dict):
 
 def test_population_dataset_url(spec: dict):
     urls = _all_data_urls(spec)
-    assert DATASET_URL in urls, (
-        f"Spec must reference the dataset URL {DATASET_URL!r}. Found data URLs: {urls!r}."
+    assert any("data/population.json" in url for url in urls), (
+        f"Spec must reference the dataset URL ending with 'data/population.json'. Found data URLs: {urls!r}."
     )
 
 

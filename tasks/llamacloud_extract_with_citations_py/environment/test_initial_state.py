@@ -56,10 +56,10 @@ def test_llama_cloud_api_key_env_var_present():
     )
 
 
-def test_zealt_run_id_env_var_present():
-    run_id = os.environ.get("ZEALT_RUN_ID", "")
-    assert run_id, "ZEALT_RUN_ID must be set in the task environment."
+def test_run_id_present():
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID must be set in the task."
     # Format from the skill rules: zr[a-z0-9]+
     assert run_id.startswith("zr") and len(run_id) > 3, (
-        f"ZEALT_RUN_ID must look like `zr<id>`; got {run_id!r}."
+        f"RUN_ID must look like `zr<id>`; got {run_id!r}."
     )

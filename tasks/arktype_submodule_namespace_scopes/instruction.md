@@ -22,15 +22,3 @@ You are wiring up a tiny request-validation layer for a back-office service usin
 - Use ArkType's built-in string keywords for UUIDs and string-length constraints rather than writing custom regex.
 - Run the CLI under `tsx`; no compile step is required.
 
-## Acceptance Criteria
-- Project path: `/home/user/myproject`
-- Schema module file: `/home/user/myproject/src/schema.ts`
-- CLI entrypoint: `/home/user/myproject/cli.ts`
-- Command: `npx --no-install tsx cli.ts`
-- Input: ONE JSON object on stdin with the shape `{"kind": "createUser" | "createOrg", "payload": <object>}`.
-- Output (stdout):
-  * Valid payload: line 1 is exactly `VALID`; line 2 is the JSON-stringified validated payload.
-  * Invalid payload (or invalid `kind`, malformed JSON, etc.): a single line starting with `INVALID:` followed by a space and an error description.
-- The CLI MUST exit with code `0` whether the payload is accepted or rejected.
-- `src/schema.ts` MUST contain the dot-namespaced submodule keys `db.User`, `db.Org`, `api.CreateUserRequest`, and `api.CreateOrgRequest` defined inside a single `scope({...})` call, and the `api.*` aliases MUST reference the `db.*` aliases by string name (no inlined duplicate object shapes).
-

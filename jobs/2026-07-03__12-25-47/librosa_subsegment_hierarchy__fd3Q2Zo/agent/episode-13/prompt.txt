@@ -1,0 +1,73 @@
+New Terminal Output:
+
+root@43871d43-2a93-4efb-8caa-f8f57bce6383:/tmp# cat > /tmp/verify.py << 'PYEOF'
+> import json
+> import numpy as np
+> import librosa
+>
+> HOP = 512
+> SR = 22050
+>
+> y, sr = librosa.load('/home/user/input.wav', sr=SR)
+> duration = len(y) / float(sr)
+>
+> with open('/home/user/hierarchy.json') as f:
+>     res = json.load(f)
+>
+> coarse = res['coarse']
+> fine = res['fine']
+>
+> print(f'audio duration: {duration}s')
+>
+> # Check coarse
+> assert len(coarse) >= 4 and len(coarse) <= 8, f'coarse count {len(coarse)} not in 4..8'
+> for i, c in enumerate(coarse):
+>     assert c['index'] == i, f'coarse index wrong at {i}: {c["index"]}'
+>     assert isinstance(c['start'], float) and isinstance(c['end'], float)
+>     assert c['start'] < c['end'], f'segment {i} start >= end'
+>
+> # First starts within 0.3s of 0
+> assert abs(coarse[0]['start']) <= 0.3, f'first start {coarse[0]["start"]} not within 0.3s of 0'
+> # Last ends within 0.5s of duration
+> assert abs(coarse[-1]['end'] - duration) <= 0.5, f'last end {coarse[-1]["end"]} not within 0.5s of duration {duration}'
+> # Consecutive segments: no overlap, gap <= 0.3
+> for i in range(len(coarse)-1):
+>     gap = coarse[i+1]['start'] - coarse[i]['end']
+>     assert -1e-9 <= gap <= 0.3, f'gap {gap} at coarse {i}/{i+1}'
+>     assert coarse[i]['end'] - coarse[i]['start'] > 0.5, f'coarse {i} too short: {coarse[i]["end"]-coarse[i]["start"]}'
+>
+> # Check fine
+> assert all(isinstance(f['index'], int) for f in fine)
+> assert all(f['index'] == i for i, f in enumerate(fine)) or True
+> fine_by_index = sorted(fine, key=lambda x: x['index'])
+> assert all(fine_by_index[i]['index'] == i for i in range(len(fine)))
+> for i, f in enumerate(fine):
+>     assert isinstance(f['start'], float) and isinstance(f['end'], float) and isinstance(f['parent_index'], int)
+>     assert f['start'] < f['end']
+>     assert f['end'] - f['start'] > 0.1, f'fine {i} too short: {f["end"]-f["start"]}'
+>
+> # Each coarse should have exactly 3 fine
+> from collections import defaultdict
+> children = defaultdict(list)
+> for f in fine:
+>     children[f['parent_index']].append(f)
+>
+> for c_idx in range(len(coarse)):
+>     kids = sorted(children[c_idx], key=lambda x: x['start'])
+>     assert len(kids) == 3, f'coarse {c_idx} has {len(kids)} children'
+>     c = coarse[c_idx]
+>     # First child start ~= coarse start (within 0.05)
+>     assert abs(kids[0]['start'] - c['start']) <= 0.05, f'coarse {c_idx} first child start {kids[0]["start"]} vs coarse start {c["start"]}'
+>     # Last child end ~= coarse end
+>     assert abs(kids[-1]['end'] - c['end']) <= 0.05, f'coarse {c_idx} last child end {kids[-1]["end"]} vs coarse end {c["end"]}'
+>     # Adjacent kids: gap <= 0.05
+>     for j in range(len(kids)-1):
+>         g = kids[j+1]['start'] - kids[j]['end']
+>         assert -1e-9 <= g <= 0.05, f'fine gap {g} at coarse {c_idx}, child {j}/{j+1}'
+>
+> print('All coarse/fine constraints satisfied!')
+> PYEOF
+root@43871d43-2a93-4efb-8caa-f8f57bce6383:/tmp# python3 /tmp/verify.py
+audio duration: 25.0s
+All coarse/fine constraints satisfied!
+root@43871d43-2a93-4efb-8caa-f8f57bce6383:/tmp#

@@ -1,0 +1,98 @@
+"""Build a back-to-back population age pyramid using Vega-Altair.
+
+Loads the canonical `data.population.url` dataset via Altair's
+URL-based data shorthand (no pre-loaded DataFrame), creates a
+transform_calculate step that signs `people` negatively for males,
+filters the data to a single year selected by an Altair
+`binding_select` dropdown bound to an `alt.param`, and emits the
+resulting chart to `pyramid.html` and `pyramid_spec.json`.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import altair as alt
+from altair.datasets import data
+
+
+OUTPUT_DIR = Path("/home/user/myproject")
+HTML_PATH = OUTPUT_DIR / "pyramid.html"
+SPEC_PATH = OUTPUT_DIR / "pyramid_spec.json"
+
+
+def build_chart() -> alt.Chart:
+    """Construct the back-to-back population age pyramid chart."""
+    # The selected year, controlled by a binding_select dropdown widget.
+    year_param = alt.param(
+        name="year",
+        value=1980,
+        bind=alt.binding_select(
+            options=[1850, 1860, 1870, 1880, 1890, 1900, 1910, 1920,
+                     1930, 1940, 1950, 1960, 1970, 1980, 1990, 2000],
+            name="Year: ",
+        ),
+    )
+
+    chart = (
+        alt.Chart(data.population.url)
+        .transform_calculate(
+            signed="datum.sex === 1 ? -datum.people : datum.people"
+        )
+        .transform_filter("datum.year === year")
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                "signed:Q",
+                axis=alt.Axis(
+                    title="Population",
+                    format="s",
+                    labelExpr="abs(datum.value)",
+                ),
+            ),
+            y=alt.Y(
+                "age:O",
+                sort="descending",
+                axis=alt.Axis(title="Age"),
+            ),
+            color=alt.Color(
+                "sex:N",
+                scale=alt.Scale(
+                    domain=[1, 2],
+                    range=["steelblue", "salmon"],
+                ),
+                legend=alt.Legend(
+                    title="Sex",
+                    labelExpr="datum.value === 1 ? 'Male' : 'Female'",
+                ),
+            ),
+        )
+        .add_params(year_param)
+        .properties(
+            title="US Population Age Pyramid",
+            width=400,
+            height=300,
+        )
+    )
+
+    return chart
+
+
+def main() -> None:
+    chart = build_chart()
+
+    # Persist the rendered chart as a standalone HTML document.
+    chart.save(str(HTML_PATH))
+
+    # Persist the underlying Vega-Lite spec as JSON for inspection.
+    spec = chart.to_dict()
+    with SPEC_PATH.open("w", encoding="utf-8") as f:
+        json.dump(spec, f, indent=2)
+
+    print(f"Saved HTML  -> {HTML_PATH}")
+    print(f"Saved spec  -> {SPEC_PATH}")
+
+
+if __name__ == "__main__":
+    main()

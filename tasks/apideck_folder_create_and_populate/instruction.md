@@ -4,6 +4,7 @@
 You are working with the Apideck Unified File Storage API connected to OneDrive (service id `onedrive`). Your job is to organize a small batch of run-scoped notes by first creating a dedicated folder at the OneDrive drive root, and then uploading exactly three text files into that folder. The end state — folder plus three child files — must be observable through the unified File Storage API.
 
 ## Requirements
+- Project path: `/home/user/apideck_task`. All code and scripts should be placed inside this directory.
 - Read the `/logs/artifacts/run-id`. Use its value as `run-id` throughout (use it directly; do not transform it).
 - Resolve the OneDrive drive whose name equals the value of the `APIDECK_FILE_STORAGE_DRIVE_NAME` environment variable, and operate at that drive's root.
 - Create exactly one folder at the drive root whose name is `FOLDER-${run-id}`.
@@ -12,7 +13,13 @@ You are working with the Apideck Unified File Storage API connected to OneDrive 
   - `NOTE-${run-id}-2.txt`
   - `NOTE-${run-id}-3.txt`
   Each file body can be any small text payload.
-- Persist a log file at `/home/user/apideck_task/output.log` recording the Apideck identifiers your script created (see `Acceptance Criteria` for the exact format).
+- Persist a log file at `/home/user/apideck_task/output.log` recording the Apideck identifiers your script created. The log file must contain a single valid JSON object on one line in the exact shape:
+
+  ```json
+  {"folder_id": "<folder_id>", "file_ids": ["<id1>", "<id2>", "<id3>"]}
+  ```
+
+  where `folder_id` is the Apideck id returned for the created folder and `file_ids` are the Apideck ids returned for the three uploaded files (order does not matter).
 
 ## Implementation Hints
 - Apideck Unified requests require `Authorization: Bearer <APIDECK_API_KEY>`, `x-apideck-app-id`, `x-apideck-consumer-id`, and `x-apideck-service-id: onedrive` on every call.
@@ -21,18 +28,4 @@ You are working with the Apideck Unified File Storage API connected to OneDrive 
 - File uploads use `POST /file-storage/files` with the **raw binary** body. Do **NOT** use multipart/form-data. The file's `name` and `parent_folder_id` (which must be the id returned by your folder-create call) belong in the `x-apideck-metadata` request header as a JSON string.
 - The drive id can be resolved by listing drives (`GET /file-storage/drives`) and matching the entry whose `name` equals `APIDECK_FILE_STORAGE_DRIVE_NAME`.
 - The folder-create response returns `data.id`; capture and reuse that id for both `parent_folder_id` on uploads and for your log file.
-
-## Acceptance Criteria
-- Project path: /home/user/apideck_task
-- Ensure the real Apideck side effects (one folder created, three files uploaded) are executed and the log artifact exists.
-- Log file: /home/user/apideck_task/output.log
-- The log file must contain a single valid JSON object on one line in the exact shape:
-
-  ```json
-  {"folder_id": "<folder_id>", "file_ids": ["<id1>", "<id2>", "<id3>"]}
-  ```
-
-  where `folder_id` is the Apideck id returned for the created folder and `file_ids` are the Apideck ids returned for the three uploaded files (order does not matter).
-- After the run, the drive named by `APIDECK_FILE_STORAGE_DRIVE_NAME` must contain at its root exactly one folder named `FOLDER-<run-id>` (type `folder`).
-- That folder must directly contain exactly three files named `NOTE-<run-id>-1.txt`, `NOTE-<run-id>-2.txt`, and `NOTE-<run-id>-3.txt`. Each of these files, when retrieved via `GET /file-storage/files/{id}`, must report the created folder's id as its direct parent folder.
 

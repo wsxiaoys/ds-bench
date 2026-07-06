@@ -1,0 +1,88 @@
+New Terminal Output:
+
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:~/project# grep -B 2 -A 80 'class _JoinWindowLogic' /usr/local/lib/python3.12/dist-packages/bytewax/operators/windowin
+g.py | head -100
+
+@dataclass
+class _JoinWindowLogic(WindowLogic[Tuple[int, V], Tuple, _JoinState]):
+    insert_mode: JoinInsertMode
+    emit_mode: JoinEmitMode
+
+    state: _JoinState
+
+    def _check_emit(self) -> Iterable[Tuple]:
+        if self.emit_mode == "complete" and self.state.all_set():
+            rows = self.state.astuples()
+            self.state.clear()
+            return rows
+        elif self.emit_mode == "running":
+            return self.state.astuples()
+        else:
+            return _EMPTY
+
+    @override
+    def on_value(self, value: Tuple[int, V]) -> Iterable[Tuple]:
+        join_side, join_value = value
+        if self.insert_mode == "first" and not self.state.is_set(join_side):
+            self.state.set_val(join_side, join_value)
+        elif self.insert_mode == "last":
+            self.state.set_val(join_side, join_value)
+        elif self.insert_mode == "product":
+            self.state.add_val(join_side, join_value)
+
+        return self._check_emit()
+
+    @override
+    def on_merge(self, original: Self) -> Iterable[Tuple]:
+        if self.insert_mode == "first":
+            # Since `self` is the "older" window, only overwrites the
+            # current values if they don't exist.
+            self.state |= original.state
+        elif self.insert_mode == "last":
+            # Do the opposite.
+            original.state |= self.state
+            self.state = original.state
+        elif self.insert_mode == "product":
+            self.state += original.state
+
+        return self._check_emit()
+
+    @override
+    def on_close(self) -> Iterable[Tuple]:
+        if self.emit_mode == "final":
+            return self.state.astuples()
+        else:
+            return _EMPTY
+
+    @override
+    def snapshot(self) -> _JoinState:
+        return copy.deepcopy(self.state)
+
+
+@overload
+def join_window(
+    step_id: str,
+    clock: Clock[V, Any],
+    windower: Windower[Any],
+    side1: KeyedStream[V],
+    /,
+    *,
+    insert_mode: JoinInsertMode = ...,
+    emit_mode: Literal["complete"],
+    ordered: bool = ...,
+) -> WindowOut[V, Tuple[V]]: ...
+
+
+@overload
+def join_window(
+    step_id: str,
+    clock: Clock[Union[U, V], SC],
+    windower: Windower[Any],
+    side1: KeyedStream[U],
+    side2: KeyedStream[V],
+    /,
+    *,
+    insert_mode: JoinInsertMode = ...,
+    emit_mode: Literal["complete"],
+    ordered: bool = ...,
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:~/project#

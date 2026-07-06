@@ -12,8 +12,8 @@ def test_deployment_log_exists():
     assert "Deployed successfully" in content, "Log file does not contain 'Deployed successfully'"
 
 def test_convex_queries_and_mutations():
-    run_id = os.environ.get("ZEALT_RUN_ID")
-    assert run_id, "ZEALT_RUN_ID environment variable is missing"
+    run_id = open("/logs/artifacts/run-id").read().strip()
+    assert run_id, "RUN_ID is missing"
 
     convex_url = os.environ.get("CONVEX_URL")
     assert convex_url, "CONVEX_URL environment variable is missing"
@@ -58,7 +58,7 @@ verify().catch(err => {{
 }});
 """
 
-    js_file = "/tmp/verify.mjs"
+    js_file = os.path.join(PROJECT_DIR, "verify.mjs")
     with open(js_file, "w") as f:
         f.write(js_script)
 

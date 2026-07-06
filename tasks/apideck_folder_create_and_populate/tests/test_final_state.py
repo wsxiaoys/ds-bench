@@ -152,7 +152,7 @@ def test_log_file_has_valid_shape():
 
 
 def test_folder_exists_at_drive_root():
-    run_id = os.environ["ZEALT_RUN_ID"]
+    run_id = open("/logs/artifacts/run-id").read().strip()
     drive_name = os.environ["APIDECK_FILE_STORAGE_DRIVE_NAME"]
     expected_name = f"FOLDER-{run_id}"
 
@@ -181,7 +181,7 @@ def test_folder_exists_at_drive_root():
 
 
 def test_note_files_are_not_at_drive_root():
-    run_id = os.environ["ZEALT_RUN_ID"]
+    run_id = open("/logs/artifacts/run-id").read().strip()
     drive_name = os.environ["APIDECK_FILE_STORAGE_DRIVE_NAME"]
     drive_id = _resolve_drive_id(drive_name)
     entries = _list_files(drive_id, "root")
@@ -198,7 +198,7 @@ def test_note_files_are_not_at_drive_root():
 
 
 def test_three_note_files_live_inside_created_folder():
-    run_id = os.environ["ZEALT_RUN_ID"]
+    run_id = open("/logs/artifacts/run-id").read().strip()
     drive_name = os.environ["APIDECK_FILE_STORAGE_DRIVE_NAME"]
     expected_names = {
         f"NOTE-{run_id}-1.txt",
@@ -245,7 +245,7 @@ def test_three_note_files_live_inside_created_folder():
 
 
 def test_each_uploaded_file_reports_correct_parent_folder():
-    run_id = os.environ["ZEALT_RUN_ID"]
+    run_id = open("/logs/artifacts/run-id").read().strip()
     expected_names = {
         f"NOTE-{run_id}-1.txt",
         f"NOTE-{run_id}-2.txt",

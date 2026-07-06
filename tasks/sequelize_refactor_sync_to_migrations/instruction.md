@@ -17,13 +17,3 @@ You have an existing Express application that uses Sequelize with SQLite. The ap
 - Run the migration using `npx sequelize-cli db:migrate`.
 - Remove the `sequelize.sync()` call from `index.js`.
 
-## Acceptance Criteria
-- Project path: /home/user/project
-- Start command: node index.js
-- Port: 3000
-- The application must not use `sync()` to create tables.
-- The database must contain the `SequelizeMeta` table, indicating that migrations are being used.
-- API Endpoints:
-  - GET `/users`: Returns status 200 and a JSON array of user objects.
-  - POST `/users`: Accepts JSON `{"username": "string"}` and returns 201 Created with the new user object.
-

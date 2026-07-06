@@ -1,0 +1,79 @@
+New Terminal Output:
+
+root@b52e4002-af38-479e-bb59-b5ac6ff0ddd2:/home/user/myproject# cat /home/user/myproject/main.go
+package main
+
+import (
+"context"
+"fmt"
+"log"
+"os"
+"strings"
+"time"
+
+"github.com/aws/aws-sdk-go-v2/aws"
+"github.com/aws/aws-sdk-go-v2/config"
+"github.com/aws/aws-sdk-go-v2/credentials"
+"github.com/aws/aws-sdk-go-v2/service/s3"
+"github.com/pocketbase/pocketbase"
+"github.com/pocketbase/pocketbase/core"
+)
+
+func main() {
+app := pocketbase.New()
+
+app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+se.Router.GET("/api/s3-presign", func(e *core.RequestEvent) error {
+filename := e.Request.URL.Query().Get("filename")
+if strings.TrimSpace(filename) == "" {
+return e.BadRequestError("filename query parameter is required", nil)
+}
+
+region := os.Getenv("AWS_REGION")
+accessKey := os.Getenv("AWS_ACCESS_KEY_ID")
+secretKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
+bucket := os.Getenv("AWS_BUCKET")
+
+if region == "" || accessKey == "" || secretKey == "" || bucket == "" {
+return e.InternalServerError("missing AWS configuration environment variables", nil)
+}
+
+runIDBytes, err := os.ReadFile("/logs/artifacts/run-id")
+if err != nil {
+return e.InternalServerError(fmt.Sprintf("failed to read run-id: %v", err), nil)
+}
+runID := strings.TrimSpace(string(runIDBytes))
+
+key := fmt.Sprintf("uploads/%s/%s", runID, filename)
+
+cfg, err := config.LoadDefaultConfig(context.Background(),
+config.WithRegion(region),
+config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+)
+if err != nil {
+return e.InternalServerError(fmt.Sprintf("failed to load AWS config: %v", err), nil)
+}
+
+client := s3.NewFromConfig(cfg)
+
+presignClient := s3.NewPresignClient(client)
+
+request, err := presignClient.PresignPutObject(context.Background(), &s3.PutObjectInput{
+Bucket: aws.String(bucket),
+Key:    aws.String(key),
+}, s3.WithPresignExpires(15*time.Minute))
+if err != nil {
+return e.InternalServerError(fmt.Sprintf("failed to presign URL: %v", err), nil)
+}
+
+return e.JSON(200, map[string]string{"url": request.URL})
+})
+
+return se.Next()
+})
+
+if err := app.Start(); err != nil {
+log.Fatal(err)
+}
+}
+root@b52e4002-af38-479e-bb59-b5ac6ff0ddd2:/home/user/myproject#

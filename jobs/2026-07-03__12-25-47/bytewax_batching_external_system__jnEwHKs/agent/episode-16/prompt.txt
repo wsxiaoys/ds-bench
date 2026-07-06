@@ -1,0 +1,143 @@
+New Terminal Output:
+
+root@18d2f3f7-b4a2-412c-b9af-2792ebfb4d90:/home/user/bytewax_batching# cat > /home/user/bytewax_batching/dataflow.py << 'PYEOF'
+> import json
+> import os
+> import sqlite3
+> from datetime import timedelta
+>
+> from bytewax.connectors.files import FileSource
+> from bytewax.dataflow import Dataflow
+> from bytewax.operators import DynamicSink, StatelessSinkPartition
+> from bytewax.testing import run_main
+> import bytewax.operators as op
+>
+>
+> # Read run-id
+> RUN_ID_FILE = "/logs/artifacts/run-id"
+> with open(RUN_ID_FILE, "r") as f:
+>     RUN_ID = f.read().strip()
+>
+> DB_PATH = f"/home/user/bytewax_batching/metrics-{RUN_ID}.db"
+> INPUT_PATH = "/home/user/bytewax_batching/input.jsonl"
+> OUTPUT_LOG = "/home/user/bytewax_batching/output.log"
+>
+>
+> def ensure_table():
+>     """Create the SQLite database and the device_metrics table if it doesn't exist."""
+>     conn = sqlite3.connect(DB_PATH)
+>     try:
+>         conn.execute(
+>             """
+>             CREATE TABLE IF NOT EXISTS device_metrics (
+>                 device_id TEXT,
+>                 timestamp TEXT,
+>                 metric_value REAL
+>             )
+>             """
+>         )
+>         conn.commit()
+>     finally:
+>         conn.close()
+>
+>
+> class SQLiteSink(DynamicSink):
+>     """Custom Bytewax Sink that bulk-inserts batches into SQLite using executemany."""
+>
+>     def build(self, step_id, worker_index, worker_count):
+>         return _SQLiteSinkPartition()
+>
+>
+> class _SQLiteSinkPartition(StatelessSinkPartition):
+>     def __init__(self):
+>         self._conn = sqlite3.connect(DB_PATH)
+>
+>     def write_batch(self, items):
+>         # `items` is a list of items reaching this output. Each item is a
+>         # (key, [record, record, ...]) tuple produced by op.collect.
+>         rows = []
+>         for _key, batch in items:
+>             for record in batch:
+>                 rows.append(
+>                     (
+>                         record["device_id"],
+>                         record["timestamp"],
+>                         record["metric_value"],
+>                     )
+>                 )
+>         if rows:
+>             self._conn.executemany(
+>                 "INSERT INTO device_metrics (device_id, timestamp, metric_value) "
+>                 "VALUES (?, ?, ?)",
+>                 rows,
+>             )
+>             self._conn.commit()
+>
+>     def close(self):
+>         try:
+>             self._conn.commit()
+>         finally:
+>             self._conn.close()
+>
+>
+> def parse_line(line: str):
+>     """Parse a single JSONL line into a metric dict."""
+>     line = line.strip()
+>     if not line:
+>         return None
+>     return json.loads(line)
+>
+>
+> def build_flow():
+>     # Ensure the SQLite table exists before the dataflow starts writing.
+>     ensure_table()
+>
+>     flow = Dataflow("device_metrics_batching")
+>
+>     # Read device metrics from the JSONL file.
+>     source = FileSource(INPUT_PATH)
+>     metrics = op.input("metrics_in", flow, source)
+>
+>     # Parse the JSON string into a dict.
+>     parsed = op.map("parse", metrics, parse_line)
+>
+>     # Filter out any metrics where metric_value is less than 0.
+>     filtered = op.filter(
+>         "non_negative",
+>         parsed,
+>         lambda r: r is not None and r["metric_value"] >= 0,
+>     )
+>
+>     # Group the metrics by device_id.
+>     keyed = op.key_on("by_device", filtered, lambda r: r["device_id"])
+>
+>     # Batch the metrics for each device using max batch size of 10 and
+>     # a timeout of 1 second.
+>     batched = op.collect(
+>         "batch",
+>         keyed,
+>         timeout=timedelta(seconds=1),
+>         max_size=10,
+>     )
+>
+>     # Write batched metrics to SQLite using a custom DynamicSink.
+>     op.output("sqlite_sink", batched, SQLiteSink())
+>
+>     return flow
+>
+>
+> def main():
+>     flow = build_flow()
+>     # Run the dataflow to completion.
+>     run_main(flow)
+>     # After the dataflow completes successfully, write the log message.
+>     with open(OUTPUT_LOG, "w") as f:
+>         f.write("Pipeline finished.\n")
+>
+>
+> if __name__ == "__main__":
+>     main()
+> PYEOF
+root@18d2f3f7-b4a2-412c-b9af-2792ebfb4d90:/home/user/bytewax_batching# rm -f /home/user/bytewax_batching/metrics-*.db /home/user/bytewax_batching/output.log
+root@18d2f3f7-b4a2-412c-b9af-2792ebfb4d90:/home/user/bytewax_batching# cd /home/user/bytewax_batching && python3 dataflow.py
+root@18d2f3f7-b4a2-412c-b9af-2792ebfb4d90:/home/user/bytewax_batching#

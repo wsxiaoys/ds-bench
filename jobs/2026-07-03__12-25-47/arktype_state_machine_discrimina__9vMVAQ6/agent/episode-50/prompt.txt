@@ -1,0 +1,145 @@
+New Terminal Output:
+
+root@cf6d50dc-0a55-42a9-8458-8fd68761a741:/home/user/myproject# ls -la /home/user/myproject/
+total 36
+drwxr-xr-x  1 root root    43 Jul  3 13:06 .
+drwxr-xr-x  1 root root    31 Jul  3 13:00 ..
+-rw-r--r--  1 root root  2762 Jul  3 13:06 cli.ts
+drwxr-xr-x 14 root root  4096 Jul  3 13:01 node_modules
+-rw-r--r--  1 root root 18007 Jul  3 13:01 package-lock.json
+-rw-r--r--  1 root root   252 Jul  3 13:00 package.json
+drwxr-xr-x  2 root root    75 Jul  3 13:06 src
+-rw-r--r--  1 root root   331 Jul  3 13:00 tsconfig.json
+root@cf6d50dc-0a55-42a9-8458-8fd68761a741:/home/user/myproject# ls -la /home/user/myproject/src/
+total 12
+drwxr-xr-x 2 root root   75 Jul  3 13:06 .
+drwxr-xr-x 1 root root   43 Jul  3 13:06 ..
+-rw-r--r-- 1 root root  819 Jul  3 13:06 event.ts
+-rw-r--r-- 1 root root  719 Jul  3 13:05 state.ts
+-rw-r--r-- 1 root root 1914 Jul  3 13:06 transition.ts
+root@cf6d50dc-0a55-42a9-8458-8fd68761a741:/home/user/myproject# cat /home/user/myproject/src/state.ts
+import { type } from "arktype";
+
+// Discriminated union branches for State. Each branch is keyed by a literal
+// `status` tag so ArkType can resolve the correct variant.
+export const Idle = type({
+  status: "'idle'",
+});
+
+export const Loading = type({
+  status: "'loading'",
+  startedAt: "number >= 0",
+});
+
+export const Success = type({
+  status: "'success'",
+  data: "unknown",
+  fetchedAt: "number >= 0",
+});
+
+export const Failure = type({
+  status: "'failure'",
+  code: "400 <= number <= 599",
+  reason: "1 <= string <= 200",
+});
+
+// Combined State union, explicitly built as a discriminated union via .or()
+// chains over the literal-tagged branches.
+export const State = Idle.or(Loading).or(Success).or(Failure);
+root@cf6d50dc-0a55-42a9-8458-8fd68761a741:/home/user/myproject# cat /home/user/myproject/src/event.ts
+import { type } from "arktype";
+
+// Reusable integer type narrowed to whole numbers.
+const int = type("number").narrow((v, ctx) =>
+  Number.isInteger(v) ? true : ctx.mustBe("integer")
+);
+
+// Discriminated union branches for Event. Each branch is keyed by a literal
+// `type` tag so ArkType can resolve the correct variant.
+export const Start = type({
+  type: "'start'",
+  at: "number",
+});
+
+export const Resolve = type({
+  type: "'resolve'",
+  data: "unknown",
+  at: "number",
+});
+
+export const Reject = type({
+  type: "'reject'",
+  code: int,
+  reason: "string",
+  at: "number",
+});
+
+export const Reset = type({
+  type: "'reset'",
+});
+
+// Combined Event union, explicitly built as a discriminated union via .or()
+// chains over the literal-tagged branches.
+export const Event = Start.or(Resolve).or(Reject).or(Reset);
+root@cf6d50dc-0a55-42a9-8458-8fd68761a741:/home/user/myproject# cat /home/user/myproject/src/transition.ts
+import { fn, type } from "arktype";
+import { State } from "./state.js";
+import { Event } from "./event.js";
+
+// The transition function: takes a State and an Event, returns the next State.
+// We use arktype's `fn` to enforce that:
+//   * the first argument matches the State discriminated union,
+//   * the second argument matches the Event discriminated union,
+//   * the returned value also matches the State discriminated union.
+//
+// Transition rules (only the listed pairings change the state; every other
+// state/event combination leaves the state unchanged):
+//   Idle    + Start   -> Loading   with startedAt  = trunc(event.at)
+//   Loading + Resolve -> Success   with data       = event.data,
+//                                         fetchedAt   = trunc(event.at)
+//   Loading + Reject  -> Failure   with code       = event.code,
+//                                         reason      = event.reason
+//   *       + Reset   -> Idle
+export const transition = fn(
+  State,
+  Event,
+  ":",
+  State
+)((state, event) => {
+  // Reset always returns to Idle, regardless of the current state.
+  if (event.type === "reset") {
+    return { status: "idle" };
+  }
+
+  if (state.status === "idle" && event.type === "start") {
+    return {
+      status: "loading",
+      startedAt: Math.trunc(event.at),
+    };
+  }
+
+  if (state.status === "loading" && event.type === "resolve") {
+    return {
+      status: "success",
+      data: event.data,
+      fetchedAt: Math.trunc(event.at),
+    };
+  }
+
+  if (state.status === "loading" && event.type === "reject") {
+    return {
+      status: "failure",
+      code: event.code,
+      reason: event.reason,
+    };
+  }
+
+  // Any other state/event pairing leaves the state unchanged.
+  return state;
+});
+
+// Re-export the underlying types for callers that need to validate inputs
+// directly (for example, the CLI entry point).
+export { State, Event };
+export { type as arktype };
+root@cf6d50dc-0a55-42a9-8458-8fd68761a741:/home/user/myproject#

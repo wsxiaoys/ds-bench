@@ -1,0 +1,98 @@
+New Terminal Output:
+
+root@5ca39d76-e84c-4337-b84e-9ed3bf35c446:/home/user/project# cat /home/user/project/recommend.py
+#!/usr/bin/env python3
+"""Personalized user-history recommender backed by LanceDB."""
+import argparse
+import json
+import os
+
+import lancedb
+import numpy as np
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Personalized recommender using LanceDB")
+    parser.add_argument("--user-id", required=True, help="Target user ID")
+    parser.add_argument("--query-vec", required=True, help="Path to .npy file with query vector")
+    parser.add_argument("--k", required=True, type=int, help="Number of recommendations")
+    parser.add_argument("--output", required=True, help="Path to output JSON file")
+    return parser.parse_args()
+
+
+def get_recent_user_history(db: lancedb.DBConnection, user_id: str, limit: int = 10):
+    """Return up to `limit` most-recent rows for the user, sorted by ts descending."""
+    history_tbl = db.open_table("user_history")
+    df = history_tbl.to_pandas()
+    if df.empty:
+        return df
+    df = df[df["user_id"] == user_id]
+    if df.empty:
+        return df
+    df = df.sort_values("ts", ascending=False).head(limit)
+    return df
+
+
+def build_seen_clause(seen_ids) -> str:
+    if not seen_ids:
+        # Always-true filter; avoids `NOT IN ()` which is invalid SQL.
+        return "1 = 1"
+    ids_csv = ",".join(str(int(i)) for i in seen_ids)
+    return f"id NOT IN ({ids_csv})"
+
+
+def main() -> None:
+    args = parse_args()
+
+    alpha = float(os.environ.get("BLEND_ALPHA", "0.3"))
+
+    # Load query vector.
+    query_vec = np.load(args.query_vec).astype("float32")
+    if query_vec.ndim != 1:
+        query_vec = query_vec.reshape(-1)
+
+    db = lancedb.connect("/home/user/project/data")
+    items = db.open_table("items")
+
+    # Recent user history (most recent 10).
+    history = get_recent_user_history(db, args.user_id, limit=10)
+    seen_ids = []
+    if not history.empty:
+        seen_ids = history["item_id"].astype(int).tolist()
+
+    # Compute taste vector by joining history with items.
+    taste_vec = None
+    if seen_ids:
+        items_df = items.to_pandas()
+        taste_df = items_df[items_df["id"].astype(int).isin(seen_ids)]
+        if not taste_df.empty:
+            embeddings = np.stack(
+                [np.asarray(v, dtype=np.float32) for v in taste_df["vector"].values]
+            )
+            taste_vec = embeddings.mean(axis=0)
+
+    # Blend.
+    if taste_vec is None:
+        blended = query_vec
+    else:
+        blended = (1.0 - alpha) * query_vec + alpha * taste_vec.astype(np.float32)
+    blended = np.asarray(blended, dtype=np.float32)
+
+    # Vector search excluding already-seen items.
+    where_clause = build_seen_clause(seen_ids)
+    results = (
+        items.search(blended)
+        .where(where_clause)
+        .limit(args.k)
+        .to_pandas()
+    )
+
+    top_ids = results["id"].astype(int).tolist()
+
+    with open(args.output, "w") as f:
+        json.dump(top_ids, f)
+
+
+if __name__ == "__main__":
+    main()
+root@5ca39d76-e84c-4337-b84e-9ed3bf35c446:/home/user/project#

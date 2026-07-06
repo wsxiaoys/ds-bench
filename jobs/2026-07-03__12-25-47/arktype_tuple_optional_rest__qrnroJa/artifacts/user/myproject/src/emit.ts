@@ -1,0 +1,35 @@
+import { type } from "arktype";
+
+// Define the payload object schema: { kind: string, data: unknown }
+const payloadSchema = type({ kind: "string", data: "unknown" });
+
+// Optional payload: payload object OR undefined
+const optionalPayload = payloadSchema.or("undefined");
+
+// Define emit as a type.fn-validated function with tuple-shaped parameters:
+//   [eventName, timestamp, payload?, ...tags]
+// where:
+//   - eventName: alphanumeric string, length 1..50
+//   - timestamp: non-negative integer
+//   - payload: optional object { kind: string, data: unknown }
+//   - tags: variadic strings, each with length 1..30
+export const emit = type.fn(
+  "1 <= string.alphanumeric <= 50",
+  "number % 1 >= 0",
+  [optionalPayload, "?"],
+  "...",
+  "1 <= string <= 30[]"
+)(
+  (eventName: string, timestamp: number, payload?: { kind: string; data: unknown }, ...tags: string[]) => {
+    // Build the event object, omitting payload when it is not provided.
+    const event: { name: string; timestamp: number; payload?: { kind: string; data: unknown }; tags: string[] } = {
+      name: eventName,
+      timestamp,
+      tags,
+    };
+    if (payload !== undefined) {
+      event.payload = payload;
+    }
+    return { ok: true, event };
+  },
+);

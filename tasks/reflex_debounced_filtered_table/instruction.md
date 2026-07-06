@@ -25,6 +25,7 @@ Use Astral `uv` to manage the Python environment and to drive every Reflex CLI c
 - Recomputation of `filtered` and `result_count` MUST happen inside an `@rx.event(background=True)` async handler that opens an `rx.asession()` and constructs a SQLModel `select` with `.where(...)` clauses and an `.order_by(...)` clause. All mutations to state must happen inside an `async with self:` block. The background event must be triggered whenever any filter or sort var changes.
 - The results table must be rendered with `rx.foreach` iterating over `State.filtered`, displaying at least `id`, `name`, `category`, `price`, and `in_stock` per row. Render `result_count` somewhere visible above or below the table.
 - Additionally expose a plain JSON HTTP endpoint `GET /api/filter` mounted via the Reflex `api_transformer` (a FastAPI app). This endpoint applies the exact same filter+sort semantics against the same SQLite database and returns a JSON object. The endpoint exists so that the filter logic can be exercised programmatically. See the "API Contract" sub-section.
+- The application frontend must run on port `3000` and the backend/API must run on port `8000` (e.g., by passing `--frontend-port 3000 --backend-port 8000` to the reflex run command).
 
 ### Seed Algorithm (must be implemented exactly)
 Use this list, in this order, as the only category values:
@@ -93,23 +94,4 @@ The length of `filtered` MUST equal `result_count`. Sort order in the JSON list 
 - For the API endpoint, build a separate FastAPI `APIRouter` (or a `FastAPI` instance) and pass it to `rx.App(api_transformer=...)`. The endpoint may use a synchronous SQLAlchemy session or `rx.asession()`; the semantics must match the State logic.
 - Factor the SQLModel `select`/`where`/`order_by` construction into a shared helper so that the State background event and the `/api/filter` endpoint produce identical results.
 - Make sure `rxconfig.py` keeps the default `db_url="sqlite:///reflex.db"`; the verifier reads that file directly.
-
-## Acceptance Criteria
-- Project path: `/home/user/filtered_table`
-- Start command (run from the project path): `uv run reflex run --backend-port 8000 --frontend-port 3000 --loglevel info`
-- Frontend port: 3000 (the `/` page must render with HTTP 200).
-- Backend port: 8000 (the `/api/filter` endpoint is mounted here via `api_transformer`).
-- After seeding completes, the SQLite database at `/home/user/filtered_table/reflex.db` must contain exactly 240 rows in the `product` table, distributed 40 per category for the six categories listed above, with `name`, `sku`, `price`, and `in_stock` matching the Seed Algorithm.
-- Source code under `/home/user/filtered_table/filtered_table/` must contain literal occurrences of all of the following Reflex idioms (verified by `grep`):
-  - `rx.debounce_input`
-  - `debounce_timeout=300`
-  - `rx.asession`
-  - `rx.foreach`
-  - `background=True`
-  - `api_transformer`
-- `GET http://localhost:3000/` returns HTTP 200 and the rendered page body references the table heading text used in the UI.
-- `GET http://localhost:8000/api/filter` returns the JSON object described in the API Contract, with `result_count` and `filtered` shaped as specified, and the list length matching `result_count`.
-- The filter logic implements the semantics described above for arbitrary combinations of the parameters, applied against the seeded data.
-- Background server teardown: after finishing the implementation, kill every background `reflex run` (and any other background server) you started. The verifier starts its own server fresh.
-- No external environment variables are required.
 

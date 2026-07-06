@@ -1,0 +1,129 @@
+New Terminal Output:
+
+root@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# mkdir -p /home/user && cat > /home/user/transcribe.py << 'PYEOF'
+> import json
+> import numpy as np
+> import librosa
+>
+> # Load audio
+> y, sr = librosa.load('/home/user/input.wav', sr=None)
+> duration = float(librosa.get_duration(y=y, sr=sr))
+>
+> # Detect onsets with backtrack=True
+> onset_frames = librosa.onset.onset_detect(y=y, sr=sr, backtrack=True)
+> onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+>
+> # Deduplicate (keep first of equal times)
+> if len(onset_times) > 0:
+>     unique = [onset_times[0]]
+>     for t in onset_times[1:]:
+>         if t > unique[-1] + 1e-6:
+>             unique.append(t)
+>     onset_times = np.array(unique)
+>
+> # Build segment boundaries: each onset to next onset (or end)
+> boundaries = list(onset_times) + [duration]
+>
+> # Pre-compute RMS across the whole file
+> hop_length = 512
+> rms_all = librosa.feature.rms(y=y, hop_length=hop_length)[0]
+> rms_times = librosa.frames_to_time(np.arange(len(rms_all)), sr=sr, hop_length=hop_length)
+>
+> fmin_hz = librosa.note_to_hz('C2')
+> fmax_hz = librosa.note_to_hz('C7')
+>
+> raw_notes = []
+> for i in range(len(onset_times)):
+>     start = float(onset_times[i])
+>     end = float(boundaries[i + 1])
+>     if end <= start:
+>         # Ensure strict increase
+>         end = start + 1.0 / sr
+>
+>     start_sample = int(start * sr)
+>     end_sample = max(end_sample if False else int(end * sr), start_sample + 1)
+>     y_seg = y[start_sample:end_sample]
+>
+>     # Estimate pitch with pyin
+>     try:
+>         f0, voiced_flag, voiced_prob = librosa.pyin(
+>             y_seg, fmin=fmin_hz, fmax=fmax_hz, sr=sr
+>         )
+>     except Exception:
+>         f0 = np.array([np.nan])
+>
+>     voiced_f0 = f0[~np.isnan(f0)]
+>     if len(voiced_f0) == 0:
+>         continue
+>
+>     pitch_hz = float(np.median(voiced_f0))
+>     pitch_midi_f = float(librosa.hz_to_midi(pitch_hz))
+>     pitch_midi = int(round(pitch_midi_f))
+>     pitch_midi = max(0, min(127, pitch_midi))
+>
+>     # RMS for this segment
+>     start_frame = int(np.searchsorted(rms_times, start))
+>     end_frame = int(np.searchsorted(rms_times, end))
+>     end_frame = max(end_frame, start_frame + 1)
+>     seg_rms = rms_all[start_frame:end_frame]
+>     if len(seg_rms) == 0:
+>         seg_rms = np.array([0.0])
+>     rms_val = float(np.mean(seg_rms))
+>
+>     raw_notes.append({
+>         'onset_sec': start,
+>         'offset_sec': end,
+>         'pitch_midi': pitch_midi,
+>         'rms': rms_val,
+>     })
+>
+> # Compute velocity from RMS values mapped to [1, 127]
+> if len(raw_notes) > 0:
+>     rms_vals = np.array([n['rms'] for n in raw_notes])
+>     rmin = float(rms_vals.min())
+>     rmax = float(rms_vals.max())
+>     for n in raw_notes:
+>         if rmax > rmin:
+>             v = 1 + int(round((n['rms'] - rmin) / (rmax - rmin) * 126))
+>         else:
+>             v = 100
+>         n['velocity'] = max(1, min(127, v))
+>
+> # Clamp offset_sec to <= duration + 0.1
+> max_offset = duration + 0.1
+> for n in raw_notes:
+>     if n['offset_sec'] > max_offset:
+>         n['offset_sec'] = max_offset
+>     # Ensure strict > onset
+>     if n['offset_sec'] <= n['onset_sec']:
+>         n['offset_sec'] = n['onset_sec'] + 1.0 / sr
+>
+> # Build final notes
+> final_notes = [
+>     {
+>         'onset_sec': float(n['onset_sec']),
+>         'offset_sec': float(n['offset_sec']),
+>         'pitch_midi': int(n['pitch_midi']),
+>         'velocity': int(n['velocity']),
+>     }
+>     for n in raw_notes
+> ]
+>
+> # Sort by onset
+> final_notes.sort(key=lambda x: x['onset_sec'])
+>
+> with open('/home/user/notes.json', 'w') as f:
+>     json.dump(final_notes, f, indent=2)
+>
+> print(f"Wrote {len(final_notes)} notes to /home/user/notes.json")
+> for n in final_notes[:5]:
+>     print(n)
+> PYEOF
+root@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~# python3 /home/user/transcribe.py
+Wrote 11 notes to /home/user/notes.json
+{'onset_sec': 0.046439909297052155, 'offset_sec': 0.9287981859410431, 'pitch_midi': 60, 'velocity': 126}
+{'onset_sec': 0.9287981859410431, 'offset_sec': 1.0216780045351475, 'pitch_midi': 60, 'velocity': 77}
+{'onset_sec': 1.18421768707483, 'offset_sec': 2.136235827664399, 'pitch_midi': 64, 'velocity': 120}
+{'onset_sec': 2.136235827664399, 'offset_sec': 2.391655328798186, 'pitch_midi': 64, 'velocity': 1}
+{'onset_sec': 2.391655328798186, 'offset_sec': 3.297233560090703, 'pitch_midi': 67, 'velocity': 121}
+root@c364f0cc-8efa-4cdf-b78c-31ca8ae43f22:~#

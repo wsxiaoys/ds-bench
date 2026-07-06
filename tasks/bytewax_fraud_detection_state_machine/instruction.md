@@ -20,12 +20,7 @@ Implement a stateful stream processing dataflow using the Bytewax framework to d
 - Use a stateful operator (such as `stateful_map`) to maintain the state machine for each `user_id`.
 - The state must be effectively immutable as per Bytewax guidelines; return a new state object or dictionary from your state update function.
 - Ensure the input is keyed by `user_id` before passing it to the stateful operator.
-
-## Acceptance Criteria
-- Project path: /home/user/fraud_detection
-- Command: python run.py --input input.jsonl --output output.jsonl
-- Input format: JSONlines with fields `user_id` (string), `event_type` (string: "login", "transaction", "logout"), `amount` (number, optional), `timestamp` (integer seconds).
-- Output format: JSONlines with fields `user_id` (string) and `alert` (string: "FRAUD_ALERT").
-- The application must correctly identify users who meet the fraud pattern and output exactly one alert per completed pattern.
-- The code must use Bytewax's stateful processing capabilities.
+- Create your project in `/home/user/fraud_detection` and ensure your script is executable via `python run.py --input input.jsonl --output output.jsonl`.
+- The input JSONlines file contains fields: `user_id` (string), `event_type` (string: "login", "transaction", "logout"), `amount` (number, optional), and `timestamp` (integer seconds).
+- The output JSONlines file must contain fields: `user_id` (string) and `alert` (string: "FRAUD_ALERT").
 

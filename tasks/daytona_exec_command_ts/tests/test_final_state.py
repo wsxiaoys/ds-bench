@@ -67,10 +67,10 @@ def test_log_contains_node_version_line():
 
 def test_log_contains_echo_run_id_line():
     """The log must contain a line prefixed with 'ECHO: ' followed by the
-    same value as the ZEALT_RUN_ID environment variable."""
-    run_id = os.environ.get("ZEALT_RUN_ID", "").strip()
+    same value as the RUN_ID."""
+    run_id = open("/logs/artifacts/run-id").read().strip().strip()
     assert run_id, (
-        "ZEALT_RUN_ID environment variable must be set during verification "
+        "RUN_ID must be set during verification "
         "so the echoed sandbox value can be checked."
     )
 
@@ -78,12 +78,12 @@ def test_log_contains_echo_run_id_line():
     match = re.search(r"(?m)^ECHO:\s*(.*)$", content)
     assert match is not None, (
         "output.log must contain a line starting with 'ECHO: ' followed by "
-        "the captured output of `echo ${ZEALT_RUN_ID}` from inside the "
+        "the captured output of `echo ${RUN_ID}` from inside the "
         "sandbox."
     )
 
     echo_value = match.group(1).strip()
     assert echo_value == run_id, (
         f"The ECHO: line value '{echo_value}' does not match the expected "
-        f"ZEALT_RUN_ID value '{run_id}'."
+        f"RUN_ID value '{run_id}'."
     )

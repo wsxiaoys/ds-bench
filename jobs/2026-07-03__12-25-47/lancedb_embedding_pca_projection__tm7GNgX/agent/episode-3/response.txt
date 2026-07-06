@@ -1,0 +1,16 @@
+
+
+{
+  "analysis": "sklearn 1.5.2 is installed, /app exists and is empty. Now I'll create the build script that fits PCA and creates the new table.",
+  "plan": "Create a build script that:\n1. Reads source data\n2. Fits PCA with n_components=16\n3. Projects vectors to 16-d\n4. Saves model to /app/pca_model.npz\n5. Creates new table articles_pca_<run-id>\n\nThen create solution.py with the search function.",
+  "commands": [
+    {
+      "keystrokes": "cat > /home/user/myproject/build_pca.py << 'EOF'\nimport os\nimport numpy as np\nimport lancedb\nimport pyarrow as pa\nfrom sklearn.decomposition import PCA\n\nDB_DIR = '/home/user/myproject/lancedb/'\nRUN_ID = open('/logs/artifacts/run-id').read().strip()\nNEW_TABLE = f'articles_pca_{RUN_ID}'\nMODEL_PATH = '/app/pca_model.npz'\n\nprint(f'Connecting to {DB_DIR}')\ndb = lancedb.connect(DB_DIR)\n\nprint('Reading source table articles ...')\nsrc = db['articles']\nprint('rows:', src.count_rows())\n\n# Read into pandas to get all data + ids + titles\ndf = src.to_pandas()\nprint('df shape:', df.shape)\nprint('cols:', df.columns.tolist())\nprint('embedding example:', type(df['embedding'].iloc[0]), len(df['embedding'].iloc[0]))\n\nX = np.stack([np.asarray(v, dtype=np.float32) for v in df['embedding'].values]).astype(np.float64)\nprint('X shape:', X.shape, X.dtype)\n\nids = df['id'].astype(np.int64).tolist()\ntitles = df['title'].astype(str).tolist()\n\nprint('Fitting PCA(n_components=16, random_state=0) ...')\npca = PCA(n_components=16, random_state=0)\nXp = pca.fit_transform(X)\nprint('Xp shape:', Xp.shape)\nprint('components shape:', pca.components_.shape)\nprint('mean shape:', pca.mean_.shape)\n\n# Save model in sklearn convention\nprint(f'Saving model to {MODEL_PATH}')\nnp.savez(MODEL_PATH, components=pca.components_.astype(np.float64), mean=pca.mean_.astype(np.float64))\n\n# Project must match: Xp = (X - mean) @ components.T\n# Verifier convention: pca.transform(x) = (x - mean) @ components.T\ncheck = (X - pca.mean_) @ pca.components_.T\nprint('recompute diff max:', np.max(np.abs(check - Xp)))\n\n# Build new table\nprint(f'Building new table {NEW_TABLE}')\nXp32 = Xp.astype(np.float32)\nrecords = []\nfor i, (id_, title_) in enumerate(zip(ids, titles)):\n    rec = {\n        'id': int(id_),\n        'title': title_,\n        'embedding': Xp32[i].tolist(),\n        'original_id': int(id_),\n    }\n    records.append(rec)\n\n# If table exists, drop and recreate (idempotent)\nif NEW_TABLE in db.table_names():\n    print('Dropping existing', NEW_TABLE)\n    db.drop_table(NEW_TABLE)\n\nschema = pa.schema([\n    pa.field('id', pa.int64()),\n    pa.field('title', pa.string()),\n    pa.field('embedding', pa.list_(pa.float32(), 16)),\n    pa.field('original_id', pa.int64()),\n])\n\ntbl = db.create_table(NEW_TABLE, records, schema=schema, mode='overwrite')\nprint('Created, rows =', tbl.count_rows())\nprint('Schema:')\nprint(tbl.schema)\nEOF\necho '--- script written ---'\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cd /home/user/myproject && python3 build_pca.py\n",
+      "duration": 30.0
+    }
+  ]
+}

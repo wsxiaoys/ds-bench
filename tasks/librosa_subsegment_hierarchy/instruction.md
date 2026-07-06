@@ -8,20 +8,7 @@ Produce a 2-level hierarchical segmentation of a short tonal audio clip using `l
 - Build a beat-synchronous `chroma_cqt` feature matrix as the segmentation feature.
 - Use `librosa.segment.agglomerative` to obtain coarse boundaries (k between 4 and 8 inclusive).
 - For each coarse segment, use `librosa.segment.subsegment` with `n_segments=3` to refine it into exactly 3 fine sub-segments.
-- Write both layers, with parent linkage, to `/home/user/hierarchy.json`.
-
-## Implementation Hints
-- Use `librosa.beat.beat_track` to obtain beat frames at a consistent `hop_length` and use those beats both for the beat-synchronous feature aggregation (`librosa.util.sync`) and as the unit of segmentation.
-- Call `librosa.segment.agglomerative` on the beat-synchronous chroma matrix; the returned values are left-boundary indices in the aggregated coordinate system (always starting at 0). You will need to map them back to beat boundaries and then to time using the same `hop_length`.
-- When calling `librosa.segment.subsegment`, pass the original chroma matrix along with the segment boundary frames; the returned array merges in the input boundaries, so be careful to extract exactly 3 fine sub-segments per coarse segment.
-- Convert all boundary frames to seconds via `librosa.frames_to_time` (using the same `hop_length` used for chroma), and clamp the last coarse and last fine boundaries to the audio duration so the coarse layer covers the full track and each coarse segment is fully covered by its 3 children.
-- All `librosa` feature and segmentation routines on 0.11 are keyword-only past the leading positional arguments; confirm signatures against the official 0.11 docs.
-
-## Acceptance Criteria
-- Project path: /workspace
-- Ensure the segmentation pipeline is executed and the output artifact exists.
-- Output file: `/home/user/hierarchy.json`
-- The output file must be a JSON object matching the schema:
+- Write both layers, with parent linkage, to `/home/user/hierarchy.json` as a JSON object matching the following schema:
 
   ```json
   {
@@ -34,7 +21,13 @@ Produce a 2-level hierarchical segmentation of a short tonal audio clip using `l
   }
   ```
 
-- The `coarse` list must be sorted by `start`, contain between 4 and 8 entries inclusive, be non-overlapping, start within 0.3s of 0, end within 0.5s of the audio duration, and have no internal gap larger than 0.3s. Each coarse segment must be strictly longer than 0.5s.
-- The `fine` list must be sorted by `start`. For each coarse segment `c` there must be exactly 3 fine entries whose `parent_index` equals `c["index"]`; those 3 children, in start-sorted order, must cover `[c.start, c.end]` with no gap larger than 0.05s and no overlap larger than 0.05s. Every fine segment must be strictly longer than 0.1s.
-- Every `parent_index` must be a valid index into `coarse`.
+## Implementation Hints
+- Use `librosa.beat.beat_track` to obtain beat frames at a consistent `hop_length` and use those beats both for the beat-synchronous feature aggregation (`librosa.util.sync`) and as the unit of segmentation.
+- Call `librosa.segment.agglomerative` on the beat-synchronous chroma matrix; the returned values are left-boundary indices in the aggregated coordinate system (always starting at 0). You will need to map them back to beat boundaries and then to time using the same `hop_length`.
+- When calling `librosa.segment.subsegment`, pass the original chroma matrix along with the segment boundary frames; the returned array merges in the input boundaries, so be careful to extract exactly 3 fine sub-segments per coarse segment.
+- Convert all boundary frames to seconds via `librosa.frames_to_time` (using the same `hop_length` used for chroma), and clamp the last coarse and last fine boundaries to the audio duration so the coarse layer covers the full track and each coarse segment is fully covered by its 3 children.
+- In the output JSON:
+  - The `coarse` list must be sorted by `start` time, with contiguous integer indices starting from 0. The first segment must start within 0.3s of 0, the last must end within 0.5s of the audio duration, and consecutive segments must not overlap or have gaps larger than 0.3s. Each coarse segment must be longer than 0.5s.
+  - The `fine` list must also be sorted by `start` time, and each entry must have a unique integer `index`. For each coarse segment `c`, its exactly 3 fine sub-segments must point to `c` via `parent_index` and cover `[c.start, c.end]` with no gap or overlap larger than 0.05s. Every fine segment must be longer than 0.1s.
+- All `librosa` feature and segmentation routines on 0.11 are keyword-only past the leading positional arguments; confirm signatures against the official 0.11 docs.
 

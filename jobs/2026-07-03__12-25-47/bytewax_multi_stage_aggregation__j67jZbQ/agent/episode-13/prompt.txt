@@ -1,0 +1,97 @@
+New Terminal Output:
+
+root@fffd77b8-bb2f-4ce3-a952-a12f1d1f4aa4:/home/user/bytewax_project# sed -n '1080,1130p' /usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py
+    documentation there.
+
+    :arg step_id: Unique ID.
+
+    :arg up: Keyed stream.
+
+    :arg builder: Called whenver a new key is encountered with the
+        resume state returned from {py:obj}`StatefulLogic.snapshot`
+        for this key, if any. This should close over any non-state
+        configuration and combine it with the resume state to return
+        the prepared {py:obj}`StatefulLogic` for the new key.
+
+    :returns: Keyed stream of all items returned from
+        {py:obj}`StatefulLogic.on_item`,
+        {py:obj}`StatefulLogic.on_notify`, and
+        {py:obj}`StatefulLogic.on_eof`.
+
+    """
+
+    def shim_builder(resume_state: Optional[S]) -> _StatefulLogic[V, W, S]:
+        inner_logic = builder(resume_state)
+        return _StatefulLogic(inner_logic, builder)
+
+    return stateful_batch("stateful_batch", up, shim_builder)
+
+
+@dataclass
+class _CollectState(Generic[V]):
+    acc: List[V] = field(default_factory=list)
+    timeout_at: Optional[datetime] = None
+
+
+@dataclass
+class _CollectLogic(StatefulLogic[V, List[V], _CollectState[V]]):
+    step_id: str
+    now_getter: Callable[[], datetime]
+    timeout: timedelta
+    max_size: int
+    state: _CollectState[V]
+
+    @override
+    def on_item(self, value: V) -> Tuple[Iterable[List[V]], bool]:
+        self.state.timeout_at = self.now_getter() + self.timeout
+
+        self.state.acc.append(value)
+        if len(self.state.acc) >= self.max_size:
+            # No need to deepcopy because we are discarding the state.
+            return ((self.state.acc,), StatefulLogic.DISCARD)
+
+        return (_EMPTY, StatefulLogic.RETAIN)
+
+root@fffd77b8-bb2f-4ce3-a952-a12f1d1f4aa4:/home/user/bytewax_project# sed -n '1990,2030p' /usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py
+    fold_final_eg.out: ('key1', 3)
+    fold_final_eg.out: ('key2', 8)
+    ```
+
+    :arg step_id: Unique ID.
+
+    :arg up: Keyed stream.
+
+    :arg builder: Called the first time a key appears and is expected
+        to return the empty accumulator for that key.
+
+    :arg folder: Combines a new value into an existing accumulator and
+        returns the updated accumulator. The accumulator is initially
+        the empty accumulator.
+
+    :returns: A keyed stream of the accumulators. _Only once the
+        upstream is EOF._
+
+    """
+
+    def shim_builder(resume_state: Optional[S]) -> _FoldFinalLogic[V, S]:
+        state = resume_state if resume_state is not None else builder()
+        return _FoldFinalLogic(step_id, folder, state)
+
+    return stateful("stateful", up, shim_builder)
+
+
+def _default_inspector(step_id: str, item: Any) -> None:
+    print(f"{step_id}: {item!r}", flush=True)
+
+
+@operator
+def inspect(
+    step_id: str,
+    up: Stream[X],
+    inspector: Callable[[str, X], None] = _default_inspector,
+) -> Stream[X]:
+    """Observe items for debugging.
+
+    ```{testcode}
+    import bytewax.operators as op
+root@fffd77b8-bb2f-4ce3-a952-a12f1d1f4aa4:/home/user/bytewax_project#

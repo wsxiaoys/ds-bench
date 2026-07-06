@@ -1,0 +1,209 @@
+New Terminal Output:
+
+root@43871d43-2a93-4efb-8caa-f8f57bce6383:/tmp# cat > /tmp/segment.py << 'PYEOF'
+> import json
+> import numpy as np
+> import librosa
+> import librosa.feature
+> import librosa.beat
+> import librosa.segment
+>
+> HOP = 512
+> SR = 22050
+> N_SEG = 3
+>
+> # Load audio
+> y, sr = librosa.load('/home/user/input.wav', sr=SR)
+> duration = len(y) / float(sr)
+>
+> # Beat tracking
+> tempo, beats = librosa.beat.beat_track(y=y, sr=sr, hop_length=HOP)
+> beats = np.asarray(beats)
+> n_beats_total = len(beats)
+> print('duration:', duration, 'tempo:', tempo, 'beats:', n_beats_total)
+>
+> # Chroma CQT
+> chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=HOP)
+>
+> # Beat-synchronous chroma
+> sync_chroma = librosa.util.sync(chroma, beats)
+>
+> # Coarse segmentation with k in [4,8]
+> # Try k values that yield well-balanced segments (no degenerate initial segment)
+> best_k = None
+> best_bounds = None
+> best_score = -np.inf
+> for k_candidate in range(4, 9):
+>     b_cand = np.asarray(librosa.segment.agglomerative(sync_chroma, k_candidate))
+>     # Evaluate: avoid short segments; require at least 3 beats between boundaries
+>     diffs = np.diff(np.concatenate([b_cand, [n_beats_total - 1]]))
+>     min_diff = int(diffs.min())
+>     # We need each interval to have enough beats for subsegment to yield 3 sub-segments
+>     # If an interval has few beats (< 4), it will fall back to even split
+>     score = -min_diff
+>     if min_diff < 2:
+>         score -= 100
+>     print(f'k={k_candidate} bounds={b_cand.tolist()} diffs={diffs.tolist()} min_diff={min_diff}')
+>     if score > best_score:
+>         best_score = score
+>         best_k = k_candidate
+>         best_bounds = b_cand
+>
+> k = best_k
+> bounds = best_bounds
+> print('chosen k=', k, 'bounds=', bounds)
+>
+> total_frames = chroma.shape[1]
+> print('chroma shape:', chroma.shape, 'total_frames:', total_frames)
+>
+> # Build coarse segments
+> coarse_segments = []
+> for i in range(len(bounds)):
+>     bi_start = int(bounds[i])
+>     if i + 1 < len(bounds):
+>         end_frame = int(beats[bounds[i+1]])
+>     else:
+>         end_frame = total_frames
+>     # Start frame: if first segment, use 0; else use beats[bi_start]
+>     if i == 0:
+>         start_frame = 0
+>     else:
+>         start_frame = int(beats[bi_start])
+>     start_t = float(librosa.frames_to_time(np.array([start_frame]), sr=sr, hop_length=HOP)[0])
+>     end_t = float(librosa.frames_to_time(np.array([end_frame]), sr=sr, hop_length=HOP)[0])
+>     coarse_segments.append({'index': i, 'start_frame': start_frame, 'end_frame': end_frame, 'start': start_t, 'end': end_t})
+>
+> # Ensure last segment ends at duration
+> coarse_segments[-1]['end_frame'] = total_frames
+> coarse_segments[-1]['end'] = duration
+>
+> # Ensure coarse segments are contiguous: segment[i].end_frame == segment[i+1].start_frame
+> for i in range(len(coarse_segments) - 1):
+>     coarse_segments[i+1]['start_frame'] = coarse_segments[i]['end_frame']
+>     coarse_segments[i+1]['start'] = coarse_segments[i]['end']
+>
+> print('coarse segments:', coarse_segments)
+>
+> # Subsegment each coarse segment into 3 sub-segments
+> # We always use 4 evenly-spaced beat-aligned boundaries per coarse segment when possible,
+> # falling back to frame-based boundaries for short segments.
+> fine_segments = []
+> for c in coarse_segments:
+>     # Find beat frames within this coarse segment
+>     seg_beats = beats[(beats >= c['start_frame']) & (beats < c['end_frame'])]
+>     if len(seg_beats) < 2:
+>         # No beats inside; we'll just use evenly spaced frame boundaries
+>         children = []
+>         for j in range(N_SEG):
+>             sf = c['start_frame'] + (c['end_frame'] - c['start_frame']) * j // N_SEG
+>             ef = c['start_frame'] + (c['end_frame'] - c['start_frame']) * (j + 1) // N_SEG
+>             start_t = float(librosa.frames_to_time(np.array([sf]), sr=sr, hop_length=HOP)[0])
+>             end_t = float(librosa.frames_to_time(np.array([ef]), sr=sr, hop_length=HOP)[0])
+>             children.append({'start_frame': sf, 'end_frame': ef, 'start': start_t, 'end': end_t, 'parent_index': c['index']})
+>     else:
+>         # Use seg_beats as input boundaries for subsegment
+>         sub_bounds = librosa.segment.subsegment(chroma, seg_beats, n_segments=N_SEG)
+>         sub_bounds = np.asarray(sub_bounds)
+>         n_int = len(seg_beats) - 1
+>         # Walk: take n_segments+1 boundaries per interval
+>         # interval 0 uses idx 0..n_seg, interval 1 uses idx n_seg..2n_seg, etc.
+>         # Total expected length: n_int * n_seg + 1
+>         children = []
+>         all_b = sub_bounds.tolist()
+>         expected_len = n_int * N_SEG + 1
+>         if len(all_b) < expected_len:
+>             # Some intervals may have been degraded due to too few frames.
+>             # In that case, the boundaries might be fewer.
+>             pass
+>         # Just use the structure: n_seg boundaries per interval (sharing endpoints)
+>         idx = 0
+>         # The pattern: bounds = [b0, i
+[... output limited to 10000 bytes; 69 interior bytes omitted ...]
+er interval: from idx i*n_seg to (i+1)*n_seg inclusive (n_seg+1 entries)
+>         for interval_i in range(n_int):
+>             start_idx = interval_i * N_SEG
+>             end_idx = start_idx + N_SEG + 1
+>             if end_idx > len(all_b):
+>                 end_idx = len(all_b)
+>             b_sub = all_b[start_idx:end_idx]
+>             # pad if needed
+>             while len(b_sub) < N_SEG + 1:
+>                 b_sub.append(c['end_frame'])
+>             # truncate if too many (shouldn't happen)
+>             if len(b_sub) > N_SEG + 1:
+>                 b_sub = b_sub[:N_SEG + 1]
+>             for j in range(N_SEG):
+>                 sf = int(b_sub[j])
+>                 ef = int(b_sub[j+1])
+>                 if sf < c['start_frame']: sf = c['start_frame']
+>                 if ef > c['end_frame']: ef = c['end_frame']
+>                 if ef <= sf:
+>                     ef = sf + 1
+>                 start_t = float(librosa.frames_to_time(np.array([sf]), sr=sr, hop_length=HOP)[0])
+>                 end_t = float(librosa.frames_to_time(np.array([ef]), sr=sr, hop_length=HOP)[0])
+>                 children.append({'start_frame': sf, 'end_frame': ef, 'start': start_t, 'end': end_t, 'parent_index': c['index']})
+>         if len(children) != N_SEG:
+>             # Fall back to even split
+>             children = []
+>             for j in range(N_SEG):
+>                 sf = c['start_frame'] + (c['end_frame'] - c['start_frame']) * j // N_SEG
+>                 ef = c['start_frame'] + (c['end_frame'] - c['start_frame']) * (j + 1) // N_SEG
+>                 start_t = float(librosa.frames_to_time(np.array([sf]), sr=sr, hop_length=HOP)[0])
+>                 end_t = float(librosa.frames_to_time(np.array([ef]), sr=sr, hop_length=HOP)[0])
+>                 children.append({'start_frame': sf, 'end_frame': ef, 'start': start_t, 'end': end_t, 'parent_index': c['index']})
+>
+>     fine_segments.extend(children)
+>
+> # Ensure each coarse segment's children cover it exactly: first.start = c.start, last.end = c.end
+> # and adjacency
+> for c in coarse_segments:
+>     children = [f for f in fine_segments if f['parent_index'] == c['index']]
+>     children.sort(key=lambda x: x['start_frame'])
+>     children[0]['start_frame'] = c['start_frame']
+>     children[0]['start'] = c['start']
+>     children[-1]['end_frame'] = c['end_frame']
+>     children[-1]['end'] = c['end']
+>     # Make adjacent children share boundary
+>     for k in range(1, len(children)):
+>         children[k]['start_frame'] = children[k-1]['end_frame']
+>         children[k]['start'] = children[k-1]['end']
+>     # Ensure each child has minimum duration (>0.1s i.e. > ~4-5 frames at hop=512 and sr=22050: 0.1s = 4.3 frames)
+>     for k in range(len(children)):
+>         min_frames = int(np.ceil(0.1 * sr / HOP)) + 1  # at least 5 frames for >0.1s
+>         if children[k]['end_frame'] - children[k]['start_frame'] < min_frames:
+>             # Steal from next if exists
+>             if k + 1 < len(children) and children[k+1]['end_frame'] - children[k+1]['start_frame'] > min_frames:
+>                 steal = min_frames - (children[k]['end_frame'] - children[k]['start_frame'])
+>                 children[k]['end_frame'] += steal
+>                 children[k]['end'] = float(librosa.frames_to_time(np.array([children[k]['end_frame']]), sr=sr, hop_length=HOP)[0])
+>                 children[k+1]['start_frame'] = children[k]['end_frame']
+>                 children[k+1]['start'] = children[k]['end']
+>             elif k - 1 >= 0 and children[k-1]['end_frame'] - children[k-1]['start_frame'] > min_frames:
+>                 steal = min_frames - (children[k]['end_frame'] - children[k]['start_frame'])
+>                 children[k]['start_frame'] -= steal
+>                 children[k]['start'] = float(librosa.frames_to_time(np.array([children[k]['start_frame']]), sr=sr, hop_length=HOP)[0])
+>                 children[k-1]['end_frame'] = children[k]['start_frame']
+>                 children[k-1]['end'] = children[k]['start']
+>
+> # Verify each coarse segment has exactly 3 fine segments
+> for c in coarse_segments:
+>     n_children = sum(1 for f in fine_segments if f['parent_index'] == c['index'])
+>     if n_children != N_SEG:
+>         print(f'WARNING: coarse {c["index"]} has {n_children} fine segments')
+>
+> # Build final json
+> coarse_out = [{'index': c['index'], 'start': round(float(c['start']), 6), 'end': round(float(c['end']), 6)} for c in coarse_segments]
+> # Sort fine by start time globally
+> fine_sorted = sorted(fine_segments, key=lambda x: x['start'])
+> fine_out = []
+> for i, f in enumerate(fine_sorted):
+>     fine_out.append({'index': i, 'start': round(float(f['start']), 6), 'end': round(float(f['end']), 6), 'parent_index': int(f['parent_index'])})
+>
+> result = {'coarse': coarse_out, 'fine': fine_out}
+>
+> with open('/home/user/hierarchy.json', 'w') as f:
+>     json.dump(result, f, indent=2)
+>
+> print(json.dumps(result, indent=2))
+> PYEOF
+root@43871d43-2a93-4efb-8caa-f8f57bce6383:/tmp#

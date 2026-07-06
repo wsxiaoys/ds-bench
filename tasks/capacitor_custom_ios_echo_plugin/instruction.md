@@ -7,9 +7,10 @@ Because this benchmark runs on Linux, you will not be able to invoke `xcodebuild
 
 ## Requirements
 - Implement a Swift Capacitor plugin called `EchoPlugin` at `/home/user/myapp/ios/App/App/EchoPlugin.swift` that conforms to both `CAPPlugin` and `CAPBridgedPlugin`.
-  - It must be exposed to the Objective-C runtime with the class name `EchoPlugin`.
-  - It must declare `identifier = "EchoPlugin"` and `jsName = "Echo"`.
-  - It must declare a `pluginMethods` array containing the `echo` method using `CAPPluginReturnPromise`.
+  - It must import `Capacitor` at the top of the file.
+  - It must be exposed to the Objective-C runtime with the class name `EchoPlugin` using `@objc(EchoPlugin)`.
+  - It must declare `public let identifier = "EchoPlugin"` and `public let jsName = "Echo"`.
+  - It must declare a `pluginMethods: [CAPPluginMethod]` array containing a `CAPPluginMethod(name: "echo", returnType: CAPPluginReturnPromise)` entry.
   - It must implement `@objc func echo(_ call: CAPPluginCall)` that resolves the call with a dictionary echoing the `value` argument back under the key `"value"` (default to an empty string when missing).
 - Register the plugin instance with the Capacitor bridge by overriding `capacitorDidLoad()` in the existing `MyViewController.swift` and calling `bridge?.registerPluginInstance(EchoPlugin())`.
 - Add `EchoPlugin.swift` to the Xcode build target so it ends up in both `PBXFileReference` and `PBXSourcesBuildPhase` sections of `ios/App/App.xcodeproj/project.pbxproj`.
@@ -22,20 +23,4 @@ Because this benchmark runs on Linux, you will not be able to invoke `xcodebuild
 - `bridge?.registerPluginInstance(...)` is called from `capacitorDidLoad()` inside the view controller that subclasses `CAPBridgeViewController` — that file already exists in the project.
 - Because Xcode is not available, you must edit `project.pbxproj` directly. Mirror the patterns used for existing Swift files (such as `MyViewController.swift`): add a `PBXFileReference`, a `PBXBuildFile`, an entry in the `App` group `PBXGroup` children, and an entry in the `Sources` `PBXSourcesBuildPhase`.
 - `pod` (CocoaPods) is not available in the Linux container; `npx cap sync ios` will skip the pod install step automatically and still exit 0.
-
-## Acceptance Criteria
-- Project path: /home/user/myapp
-- Plugin source file `ios/App/App/EchoPlugin.swift` exists and contains:
-  - `import Capacitor`
-  - `@objc(EchoPlugin)` annotation
-  - A class declaration combining `CAPPlugin` and `CAPBridgedPlugin`
-  - `public let identifier = "EchoPlugin"`
-  - `public let jsName = "Echo"`
-  - A `pluginMethods` array entry `CAPPluginMethod(name: "echo", returnType: CAPPluginReturnPromise)`
-  - A method signature matching `@objc func echo(_ call: CAPPluginCall)` and a `call.resolve` invocation that returns a dictionary keyed by `"value"`
-- The view controller at `ios/App/App/MyViewController.swift` overrides `capacitorDidLoad()` and calls `bridge?.registerPluginInstance(EchoPlugin())`.
-- The Xcode project file `ios/App/App.xcodeproj/project.pbxproj` references `EchoPlugin.swift` in both `PBXFileReference` and `PBXSourcesBuildPhase` sections (at least two occurrences of the string `EchoPlugin.swift`).
-- The TypeScript wrapper `src/echo.ts` imports `registerPlugin` from `@capacitor/core` and registers it under the literal name `"Echo"`.
-- Running `npx cap sync ios` from `/home/user/myapp` exits with status 0.
-- `EchoPlugin.swift` has balanced curly braces (equal counts of `{` and `}`, at least 4 of each).
 

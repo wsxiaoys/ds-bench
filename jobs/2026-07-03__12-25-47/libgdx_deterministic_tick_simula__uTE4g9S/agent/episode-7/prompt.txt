@@ -1,0 +1,180 @@
+New Terminal Output:
+
+root@56d6b4eb-ce6f-4e19-be9a-b7c555a667fd:/home/user/gdx-sim# cat > build.gradle << 'EOF'
+> plugins {
+>     id 'application'
+>     id 'java'
+> }
+>
+> group = 'com.example'
+> version = '1.0.0'
+>
+> repositories {
+>     mavenCentral()
+> }
+>
+> dependencies {
+>     implementation 'com.badlogicgames.gdx:gdx:1.14.2'
+>     implementation 'com.badlogicgames.gdx:gdx-backend-headless:1.14.2'
+>     implementation 'com.badlogicgames.gdx:gdx-platform:1.14.2:natives-desktop'
+> }
+>
+> application {
+>     mainClass = 'com.example.sim.SimApp'
+> }
+> EOF
+root@56d6b4eb-ce6f-4e19-be9a-b7c555a667fd:/home/user/gdx-sim# cat > src/main/java/com/example/sim/SimApp.java << 'JAVA_EOF'
+> package com.example.sim;
+>
+> import java.io.OutputStreamWriter;
+> import java.io.Writer;
+> import java.nio.charset.StandardCharsets;
+> import java.util.Locale;
+> import java.util.Properties;
+>
+> import com.badlogic.gdx.ApplicationAdapter;
+> import com.badlogic.gdx.Gdx;
+> import com.badlogic.gdx.backends.headless.HeadlessApplication;
+> import com.badlogic.gdx.backends.headless.HeadlessApplicationConfiguration;
+> import com.badlogic.gdx.files.FileHandle;
+>
+> public class SimApp extends ApplicationAdapter {
+>
+>     private String outputPath;
+>
+>     private double x, y, vx, vy;
+>     private double dt;
+>     private double ay; // gravity_y
+>     private int ticks;
+>     private int renderCount = 0;
+>     private volatile boolean started = false;
+>
+>     @Override
+>     public void create() {
+>         // Main thread has set up paths via static fields on the class.
+>         this.started = true;
+>
+>         // Read config file (absolute path passed in).
+>         Properties props = new Properties();
+>         FileHandle cfg = Gdx.files.absolute(Main.configPath);
+>         try (java.io.InputStreamReader reader = new java.io.InputStreamReader(cfg.read(), StandardCharsets.UTF_8)) {
+>             props.load(reader);
+>         } catch (java.io.IOException e) {
+>             throw new RuntimeException("Failed to read config: " + Main.configPath, e);
+>         }
+>
+>         this.ticks = Integer.parseInt(props.getProperty("ticks", "0").trim());
+>         this.dt = Double.parseDouble(props.getProperty("dt", "0").trim());
+>         this.x = Double.parseDouble(props.getProperty("position_x", "0").trim());
+>         this.y = Double.parseDouble(props.getProperty("position_y", "0").trim());
+>         this.vx = Double.parseDouble(props.getProperty("velocity_x", "0").trim());
+>         this.vy = Double.parseDouble(props.getProperty("velocity_y", "0").trim());
+>         this.ay = Double.parseDouble(props.getProperty("gravity_y", "0").trim());
+>
+>         this.outputPath = Main.outputPath;
+>
+>         // If ticks == 0, exit immediately after setup; dispose() will write the file.
+>         if (this.ticks <= 0) {
+>             Gdx.app.exit();
+>         }
+>     }
+>
+>     @Override
+>     public void render() {
+>         if (!started) return;
+>         if (renderCount >= ticks) {
+>             // Should not normally happen; just exit.
+>             Gdx.app.exit();
+>             return;
+>         }
+>
+>         // Symplectic Euler integration
+>         double ax = 0.0;
+>         vx += ax * dt;
+>         vy += ay * dt;
+>         x += vx * dt;
+>         y += vy * dt;
+>
+>         renderCount++;
+>
+>         if (renderCount >= ticks) {
+>             Gdx.app.exit();
+>         }
+>     }
+>
+>     @Override
+>     public void dispose() {
+>         // Write the final state to the output file using UTF-8 and LF line endings.
+>         if (outputPath == null) return;
+>         FileHandle out = Gdx.files.absolute(outputPath);
+>         StringBuilder sb = new StringBuilder();
+>         sb.append("final_x=").append(String.format(Locale.ROOT, "%.6f", x)).append('\n');
+>         sb.append("final_y=").append(String.format(Locale.ROOT, "%.6f", y)).append('\n');
+>         sb.append("final_vx=").append(String.format(Locale.ROOT, "%.6f", vx)).append('\n');
+>         sb.append("final_vy=").append(String.format(Locale.ROOT, "%.6f", vy)).append('\n');
+>         sb.append("ticks=").append(renderCount).append('\n');
+>         byte[] data = sb.toString().getBytes(StandardCharsets.UTF_8);
+>         try (java.io.OutputStream os = out.write(false)) {
+>             os.write(data);
+>             os.flush();
+>         } catch (java.io.IOException e) {
+>             throw new RuntimeException("Failed to write output: " + outputPath, e);
+>         }
+>     }
+>
+>     // ---------- Bootstrap ----------
+>
+>     public static class Main {
+>         public static volatile String configPath;
+>         public static volatile String outputPath;
+>
+>         public static void main(String[] args) {
+>             if (args.length < 2) {
+>                 System.err.println("Usage: SimApp <config-path> <output-path>");
+>                 System.exit(2);
+>             }
+>             configPath = args[0];
+>             outputPath = args[1];
+>
+>             HeadlessApplicationConfiguration cfg = new HeadlessApplicationConfiguration();
+>             // Run the loop as fast as possible; no wall-clock pacing.
+>             cfg.updatesPerSecond = 0;
+>
+>             HeadlessApplication app = new HeadlessApplication(new SimApp(), cfg);
+>
+>             // Wait until the application is done (until Gdx.app.exit() tears it down).
+>             // HeadlessApplication exposes a thread via reflection-free API: getApplicationLogger
+>             // but the runnable loop is internal. Use reflection to join the loop thread.
+>             try {
+>                 java.lang.reflect.Field f = HeadlessApplication.class.getDeclaredField("mainLoopThread");
+>                 f.setAccessible(true);
+>                 Thread t = (Thread) f.get(app);
+>                 if (t != null) {
+>                     t.join();
+>                 }
+>             } catch (NoSuchFieldException nsfe) {
+>                 // Fallback: try alternative field names used across versions.
+>                 try {
+>                     java.lang.reflect.Field alt = null;
+>                     for (java.lang.reflect.Field candidate : HeadlessApplication.class.getDeclaredFields()) {
+>                         if (Thread.class.isAssignableFrom(candidate.getType())) {
+>                             alt = candidate;
+>                             break;
+>                         }
+>                     }
+>                     if (alt != null) {
+>                         alt.setAccessible(true);
+>                         Thread t = (Thread) alt.get(app);
+>                         if (t != null) t.join();
+>                     }
+>                 } catch (Exception e) {
+>                     throw new RuntimeException(e);
+>                 }
+>             } catch (Exception e) {
+>                 throw new RuntimeException(e);
+>             }
+>         }
+>     }
+> }
+> JAVA_EOF
+root@56d6b4eb-ce6f-4e19-be9a-b7c555a667fd:/home/user/gdx-sim#

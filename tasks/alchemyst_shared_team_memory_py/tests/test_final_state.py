@@ -11,9 +11,9 @@ BOB_PHRASE = "Bob recommends PostgreSQL with TimescaleDB for time-series storage
 
 
 def _run_id():
-    value = os.environ.get("ZEALT_RUN_ID")
+    value = open("/logs/artifacts/run-id").read().strip()
     assert value, (
-        "ZEALT_RUN_ID environment variable must be set in the verifier environment "
+        "RUN_ID must be set in the verifier environment "
         "to scope shared memory resources."
     )
     return value

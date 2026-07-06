@@ -21,21 +21,15 @@ Build a runtime-validated state machine using `arktype@2.2.0`. Both the machine'
   - `Loading` + `Resolve` -> `Success` with `data = event.data` and `fetchedAt = event.at` (truncated to integer if needed).
   - `Loading` + `Reject` -> `Failure` with `code = event.code` and `reason = event.reason`.
   - Any state + `Reset` -> `Idle`.
-- Build a CLI entrypoint that reads a single JSON document from stdin with the shape `{"initial": <State>, "events": [<Event>, ...]}`, replays the events through `transition`, and prints the outcome to stdout.
+- Build a CLI entrypoint in `cli.ts` that reads a single JSON document from stdin with the shape `{"initial": <State>, "events": [<Event>, ...]}`, replays the events through `transition` in order, and prints the outcome to stdout:
+  - On success: the first non-empty line MUST be exactly `VALID`, and the next non-empty line MUST be a JSON-stringified `State` describing the final state after replaying every event in order.
+  - On any validation failure (invalid `initial` state, invalid event payload, or transition produced an invalid state): a single non-empty line beginning with `INVALID: ` followed by an error description.
 
 ## Implementation Hints
 - Both unions must be true discriminated unions keyed by a literal tag so that ArkType can resolve each branch deterministically; do not rely on plain `or` chains of differently-morphed objects.
 - The transition function must be wrapped so that both the inputs and the result are validated at runtime.
 - The CLI may invoke the transition function directly; the runtime validation will reject malformed states or events with an `ArkErrors`-style failure that you must convert into the required stdout format.
 - The CLI must always exit with code 0 even when the input is rejected.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Command: `npx --no-install tsx cli.ts`
-- Input: a single JSON document piped through stdin with the shape `{"initial": <State>, "events": [<Event>, ...]}`.
-- Output (stdout):
-  - On success: the first non-empty line MUST be exactly `VALID`, and the next non-empty line MUST be a JSON-stringified `State` describing the final state after replaying every event in order.
-  - On any validation failure (invalid `initial`, invalid event payload, transition produced an invalid state): a single non-empty line beginning with `INVALID: ` followed by an error description.
-- Exit code: `0` for both the success and invalid cases.
+- You can execute your CLI using `npx --no-install tsx cli.ts`.
 - `arktype@2.2.0` and `tsx` are preinstalled at `/home/user/myproject`. `tsconfig.json` is preconfigured with `module: NodeNext` and `moduleResolution: NodeNext`.
 

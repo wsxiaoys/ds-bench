@@ -9,6 +9,7 @@ import {
 	ArrowUp,
 	ArrowUpDown,
 	Check,
+	Clock,
 	ExternalLink,
 	Filter,
 	Search,
@@ -63,7 +64,7 @@ export type CompactTrial = {
 	agent: string;
 	passed: boolean;
 	reward: number | null;
-	error: boolean;
+	error: string | boolean;
 	latency_sec: number | null;
 	latency_breakdown: {
 		env_setup: number | null;
@@ -813,24 +814,36 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 											{renderSortIcon("taskName")}
 										</div>
 									</th>
-									{activeCombos.map((combo, index) => (
-										<th
-											key={combo}
-											className={cn(
-												"relative min-w-30 px-3 py-3 text-left after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] sm:px-6 md:min-w-37.5",
-												index === activeCombos.length - 1 && "after:hidden",
-											)}
-										>
-											<div className="flex flex-col items-start">
-												<span
-													className="max-w-25 truncate font-medium text-foreground md:max-w-32.5"
-													title={combo.split(" (")[0]}
-												>
-													{combo.split(" (")[0]}
-												</span>
-											</div>
-										</th>
-									))}
+									{activeCombos.map((combo, index) => {
+										const [model, agentStr] = combo.split(" (");
+										const agent = agentStr ? agentStr.slice(0, -1) : "";
+										return (
+											<th
+												key={combo}
+												className={cn(
+													"relative min-w-30 px-3 py-3 text-left after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border/50 after:content-[''] sm:px-6 md:min-w-37.5",
+													index === activeCombos.length - 1 && "after:hidden",
+												)}
+											>
+												<div className="flex flex-col items-start">
+													<span
+														className="max-w-25 truncate font-medium text-foreground md:max-w-32.5"
+														title={model}
+													>
+														{model}
+													</span>
+													{agent && (
+														<span
+															className="max-w-25 truncate text-xs text-muted-foreground md:max-w-32.5"
+															title={agent}
+														>
+															{agent}
+														</span>
+													)}
+												</div>
+											</th>
+										);
+									})}
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-border/30">
@@ -1028,9 +1041,7 @@ const VirtualTaskRow = memo(function VirtualTaskRow({
 								onBlur={hideCellPreview}
 								onClick={hideCellPreview}
 							>
-								{trial.error ? (
-									<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500/90 md:h-4 md:w-4" />
-								) : trial.passed ? (
+								{trial.passed ? (
 									<Check
 										className="h-3.5 w-3.5 shrink-0 text-emerald-500/90 md:h-4 md:w-4"
 										strokeWidth={3}
@@ -1041,11 +1052,21 @@ const VirtualTaskRow = memo(function VirtualTaskRow({
 										strokeWidth={3}
 									/>
 								)}
-								<span className="font-mono text-muted-foreground/80 text-xs transition-colors group-hover/cell:text-foreground group-hover/cell:underline md:text-sm">
-									{trial.exec_duration
-										? `${trial.exec_duration.toFixed(1)}s`
-										: "-"}
-								</span>
+								{trial.error === "AgentTimeoutError" ? (
+									<span title="AgentTimeoutError">
+										<Clock className="h-3.5 w-3.5 shrink-0 text-red-400/80 md:h-4 md:w-4" />
+									</span>
+								) : trial.error ? (
+									<span title={typeof trial.error === "string" ? trial.error : "Error"}>
+										<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-400/80 md:h-4 md:w-4" />
+									</span>
+								) : (
+									<span className="font-mono text-muted-foreground/80 text-xs transition-colors group-hover/cell:text-foreground group-hover/cell:underline md:text-sm">
+										{trial.exec_duration
+											? `${trial.exec_duration.toFixed(1)}s`
+											: "-"}
+									</span>
+								)}
 							</Link>
 						) : (
 							<div

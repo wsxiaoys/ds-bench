@@ -8,7 +8,6 @@ REQUIRED_ENV_VARS = [
     "APIDECK_API_KEY",
     "APIDECK_CONSUMER_ID",
     "APIDECK_ISSUE_TRACKING_COLLECTION_ID",
-    "ZEALT_RUN_ID",
 ]
 
 
@@ -28,7 +27,7 @@ def test_required_env_var_is_set(env_var: str):
 
 
 def test_run_id_format():
-    run_id = os.environ.get("ZEALT_RUN_ID", "")
+    run_id = open("/logs/artifacts/run-id").read().strip()
     assert run_id.startswith("zr"), (
-        "ZEALT_RUN_ID must start with the prefix `zr` so that task side effects are isolated per run."
+        "RUN_ID must start with the prefix `zr` so that task side effects are isolated per run."
     )

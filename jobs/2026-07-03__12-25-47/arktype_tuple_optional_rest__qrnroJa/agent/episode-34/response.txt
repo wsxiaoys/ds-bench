@@ -1,0 +1,12 @@
+
+
+{
+  "analysis": "Now I see the problem clearly. When I pass a tuple schema, the params becomes `[[string, number, ...string[]]]` - which is a 1-element tuple where the element is a tuple. This means the function expects a single argument that's an array. So the spread doesn't distribute.\n\nThe issue is that `$.parse(tupleSchema)` is wrapping the tuple schema as the SINGLE parameter. The internal fn.js does `$.parse(paramDefs)` where paramDefs is the array of parameter definitions. So if we want the params to be a tuple of 4 elements, we need to pass them as 4 separate items in the array.\n\nLet me try with separate items, but the issue was the `\"...\"` element can't be a definition. Let me look more carefully at how the spread is parsed in the tuple literal.\n\nLooking at `parseTupleLiteral`:\n```js\nif (def[i] === \"...\" && i < def.length - 1) {\n    spread = true;\n    i++;\n}\nconst parsedProperty = parseProperty(def[i], ctx);\n```\n\nSo `def[i] === \"...\"` requires a string literal `\"...\"` element. The next element `def[i]` is the type of the spread.\n\nSo in `$.parse([\"string\", \"number\", \"...\", \"string[]\"])`, this works because the array has `\"...\"` at index 2 and `\"string[]\"` at index 3.\n\nWhen `$.parse(paramDefs)` is called from fn.js, paramDefs IS that array, so the parseTupleLiteral should work directly.\n\nBut fn.js slices the signature array - so when we call `type.fn(\"string\", \"number\", \"...\", \"string[]\")`, the signature is `[\"string\", \"number\", \"...\", \"string[]\"]` (no return type). The fn.js then does `paramDefs = signature.slice(0, lastParamIndex + 1)` where `lastParamIndex = signature.length - 1` (since no return operator). So paramDefs is the whole thing.\n\nThen `$.parse(paramDefs)` parses the array. Let me test this!",
+  "plan": "Test with separate args without return type.",
+  "commands": [
+    {
+      "keystrokes": "cat > test_fn.mjs << 'EOF'\nimport { type } from 'arktype';\n\n// Pass as separate args, no return type\nconst f = type.fn(\n  \"string\", \n  \"number >= 0\", \n  \"...\", \n  \"string[]\"\n)((name, ts, ...tags) => {\n  return { name, ts, tags };\n});\n\nconsole.log('params expression:', f.params.expression);\nconsole.log('---');\nconsole.log(JSON.stringify(f(\"abc\", 100, \"x\", \"y\")));\nconsole.log(JSON.stringify(f(\"abc\", 100)));\nEOF\nnpx --no-install tsx test_fn.mjs\n",
+      "duration": 3.0
+    }
+  ]
+}

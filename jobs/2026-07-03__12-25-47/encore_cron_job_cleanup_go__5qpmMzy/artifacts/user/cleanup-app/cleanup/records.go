@@ -1,0 +1,62 @@
+package cleanup
+
+import (
+    "context"
+    "time"
+)
+
+type Record struct {
+    ID        string    `json:"id"`
+    Data      string    `json:"data"`
+    CreatedAt time.Time `json:"created_at"`
+}
+
+type InsertRecordParams struct {
+    ID        string    `json:"id"`
+    Data      string    `json:"data"`
+    CreatedAt time.Time `json:"created_at"`
+}
+
+//encore:api public method=POST path=/records
+func InsertRecord(ctx context.Context, p *InsertRecordParams) error {
+    rec := &Record{
+        ID:        p.ID,
+        Data:      p.Data,
+        CreatedAt: p.CreatedAt,
+    }
+    _, err := db.Exec(ctx, `
+        INSERT INTO records (id, data, created_at)
+        VALUES ($1, $2, $3)
+    `, rec.ID, rec.Data, rec.CreatedAt)
+    return err
+}
+
+type ListRecordsResponse struct {
+    Records []*Record `json:"records"`
+}
+
+//encore:api public method=GET path=/records
+func ListRecords(ctx context.Context) (*ListRecordsResponse, error) {
+    rows, err := db.Query(ctx, `
+        SELECT id, data, created_at
+        FROM records
+        ORDER BY created_at DESC
+    `)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    resp := &ListRecordsResponse{}
+    for rows.Next() {
+        rec := &Record{}
+        if err := rows.Scan(&rec.ID, &rec.Data, &rec.CreatedAt); err != nil {
+            return nil, err
+        }
+        resp.Records = append(resp.Records, rec)
+    }
+    if err := rows.Err(); err != nil {
+        return nil, err
+    }
+    return resp, nil
+}

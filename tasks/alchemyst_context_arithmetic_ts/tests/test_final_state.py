@@ -138,7 +138,7 @@ def test_empty_intersection_eng_product(build_project):
 
 
 def test_rerunnable_no_conflict(build_project):
-    # Re-running with the same ZEALT_RUN_ID must succeed and yield the same result.
+    # Re-running with the same  must succeed and yield the same result.
     items = _run_cli("eng", "v1")
     keys = _key_set(items)
     assert keys == {"ENG_V1_DOC"}, (

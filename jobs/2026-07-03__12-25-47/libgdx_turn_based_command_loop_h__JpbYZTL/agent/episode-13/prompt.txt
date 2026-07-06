@@ -1,0 +1,148 @@
+New Terminal Output:
+
+root@2abd3574-07d2-4bc1-8b41-883a9b637e92:/home/user/turn-based-game# cat > /home/user/turn-based-game/headless/src/main/java/launcher/HeadlessLauncher.java <<
+'EOF'
+> package launcher;
+>
+> import com.badlogic.gdx.ApplicationListener;
+> import com.badlogic.gdx.Gdx;
+> import com.badlogic.gdx.backends.headless.HeadlessApplication;
+> import com.badlogic.gdx.backends.headless.HeadlessApplicationConfiguration;
+> import com.badlogic.gdx.files.FileHandle;
+> import game.ScriptedMockInput;
+> import game.TurnBasedGame;
+>
+> import java.io.File;
+> import java.util.ArrayList;
+> import java.util.List;
+> import java.util.concurrent.CountDownLatch;
+>
+> /**
+>  * Headless launcher. Boots a {@link HeadlessApplication} running a {@link TurnBasedGame}
+>  * driven by commands read from a script file. The transcript is written via libGDX's
+>  * {@link Gdx#files} subsystem, then the JVM is allowed to terminate cleanly with exit code 0.
+>  */
+> public final class HeadlessLauncher {
+>
+>     private HeadlessLauncher() { }
+>
+>     public static void main(String[] args) {
+>         String mapPath = null;
+>         String commandsPath = null;
+>         String transcriptPath = null;
+>         for (String a : args) {
+>             if (a == null) continue;
+>             if (a.startsWith("--map=")) mapPath = a.substring("--map=".length());
+>             else if (a.startsWith("--commands=")) commandsPath = a.substring("--commands=".length());
+>             else if (a.startsWith("--transcript=")) transcriptPath = a.substring("--transcript=".length());
+>         }
+>         if (mapPath == null || commandsPath == null || transcriptPath == null) {
+>             System.err.println("Usage: HeadlessLauncher --map=<path> --commands=<path> --transcript=<path>");
+>             System.exit(2);
+>             return;
+>         }
+>
+>         // Read commands file via standard IO (parsing is independent of libGDX).
+>         List<String> commands = readCommands(commandsPath);
+>
+>         // The transcript and map will be read through Gdx.files once Gdx.files exists.
+>         // We construct the listener first; Gdx.files is alive after HeadlessApplication ctor.
+>         CountDownLatch mainLoopDone = new CountDownLatch(1);
+>
+>         HeadlessApplication app;
+>         {
+>             HeadlessApplicationConfiguration cfg = new HeadlessApplicationConfiguration();
+>             // Run as fast as possible.
+>             cfg.updatesPerSecond = 0;
+>             cfg.renderInterval = 0f;
+>             cfg.idleFPS = 0;
+>             ScriptedMockInput scripted = new ScriptedMockInput(commands);
+>             FileHandle mapHandle = Gdx.files.absolute(new File(mapPath).getAbsolutePath());
+>             FileHandle transcriptHandle = Gdx.files.absolute(new File(transcriptPath).getAbsolutePath());
+>             TurnBasedGame game = new TurnBasedGame(mapHandle, transcriptHandle, scripted);
+>             // Wrap the listener so we can observe when the headless main loop terminates.
+>             ApplicationListener wrapper = new LoopTerminator(game, mainLoopDone);
+>             app = new HeadlessApplication(wrapper, cfg);
+>             // Replace Gdx.input with our scripted subclass immediately.
+>             Gdx.input = scripted;
+>         }
+>
+>         // Block the main thread until the headless main-loop thread signals done.
+>         try {
+>             mainLoopDone.await();
+>         } catch (InterruptedException ie) {
+>             Thread.currentThread().interrupt();
+>         }
+>         // Ensure resources are released.
+>         app.exit();
+>     }
+>
+>     private static List<String> readCommands(String path) {
+>         List<String> out = new ArrayList<String>();
+>         java.io.BufferedReader br = null;
+>         try {
+>             br = new java.io.BufferedReader(
+>                     new java.io.InputStreamReader(
+>                             new java.io.FileInputStream(path), "UTF-8"));
+>             String line;
+>             while ((line = br.readLine()) != null) {
+>                 String trimmed = line.trim();
+>                 if (trimmed.isEmpty()) continue;
+>                 if (trimmed.startsWith("#")) continue;
+>                 out.add(trimmed);
+>             }
+>         } catch (java.io.IOException ioe) {
+>             throw new RuntimeException("Failed to read commands file: " + path, ioe);
+>         } finally {
+>             if (br != null) {
+>                 try { br.close(); } catch (java.io.IOException ignored) { }
+>             }
+>         }
+>         return out;
+>     }
+>
+>     /** Wraps a listener so we can fire a latch when the headless main loop stops. */
+>     private static final class LoopTerminator implements ApplicationListener {
+>         private final ApplicationListener delegate;
+>         private final CountDownLatch latch;
+>         private boolean disposed = false;
+>
+>         LoopTerminator(ApplicationListener delegate, CountDownLatch latch) {
+>             this.delegate = delegate;
+>             this.latch = latch;
+>         }
+>
+>         @Override
+>         public void create() { delegate.create(); }
+>
+>         @Override
+>         public void render() {
+>             try {
+>                 delegate.render();
+>             } finally {
+>                 if (disposed) latch.countDown();
+>             }
+>         }
+>
+>         @Override
+>         public void pause() { delegate.pause(); }
+>
+>         @Override
+>         public void resize(int width, int height) { delegate.resize(width, height); }
+>
+>         @Override
+>         public void resume() { delegate.resume(); }
+>
+>         @Override
+>         public void dispose() {
+>             try {
+>                 delegate.dispose();
+>             } finally {
+>                 disposed = true;
+>                 latch.countDown();
+>             }
+>         }
+>     }
+> }
+> EOF
+root@2abd3574-07d2-4bc1-8b41-883a9b637e92:/home/user/turn-based-game#

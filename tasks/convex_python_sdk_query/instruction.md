@@ -18,10 +18,3 @@ Use the official Python SDK (`convex` package) to interact with a Convex backend
 - In `run.py`, initialize the `ConvexClient` using the `CONVEX_URL` environment variable.
 - Ensure `run.py` parses arguments correctly and prints the query output when `--list` is used.
 
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Command: `npx convex deploy --cmd "python3 run.py <args>"`
-- The script must support the `--add <text>` argument to insert a task.
-- The script must support the `--list` argument to print the list of tasks to stdout.
-- The `run.py` script must connect to the backend using the `CONVEX_URL` environment variable.
-

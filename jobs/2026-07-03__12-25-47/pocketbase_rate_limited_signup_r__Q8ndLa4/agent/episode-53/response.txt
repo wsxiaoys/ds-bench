@@ -1,0 +1,28 @@
+
+
+{
+  "analysis": "Found it! `ReferenceError: rateLimitStore is not defined`. The PocketBase JSVM is bundling all hook files together and rewriting them - variables in one file become local in the bundled output! That's why I need to use `globalThis` to share state across calls. Or use the `$app` or another mechanism.\n\nThe error tells me that PocketBase compiles hooks into a single pb.js file and scopes variables per-file. So I need to attach my state to a global object. Let me use `globalThis`.",
+  "plan": "Fix the hook by using globalThis for state storage.",
+  "commands": [
+    {
+      "keystrokes": "kill %1 2>/dev/null; sleep 1; pkill -f pocketbase; sleep 2\n",
+      "duration": 3.5
+    },
+    {
+      "keystrokes": "cat > /home/user/myproject/pb_hooks/rate_limit.pb.js << 'EOF'\nconst RATE_LIMIT_WINDOW_MS = 60 * 1000;\nconst RATE_LIMIT_MAX = 3;\n\n// Use globalThis for state that persists across hook invocations within the\n// PocketBase JSVM (per-file top-level `const`/`let` are scoped to the bundled\n// module and are not reliably shared across calls).\nif (typeof globalThis.__signupRateLimitStore === \"undefined\") {\n    globalThis.__signupRateLimitStore = {};\n}\nconst rateLimitStore = globalThis.__signupRateLimitStore;\n\nonRecordCreateRequest((e) => {\n    if (!e.collection || e.collection.name !== \"users\") {\n        return;\n    }\n\n    const ip = e.realIP();\n    const now = Date.now();\n\n    if (!rateLimitStore[ip]) {\n        rateLimitStore[ip] = [];\n    }\n    const timestamps = rateLimitStore[ip];\n\n    // Drop entries that fall outside the rolling 60s window.\n    const cutoff = now - RATE_LIMIT_WINDOW_MS;\n    while (timestamps.length > 0 && timestamps[0] <= cutoff) {\n        timestamps.shift();\n    }\n\n    if (timestamps.length >= RATE_LIMIT_MAX) {\n        const oldest = timestamps[0];\n        const retryAfterMs = (oldest + RATE_LIMIT_WINDOW_MS) - now;\n        let retryAfterSec = Math.ceil(retryAfterMs / 1000);\n        if (retryAfterSec < 1) {\n            retryAfterSec = 1;\n        }\n\n        // Set the Retry-After header before writing the response body.\n        try {\n            e.response.header().set(\"Retry-After\", String(retryAfterSec));\n        } catch (_) {}\n\n        // 429 response with `retryAfter` at the top level of the JSON body.\n        e.json(429, {\n            status: 429,\n            message: \"Too many signup attempts. Please try again later.\",\n            retryAfter: retryAfterSec,\n        });\n\n        // Stop processing further hooks/handlers.\n        throw new ApiError(429, \"stop\", {});\n    }\n\n    timestamps.push(now);\n}, \"users\");\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "sqlite3 /home/user/myproject/pb_data/data.db \"DELETE FROM users;\"\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cd /home/user/myproject && bash start.sh > /tmp/pb.log 2>&1 &\n",
+      "duration": 0.5
+    },
+    {
+      "keystrokes": "sleep 2 && for i in 1 2 3 4; do echo \"--- Request $i ---\"; curl -s -i -X POST http://127.0.0.1:8090/api/collections/users/records -H \"Content-Type: application/json\" -d \"{\\\"email\\\":\\\"user${i}_$(date +%s)@example.com\\\",\\\"password\\\":\\\"password12345678\\\",\\\"passwordConfirm\\\":\\\"password12345678\\\"}\"; echo \"\"; done\n",
+      "duration": 8.0
+    }
+  ]
+}

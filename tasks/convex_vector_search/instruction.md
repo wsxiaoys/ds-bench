@@ -7,8 +7,8 @@ Convex provides built-in vector search capabilities, allowing you to store embed
 - Initialize a Convex project in `/home/user/convex-project`.
 - Define a `foods` table with a string `text`, a string `runId`, and a float64 array `embedding`.
 - Create a vector index named `by_embedding` on the `embedding` field with 3 dimensions, and add `runId` as a filter field.
-- Implement a mutation `api.foods.insert` to add a new food document.
-- Implement an action `api.foods.searchSimilar` that takes a 3-dimensional vector and a `runId`, and uses `ctx.vectorSearch` to find the 2 most similar foods for that specific `runId`.
+- Implement a mutation `api.foods.insert` that accepts `runId` (string), `text` (string), and `embedding` (array of 3 numbers), and returns the inserted document ID.
+- Implement an action `api.foods.searchSimilar` that accepts `runId` (string) and `vector` (array of 3 numbers), and uses `ctx.vectorSearch` to return an array of objects containing `_id` and `_score` for the 2 most similar foods for that specific `runId`.
 - Deploy the Convex functions.
 
 ## Implementation Hints
@@ -17,11 +17,4 @@ Convex provides built-in vector search capabilities, allowing you to store embed
 - Remember that vector search is only available in Convex actions, not queries or mutations.
 - Use `ctx.vectorSearch("foods", "by_embedding", { vector: args.vector, limit: 2, filter: (q) => q.eq("runId", args.runId) })` in your action.
 - Ensure you run `npx convex deploy` to push your schema and functions to the Convex cloud.
-
-## Acceptance Criteria
-- Project path: /home/user/convex-project
-- Start command: npx convex deploy
-- Convex Functions:
-  - Mutation `api.foods.insert`: Accepts `runId` (string), `text` (string), and `embedding` (array of 3 numbers). Returns the inserted document ID.
-  - Action `api.foods.searchSimilar`: Accepts `runId` (string) and `vector` (array of 3 numbers). Returns an array of objects containing `_id` and `_score`, representing the 2 most similar documents filtered by the given `runId`.
 

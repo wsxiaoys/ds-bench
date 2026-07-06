@@ -1,0 +1,16 @@
+
+
+{
+  "analysis": "Build succeeded: 600 rows in new table, schema matches (embedding is fixed_size_list<item: float>[16]), PCA components and mean saved. The recompute diff is tiny (1.9e-10), confirming the sklearn convention. Now I need to:\n1. Verify the model file is correctly saved\n2. Create solution.py with the search function\n3. Test it",
+  "plan": "Create solution.py with the search function that loads the PCA model from /app/pca_model.npz, projects the query vector, and searches the new LanceDB table. Then test it.",
+  "commands": [
+    {
+      "keystrokes": "ls -la /app/pca_model.npz && python3 -c \"import numpy as np; d = np.load('/app/pca_model.npz'); print('files:', d.files); print('components:', d['components'].shape, d['components'].dtype); print('mean:', d['mean'].shape, d['mean'].dtype)\"\n",
+      "duration": 1.0
+    },
+    {
+      "keystrokes": "cat > /home/user/myproject/solution.py << 'EOF'\n\"\"\"PCA-projected LanceDB vector search.\"\"\"\nimport os\nimport numpy as np\nimport lancedb\n\nDB_DIR = '/home/user/myproject/lancedb/'\nMODEL_PATH = '/app/pca_model.npz'\n\n_RUN_ID = None\n_TABLE_NAME = None\n_COMPONENTS = None\n_MEAN = None\n_TABLE = None\n\n\ndef _ensure_loaded():\n    global _RUN_ID, _TABLE_NAME, _COMPONENTS, _MEAN, _TABLE\n    if _TABLE is not None:\n        return\n    with open('/logs/artifacts/run-id', 'r') as f:\n        _RUN_ID = f.read().strip()\n    _TABLE_NAME = f'articles_pca_{_RUN_ID}'\n    model = np.load(MODEL_PATH)\n    _COMPONENTS = model['components'].astype(np.float64)\n    _MEAN = model['mean'].astype(np.float64)\n    db = lancedb.connect(DB_DIR)\n    _TABLE = db[_TABLE_NAME]\n\n\ndef _project(q: np.ndarray) -> np.ndarray:\n    \"\"\"Project 128-d vector to 16-d using sklearn convention:\n    projected = (q - mean) @ components.T\n    \"\"\"\n    q = np.asarray(q, dtype=np.float64).reshape(-1)\n    if q.shape[0] != _MEAN.shape[0]:\n        raise ValueError(\n            f'query_vec must be {_MEAN.shape[0]}-d, got {q.shape[0]}'\n        )\n    return ((q - _MEAN) @ _COMPONENTS.T).astype(np.float32)\n\n\ndef search(query_vec, k):\n    \"\"\"Search for the k nearest neighbours of `query_vec` in the PCA-projected table.\n\n    Parameters\n    ----------\n    query_vec : sequence of 128 floats\n        Input vector in the original embedding space.\n    k : int\n        Number of neighbours to return.\n\n    Returns\n    -------\n    list of dict\n        Each dict has keys ``id`` (int), ``title`` (str), ``original_id`` (int),\n        ordered from most to least similar.\n    \"\"\"\n    _ensure_loaded()\n    proj = _project(query_vec)\n    results = _TABLE.search(proj.tolist()).limit(int(k)).to_list()\n    out = []\n    for r in results:\n        out.append({\n            'id': int(r['id']),\n            'title': str(r['title']),\n            'original_id': int(r['original_id']),\n        })\n    return out\nEOF\necho '--- solution.py written ---'\n",
+      "duration": 0.1
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+-- CreateTable
+CREATE TABLE "Document" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "content" TEXT NOT NULL,
+    "version" INTEGER NOT NULL DEFAULT 1
+);

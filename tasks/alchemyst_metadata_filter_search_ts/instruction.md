@@ -1,5 +1,3 @@
-# Metadata-Filtered Context Search with the Alchemyst TypeScript SDK
-
 ## Background
 Alchemyst AI is a Context Engine that lets you tag stored documents with `group_name` metadata so you can later run filtered semantic searches that only return chunks from the requested group(s). The TypeScript SDK has a well-known asymmetry that trips developers up: when storing a document you tag it with `group_name` (snake_case) inside `metadata`, but when searching you must filter with `groupName` (camelCase) inside `metadata`. Mixing these up silently returns the wrong (or no) results.
 
@@ -24,15 +22,4 @@ Your task is to build a small, rerunnable Node.js CLI in TypeScript that exercis
 - Because `file_name`s must be unique, attempting to re-add an existing `file_name` returns a 409 conflict. Make the seeding step idempotent so re-running the CLI does not crash.
 - The search returns chunks (`contexts`), each carrying its source document's metadata. Deduplicate by `file_name` and emit a single JSON array of strings.
 - For the TypeScript SDK details and the `group_name`/`groupName` asymmetry, see https://getalchemystai.com/docs/getting-started/quickstart and https://getalchemystai.com/docs/tutorials/typescript-agent.md.
-
-## Acceptance Criteria
-- Project path: /home/user/myproject
-- Command: `node dist/main.js --group <group_name>`
-- Input argument format: `--group <group_name>` where `<group_name>` is one of `support` or `engineering`.
 - The compiled output must exist at `/home/user/myproject/dist/main.js` after building.
-- The CLI must read `ALCHEMYST_AI_API_KEY` and `/logs/artifacts/run-id` from environment variables.
-- The CLI must seed four documents (two in `support`, two in `engineering`), with each `file_name` suffixed by the current `run-id`. Seeding must be idempotent across reruns.
-- The CLI must perform a real metadata-filtered search via `client.v1.context.search` using `metadata: { groupName: [<group>] }` (camelCase).
-- The stdout of the CLI must be a single JSON array of strings (the deduplicated `file_name`s returned by the filtered search) and nothing else on the final line. Logs may be printed to stderr.
-- When filtering by a given group, only documents whose stored `group_name` includes that group must appear in the JSON array.
-
