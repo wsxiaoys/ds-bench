@@ -1,0 +1,121 @@
+New Terminal Output:
+
+root@83fdef26-f5a1-4c44-abdc-b2bba8aff942:/home/user/myproject# cat node_modules/arktype/out/parser/shift/operand/operand.js | head -60
+import { whitespaceChars } from "@ark/util";
+import { enclosingChar, enclosingQuote, parseEnclosed } from "./enclosed.js";
+import { parseUnenclosed, writeMissingOperandMessage } from "./unenclosed.js";
+export const parseOperand = (s) => s.scanner.lookahead === "" ? s.error(writeMissingOperandMessage(s))
+    : s.scanner.lookahead === "(" ? s.shiftedBy(1).reduceGroupOpen()
+        : s.scanner.lookaheadIsIn(enclosingChar) ? parseEnclosed(s, s.scanner.shift())
+            : s.scanner.lookaheadIsIn(whitespaceChars) ? parseOperand(s.shiftedBy(1))
+                : s.scanner.lookahead === "d" ?
+                    s.scanner.nextLookahead in enclosingQuote ?
+                        parseEnclosed(s, `${s.scanner.shift()}${s.scanner.shift()}`)
+                        : parseUnenclosed(s)
+                    : s.scanner.lookahead === "x" ?
+                        s.scanner.nextLookahead === "/" ?
+                            s.shiftedBy(2) && parseEnclosed(s, "x/")
+                            : parseUnenclosed(s)
+                        : parseUnenclosed(s);
+root@83fdef26-f5a1-4c44-abdc-b2bba8aff942:/home/user/myproject# cat node_modules/arktype/out/parser/reduce/dynamic.js | head -100
+import { isKeyOf, throwInternalError, throwParseError, writeUnclosedGroupMessage, writeUnmatchedGroupCloseMessage } from "@ark/util";
+import { parseOperand } from "../shift/operand/operand.js";
+import { parseOperator } from "../shift/operator/operator.js";
+import { parseUntilFinalizer } from "../string.js";
+import { invertedComparators, minComparators, writeMultipleLeftBoundsMessage, writeOpenRangeMessage, writeUnpairableComparatorMessage } from "./shared.js";
+export class RuntimeState {
+    root;
+    branches = {
+        prefixes: [],
+        leftBound: null,
+        intersection: null,
+        union: null,
+        pipe: null
+    };
+    finalizer;
+    groups = [];
+    scanner;
+    ctx;
+    constructor(scanner, ctx) {
+        this.scanner = scanner;
+        this.ctx = ctx;
+    }
+    error(message) {
+        return throwParseError(message);
+    }
+    hasRoot() {
+        return this.root !== undefined;
+    }
+    setRoot(root) {
+        this.root = root;
+    }
+    unsetRoot() {
+        const value = this.root;
+        this.root = undefined;
+        return value;
+    }
+    constrainRoot(...args) {
+        this.root = this.root.constrain(args[0], args[1]);
+    }
+    finalize(finalizer) {
+        if (this.groups.length)
+            return this.error(writeUnclosedGroupMessage(")"));
+        this.finalizeBranches();
+        this.finalizer = finalizer;
+    }
+    reduceLeftBound(limit, comparator) {
+        const invertedComparator = invertedComparators[comparator];
+        if (!isKeyOf(invertedComparator, minComparators))
+            return this.error(writeUnpairableComparatorMessage(comparator));
+        if (this.branches.leftBound) {
+            return this.error(writeMultipleLeftBoundsMessage(this.branches.leftBound.limit, this.branches.leftBound.comparator, limit, invertedComparator));
+        }
+        this.branches.leftBound = {
+            comparator: invertedComparator,
+            limit
+        };
+    }
+    finalizeBranches() {
+        this.assertRangeUnset();
+        if (this.branches.pipe) {
+            this.pushRootToBranch("|>");
+            this.root = this.branches.pipe;
+            return;
+        }
+        if (this.branches.union) {
+            this.pushRootToBranch("|");
+            this.root = this.branches.union;
+            return;
+        }
+        if (this.branches.intersection) {
+            this.pushRootToBranch("&");
+            this.root = this.branches.intersection;
+            return;
+        }
+        this.applyPrefixes();
+    }
+    finalizeGroup() {
+        this.finalizeBranches();
+        const topBranchState = this.groups.pop();
+        if (!topBranchState) {
+            return this.error(writeUnmatchedGroupCloseMessage(")", this.scanner.unscanned));
+        }
+        this.branches = topBranchState;
+    }
+    addPrefix(prefix) {
+        this.branches.prefixes.push(prefix);
+    }
+    applyPrefixes() {
+        while (this.branches.prefixes.length) {
+            const lastPrefix = this.branches.prefixes.pop();
+            this.root =
+                lastPrefix === "keyof" ?
+                    this.root.keyof()
+                    : throwInternalError(`Unexpected prefix '${lastPrefix}'`);
+        }
+    }
+    pushRootToBranch(token) {
+        this.assertRangeUnset();
+        this.applyPrefixes();
+        const root = this.root;
+root@83fdef26-f5a1-4c44-abdc-b2bba8aff942:/home/user/myproject#

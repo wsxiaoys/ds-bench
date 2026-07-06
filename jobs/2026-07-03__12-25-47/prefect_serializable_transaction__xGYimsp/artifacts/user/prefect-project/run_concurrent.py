@@ -1,0 +1,41 @@
+import subprocess
+import sys
+from pathlib import Path
+
+
+FLOW_SCRIPT = Path("/home/user/prefect-project/flow.py")
+NUM_RUNS = 5
+
+
+def main() -> int:
+    # Make sure counter starts at 0
+    counter_file = Path("/home/user/prefect-project/counter.txt")
+    counter_file.write_text("0")
+
+    # Launch NUM_RUNS concurrent flow invocations as subprocesses so that
+    # each one acquires its own FileSystemLockManager and contends for the
+    # same lock file.
+    processes = []
+    for i in range(NUM_RUNS):
+        proc = subprocess.Popen(
+            [sys.executable, str(FLOW_SCRIPT)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        processes.append(proc)
+
+    # Wait for all to finish
+    for proc in processes:
+        stdout, stderr = proc.communicate()
+        if proc.returncode != 0:
+            print(f"Process failed with code {proc.returncode}")
+            print("STDOUT:", stdout.decode(errors="replace"))
+            print("STDERR:", stderr.decode(errors="replace"))
+
+    final = counter_file.read_text().strip()
+    print(f"Final counter value: {final}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

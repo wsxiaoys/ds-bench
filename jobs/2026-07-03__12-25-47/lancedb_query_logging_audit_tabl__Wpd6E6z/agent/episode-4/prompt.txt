@@ -1,0 +1,87 @@
+New Terminal Output:
+
+root@7d1bb788-98dc-4be8-ae6c-9328c582230c:/home/user/myproject# cd /home/user/myproject && python3 << 'EOF'
+> import lancedb
+> import pyarrow as pa
+> import random
+> import shutil
+> import os
+>
+> # Use a fresh DB for the test
+> test_db = '/tmp/test_audit.lancedb'
+> if os.path.exists(test_db):
+>     shutil.rmtree(test_db)
+>
+> from solution import LoggedSearcher
+>
+> random.seed(0)
+>
+> # 1. Create a fresh db with the same articles schema
+> db = lancedb.connect(test_db)
+> schema = pa.schema([
+>     pa.field('id', pa.int64()),
+>     pa.field('title', pa.string()),
+>     pa.field('embedding', pa.list_(pa.float32(), 64)),
+> ])
+> rows = []
+> for i in range(50):
+>     rows.append({'id': i, 'title': f'Article #{i:03d}', 'embedding': [random.gauss(0,1) for _ in range(64)]})
+> db.create_table('articles', data=rows, schema=schema)
+>
+> # 2. Try the LoggedSearcher
+> searcher = LoggedSearcher(test_db, 'articles', 'query_logs')
+>
+> # 3. Run a search
+> qv = [random.gauss(0,1) for _ in range(64)]
+> hits = searcher.search(qv, 5, query_id='q-1', user_id='alice', query_text='hello')
+> print('Hits returned:', len(hits))
+> print('First hit keys:', list(hits[0].keys()))
+> assert 'id' in hits[0]
+> assert 'title' in hits[0]
+> print('First hit:', hits[0]['id'], hits[0]['title'])
+>
+> # 4. Run a few more searches
+> for i in range(3):
+>     qv = [random.gauss(0,1) for _ in range(64)]
+>     searcher.search(qv, 3, query_id=f'q-{i+2}', user_id='bob', query_text=f'text {i}')
+>
+> # 5. Check query_logs
+> db2 = lancedb.connect(test_db)
+> print('Tables:', db2.table_names())
+> assert 'query_logs' in db2.table_names()
+> log_tbl = db2.open_table('query_logs')
+> print('Log schema:', log_tbl.schema)
+> print('Log rows:', log_tbl.count_rows())
+> rows = log_tbl.to_pylist()
+> for r in rows:
+>     print(r)
+>
+> # 6. Verify fields
+> assert len(rows) == 4
+> for r in rows:
+>     assert isinstance(r['query_id'], str)
+>     assert isinstance(r['user_id'], str)
+>     assert isinstance(r['query_text'], str)
+>     assert r['latency_ms'] > 0
+>     assert isinstance(r['hit_count'], int)
+>     assert all(isinstance(x, int) for x in r['top_ids'])
+>
+> print('ALL TESTS PASSED')
+> EOF
+Hits returned: 5
+First hit keys: ['id', 'title', 'embedding', '_distance']
+First hit: 20 Article #020
+Tables: ['articles', 'query_logs']
+Log schema: query_id: string not null
+user_id: string not null
+query_text: string
+ts: timestamp[us, tz=UTC] not null
+latency_ms: double not null
+hit_count: int64 not null
+top_ids: list<item: int64> not null
+  child 0, item: int64
+Log rows: 4
+Traceback (most recent call last):
+  File "<stdin>", line 52, in <module>
+AttributeError: 'LanceTable' object has no attribute 'to_pylist'
+root@7d1bb788-98dc-4be8-ae6c-9328c582230c:/home/user/myproject#

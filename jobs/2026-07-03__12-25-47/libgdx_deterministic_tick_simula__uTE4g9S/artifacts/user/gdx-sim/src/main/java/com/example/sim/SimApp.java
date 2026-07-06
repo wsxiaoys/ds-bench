@@ -1,0 +1,121 @@
+package com.example.sim;
+
+import java.io.InputStreamReader;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.Properties;
+
+import com.badlogic.gdx.ApplicationAdapter;
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.backends.headless.HeadlessApplication;
+import com.badlogic.gdx.backends.headless.HeadlessApplicationConfiguration;
+import com.badlogic.gdx.files.FileHandle;
+
+public class SimApp extends ApplicationAdapter {
+
+    // Paths supplied by main().
+    public static volatile String configPath;
+    public static volatile String outputPath;
+
+    // Simulation state.
+    private double x, y, vx, vy;
+    private double dt;
+    private double ay; // gravity_y (ax is always 0)
+    private int ticks;
+    private int renderCount = 0;
+
+    @Override
+    public void create() {
+        // Read config file via libGDX FileHandle (absolute path).
+        Properties props = new Properties();
+        FileHandle cfg = Gdx.files.absolute(configPath);
+        try (InputStreamReader reader = new InputStreamReader(cfg.read(), StandardCharsets.UTF_8)) {
+            props.load(reader);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read config: " + configPath, e);
+        }
+
+        this.ticks = Integer.parseInt(props.getProperty("ticks", "0").trim());
+        if (this.ticks < 0) this.ticks = 0;
+        this.dt = Double.parseDouble(props.getProperty("dt", "0").trim());
+        this.x  = Double.parseDouble(props.getProperty("position_x", "0").trim());
+        this.y  = Double.parseDouble(props.getProperty("position_y", "0").trim());
+        this.vx = Double.parseDouble(props.getProperty("velocity_x", "0").trim());
+        this.vy = Double.parseDouble(props.getProperty("velocity_y", "0").trim());
+        this.ay = Double.parseDouble(props.getProperty("gravity_y", "0").trim());
+
+        // If ticks == 0 we still want to write the initial state to the output file.
+        if (this.ticks == 0) {
+            Gdx.app.exit();
+        }
+    }
+
+    @Override
+    public void render() {
+        if (renderCount >= ticks) {
+            // HeadlessApplication always invokes render() once more after we call exit().
+            // Skip any further integration; just ensure exit is requested.
+            Gdx.app.exit();
+            return;
+        }
+
+        // Symplectic Euler integration (velocity first, then position).
+        double ax = 0.0;
+        vx += ax * dt;
+        vy += ay * dt;
+        x  += vx * dt;
+        y  += vy * dt;
+
+        renderCount++;
+
+        if (renderCount >= ticks) {
+            Gdx.app.exit();
+        }
+    }
+
+    @Override
+    public void dispose() {
+        // Write the final state to the output file with UTF-8 + LF line endings.
+        FileHandle out = Gdx.files.absolute(outputPath);
+        StringBuilder sb = new StringBuilder();
+        sb.append("final_x=").append(String.format(Locale.ROOT, "%.6f", x)).append('\n');
+        sb.append("final_y=").append(String.format(Locale.ROOT, "%.6f", y)).append('\n');
+        sb.append("final_vx=").append(String.format(Locale.ROOT, "%.6f", vx)).append('\n');
+        sb.append("final_vy=").append(String.format(Locale.ROOT, "%.6f", vy)).append('\n');
+        sb.append("ticks=").append(renderCount).append('\n');
+        byte[] data = sb.toString().getBytes(StandardCharsets.UTF_8);
+        try (OutputStream os = out.write(false)) {
+            os.write(data);
+            os.flush();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to write output: " + outputPath, e);
+        }
+    }
+
+    // ---------- Bootstrap ----------
+
+    public static void main(String[] args) throws Exception {
+        if (args.length < 2) {
+            System.err.println("Usage: SimApp <config-path> <output-path>");
+            System.exit(2);
+        }
+        configPath = args[0];
+        outputPath = args[1];
+
+        HeadlessApplicationConfiguration cfg = new HeadlessApplicationConfiguration();
+        // 0 = run the main loop as fast as possible, no wall-clock pacing.
+        cfg.updatesPerSecond = 0;
+
+        HeadlessApplication app = new HeadlessApplication(new SimApp(), cfg);
+
+        // Join the main-loop thread so the JVM doesn't exit before dispose() runs.
+        java.lang.reflect.Field f = HeadlessApplication.class.getDeclaredField("mainLoopThread");
+        f.setAccessible(true);
+        Thread t = (Thread) f.get(app);
+        if (t != null) {
+            t.join();
+        }
+    }
+}

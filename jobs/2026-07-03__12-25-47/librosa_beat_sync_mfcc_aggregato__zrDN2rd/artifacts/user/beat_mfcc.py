@@ -1,0 +1,70 @@
+import json
+import numpy as np
+import librosa
+import librosa.beat
+import librosa.feature
+import librosa.util
+
+INPUT_PATH = "/home/user/input.wav"
+MFCC_OUT = "/home/user/beat_mfcc.npz"
+BEATS_OUT = "/home/user/beats.json"
+
+HOP_LENGTH = 512
+N_MFCC = 20
+
+# Load audio
+y, sr = librosa.load(INPUT_PATH, sr=None, mono=True)
+
+# Beat tracking with the same hop_length
+tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=HOP_LENGTH)
+# tempo is a 1-D ndarray; reduce to scalar
+tempo_scalar = float(np.asarray(tempo).reshape(-1)[0])
+
+# Ensure beat_frames is a 1-D ndarray
+beat_frames = np.asarray(beat_frames).reshape(-1)
+
+# Compute MFCCs with the same hop_length
+mfcc = librosa.feature.mfcc(y=y, sr=sr, hop_length=HOP_LENGTH, n_mfcc=N_MFCC)
+
+# Aggregate MFCC frames into per-beat-interval medians
+mfcc_sync = librosa.util.sync(mfcc, beat_frames, aggregate=np.median, pad=False)
+
+# Convert beat frames to time (seconds)
+beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=HOP_LENGTH)
+beat_times = np.asarray(beat_times).reshape(-1).astype(float)
+# Ensure strictly increasing
+assert np.all(np.diff(beat_times) > 0), "beat times are not strictly increasing"
+duration = len(y) / float(sr)
+assert beat_times.min() >= 0.0 and beat_times.max() <= duration + 1e-6, \
+    f"beat times out of audio bounds: min={beat_times.min()} max={beat_times.max()} dur={duration}"
+
+# Sanity check on mfcc_sync shape
+n_cols = mfcc_sync.shape[1]
+n_beats = len(beat_times)
+assert n_cols in (n_beats - 1, n_beats), \
+    f"Unexpected sync column count: {n_cols} vs beats {n_beats}"
+assert mfcc_sync.shape[0] == N_MFCC, f"Unexpected MFCC row count: {mfcc_sync.shape[0]}"
+
+# Save synchronized MFCC matrix
+np.savez(MFCC_OUT, mfcc_sync=mfcc_sync)
+
+# Save beat metadata
+metadata = {
+    "tempo_bpm": tempo_scalar,
+    "beat_times_seconds": beat_times.tolist(),
+    "hop_length": int(HOP_LENGTH),
+    "sample_rate": int(sr),
+    "n_mfcc": int(N_MFCC),
+}
+with open(BEATS_OUT, "w") as f:
+    json.dump(metadata, f, indent=2)
+
+print("tempo_bpm:", tempo_scalar)
+print("hop_length:", HOP_LENGTH)
+print("sample_rate:", sr)
+print("n_mfcc:", N_MFCC)
+print("n_beats:", n_beats)
+print("mfcc_sync shape:", mfcc_sync.shape)
+print("audio duration:", duration)
+print("beat_times[0..4]:", beat_times[:5])
+print("beat_times[-4..]:", beat_times[-4:])

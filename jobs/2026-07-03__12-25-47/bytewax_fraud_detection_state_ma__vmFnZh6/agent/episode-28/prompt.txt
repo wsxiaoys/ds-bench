@@ -1,0 +1,40 @@
+New Terminal Output:
+
+root@be5de8b4-2ef7-4b40-aa15-0c4ba857c283:/home/user/fraud_detection# sed -n '95,130p' /home/user/fraud_detection/run.py
+        return new_state, None
+
+    # Unknown events are ignored; state remains unchanged (immutable copy).
+    return dict(state), None
+
+
+# ---------- Dataflow ----------
+def build_dataflow(input_path: str, output_path: str) -> Dataflow:
+    flow = Dataflow("fraud_detection")
+
+    # Read raw lines from the input file.
+    raw_lines = op.input("input", flow, FileSource(Path(input_path)))
+
+    # Parse each line into a dict, dropping any blank lines.
+    parsed = op.map("parse_json", raw_lines, lambda line: json.loads(line))
+
+    # Key by user_id so that state is maintained per user.
+    keyed = op.key_on("key_user", parsed, lambda event: event["user_id"])
+
+    # Run the state machine. stateful_map returns (new_state, alert_or_None).
+    processed = op.stateful_map("fraud_state", keyed, update_state)
+
+    # Drop the (key, None) tuples, keep only alerts.
+    only_alerts = op.filter("drop_none", processed, lambda kv: kv[1] is not None)
+
+    # Strip the key so the sink only sees the alert dict.
+    alert_values = op.map("strip_key", only_alerts, lambda kv: kv[1])
+
+    # Serialize the alert dict to a JSON string for the file sink.
+    keyed_alerts = op.key_on("alert_key", alert_values, lambda alert: alert["user_id"])
+    serialized = op.map("to_json_str", keyed_alerts, lambda kv: json.dumps(kv[1]))
+
+    op.output("alerts_out", serialized, FileSink(Path(output_path)))
+    return flow
+
+
+root@be5de8b4-2ef7-4b40-aa15-0c4ba857c283:/home/user/fraud_detection#

@@ -1,0 +1,60 @@
+New Terminal Output:
+
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex# grep -n 'def project\|def folder\|def merger\|Acc' /home/user/bytewax-apdex/apdex_flow.py
+77:class ApdexAccumulator:
+87:    def add(self, response_time_ms: int) -> "ApdexAccumulator":
+96:    def merge(self, other: "ApdexAccumulator") -> "ApdexAccumulator":
+110:def builder() -> ApdexAccumulator:
+111:    return ApdexAccumulator()
+114:def folder(acc: ApdexAccumulator, value) -> ApdexAccumulator:
+120:def merger(a: ApdexAccumulator, b: ApdexAccumulator) -> ApdexAccumulator:
+192:    # 5. Fold each window of events into an ApdexAccumulator.
+206:    def project(item) -> dict:
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex# sed -n '170,215p' /home/user/bytewax-apdex/apdex_flow.py
+    clock = EventClock(
+        ts_getter=lambda item: item[2],
+        wait_for_system_duration=timedelta(seconds=0),
+    )
+
+    # 4. 10-second tumbling windows aligned to the start of the first
+    #    window that contains any event.
+    epoch = datetime.fromtimestamp(0, tz=timezone.utc)
+    if events:
+        first_ts = min(ev[2] for ev in events)
+    else:
+        first_ts = epoch
+    seconds_since_epoch = int((first_ts - epoch).total_seconds())
+    window_seconds = int(WINDOW_LENGTH.total_seconds())
+    snapped = seconds_since_epoch - (seconds_since_epoch % window_seconds)
+    align_to = epoch + timedelta(seconds=snapped)
+
+    windower = TumblingWindower(
+        length=WINDOW_LENGTH,
+        align_to=align_to,
+    )
+
+    # 5. Fold each window of events into an ApdexAccumulator.
+    windowed = fold_window(
+        "apdex_fold",
+        keyed,
+        clock,
+        windower,
+        builder=builder,
+        folder=folder,
+        merger=merger,
+    )
+
+    # 6. Project each emitted item ``(service, (window_id, acc))`` into
+    #    the final output schema. ``window_start`` is computed from the
+    #    window id (the index 0, 1, 2, ...) and the aligned base time.
+    def project(item) -> dict:
+        service, (window_id, acc) = item
+        window_start = align_to + window_id * WINDOW_LENGTH
+        return {
+            "window_start": window_start.isoformat().replace("+00:00", "Z"),
+            "service": service,
+            "apdex_score": acc.apdex(),
+        }
+
+    results = op.map_value("project", windowed.down, project)
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex#

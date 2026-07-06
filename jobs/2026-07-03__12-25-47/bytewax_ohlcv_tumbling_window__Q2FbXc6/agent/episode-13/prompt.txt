@@ -1,0 +1,172 @@
+New Terminal Output:
+
+root@97c5c4c0-869e-45e9-beba-01256e290bbb:~# cat > run.py << 'EOF'
+> #!/usr/bin/env python3
+> """Tumbling Window OHLCV Aggregation using Bytewax."""
+>
+> import argparse
+> import json
+> from datetime import datetime, timedelta, timezone
+> from pathlib import Path
+>
+> from bytewax.connectors.files import CSVSource, FileSink
+> from bytewax.dataflow import Dataflow
+> import bytewax.operators as op
+> from bytewax.operators.windowing import EventClock, TumblingWindower, fold_window
+> from bytewax.run import cli_main
+>
+>
+> def parse_iso8601(ts: str) -> datetime:
+>     """Parse an ISO 8601 timestamp string to a timezone-aware datetime."""
+>     # Handle trailing 'Z' (Zulu/UTC) by converting to +00:00
+>     if ts.endswith("Z"):
+>         ts = ts[:-1] + "+00:00"
+>     dt = datetime.fromisoformat(ts)
+>     if dt.tzinfo is None:
+>         dt = dt.replace(tzinfo=timezone.utc)
+>     return dt
+>
+>
+> def build_flow(input_path: Path, output_path: Path) -> Dataflow:
+>     """Build the Bytewax dataflow for OHLCV aggregation."""
+>     flow = Dataflow("ohlcv_1min")
+>
+>     # Read CSV file
+>     csv_source = CSVSource(input_path)
+>     inp = op.input("csv_in", flow, csv_source)
+>
+>     # Parse each row into (symbol, price, volume, timestamp_dt)
+>     parsed = op.map("parse", inp, lambda row: {
+>         "symbol": row["symbol"],
+>         "price": float(row["price"]),
+>         "volume": float(row["volume"]),
+>         "timestamp": parse_iso8601(row["timestamp"]),
+>     })
+>
+>     # Key the stream by symbol
+>     keyed = op.key_on("key_symbol", parsed, lambda x: x["symbol"])
+>
+>     # Define the event-time clock using the trade timestamp
+>     clock = EventClock(
+>         ts_getter=lambda x: x["timestamp"],
+>         wait_for_system_duration=timedelta(seconds=0),
+>     )
+>
+>     # Define a 1-minute tumbling window aligned to the minute boundary
+>     windower = TumblingWindower(
+>         length=timedelta(minutes=1),
+>         align_to=datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+>     )
+>
+>     # Fold OHLCV state for each window. The accumulator is a dict holding:
+>     #   open: first trade price seen
+>     #   high: max trade price
+>     #   low: min trade price
+>     #   close: last trade price seen
+>     #   volume: sum of trade volumes
+>     #   timestamp: latest trade timestamp seen (used for window_start)
+>     def builder():
+>         return {
+>             "open": None,
+>             "high": None,
+>             "low": None,
+>             "close": None,
+>             "volume": 0.0,
+>             "timestamp": None,
+>         }
+>
+>     def folder(acc, trade):
+>         if acc["open"] is None:
+>             acc["open"] = trade["price"]
+>             acc["high"] = trade["price"]
+>             acc["low"] = trade["price"]
+>         else:
+>             if trade["price"] > acc["high"]:
+>                 acc["high"] = trade["price"]
+>             if trade["price"] < acc["low"]:
+>                 acc["low"] = trade["price"]
+>         acc["close"] = trade["price"]
+>         acc["volume"] += trade["volume"]
+>         acc["timestamp"] = trade["timestamp"]
+>         return acc
+>
+>     def merger(a, b):
+>         # If either side is empty, return the other
+>         if a["open"] is None:
+>             return b
+>         if b["open"] is None:
+>             return a
+>         # Both have data: open is the earliest, close is the latest.
+>         # The downstream folder will pass items in order when ordered=True,
+>         # but we still handle the merger defensively.
+>         return {
+>             "open": a["open"],
+>             "high": max(a["high"], b["high"]),
+>             "low": min(a["low"], b["low"]),
+>             "close": b["close"],
+>             "volume": a["volume"] + b["volume"],
+>             "timestamp": b["timestamp"],
+>         }
+>
+>     windowed = fold_window(
+>         "ohlcv_fold",
+>         keyed,
+>         clock,
+>         windower,
+>         builder=builder,
+>         folder=folder,
+>         merger=merger,
+>     )
+>
+>     # Format the windowed output to JSONL strings
+>     # windowed.down emits items shaped as: (symbol, (window_id, (open_time, acc)))
+>     def format_output(item):
+>         symbol, (window_id, (window_start_dt, acc)) = item
+>         record = {
+>             "window_start": window_start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+>             "symbol": symbol,
+>             "open": acc["open"],
+>             "high": acc["high"],
+>             "low": acc["low"],
+>             "close": acc["close"],
+>             "volume": acc["volume"],
+>         }
+>         return json.dumps(record)
+>
+>     formatted = op.map("format", windowed.down, format_output)
+>
+>     # Write to a JSONL file
+>     out_sink = FileSink(output_path)
+>     op.output("jsonl_out", formatted, out_sink)
+>
+>     return flow
+>
+>
+> def main():
+>     parser = argparse.ArgumentParser(
+>         description="Tumbling Window OHLCV Aggregation using Bytewax"
+>     )
+>     parser.add_argument(
+>         "--input",
+>         required=True,
+>         type=Path,
+>         help="Path to input CSV file with columns: timestamp,symbol,price,volume",
+>     )
+>     parser.add_argument(
+>         "--output",
+>         required=True,
+>         type=Path,
+>         help="Path to output JSONL file",
+>     )
+>     args = parser.parse_args()
+>
+>     flow = build_flow(args.input, args.output)
+>     cli_main(flow)
+>
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+root@97c5c4c0-869e-45e9-beba-01256e290bbb:~# ls -la run.py
+-rw-r--r-- 1 root root 5039 Jul  3 14:49 run.py
+root@97c5c4c0-869e-45e9-beba-01256e290bbb:~#

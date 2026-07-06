@@ -1,0 +1,85 @@
+New Terminal Output:
+
+root@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~# sed -n '275,400p' /usr/local/lib/python3.12/dist-packages/bytewax/run.py
+    scaling.add_argument(
+        "-a",
+        "--addresses",
+        help="Addresses of other processes, separated by semicolon:\n"
+        '-a "localhost:2021;localhost:2022;localhost:2023" ',
+        action=_EnvDefault,
+        envvar="BYTEWAX_ADDRESSES",
+    )
+
+    args = arg_parser.parse_args()
+
+    # First of all check if a process_id was set with a different
+    # env var, used in the helm chart for deploy
+    env = os.environ
+    if args.process_id is None:
+        if "BYTEWAX_POD_NAME" in env and "BYTEWAX_STATEFULSET_NAME" in env:
+            args.process_id = int(
+                env["BYTEWAX_POD_NAME"].replace(
+                    env["BYTEWAX_STATEFULSET_NAME"] + "-", ""
+                )
+            )
+
+    # If process_id is set, check if the addresses parameter is correctly set.
+    # Again, we check for a different env var that can be used by the helm chart,
+    # which specifies a file with host addresses. We read the file and populate
+    # the argument if needed.
+    # Not using else since we might have modified the condition inside the first if.
+    if args.process_id is not None and args.addresses is None:
+        if "BYTEWAX_HOSTFILE_PATH" in env:
+            with open(env["BYTEWAX_HOSTFILE_PATH"]) as hostfile:
+                args.addresses = ";".join(
+                    [address.strip() for address in hostfile if address.strip()]
+                )
+        else:
+            arg_parser.error(
+                "the addresses option is required if a process_id is passed"
+            )
+
+    # If recovery is configured, make sure that the snapshot_interval and
+    # backup_interval are set.
+    if args.recovery_directory is not None and (
+        args.snapshot_interval is None or args.backup_interval is None
+    ):
+        arg_parser.error(
+            "when running with recovery, the `-s/--snapshot_interval` and "
+            "`-b/--backup_interval` values must be set. For more information "
+            "about setting these values, please see "
+            "https://bytewax.io/docs/concepts/recovery."
+        )
+
+    return args
+
+
+if __name__ == "__main__":
+    kwargs = vars(_parse_args())
+    snapshot_interval = kwargs.pop("snapshot_interval")
+
+    recovery_directory, backup_interval = (
+        kwargs.pop("recovery_directory"),
+        kwargs.pop("backup_interval"),
+    )
+    kwargs["recovery_config"] = None
+    if recovery_directory is not None:
+        kwargs["epoch_interval"] = snapshot_interval
+        kwargs["recovery_config"] = RecoveryConfig(recovery_directory, backup_interval)
+    else:
+        # Default epoch interval if there is no recovery setup. Since
+        # there's no recovery, this needs not be coordinated with
+        # anything else.
+        kwargs["epoch_interval"] = snapshot_interval or timedelta(seconds=10)
+
+    # Prepare addresses
+    addresses = kwargs.pop("addresses")
+    if addresses is not None:
+        kwargs["addresses"] = addresses.split(";")
+
+    # Import the dataflow
+    mod_str, attr_str = _prepare_import(kwargs.pop("import_str"))
+    kwargs["flow"] = _locate_dataflow(mod_str, attr_str)
+
+    cli_main(**kwargs)
+root@a7a4e5d6-ccfd-45a5-8e77-16f79289d68a:~#

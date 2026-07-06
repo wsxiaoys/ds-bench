@@ -1,0 +1,184 @@
+package gdxecs;
+
+import com.badlogic.ashley.core.Engine;
+import com.badlogic.ashley.core.Entity;
+import com.badlogic.gdx.ApplicationListener;
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.files.FileHandle;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Bootstraps an Ashley ECS world from a scenario file and runs a fixed-tick
+ * deterministic simulation on the libGDX headless backend.
+ *
+ * <p>On each invocation of {@link #render()} the engine is advanced by
+ * <code>1.0 / 60.0</code> seconds (NOT whatever {@code Gdx.graphics.getDeltaTime()}
+ * happens to return).  Once <code>TICKS</code> updates have been dispatched the
+ * final state of every entity is written to stdout and the headless app is
+ * asked to exit.  The <code>TICKS</code>=0 special case writes the initial
+ * state and exits on the very first render call.</p>
+ */
+public class GdxEcsSimulator implements ApplicationListener {
+
+    /** Deterministic fixed time step used for every engine update. */
+    public static final float FIXED_DT = 1.0f / 60.0f;
+
+    private final String scenarioPath;
+
+    private Engine engine;
+    private int targetTicks;
+    /** The number of engine updates we have already dispatched. */
+    private int ticksDispatched;
+    /** Set to true exactly once we have produced the final-state report. */
+    private boolean finished;
+
+    /** Entities in the order they were declared in the scenario file. */
+    private final List<EntityRecord> records = new ArrayList<EntityRecord>();
+
+    /** Carries the original id and components for one entity so we can
+     *  reproduce the final output ordering regardless of internal storage. */
+    private static final class EntityRecord {
+        final String id;
+        final Entity entity;
+        EntityRecord(String id, Entity entity) {
+            this.id = id;
+            this.entity = entity;
+        }
+    }
+
+    public GdxEcsSimulator(String scenarioPath) {
+        this.scenarioPath = scenarioPath;
+    }
+
+    @Override
+    public void create() {
+        engine = new Engine();
+        engine.addSystem(new MovementSystem());
+
+        loadScenario(scenarioPath);
+    }
+
+    /**
+     * Parses the scenario file.  Lines beginning with {@code #} and blank
+     * lines are ignored.  Exactly one {@code TICKS <n>} line and zero or
+     * more {@code ENTITY <id> <x> <y> <vx> <vy>} lines are required.
+     */
+    private void loadScenario(String path) {
+        FileHandle handle = Gdx.files.absolute(path);
+        if (!handle.exists()) {
+            throw new IllegalArgumentException("Scenario file does not exist: " + path);
+        }
+
+        BufferedReader reader = new BufferedReader(
+                new InputStreamReader(handle.read(), StandardCharsets.UTF_8));
+        try {
+            String line;
+            boolean ticksSeen = false;
+            int lineNo = 0;
+            while ((line = reader.readLine()) != null) {
+                lineNo++;
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                    continue;
+                }
+                String[] parts = trimmed.split("\\s+");
+                String head = parts[0];
+                if ("TICKS".equals(head)) {
+                    if (parts.length != 2) {
+                        throw new IllegalArgumentException(
+                                "Malformed TICKS line at " + lineNo + ": " + line);
+                    }
+                    targetTicks = Integer.parseInt(parts[1]);
+                    if (targetTicks < 0) {
+                        throw new IllegalArgumentException(
+                                "TICKS must be non-negative at line " + lineNo);
+                    }
+                    ticksSeen = true;
+                } else if ("ENTITY".equals(head)) {
+                    if (parts.length != 6) {
+                        throw new IllegalArgumentException(
+                                "Malformed ENTITY line at " + lineNo + ": " + line);
+                    }
+                    String id = parts[1];
+                    if (!id.matches("[A-Za-z0-9_]+")) {
+                        throw new IllegalArgumentException(
+                                "Invalid entity id at line " + lineNo + ": " + id);
+                    }
+                    float x  = Float.parseFloat(parts[2]);
+                    float y  = Float.parseFloat(parts[3]);
+                    float vx = Float.parseFloat(parts[4]);
+                    float vy = Float.parseFloat(parts[5]);
+
+                    Entity e = new Entity();
+                    e.add(new PositionComponent(x, y));
+                    e.add(new VelocityComponent(vx, vy));
+                    engine.addEntity(e);
+                    records.add(new EntityRecord(id, e));
+                } else {
+                    throw new IllegalArgumentException(
+                            "Unknown directive at line " + lineNo + ": " + head);
+                }
+            }
+            if (!ticksSeen) {
+                throw new IllegalArgumentException("Scenario is missing a TICKS line");
+            }
+        } catch (IOException ioe) {
+            throw new RuntimeException("Failed reading scenario file: " + path, ioe);
+        } finally {
+            try { reader.close(); } catch (IOException ignored) { }
+        }
+    }
+
+    @Override
+    public void render() {
+        if (finished) {
+            return;
+        }
+        // Run one fixed step until we've reached the requested tick count.
+        if (ticksDispatched < targetTicks) {
+            engine.update(FIXED_DT);
+            ticksDispatched++;
+        }
+        // Whether or not we just dispatched a step, when we've reached the
+        // target tick count we emit the report and ask the headless app to
+        // exit (this also handles the TICKS=0 special case).
+        if (ticksDispatched >= targetTicks) {
+            finished = true;
+            writeFinalState();
+            Gdx.app.exit();
+        }
+    }
+
+    /** Emits the deterministic final-state report to stdout. */
+    private void writeFinalState() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("TICK_COUNT ").append(targetTicks).append('\n');
+        for (EntityRecord r : records) {
+            PositionComponent pos = r.entity.getComponent(PositionComponent.class);
+            sb.append("ENTITY ")
+              .append(r.id)
+              .append(" x=").append(formatFloat(pos.x))
+              .append(" y=").append(formatFloat(pos.y))
+              .append('\n');
+        }
+        System.out.print(sb.toString());
+        System.out.flush();
+    }
+
+    /** Formats a float with exactly three decimal places using Locale.ROOT. */
+    public static String formatFloat(float v) {
+        return String.format(Locale.ROOT, "%.3f", v);
+    }
+
+    @Override public void resize(int width, int height) { }
+    @Override public void pause() { }
+    @Override public void resume() { }
+    @Override public void dispose() { }
+}

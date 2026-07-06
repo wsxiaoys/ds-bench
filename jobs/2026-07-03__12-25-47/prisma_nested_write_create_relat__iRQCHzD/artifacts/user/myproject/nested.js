@@ -1,0 +1,32 @@
+const { PrismaClient } = require('@prisma/client');
+const fs = require('fs');
+
+const prisma = new PrismaClient();
+
+async function main() {
+  const user = await prisma.user.create({
+    data: {
+      email: 'nested@example.com',
+      name: 'Nested Writer',
+      posts: {
+        create: [
+          { title: 'Nested Post A' },
+          { title: 'Nested Post B' }
+        ]
+      }
+    },
+    include: { posts: true }
+  });
+
+  fs.writeFileSync('/home/user/myproject/nested_result.json', JSON.stringify(user, null, 2));
+  console.log(JSON.stringify(user, null, 2));
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

@@ -1,0 +1,124 @@
+New Terminal Output:
+
+root@ce160a79-12a5-4a7a-83d6-159eddfc2b67:~# cat > /tmp/solve.py << 'EOF'
+> import json
+> import numpy as np
+> import librosa
+> import soundfile as sf
+>
+> INPUT_PATH = '/home/user/input.wav'
+> OUTPUT_PATH = '/home/user/peaks.json'
+>
+> # Load audio
+> y, sr = sf.read(INPUT_PATH)
+> if y.ndim > 1:
+>     y = np.mean(y, axis=1)
+> duration = len(y) / sr
+>
+> # STFT parameters
+> n_fft = 2048
+> hop_length = 512
+>
+> # Compute reassigned spectrogram
+> # Returns (freqs, times, mags)
+> freqs, times, mags = librosa.reassigned_spectrogram(
+>     y, sr=sr, n_fft=n_fft, hop_length=hop_length, center=True
+> )
+>
+> print('freqs.shape:', freqs.shape)
+> print('times.shape:', times.shape)
+> print('mags.shape:', mags.shape)
+> print('sr:', sr, 'duration:', duration)
+> print('n_frames:', freqs.shape[-1])
+>
+> # Verify shape: (1 + n_fft/2, n_frames)
+> n_frames = freqs.shape[-1]
+>
+> # Convert magnitudes to dB
+> mags_db = librosa.amplitude_to_db(mags, ref=np.max)
+>
+> # Canonical STFT frame times (when each frame occurs in seconds)
+> frame_times = np.arange(n_frames) * hop_length / sr
+>
+> # For each frame, get top-5 peaks
+> frames_out = []
+> for t_idx in range(n_frames):
+>     f_col = freqs[:, t_idx]
+>     m_col = mags_db[:, t_idx]
+>
+>     # Mask out NaN/inf in frequencies (and corresponding magnitudes)
+>     finite_mask = np.isfinite(f_col) & np.isfinite(m_col)
+>     # Also require freq > 0 and <= sr/2
+>     valid_mask = finite_mask & (f_col > 0.0) & (f_col <= sr / 2.0)
+>
+>     valid_idx = np.where(valid_mask)[0]
+>
+>     if len(valid_idx) == 0:
+>         # Shouldn't happen for typical input, but handle gracefully
+>         peaks = [{'freq_hz': float(sr/2.0), 'magnitude_db': -1e10} for _ in range(5)]
+>     else:
+>         valid_mags = m_col[valid_idx]
+>         k = min(5, len(valid_idx))
+>         if k < 5:
+>             # Pad with copies of the smallest available peak
+>             order = np.argsort(-valid_mags)
+>             top_k_local = order[:k]
+>             top_k_idx = valid_idx[top_k_local]
+>             while len(top_k_idx) < 5:
+>                 top_k_idx = np.concatenate([top_k_idx, [top_k_idx[-1]]])
+>         else:
+>             # Get top 5 by magnitude (descending)
+>             top_k_local = np.argpartition(-valid_mags, 4)[:5]
+>             top_k_local = top_k_local[np.argsort(-valid_mags[top_k_local])]
+>             top_k_idx = valid_idx[top_k_local]
+>
+>         peaks = []
+>         for idx in top_k_idx:
+>             f_val = float(f_col[idx])
+>             m_val = float(m_col[idx])
+>             # Final safety: ensure finite
+>             if not np.isfinite(f_val):
+>                 f_val = float(sr / 2.0)
+>             if not np.isfinite(m_val):
+>                 m_val = -1e10
+>             peaks.append({'freq_hz': f_val, 'magnitude_db': m_val})
+>
+>     frames_out.append({
+>         'time': float(frame_times[t_idx]),
+>         'peaks': peaks
+>     })
+>
+> output = {
+>     'meta': {
+>         'n_frames': n_frames,
+>         'sr': int(sr),
+>         'n_fft': n_fft,
+>         'hop_length': hop_length
+>     },
+>     'frames': frames_out
+> }
+>
+> with open(OUTPUT_PATH, 'w') as f:
+>     json.dump(output, f)
+>
+> print('Wrote', OUTPUT_PATH)
+> print('First frame:', frames_out[0])
+> print('Last frame:', frames_out[-1])
+> EOF
+root@ce160a79-12a5-4a7a-83d6-159eddfc2b67:~# python3 /tmp/solve.py
+/usr/local/lib/python3.12/dist-packages/librosa/core/spectrum.py:1260: UserWarning: 'where' used without 'out', expect unitialized memory in output. If this is
+intentional, use out=None.
+  mags_low = np.less(mags, ref_p**0.5, where=~np.isnan(mags))
+freqs.shape: (1025, 216)
+times.shape: (1025, 216)
+mags.shape: (1025, 216)
+sr: 22050 duration: 5.0
+n_frames: 216
+Wrote /home/user/peaks.json
+First frame: {'time': 0.0, 'peaks': [{'freq_hz': 216.82662414218416, 'magnitude_db': -5.1139490175693965}, {'freq_hz': 223.26130833564127, 'magnitude_db': -5.80
+6573649225413}, {'freq_hz': 440.90290055055533, 'magnitude_db': -7.502266063213867}, {'freq_hz': 209.45405850362494, 'magnitude_db': -8.116920214650477}, {'freq
+_hz': 434.3514237803905, 'magnitude_db': -8.908221717963514}]}
+Last frame: {'time': 4.992290249433107, 'peaks': [{'freq_hz': 217.2582316515117, 'magnitude_db': -2.8542193694202638}, {'freq_hz': 222.89952850600918, 'magnitud
+e_db': -3.585120212079218}, {'freq_hz': 440.7737923514299, 'magnitude_db': -5.094556143119924}, {'freq_hz': 435.03022062524553, 'magnitude_db': -7.0464330932869
+075}, {'freq_hz': 210.52503313146448, 'magnitude_db': -7.434098528076483}]}
+root@ce160a79-12a5-4a7a-83d6-159eddfc2b67:~#

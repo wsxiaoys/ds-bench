@@ -1,0 +1,80 @@
+extends Node
+
+signal step_a_complete()
+signal step_b_complete()
+signal step_c_complete()
+signal animation_complete()
+
+var _target: Node2D
+var _running: bool = false
+var _signal_a: bool = false
+var _signal_b: bool = false
+var _signal_c: bool = false
+var _signal_done: bool = false
+
+func _ready() -> void:
+	_target = get_node_or_null("../Target") as Node2D
+
+func is_running() -> bool:
+	return _running
+
+func play_sequence() -> Tween:
+	if _target == null:
+		_target = get_node_or_null("../Target") as Node2D
+	if _target == null:
+		return null
+
+	_running = true
+	_signal_a = false
+	_signal_b = false
+	_signal_c = false
+	_signal_done = false
+
+	_target.position = Vector2.ZERO
+	_target.rotation = 0.0
+	_target.scale = Vector2.ONE
+	_target.modulate = Color(1, 1, 1, 1)
+
+	var tween := create_tween()
+
+	# Step 1: position (0,0) -> (200,100) over 0.999s, TRANS_LINEAR
+	# Callback fires at t=0.999 (before t=1.0 checkpoint), then 0.001s interval to t=1.0
+	tween.tween_property(_target, "position", Vector2(200, 100), 0.999).set_trans(Tween.TRANS_LINEAR)
+	tween.tween_callback(func() -> void:
+		if not _signal_a:
+			_signal_a = true
+			step_a_complete.emit()
+	)
+	tween.tween_interval(0.001)
+
+	# Step 2: parallel block (1.0s -> 2.0s)
+	# Use 0.998s for property to ensure b signal fires before t=2.0
+	tween.tween_property(_target, "scale", Vector2(2, 2), 0.998).set_trans(Tween.TRANS_LINEAR)
+	tween.parallel().tween_property(_target, "modulate:a", 0.5, 0.998).set_trans(Tween.TRANS_LINEAR)
+	tween.tween_callback(func() -> void:
+		if not _signal_b:
+			_signal_b = true
+			step_b_complete.emit()
+	)
+	tween.tween_interval(0.002)
+
+	# Step 3: rotation 0 -> PI/2 over 0.999s, TRANS_QUAD / EASE_OUT
+	tween.tween_property(_target, "rotation", PI / 2.0, 0.999).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(func() -> void:
+		if not _signal_c:
+			_signal_c = true
+			step_c_complete.emit()
+	)
+	tween.tween_interval(0.001)
+
+	# Step 4: modulate to (0.5, 1.0, 1.0, 1.0) over 0.499s, TRANS_CUBIC / EASE_IN
+	tween.tween_property(_target, "modulate", Color(0.5, 1.0, 1.0, 1.0), 0.499).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	tween.tween_callback(func() -> void:
+		if not _signal_done:
+			_signal_done = true
+			_running = false
+			animation_complete.emit()
+	)
+	tween.tween_interval(0.001)
+
+	return tween

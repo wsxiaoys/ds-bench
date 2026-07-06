@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+#
+# setup.sh - Idempotent PocketBase v0.31.0 provisioning script.
+#
+# - Applies DB migrations (defining the `tasks` collection)
+# - Creates a single superuser (admin@example.com)
+# - Starts the PocketBase server in the background on the default port
+# - Seeds 5 predefined records into the `tasks` collection via the REST API
+#
+# The script is safe to run multiple times: it will not create duplicate
+# superusers, duplicate tasks, or error if the server is already running.
+
+set -u
+
+PROJECT_DIR="/home/user/myproject"
+PB_BIN="${PROJECT_DIR}/pocketbase"
+MIGRATIONS_DIR="${PROJECT_DIR}/pb_migrations"
+PB_DATA_DIR="${PROJECT_DIR}/pb_data"
+PB_LOG="${PROJECT_DIR}/pocketbase.log"
+PB_PIDFILE="${PROJECT_DIR}/pocketbase.pid"
+PB_URL="http://127.0.0.1:8090"
+HEALTH_URL="${PB_URL}/api/health"
+
+SUPERUSER_EMAIL="admin@example.com"
+SUPERUSER_PASSWORD='Adm1n_passw0rd!'
+
+TASK_TITLES=(
+  "Buy groceries"
+  "Walk the dog"
+  "Read a book"
+  "Write weekly report"
+  "Call mom"
+)
+
+log() {
+  printf '[setup.sh] %s\n' "$*"
+}
+
+# --- 1. Apply migrations (idempotent) -------------------------------------
+log "Applying migrations from ${MIGRATIONS_DIR} (if any)..."
+"${PB_BIN}" migrate up --migrationsDir="${MIGRATIONS_DIR}" >/dev/null 2>&1 || true
+
+# --- 2. Ensure the superuser exists (idempotent upsert) --------------------
+log "Ensuring superuser ${SUPERUSER_EMAIL} exists..."
+"${PB_BIN}" superuser upsert "${SUPERUSER_EMAIL}" "${SUPERUSER_PASSWORD}" >/dev/null 2>&1 || true
+
+# --- 3. Make sure the server is running in the background ------------------
+server_is_up() {
+  curl -s -o /dev/null -w '%{http_code}' --max-time 2 "${HEALTH_URL}" 2>/dev/null | grep -q '^200$'
+}
+
+start_server() {
+  log "Starting PocketBase server in the background..."
+  cd "${PROJECT_DIR}"
+  nohup "${PB_BIN}" serve >>"${PB_LOG}" 2>&1 &
+  echo $! >"${PB_PIDFILE}"
+  disown 2>/dev/null || true
+}
+
+# If a previous PID is recorded but the process is gone, clean up.
+if [[ -f "${PB_PIDFILE}" ]]; then
+  existing_pid="$(cat "${PB_PIDFILE}" 2>/dev/null || true)"
+  if [[ -n "${existing_pid}" ]] && kill -0 "${existing_pid}" 2>/dev/null; then
+    log "PocketBase already running (pid=${existing_pid})."
+  else
+    rm -f "${PB_PIDFILE}"
+  fi
+fi
+
+# Check if server is responding. If not, attempt to start it.
+if server_is_up; then
+  log "PocketBase health check OK at ${HEALTH_URL}"
+else
+  start_server
+  # Wait for the server to become responsive (max ~15 seconds).
+  for _ in $(seq 1 30); do
+    if server_is_up; then
+      log "PocketBase is up at ${PB_URL}"
+      break
+    fi
+    sleep 0.5
+  done
+  if ! server_is_up; then
+    log "ERROR: PocketBase did not become healthy in time. Check ${PB_LOG}."
+    # Don't fail the script — keep it idempotent / non-fatal here.
+  fi
+fi
+
+# --- 4. Authenticate and seed the tasks collection --------------------------
+log "Authenticating as ${SUPERUSER_EMAIL}..."
+auth_response="$(curl -s -X POST "${PB_URL}/api/collections/_superusers/auth-with-password" \
+  -H 'Content-Type: application/json' \
+  -d "{\"identity\":\"${SUPERUSER_EMAIL}\",\"password\":\"${SUPERUSER_PASSWORD}\"}")"
+
+TOKEN="$(printf '%s' "${auth_response}" | jq -r '.token // empty' 2>/dev/null || true)"
+
+if [[ -z "${TOKEN}" || "${TOKEN}" == "null" ]]; then
+  log "ERROR: Failed to obtain auth token. Response: ${auth_response}"
+  exit 0
+fi
+
+# Fetch existing task titles to avoid creating duplicates.
+existing_titles="$(curl -s \
+  -H "Authorization: ${TOKEN}" \
+  "${PB_URL}/api/collections/tasks/records?perPage=500" \
+  | jq -r '.items[].title // empty' 2>/dev/null || true)"
+
+seed_one() {
+  local title="$1"
+  # Skip if already present (exact, case-sensitive match).
+  if printf '%s\n' "${existing_titles}" | grep -Fxq "${title}"; then
+    log "Task already present, skipping: ${title}"
+    return 0
+  fi
+  local payload
+  payload="$(jq -n --arg t "${title}" '{title:$t}')"
+  local resp
+  resp="$(curl -s -X POST "${PB_URL}/api/collections/tasks/records" \
+    -H "Authorization: ${TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "${payload}")"
+  if printf '%s' "${resp}" | jq -e '.id' >/dev/null 2>&1; then
+    log "Seeded task: ${title}"
+  else
+    log "ERROR seeding task '${title}': ${resp}"
+  fi
+}
+
+log "Seeding tasks collection..."
+for t in "${TASK_TITLES[@]}"; do
+  seed_one "${t}"
+done
+
+log "Done."
+exit 0

@@ -1,0 +1,183 @@
+New Terminal Output:
+
+root@a567651f-5c90-4592-99d5-a62c048cd72f:~# cat > /home/user/apideck_task/workflow.py << 'EOF'
+> #!/usr/bin/env python3
+> import os
+> import json
+> import urllib.request
+> import urllib.parse
+> import urllib.error
+>
+> API_KEY = os.environ['APIDECK_API_KEY']
+> APP_ID = os.environ['APIDECK_APP_ID']
+> CONSUMER_ID = os.environ['APIDECK_CONSUMER_ID']
+> COLLECTION_ID = os.environ['APIDECK_ISSUE_TRACKING_COLLECTION_ID']
+> SERVICE_ID = 'github'
+>
+> with open('/logs/artifacts/run-id') as f:
+>     RUN_ID = f.read().strip()
+>
+> BASE = 'https://unify.apideck.com'
+>
+> def request(method, path, body=None, query=None):
+>     url = BASE + path
+>     if query:
+>         url += '?' + urllib.parse.urlencode(query)
+>     data = None
+>     headers = {
+>         'Authorization': 'Bearer ' + API_KEY,
+>         'x-apideck-app-id': APP_ID,
+>         'x-apideck-consumer-id': CONSUMER_ID,
+>         'x-apideck-service-id': SERVICE_ID,
+>         'Accept': 'application/json',
+>     }
+>     if body is not None:
+>         data = json.dumps(body).encode('utf-8')
+>         headers['Content-Type'] = 'application/json'
+>     req = urllib.request.Request(url, data=data, method=method, headers=headers)
+>     try:
+>         with urllib.request.urlopen(req) as resp:
+>             return resp.status, json.loads(resp.read().decode('utf-8'))
+>     except urllib.error.HTTPError as e:
+>         return e.code, e.read().decode('utf-8')
+>
+> # 1. Create ticket
+> subject = f'[COMMENT-EDIT-DELETE] {RUN_ID}'
+> print(f'Creating ticket with subject: {subject}')
+> status, resp = request('POST', f'/issue-tracking/collections/{COLLECTION_ID}/tickets', {
+>     'subject': subject,
+>     'status': 'open',
+>     'description': f'Ticket for comment edit/delete workflow. run-id={RUN_ID}',
+> })
+> print('Create ticket status:', status)
+> print('Create ticket response:', json.dumps(resp, indent=2) if isinstance(resp, dict) else resp)
+>
+> if status not in (200, 201):
+>     raise SystemExit('Failed to create ticket')
+>
+> ticket_id = resp['data']['id']
+> print(f'Ticket ID: {ticket_id}')
+>
+> # Log ticket ID
+> with open('/home/user/apideck_task/output.log', 'w') as f:
+>     f.write(f'Ticket ID: {ticket_id}\n')
+>
+> # 2. Add 4 comments
+> comment_ids = {}
+> for label in ['A', 'B', 'C', 'D']:
+>     body = f'{label}-{RUN_ID}'
+>     print(f'Creating comment {body}')
+>     status, resp = request('POST', f'/issue-tracking/collections/{COLLECTION_ID}/tickets/{ticket_id}/comments', {
+>         'body': body,
+>     })
+>     print(f'  status={status}')
+>     if isinstance(resp, dict):
+>         cid = resp.get('data', {}).get('id')
+>         comment_ids[body] = cid
+>         print(f'  id={cid}')
+>     else:
+>         print(f'  resp={resp}')
+>     if status not in (200, 201):
+>         raise SystemExit(f'Failed to create comment {body}')
+>
+> # 3. Edit comment B
+> b_body = f'B-{RUN_ID}'
+> b_id = comment_ids[b_body]
+> b_new = f'B-EDITED-{RUN_ID}'
+> print(f'Editing comment {b_id} -> {b_new}')
+> status, resp = request('PATCH', f'/issue-tracking/collections/{COLLECTION_ID}/tickets/{ticket_id}/comments/{b_id}', {
+>     'body': b_new,
+> })
+> print(f'  status={status}')
+> print(f'  resp={json.dumps(resp, indent=2) if isinstance(resp, dict) else resp}')
+>
+> # 4. Delete comment C
+> c_body = f'C-{RUN_ID}'
+> c_id = comment_ids[c_body]
+> print(f'Deleting comment {c_id}')
+> status, resp = request('DELETE', f'/issue-tracking/collections/{COLLECTION_ID}/tickets/{ticket_id}/comments/{c_id}')
+> print(f'  status={status}')
+> print(f'  resp={json.dumps(resp, indent=2) if isinstance(resp, dict) else resp}')
+>
+> # 5. Verify by listing comments
+> print('\nVerifying comments...')
+> all_comments = []
+> cursor = None
+> while True:
+>     query = {'limit': 100}
+>     if cursor:
+>         query['cursor'] = cursor
+>     status, resp = request('GET', f'/issue-tracking/collections/{COLLECTION_ID}/tickets/{ticket_id}/comments', query=query)
+>     if status != 200 or not isinstance(resp, dict):
+>         print('List status:', status, resp)
+>         break
+>     all_comments.extend(resp.get('data', []))
+>     cursor = resp.get('meta', {}).get('cursors', {}).get('next')
+>     if not cursor:
+>         break
+>
+> print(f'Total comments: {len(all_comments)}')
+> for c in all_comments:
+>     print(f'  id={c.get("id")} body={c.get("body")!r}')
+>
+> print(f'\nLogged ticket ID: {ticket_id}')
+> EOF
+root@a567651f-5c90-4592-99d5-a62c048cd72f:~# echo 'Script created'
+Script created
+root@a567651f-5c90-4592-99d5-a62c048cd72f:~# python3 /home/user/apideck_task/workflow.py
+Creating ticket with subject: [COMMENT-EDIT-DELETE] zr4rm91n5t
+Create ticket status: 201
+Create ticket response: {
+  "status_code": 201,
+  "status": "Created",
+  "service": "github",
+  "resource": "collection-tickets",
+  "operation": "add",
+  "data": {
+    "id": "270"
+  }
+}
+Ticket ID: 270
+Creating comment A-zr4rm91n5t
+  status=201
+  id=4876902716
+Creating comment B-zr4rm91n5t
+  status=201
+  id=4876902827
+Creating comment C-zr4rm91n5t
+  status=201
+  id=4876902924
+Creating comment D-zr4rm91n5t
+  status=201
+  id=4876903039
+Editing comment 4876902827 -> B-EDITED-zr4rm91n5t
+  status=200
+  resp={
+  "status_code": 200,
+  "status": "OK",
+  "service": "github",
+  "resource": "collection-ticket-comments",
+  "operation": "update",
+  "data": {
+    "id": "4876902827"
+  }
+}
+Deleting comment 4876902924
+  status=200
+  resp={
+  "status_code": 200,
+  "status": "OK",
+  "service": "github",
+  "resource": "collection-ticket-comments",
+  "operation": "delete",
+  "data": {}
+}
+
+Verifying comments...
+Total comments: 3
+  id=4876902716 body='A-zr4rm91n5t'
+  id=4876902827 body='B-EDITED-zr4rm91n5t'
+  id=4876903039 body='D-zr4rm91n5t'
+
+Logged ticket ID: 270
+root@a567651f-5c90-4592-99d5-a62c048cd72f:~#

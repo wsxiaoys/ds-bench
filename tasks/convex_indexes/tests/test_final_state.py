@@ -58,7 +58,7 @@ verify().catch(err => {{
 }});
 """
 
-    js_file = "/tmp/verify.mjs"
+    js_file = os.path.join(PROJECT_DIR, "verify.mjs")
     with open(js_file, "w") as f:
         f.write(js_script)
 

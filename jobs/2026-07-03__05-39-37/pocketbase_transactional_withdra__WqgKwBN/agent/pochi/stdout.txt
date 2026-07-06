@@ -1,0 +1,132 @@
+- Initializing MCP connections...
+You
+# PocketBase Atomic Wallet Withdrawal Hook (Go) ## Background [PocketBase](https://pocketbase.io/) is a single-file Go backend that uses an embedded SQLite database in WAL mode. SQLite WAL allows many concurrent readers but only a single writer. Because of this, any database mutation that has to span more than one row (such as moving money from a wallet to a ledger entry) must run inside a single transaction, and inside the transaction callback **every** database operation has to go through the transaction-scoped `core.App` instance that PocketBase hands to the callback (commonly named `txApp`). Reusing the global `app` instance from inside the transaction will deadlock the writer. Your job is to extend a pre-built PocketBase v0.31.0 Go application that already provisions a `wallets` collection and a `withdrawals` collection via a registered migration. You will add a **Go event hook** that wraps record creation on the `withdrawals` collection so that a withdrawal is only accepted when the wallet has sufficient funds, and so that the wallet's balance is debited **atomically** with the persisted withdrawal row. ## Requirements - Register a Go event hook on the public **record create request** for the `withdrawals` collection (i.e. wrap the REST `POST /api/collections/withdrawals/records` endpoint, not internal `app.Save` calls). - Validate the incoming payload: - The `amount` field must be present and strictly greater than `0`. Otherwise reject the request with HTTP `400 Bad Request` and DO NOT persist anything. - The `wallet` field must reference an existing `wallets` record. Otherwise reject with HTTP `400 Bad Request` and DO NOT persist anything. - The wallet's current `balance` must be greater than or equal to the submitted `amount`. Otherwise reject with HTTP `400 Bad Request` and DO NOT persist anything and DO NOT modify the wallet. - On valid input, run a single PocketBase transaction in which: - The referenced wallet's `balance` is decreased by exactly `amount`. - The withdrawal record is persisted with the submitted `wallet`, `amount`, and optional `note` values. - If any step inside the transaction fails, both the balance change AND the withdrawal record must be rolled back so the database stays consistent. - The hook must continue to propagate the request chain so that PocketBase's default save logic runs for the withdrawal record; forgetting to propagate is a known v0.23+ pitfall and will block all writes. - Keep the resulting binary runnable as a standalone PocketBase backend (`./wallet-app serve --http=0.0.0.0:8090`). Do not remove the existing migration registration or change the schema of either collection. ## Implementation Hints - PocketBase v0.31 uses the chained hook API. Register your handler with `app.OnRecordCreateRequest("withdrawals").BindFunc(...)` and remember the post-v0.23 propagation rule: return `e.Next()` from the success path or the chain is silently aborted. - The transaction-scoped app instance is exposed via `app.RunInTransaction(func(txApp core.App) error { ... })`. Inside the callback you **must** use `txApp` (not the captured outer `app` / `e.App`) for every DB lookup and save, or you will hit `SQLITE_BUSY` / deadlock the writer. The PocketBase docs explicitly call this out. - The cleanest pattern for hooks that need to extend a transaction across `e.Next()` is to temporarily re-point `e.App` at the `txApp` for the duration of the callback so that the downstream chain (which actually saves the withdrawal record) also runs inside the same transaction. Restore it before returning if you want, but the chain semantics expect the propagated app to be the transactional one. - Use `e.Record.GetString("wallet")`, `e.Record.GetFloat("amount")`, and `e.Record.GetString("note")` to read the incoming submission, and `txApp.FindRecordById("wallets", walletId)` to load the wallet inside the transaction. - Use `e.BadRequestError(message, nil)` to short-circuit with a 400 response. Returning a non-nil error from `RunInTransaction` rolls back REDACTEDmatically. - All API rules on both `wallets` and `withdrawals` are left open (`""`) by the bundled migration so that the verifier can interact with them without auth. You do not need to change them. - Build with `go build -o wallet-app .` from the project directory.   
+
+Pochi
+💭 Thinking for 82 characters   
+📂 Listing files in / ✔ 
+💫 Executing find / -name "*.go" -not -path "*/proc/*" -not -path "*/sys/*" 2>/dev/null | head -50 ✔ 
+📖 Reading /home/user/myproject/main.go ✔ 
+📖 Reading /home/user/myproject/migrations/1700000000_init_wallet_schema.go ✔ 
+📂 Listing files in /home/user/myproject recursively ✔ 
+📖 Reading /home/user/myproject/go.mod ✔ 
+💭 Thinking for 87 characters   
+💫 Executing grep -rn "OnRecordCreateRequest" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/*.go | head -20 ✔ 
+💫 Executing grep -rn "RunInTransaction" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/app.go ✔ 
+💫 Executing grep -rn "type RecordRequestEvent" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/*.go ✔ 
+💫 Executing grep -rn "func.*BadRequestError" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/*.go ✖ "Command exited with code 1"
+📖 Reading /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/events.go ✔ 
+💫 Executing grep -rn "BadRequestError" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/*.go | head ✔ 
+💫 Executing grep -rn "func.*RequestEvent\b" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/events.go | head ✔ 
+💫 Executing grep -rn "BadRequestError\|func (e \*RequestEvent)\|RequestEvent struct" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/router/*.go | head -30 ✔ 
+💫 Executing grep -rln "func.*BadRequestError\|NewBadRequestError" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/ | head ✔ 
+💫 Executing grep -n "BadRequestError\|func.*RequestEvent\|type RequestEvent" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/tools/router/event.go ✔ 
+📖 Reading /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/tools/router/event.go ✔ 
+💭 Thinking for 134 characters   
+💫 Executing grep -rn "BindFunc\|func.*TaggedHook\|type Hook\|Next()" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/tools/hook/*.go | head -30 ✔ 
+💭 Thinking for 140 characters   
+💫 Executing grep -n "type RequestEvent\|App " /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/tools/router/event.go | head ✔ 
+💫 Executing grep -rn "type RequestEvent" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/ ✔ 
+📖 Reading /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/event_request.go ✔ 
+💭 Thinking for 302 characters   
+💫 Executing grep -rn "func (r \*Record) GetFloat\|func (r \*Record) GetString\b\|func (r \*Record) Get(" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/record_model.go | head ✔ 
+💫 Executing grep -rln "func (r \*Record) GetFloat\|func (r \*Record) GetString" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/ ✖ "Command exited with code 1"
+💫 Executing grep -rln "GetFloat\|GetString" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/record*.go ✔ 
+💫 Executing grep -n "func (r \*Record) Get" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/record_model.go | head -40 ✔ 
+💫 Executing grep -n "GetFloat\|GetString\|func.*Record.*Get" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/record_model.go | head -40 ✔ 
+💭 Thinking for 109 characters   
+💫 Executing grep -n "func (m \*Record) Set\|func.*Save" /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/record_model.go /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.31.0/core/app.go | head ✔ 
+💭 Thinking for 8630 characters   
+Now I have enough understanding of the PocketBase v0.31 API. Let me write the updated `main.go` with the withdrawal eventhook.   
+✏️  Writing /home/user/myproject/main.go ✔ 
+Now let me build it to make sure it compiles:   
+💫 Executing cd /home/user/myproject && go build -o wallet-app . 2>&1 ✔ 
+💭 Thinking for 155 characters   
+Build succeeded. Let me run a quick end-to-end sanity test to verify the hook behavescorrectly.   
+💫 Executing cd /home/user/myproject && rm -rf /tmp/pb_test_data && mkdir -p /tmp/pb_test_data && PB_DATA_DIR=/tmp/pb_test_data ./wallet-app migrate up 2>&1 | tail -20 ✔ 
+🛠️ Tool startBackgroundJob ✔ 
+💫 Executing sleep 2 && curl -s -X POST http://127.0.0.1:8090/api/collections/wallets/records -H "Content-Type: application/json" -d '{"owner":"alice","balance":100}' 2>&1 ✖ "Command exited with code 7"
+🛠️ Tool readBackgroundJobOutput ✔ 
+🛠️ Tool startBackgroundJob ✔ 
+💫 Executing sleep 3 && curl -s -X POST http://127.0.0.1:8090/api/collections/wallets/records -H "Content-Type: application/json" -d '{"owner":"alice","balance":100}' ✔ 
+Wallet created. Now let me run the full test matrix:   
+💫 Executing WID=0t6w8r628wltv9n
+echo "=== Test 1: valid withdrawal (amount=30, balance 100->70) ==="
+curl -s -o /tmp/t1.json -w "HTTP %{http_code}\n" -X POST http://127.0.0.1:8090/api/collections/withdrawals/records -H "Content-Type: application/json" -d "{\"wallet\":\"$WID\",\"amount\":30,\"note\":\"first\"}"
+cat /tmp/t1.json; echo
+echo "=== wallet balance after ==="
+curl -s http://127.0.0.1:8090/api/collections/wallets/records/$WID | python3 -c "import sys,json;print('balance=',json.load(sys.stdin)['balance'])"
+
+echo "=== Test 2: amount=0 (should 400, no change) ==="
+curl -s -o /tmp/t2.json -w "HTTP %{http_code}\n" -X POST http://127.0.0.1:8090/api/collections/withdrawals/records -H "Content-Type: application/json" -d "{\"wallet\":\"$WID\",\"amount\":0}"
+cat /tmp/t2.json; echo
+
+echo "=== Test 3: negative amount (should 400) ==="
+curl -s -o /tmp/t3.json -w "HTTP %{http_code}\n" -X POST http://127.0.0.1:8090/api/collections/withdrawals/records -H "Content-Type: application/json" -d "{\"wallet\":\"$WID\",\"amount\":-5}"
+cat /tmp/t3.json; echo
+
+echo "=== Test 4: missing amount (should 400) ==="
+curl -s -o /tmp/t4.json -w "HTTP %{http_code}\n" -X POST http://127.0.0.1:8090/api/collections/withdrawals/records -H "Content-Type: application/json" -d "{\"wallet\":\"$WID\"}"
+cat /tmp/t4.json; echo
+
+echo "=== Test 5: nonexistent wallet (should 400) ==="
+curl -s -o /tmp/t5.json -w "HTTP %{http_code}\n" -X POST http://127.0.0.1:8090/api/collections/withdrawals/records -H "Content-Type: application/json" -d "{\"wallet\":\"nope\",\"amount\":5}"
+cat /tmp/t5.json; echo
+
+echo "=== Test 6: insufficient funds (amount=1000, balance=70, should 400, no change) ==="
+curl -s -o /tmp/t6.json -w "HTTP %{http_code}\n" -X POST http://127.0.0.1:8090/api/collections/withdrawals/records -H "Content-Type: application/json" -d "{\"wallet\":\"$WID\",\"amount\":1000}"
+cat /tmp/t6.json; echo
+echo "=== wallet balance after test 6 ==="
+curl -s http://127.0.0.1:8090/api/collections/wallets/records/$WID | python3 -c "import sys,json;print('balance=',json.load(sys.stdin)['balance'])"
+
+echo "=== Test 7: valid withdrawal of exact remaining balance (70) ==="
+curl -s -o /tmp/t7.json -w "HTTP %{http_code}\n" -X POST http://127.0.0.1:8090/api/collections/withdrawals/records -H "Content-Type: application/json" -d "{\"wallet\":\"$WID\",\"amount\":70}"
+cat /tmp/t7.json; echo
+echo "=== wallet balance after test 7 (should be 0) ==="
+curl -s http://127.0.0.1:8090/api/collections/wallets/records/$WID | python3 -c "import sys,json;print('balance=',json.load(sys.stdin)['balance'])"
+
+echo "=== Test 8: withdrawal when balance=0 (should 400) ==="
+curl -s -o /tmp/t8.json -w "HTTP %{http_code}\n" -X POST http://127.0.0.1:8090/api/collections/withdrawals/records -H "Content-Type: application/json" -d "{\"wallet\":\"$WID\",\"amount\":1}"
+cat /tmp/t8.json; echo
+
+echo "=== Count of persisted withdrawals (should be 2: test1 + test7) ==="
+curl -s "http://127.0.0.1:8090/api/collections/withdrawals/records?perPage=500" | python3 -c "import sys,json;d=json.load(sys.stdin);print('totalItems=',d.get('totalItems'));[print('  ',i.get('amount'),i.get('note')) for i in d.get('items',[])]" ✔ 
+💭 Thinking for 561 characters   
+All tests pass. Let me clean up the test server and data.   
+🛠️ Tool killBackgroundJob ✔ 
+💫 Executing cd /home/user/myproject && rm -rf /tmp/pb_test_data && ls -la wallet-app ✔ 
+🎉 Task Completed
+I extended the PocketBase app at `/home/user/myproject/main.go` with a Go event hook that makes wallet withdrawals atomic.
+
+## What was implemented
+
+Registered `app.OnRecordCreateRequest("withdrawals").BindFunc(...)` (the public REST create-request hook, not internal `app.Save`), which:
+
+1. **Validates `amount`** — reads `e.Record.GetFloat("amount")` and rejects with `e.BadRequestError(...)` (HTTP 400) when it is not strictly greater than `0`. This covers missing, zero, and negative values, and nothing is persisted.
+2. **Runs a single transaction** via `app.RunInTransaction(func(txApp core.App) error { ... })`. Inside the callback every DB operation goes through the transaction-scoped `txApp` (never the captured outer `app`), avoiding the WAL-writer deadlock / `SQLITE_BUSY` pitfall:
+   - Loads the wallet with `txApp.FindRecordById("wallets", walletId)`. If it is missing, returns `e.BadRequestError(...)` → 400 and the transaction rolls back (nothing persisted, wallet untouched).
+   - Checks `wallet.GetFloat("balance") >= amount`; otherwise returns `e.BadRequestError("Insufficient funds", nil)` → 400 with rollback.
+   - Debits the wallet: `wallet.Set("balance", balance-amount)` then `txApp.Save(wallet)`.
+   - Sets the submitted `wallet`/`amount` (and leaves the optional `note` from the payload) on `e.Record`.
+   - **Re-points `e.App` at `txApp`** before calling `e.Next()` so PocketBase's default save logic for the withdrawal record runs *inside the same transaction*. The original `e.App` is restored afterward. The success path returns `e.Next()` so the request chain is propagated (the v0.23+ requirement); any error from `RunInTransaction` rolls back both the balance change and the withdrawal row REDACTEDmatically.
+
+The existing migration registration and collection schemas were left untouched, and the binary still builds/runs standalone: `go build -o wallet-app .` then `./wallet-app serve --http=0.0.0.0:8090`.
+
+## Verification
+
+Built successfully and ran an end-to-end test matrix against a live server:
+
+| Scenario | Result |
+|---|---|
+| Valid withdrawal `amount=30` from balance 100 | HTTP 200, balance → 70, withdrawal persisted with `note` |
+| `amount=0` | HTTP 400, nothing persisted |
+| `amount=-5` | HTTP 400, nothing persisted |
+| missing `amount` | HTTP 400, nothing persisted |
+| non-existent `wallet` | HTTP 400, nothing persisted |
+| `amount=1000` > balance 70 | HTTP 400, balance unchanged (70) |
+| Withdraw exact remaining balance 70 | HTTP 200, balance → 0 |
+| Withdraw 1 when balance 0 | HTTP 400 |
+| Final withdrawals count | `totalItems=2` (only the two valid ones) |
+
+Confirmed the debit + withdrawal row are committed together and that every rejected case leaves the database untouched.   
+  

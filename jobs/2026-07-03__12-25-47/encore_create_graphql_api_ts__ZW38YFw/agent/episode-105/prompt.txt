@@ -1,0 +1,88 @@
+New Terminal Output:
+
+root@c58dab8b-5041-4da9-9075-31c228cf1f9a:/home/user/graphql-api# grep -B 2 -A 80 'function invokeMiddlewareChain' node_modules/encore.dev/internal/appinit/mod.
+ts
+
+// recursively calls all middlewares
+async function invokeMiddlewareChain(
+  curReq: runtime.Request,
+  req: MiddlewareRequest,
+  chain: Middleware[],
+  handler: () => Promise<any>
+): Promise<InternalHandlerResponse> {
+  const execute = async (
+    index: number,
+    req: MiddlewareRequest
+  ): Promise<HandlerResponse> => {
+    const currentMiddleware = chain.at(index);
+
+    // no more middlewares, execute the handler
+    if (currentMiddleware === undefined) {
+      const mwData = req.data;
+      if (mwData !== undefined) {
+        (curReq as any).middlewareData = mwData;
+      }
+      return new HandlerResponse(await handler());
+    }
+
+    // execute current middleware
+    return currentMiddleware(req, (req) => {
+      return execute(index + 1, req);
+    });
+  };
+
+  return (await execute(0, req)).__internalToResponse();
+}
+
+// calculate what middlewares should run for an endpoint
+function calculateMiddlewareChain(
+  endpointOptions: EndpointOptions,
+  ms: Middleware[]
+): Middleware[] {
+  const middlewares = ms.filter((m) => {
+    const target = m.options?.target;
+    if (!target) return true;
+    const { auth, expose, isRaw, isStream, tags } = target;
+    return (
+      (auth === undefined || auth === endpointOptions.auth) &&
+      (expose === undefined || expose === endpointOptions.expose) &&
+      (isRaw === undefined || isRaw === endpointOptions.isRaw) &&
+      (isStream === undefined || isStream === endpointOptions.isStream) &&
+      (tags === undefined ||
+        tags.some((tag) => endpointOptions.tags.includes(tag)))
+    );
+  });
+
+  return middlewares;
+}
+
+function transformHandler(h: Handler): runtime.ApiRoute {
+  const middlewares = calculateMiddlewareChain(
+    h.endpointOptions,
+    h.middlewares
+  );
+
+  if (h.apiRoute.streamingResponse || h.apiRoute.streamingRequest) {
+    return {
+      ...h.apiRoute,
+      // req is the upgrade request.
+      // stream is either a bidirectional stream, in stream or out stream.
+      handler: (
+        req: runtime.Request,
+        stream: runtime.Sink | runtime.Stream | runtime.Socket
+      ) => {
+        setCurrentRequest(req);
+
+        // make readable streams async iterators
+        const streamArg: IterableStream | IterableSocket | Sink =
+          stream instanceof runtime.Stream
+            ? new IterableStream(stream)
+            : stream instanceof runtime.Socket
+              ? new IterableSocket(stream)
+              : new Sink(stream);
+
+        if (middlewares.length === 0) {
+          const payload = req.payload();
+          return toResponse(
+            payload !== null
+root@c58dab8b-5041-4da9-9075-31c228cf1f9a:/home/user/graphql-api#

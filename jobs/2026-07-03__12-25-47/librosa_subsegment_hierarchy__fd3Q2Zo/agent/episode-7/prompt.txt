@@ -1,0 +1,143 @@
+New Terminal Output:
+
+root@43871d43-2a93-4efb-8caa-f8f57bce6383:~# cat > /tmp/segment.py << 'PYEOF'
+> import json
+> import numpy as np
+> import librosa
+> import librosa.feature
+> import librosa.beat
+> import librosa.segment
+>
+> HOP = 512
+> SR = 22050
+>
+> # Load audio
+> y, sr = librosa.load('/home/user/input.wav', sr=SR)
+> duration = len(y) / sr
+>
+> # Beat tracking
+> tempo, beats = librosa.beat.beat_track(y=y, sr=sr, hop_length=HOP)
+> beats = np.asarray(beats)
+>
+> # Chroma CQT
+> chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=HOP)
+>
+> # Beat-synchronous chroma
+ > sync_chroma = librosa.util.sync(chroma, beats)
+>
+> # Coarse segmentation with agglomerative
+> # Choose k so number of segments divides well and segments are meaningful
+> # We have beats beats; try a k between 4 and 8
+> k = 5
+> bounds = librosa.segment.agglomerative(sync_chroma, k)
+> # bounds are indices into the beat array (synchronous frames)
+> # They always start at 0; length should equal k
+> print('agglo bounds:', bounds, 'k=', k, 'len beats=', len(beats))
+> print('duration:', duration)
+>
+> # Map beat indices to beat frames, then to time
+> beat_times = librosa.frames_to_time(beats, sr=sr, hop_length=HOP)
+>
+> # Coarse segment: [beats[bounds[i]], beats[bounds[i+1]])
+> # Convert to time via librosa.frames_to_time(beat_frames, hop_length=HOP)
+> coarse_segments = []
+> for i in range(len(bounds)):
+>     start_frame = int(beats[bounds[i]])
+>     if i + 1 < len(bounds):
+>         end_frame = int(beats[bounds[i+1]])
+>     else:
+>         end_frame = int(librosa.frames_to_time(np.array([len(y)//HOP]), sr=sr, hop_length=HOP)[0] * sr / HOP)
+>         # use the last beat as end_frame - we just need the last beat frame to compute end time
+>         end_frame = int(beats[-1])
+>     start_t = float(librosa.frames_to_time(np.array([start_frame]), sr=sr, hop_length=HOP)[0])
+>     end_t = float(librosa.frames_to_time(np.array([end_frame]), sr=sr, hop_length=HOP)[0])
+>     coarse_segments.append({'index': i, 'start_frame': start_frame, 'end_frame': end_frame, 'start': start_t, 'end': end_t})
+>
+> # Clamp last end to duration
+> coarse_segments[-1]['end'] = duration
+>
+> # Subsegment each coarse segment
+> fine_segments = []
+> for c in coarse_segments:
+>     # Use the beat frames as the segment boundaries
+>     # We need beat frames for this segment: find beats in [c['start_frame'], c['end_frame']]
+>     seg_beats = beats[(beats >= c['start_frame']) & (beats <= c['end_frame'])]
+>     if len(seg_beats) < 2:
+>         # not enough beats, just split equally? Use the frames
+>         # Fallback: use frames
+>         seg_beats = np.array([c['start_frame'], c['end_frame']])
+>     sub_bounds = librosa.segment.subsegment(chroma, seg_beats, n_segments=3)
+>     # sub_bounds merges input boundaries; split into per-interval 3 each
+>     # Number of intervals = len(seg_beats)-1, each interval should have up to 3 new boundaries
+>     # Total boundaries = (n_intervals) * (n_segments-1) + 1? Actually: per interval we get n_segments+1 boundaries if all exist
+>     # But subsegment returns boundaries consistent across intervals. The boundaries array contains all input boundaries AND the internal sub-boundaries.
+>     # The structure is: for each interval, returns n_segments boundaries (left boundary at start of interval, then n_segments-1 interior, then end is start of
+ next).
+>     # Actually based on docs, subsegment returns "list of sub-divided segment boundaries" merging input boundaries.
+>     # Let's split: input has len(seg_beats) boundaries. Output should split each interval into n_segments subintervals.
+>     # So between input[i] and input[i+1], there are n_segments-1 new boundaries added.
+>     # Total = len(seg_beats) + (len(seg_beats)-1)*(n_segments-1) = n_segments*len(seg_beats) - n_segments + 1
+>     n_int = len(seg_beats) - 1
+>     expected = n_int * n_segments - n_segments + 1
+>     print('coarse', c['index'], 'seg_beats:', seg_beats, 'sub_bounds:', sub_bounds, 'expected:', expected)
+>     # Walk through intervals
+>     all_bounds = list(sub_bounds)
+>     idx = 0
+>     for interval_i in range(n_int):
+>         # take n_segments+1 boundaries: start, n_segments-1 interior, end
+>         # But end of interval i == start of interval i+1
+>         # To extract exactly 3 sub-segments per interval, we want to read n_segments boundaries that include end of last
+>         # Actually let's just collect 3 boundaries per sub-seg
+>         # sub-seg j in [0..2]: boundary[j] to boundary[j+1]
+>         # 4 boundaries per interval (start, two interior, end)
+>         # Let's check sizes: if each interval is split into 3, we have 4 boundaries per interval
+>         # but adjacent intervals share a boundary. So total = (n_int)*(n_segments+1) - (n_int-1) = n_int*n_segments + 1
+>         # That's what we expect
+>         b_sub = all_bounds[idx:idx+n_segments+1]
+>         idx += n_segments
+>         if len(b_sub) < n_segments+1:
+>             break
+>         # build 3 sub-segments
+>         for j in range(n_segments):
+>             sf = int(b_sub[j])
+>             ef = int(b_sub[j+1])
+>             # sanity: must be within coarse
+>             if sf < c['start_frame']: sf = c['start_frame']
+>             if ef > c['end_frame']: ef = c['end_frame']
+>             start_t = float(librosa.frames_to_time(np.array([sf]), sr=sr, hop_length=HOP)[0])
+>             end_t = float(librosa.frames_to_time(np.array([ef]), sr=sr, hop_length=HOP)[0])
+>             fine_segments.append({'start_frame': sf, 'end_frame': ef, 'start': start_t, 'end': end_t, 'parent_index': c['index']})
+>
+> # Clamp last fine segment of each coarse to coarse end
+> for c in coarse_segments:
+>     children = [f for f in fine_segments if f['parent_index'] == c['index']]
+>     if not children:
+>         continue
+>     # first start clamp to coarse start
+>     if abs(children[0]['start'] - c['start']) > 0.001:
+>         children[0]['start'] = c['start']
+>         children[0]['start_frame'] = c['start_frame']
+>     # last end clamp to coarse end
+>     children[-1]['end'] = c['end']
+>     children[-1]['end_frame'] = c['end_frame']
+>     # adjust interior adjacency: ensure prev.end == next.start frame
+>     for k in range(1, len(children)):
+>         if children[k]['start_frame'] != children[k-1]['end_frame']:
+>             children[k]['start_frame'] = children[k-1]['end_frame']
+>             children[k]['start'] = children[k-1]['end']
+>
+> # Build final json
+> coarse_out = [{'index': c['index'], 'start': c['start'], 'end': c['end']} for c in coarse_segments]
+> fine_sorted = sorted(fine_segments, key=lambda x: x['start'])
+> fine_out = []
+> for i, f in enumerate(fine_sorted):
+>     fine_out.append({'index': i, 'start': f['start'], 'end': f['end'], 'parent_index': f['parent_index']})
+>
+> result = {'coarse': coarse_out, 'fine': fine_out}
+>
+> with open('/home/user/hierarchy.json', 'w') as f:
+>     json.dump(result, f, indent=2)
+>
+> print(json.dumps(result, indent=2))
+> PYEOF
+root@43871d43-2a93-4efb-8caa-f8f57bce6383:~#

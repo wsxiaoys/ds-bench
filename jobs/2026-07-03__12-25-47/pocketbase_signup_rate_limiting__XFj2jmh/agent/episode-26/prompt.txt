@@ -1,0 +1,66 @@
+New Terminal Output:
+
+root@9f1f49b1-fbd4-494e-a68e-85966526b44b:/home/user/pb# sed -n '200,260p' /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.39.5/apis/middlewares_rate_limit
+.go
+func defaultRateLimitAudience(e *core.RequestEvent) []string {
+        if e.Auth != nil {
+                return defaultAuthAudience
+        }
+
+        return defaultGuestAudience
+}
+
+func defaultRateLimitLabels(e *core.RequestEvent) []string {
+        return []string{e.Request.Method + " " + e.Request.URL.Path, e.Request.URL.Path}
+}
+
+func destroyRateLimitersStore(app core.App) {
+        app.OnSettingsReload().Unbind(rateLimitersSettingsHookId)
+        app.Cron().Remove(rateLimitersCronKey)
+        app.Store().Remove(rateLimitersStoreKey)
+}
+
+func initRateLimitersStore(app core.App) *store.Store[string, *rateLimiter] {
+        app.Cron().Add(rateLimitersCronKey, "2 * * * *", func() { // offset a little since too many cleanup tasks execute at 00
+                limitersStore, ok := app.Store().Get(rateLimitersStoreKey).(*store.Store[string, *rateLimiter])
+                if !ok {
+                        return
+                }
+                limiters := limitersStore.GetAll()
+                for _, limiter := range limiters {
+                        limiter.clean()
+                }
+        })
+
+        app.OnSettingsReload().Bind(&hook.Handler[*core.SettingsReloadEvent]{
+                Id: rateLimitersSettingsHookId,
+                Func: func(e *core.SettingsReloadEvent) error {
+                        err := e.Next()
+                        if err != nil {
+                                return err
+                        }
+
+                        // reset
+                        destroyRateLimitersStore(e.App)
+
+                        return nil
+                },
+        })
+
+        return store.New[string, *rateLimiter](nil)
+}
+
+func newRateLimiter(maxAllowed int, intervalInSec int64, minDeleteIntervalInSec int64) *rateLimiter {
+        return &rateLimiter{
+                maxAllowed:        maxAllowed,
+                interval:          intervalInSec,
+                minDeleteInterval: minDeleteIntervalInSec,
+                clients:           map[string]*rateClient{},
+        }
+}
+
+type rateLimiter struct {
+        clients map[string]*rateClient
+
+        maxAllowed        int
+root@9f1f49b1-fbd4-494e-a68e-85966526b44b:/home/user/pb#

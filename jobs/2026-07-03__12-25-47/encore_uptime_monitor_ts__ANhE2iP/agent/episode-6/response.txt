@@ -1,0 +1,24 @@
+
+
+{
+  "analysis": "Good. Now let me create the pub/sub topic, the endpoints file (monitor.ts), and the subscription (checker.ts).",
+  "plan": "Create the events file with the Topic, then the API endpoints, then the subscription handler.",
+  "commands": [
+    {
+      "keystrokes": "cat > monitor/events.ts << 'EOF'\nimport { Topic } from \"encore.dev/pubsub\";\n\nexport interface CheckEvent {\n  siteId: number;\n  url: string;\n}\n\nexport const checkTopic = new Topic<CheckEvent>(\"check-site\", {\n  deliveryGuarantee: \"at-least-once\",\n});\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cat > monitor/monitor.ts << 'EOF'\nimport { api, APIError } from \"encore.dev\";\nimport { SQLDatabase } from \"encore.dev/storage/sqldb\";\nimport { checkTopic } from \"./events\";\nimport { db } from \"./db\";\n\ninterface AddSiteRequest {\n  url: string;\n}\n\ninterface Site {\n  id: number;\n  url: string;\n  is_up: boolean;\n}\n\ninterface ListSitesResponse {\n  sites: Site[];\n}\n\n// POST /site\nexport const addSite = api(\n  { method: \"POST\", path: \"/site\", expose: true },\n  async (req: AddSiteRequest): Promise<Site> => {\n    if (!req.url || typeof req.url !== \"string\") {\n      throw APIError.invalidArgument(\"url is required\");\n    }\n    const row = await db.queryRow<Site>`\n      INSERT INTO sites (url, is_up)\n      VALUES (${req.url}, FALSE)\n      RETURNING id, url, is_up\n    `;\n    if (!row) {\n      throw APIError.internal(\"failed to insert site\");\n    }\n    return row;\n  },\n);\n\n// GET /site\nexport const listSites = api(\n  { method: \"GET\", path: \"/site\", expose: true },\n  async (): Promise<ListSitesResponse> => {\n    const rows: Site[] = [];\n    for await (const row of db.query<Site>`SELECT id, url, is_up FROM sites ORDER BY id`) {\n      rows.push(row);\n    }\n    return { sites: rows };\n  },\n);\n\n// POST /check\nexport const triggerCheck = api(\n  { method: \"POST\", path: \"/check\", expose: true },\n  async (): Promise<{ ok: boolean }> => {\n    for await (const row of db.query<Site>`SELECT id, url FROM sites`) {\n      await checkTopic.publish({ siteId: row.id, url: row.url });\n    }\n    return { ok: true };\n  },\n);\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cat > monitor/checker.ts << 'EOF'\nimport { Subscription } from \"encore.dev/pubsub\";\nimport { db } from \"./db\";\nimport { checkTopic, CheckEvent } from \"./events\";\n\nnew Subscription(checkTopic, \"check-site\", {\n  handler: async (event: CheckEvent) => {\n    let isUp = false;\n    try {\n      const controller = new AbortController();\n      const timeout = setTimeout(() => controller.abort(), 10000);\n      const res = await fetch(event.url, { method: \"GET\", signal: controller.signal });\n      clearTimeout(timeout);\n      isUp = res.status >= 200 && res.status < 300;\n    } catch (err) {\n      isUp = false;\n    }\n    await db.exec`\n      UPDATE sites SET is_up = ${isUp} WHERE id = ${event.siteId}\n    `;\n  },\n});\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "ls -la monitor/\n",
+      "duration": 0.1
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+You are an AI assistant tasked with solving command-line tasks in a Linux environment. You will be given a task description and the output from previously executed commands. Your goal is to solve the task by providing batches of shell commands.
+
+Format your response as JSON with the following structure:
+
+{
+  "analysis": "Analyze the current state based on the terminal output provided. What do you see? What has been accomplished? What still needs to be done?",
+  "plan": "Describe your plan for the next steps. What commands will you run and why? Be specific about what you expect each command to accomplish.",
+  "commands": [
+    {
+      "keystrokes": "ls -la\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cd project\n",
+      "duration": 0.1
+    }
+  ],
+  "task_complete": true
+}
+
+Required fields:
+- "analysis": Your analysis of the current situation
+- "plan": Your plan for the next steps
+- "commands": Array of command objects to execute
+
+Optional fields:
+- "task_complete": Boolean indicating if the task is complete (defaults to false if not present)
+
+Command object structure:
+- "keystrokes": String containing the exact keystrokes to send to the terminal (required)
+- "duration": Number of seconds to wait for the command to complete before the next command will be executed (defaults to 1.0 if not present)
+
+IMPORTANT: The text inside "keystrokes" will be used completely verbatim as keystrokes. Write commands exactly as you want them sent to the terminal:
+- You must end every command with a newline (\n) or it will not execute.
+- For special key sequences, use tmux-style escape sequences:
+  - C-c for Ctrl+C
+  - C-d for Ctrl+D
+
+The "duration" attribute specifies the number of seconds to wait for the command to complete (default: 1.0) before the next command will be executed. On immediate tasks (e.g., cd, ls, echo, cat) set a duration of 0.1 seconds. On commands (e.g., gcc, find, rustc) set a duration of 1.0 seconds. On slow commands (e.g., make, python3 [long running script], wget [file]) set an appropriate duration as you determine necessary.
+
+It is better to set a smaller duration than a longer duration. It is always possible to wait again if the prior output has not finished, by running {"keystrokes": "", "duration": 10.0} on subsequent requests to wait longer. Never wait longer than 60 seconds; prefer to poll to see intermediate result status.
+
+Important notes:
+- Each command's keystrokes are sent exactly as written to the terminal
+- Do not include extra whitespace before or after the keystrokes unless it's part of the intended command
+- Extra text before or after the JSON will generate warnings but be tolerated
+- The JSON must be valid - use proper escaping for quotes and special characters within strings
+- Commands array can be empty if you want to wait without taking action
+
+Task Description:
+# Interpolation Curve Sampler with libGDX Headless Backend
+
+## Background
+libGDX ships a tweening utility, `com.badlogic.gdx.math.Interpolation`, that exposes named easing curves (`linear`, `smooth`, `smoother`, and many more) for animating values between two endpoints. The class is part of `com.badlogicgames.gdx:gdx` and does not require an OpenGL context, so it can be driven by the headless backend (`com.badlogicgames.gdx:gdx-backend-headless`) and used inside CI / server pipelines.
+
+Build a small, fully-deterministic Java application that drives the libGDX `Interpolation` API from inside an `ApplicationListener` running under `HeadlessApplication`, samples a named easing curve over the unit interval, and writes the resulting samples to a file.
+
+## Requirements
+- Create a Gradle (single-module) Java project at `/home/user/gdx-interp`.
+- Use libGDX `1.14.2` with the headless backend (`com.badlogicgames.gdx:gdx-backend-headless:1.14.2`) on top of `com.badlogicgames.gdx:gdx:1.14.2` and the `com.badlogicgames.gdx:gdx-platform:1.14.2:natives-desktop` natives classifier.
+- Implement an `ApplicationListener` (or `ApplicationAdapter`) whose `create()` reads a Java properties config file via `Gdx.files.absolute(...)`. The `render()` method must produce exactly one new sample per invocation. After exactly `samples` ticks, the program must call `Gdx.app.exit()`. No additional samples may be produced after `samples` ticks.
+- Bootstrap the application from a `main` method that constructs a `HeadlessApplication` with a `HeadlessApplicationConfiguration`. After the last sample call `Gdx.app.exit()` and join the main-loop thread so the JVM exits cleanly.
+- The input configuration file at `<config-path>` is a Java properties file containing these keys:
+  - `curve` (string): one of `linear`, `smooth`, `smoother` (case-sensitive, matching the static field name on `Interpolation`).
+  - `start` (double): start value of the range.
+  - `end` (double): end value of the range.
+  - `samples` (integer, `>= 2`): number of equally-spaced samples to produce (inclusive of both endpoints).
+- Write the final result to `<output-path>` (created or overwritten) using UTF-8 encoding and LF line endings, with the following format:
+  - Line 1: `curve=<curve-name>`
+  - Line 2: `samples=<integer>`
+  - Next `samples` lines (lines 3..2+samples): one decimal number per line, formatted with `%.6f` using `Locale.ROOT`, in sample-index order (i.e. `t = 0/(samples-1)` first, then `1/(samples-1)`, ..., ending with `t = 1`).
+  - The file MUST end with a trailing newline (so the total number of lines is `2 + samples`).
+- The sample at index `i` (zero-based) must equal `Interpolation.<curve>.apply(start, end, t)` where `t = i / (samples - 1)` as a single-precision `float` and `samples >= 2`.
+- Supported curve names (must be looked up on `com.badlogic.gdx.math.Interpolation`): `linear`, `smooth`, `smoother`. If the curve name is unknown or invalid, the program must NOT create or overwrite `<output-path>`, and must exit with a non-zero status code and an error message on stderr.
+- Make the program runnable through Gradle's `application` plugin so it can be launched with `./gradlew run --args="<config-path> <output-path>"`.
+
+## Implementation Hints
+- Look at `HeadlessApplication` and `HeadlessApplicationConfiguration`. Setting `updatesPerSecond = 0` lets the main loop run as fast as possible without wall-clock pacing, which is what you want for a finite, deterministic sweep.
+- `MockGraphics` in the headless backend cannot run OpenGL code, so do NOT call anything under `Gdx.gl*`; keep the listener pure logic.
+- `Gdx.app.exit()` is asynchronous (it posts a runnable that flips a `running` flag and triggers `pause()` + `dispose()`). To guarantee the output file is flushed before the JVM exits, write the file from `dispose()` and `join()` the main-loop thread from `main`.
+- Use `java.util.Properties` (or any other parser) to read the config; access it through `Gdx.files.absolute(path).read()` so the libGDX `FileHandle` abstraction is exercised.
+- All numeric values written to the output file MUST use `Locale.ROOT` (or equivalent) when formatting, so the decimal separator is `.`.
+- The sample at `i = samples - 1` must use `t = 1.0f` exactly (do not let floating-point drift produce `0.9999...`). Computing `t` as `i / (float)(samples - 1)` and then explicitly forcing the endpoint case is acceptable.
+- The program must run efficiently and terminate within 60 seconds for any input with `samples <= 100000`.
+
+
+Current terminal state:
+Current Terminal Screen:
+root@401f1113-82d3-4933-a426-7618852533ef:~#
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

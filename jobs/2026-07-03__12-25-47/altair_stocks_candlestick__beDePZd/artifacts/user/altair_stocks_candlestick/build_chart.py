@@ -1,0 +1,95 @@
+import altair as alt
+import pandas as pd
+
+# Read the OHLCV dataset
+df = pd.read_csv('/home/user/altair_stocks_candlestick/ohlcv.csv')
+df['date'] = pd.to_datetime(df['date'])
+
+# Define an interval brush selection constrained to the x (date) encoding
+brush = alt.selection_interval(encodings=['x'])
+
+# Base chart for candlestick view (shared across the layered marks)
+base = alt.Chart(df).encode(x=alt.X('date:T', title='Date'))
+
+# Wick: rule from low to high
+wick = base.mark_rule(color='#555555').encode(
+    y=alt.Y('low:Q', title='Price', scale=alt.Scale(zero=False)),
+    y2='high:Q',
+)
+
+# Body: bar from open to close with conditional coloring
+body = base.mark_bar().encode(
+    y=alt.Y('open:Q'),
+    y2='close:Q',
+    color=alt.condition(
+        'datum.close >= datum.open',
+        alt.value('#26a69a'),  # green for up days
+        alt.value('#ef5350'),  # red for down days
+    ),
+)
+
+# Combine wick and body into candlestick view
+candlestick = alt.LayerChart(layers=[wick, body]).encode(
+    x=alt.X('date:T', title='Date'),
+).properties(
+    width=800,
+    height=400,
+    title='Candlestick Chart',
+)
+
+# Bind candlestick's x-scale domain to the brush selection
+candlestick = candlestick.transform_filter(brush) if False else candlestick
+
+# We need to make the candlestick respect the brush via x scale domain binding.
+# Approach: build candlestick via a layered chart object and override its x encoding
+# to use the brush selection as the scale domain.
+
+# Volume bar chart with brush parameter attached
+volume = alt.Chart(df).mark_bar(color='#4c78a8').encode(
+    x=alt.X('date:T', title='Date'),
+    y=alt.Y('volume:Q', title='Volume'),
+).add_params(brush).properties(
+    width=800,
+    height=150,
+    title='Volume',
+)
+
+# Create candlestick with x domain bound to brush
+candlestick = alt.Chart(df).encode(
+    x=alt.X('date:T', title='Date', scale=alt.Scale(domain=brush)),
+).mark_rule(color='#555555').encode(
+    y=alt.Y('low:Q', title='Price', scale=alt.Scale(zero=False)),
+    y2='high:Q',
+).properties(
+    width=800,
+    height=400,
+    title='Candlestick Chart',
+)
+
+# Recreate properly with layered chart
+base_c = alt.Chart(df).encode(x=alt.X('date:T', title='Date'))
+wick = base_c.mark_rule(color='#555555').encode(
+    y=alt.Y('low:Q', title='Price', scale=alt.Scale(zero=False)),
+    y2='high:Q',
+)
+body = base_c.mark_bar().encode(
+    y='open:Q',
+    y2='close:Q',
+    color=alt.condition(
+        'datum.close >= datum.open',
+        alt.value('#26a69a'),
+        alt.value('#ef5350'),
+    ),
+)
+candlestick = (wick + body).encode(
+    x=alt.X('date:T', title='Date', scale=alt.Scale(domain=brush)),
+).properties(width=800, height=400, title='Candlestick Chart')
+
+# Compose vertically
+chart = alt.vconcat(candlestick, volume).resolve_scale(x='shared')
+
+# Save chart artifacts
+chart.save('/home/user/altair_stocks_candlestick/chart.html')
+chart.save('/home/user/altair_stocks_candlestick/chart.json')
+
+print('Chart saved successfully.')

@@ -1,0 +1,51 @@
+import { registerPlugin } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { App } from '@capacitor/app';
+
+interface NavBarPlugin {
+  setColor(options: { color: string }): Promise<{ color: string }>;
+}
+
+const NavBar = registerPlugin<NavBarPlugin>('NavBar');
+
+interface ThemeColors {
+  style: Style;
+  statusBarColor: string;
+  navBarColor: string;
+}
+
+const THEME_PRESETS: Record<'dark' | 'light', ThemeColors> = {
+  dark: {
+    style: Style.Dark,
+    statusBarColor: '#000000',
+    navBarColor: '#000000',
+  },
+  light: {
+    style: Style.Light,
+    statusBarColor: '#FFFFFF',
+    navBarColor: '#FFFFFF',
+  },
+};
+
+export async function applyTheme(mode: 'dark' | 'light'): Promise<void> {
+  // Demonstrate platform detection using the official Capacitor plugins.
+  const appInfo = await App.getInfo();
+  const statusBarInfo = await StatusBar.getInfo();
+
+  console.log('Applying theme', {
+    mode,
+    platform: appInfo.platform,
+    isNative: appInfo.platform !== 'web',
+    statusBarInfo,
+  });
+
+  const preset = THEME_PRESETS[mode];
+
+  await Promise.all([
+    StatusBar.setStyle({ style: preset.style }),
+    StatusBar.setBackgroundColor({ color: preset.statusBarColor }),
+    NavBar.setColor({ color: preset.navBarColor }),
+  ]);
+}
+
+export default applyTheme;

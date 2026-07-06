@@ -1,0 +1,29 @@
+import os
+from e2b import Sandbox
+
+# Get API key from environment
+api_key = os.environ.get('E2B_API_KEY')
+if not api_key:
+    raise RuntimeError('E2B_API_KEY is not set in environment')
+
+# Spawn a sandbox from the default template, keep alive for 10 minutes
+sandbox = Sandbox.create(timeout=600)
+
+# Execute the command in the sandbox
+result = sandbox.commands.run("echo 'Hello E2B' > /home/user/hello.txt")
+print(f"Command stdout: {result.stdout}")
+print(f"Command stderr: {result.stderr}")
+print(f"Exit code: {result.exit_code}")
+
+# Save the sandbox ID to local file
+sandbox_id = sandbox.sandbox_id
+with open('/home/user/sandbox_id.txt', 'w') as f:
+    f.write(sandbox_id)
+print(f"Sandbox ID written: {sandbox_id}")
+
+# Save the E2B_API_KEY to local file
+with open('/home/user/e2b_api_key.txt', 'w') as f:
+    f.write(api_key)
+print('E2B API key written to /home/user/e2b_api_key.txt')
+
+print('Done. Sandbox will remain alive for the full timeout (600 seconds).')

@@ -1,0 +1,182 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const sdk_1 = __importDefault(require("@alchemystai/sdk"));
+const fs_1 = __importDefault(require("fs"));
+// ----- CLI parsing -----
+function parseArgs(argv) {
+    // Accept: --groups g1 g2 ...  (groups are positional values after --groups, until end / next flag)
+    const groups = [];
+    let i = 0;
+    while (i < argv.length) {
+        const a = argv[i];
+        if (a === '--groups' || a === '--group') {
+            i++;
+            while (i < argv.length && !argv[i].startsWith('--')) {
+                groups.push(argv[i]);
+                i++;
+            }
+        }
+        else {
+            i++;
+        }
+    }
+    return groups;
+}
+// ----- Read run-id -----
+function readRunId() {
+    // Per task, the run-id lives at /logs/artifacts/run-id
+    const p = '/logs/artifacts/run-id';
+    try {
+        return fs_1.default.readFileSync(p, 'utf8').trim();
+    }
+    catch {
+        // Fallback: a random id so the build/run still works in dev environments
+        return Math.random().toString(36).slice(2, 12);
+    }
+}
+// ----- Seed corpus -----
+function buildSeedDocs() {
+    return [
+        {
+            key: 'ENG_V1_DOC',
+            groups: ['eng', 'v1'],
+            content: 'ENG_V1_DOC Engineering notes for API version 1. ' +
+                'This document summarises the v1 endpoint contracts, deprecated fields, and the legacy auth flow ' +
+                'used by first-generation mobile clients. Topics: REST API version 1, basic auth, simple rate limits.',
+        },
+        {
+            key: 'ENG_V2_DOC',
+            groups: ['eng', 'v2'],
+            content: 'ENG_V2_DOC Engineering notes for API version 2. ' +
+                'This document summarises the v2 endpoint contracts, OAuth2 scopes, refreshed pagination model, ' +
+                'and the newer streaming response format used by modern clients. Topics: REST API version 2, OAuth2.',
+        },
+        {
+            key: 'PRODUCT_V1_DOC',
+            groups: ['product', 'v1'],
+            content: 'PRODUCT_V1_DOC Product notes for release version 1. ' +
+                'This document outlines the GTM plan, positioning, pricing tiers, and customer success KPIs ' +
+                'for the initial public launch of release version 1. Topics: launch, pricing, positioning.',
+        },
+        {
+            key: 'PRODUCT_V2_DOC',
+            groups: ['product', 'v2'],
+            content: 'PRODUCT_V2_DOC Product notes for release version 2. ' +
+                'This document outlines feature flags, the multi-region expansion, enterprise tier packaging, ' +
+                'and adoption metrics for release version 2. Topics: enterprise, regions, adoption.',
+        },
+    ];
+}
+// ----- Ingest -----
+async function ingest(client, runId, seeds) {
+    for (const seed of seeds) {
+        const fileName = `${seed.key}-${runId}.md`;
+        const params = {
+            context_type: 'resource',
+            scope: 'internal',
+            source: 'platform.api.context.add',
+            documents: [{ content: seed.content }],
+            metadata: {
+                // NOTE: per task spec and Alchemyst docs, metadata for `add` uses SNAKE_CASE
+                // (group_name, file_name, file_type). The SDK TS types are loose here.
+                file_name: fileName,
+                file_type: 'text/markdown',
+                group_name: seed.groups,
+            },
+        };
+        try {
+            const res = await client.v1.context.add(params);
+            process.stderr.write(`[ingest] ${seed.key} -> ${fileName} id=${res.context_id ?? '?'}\n`);
+        }
+        catch (err) {
+            // Tolerate 409 conflict on re-runs (we re-use the same file_name for stable run-id)
+            const status = err?.status ?? err?.statusCode;
+            const msg = String(err?.message ?? err);
+            if (status === 409 || /already exists/i.test(msg)) {
+                process.stderr.write(`[ingest] ${seed.key} already exists, skipping (409 tolerated)\n`);
+                continue;
+            }
+            throw err;
+        }
+    }
+}
+// ----- Search -----
+async function runSearch(client, groups) {
+    // Per task spec, the search uses CAMELCASE groupName for the intersection filter.
+    const params = {
+        query: 'engineering product API release version notes documents — broadly match all seed documents',
+        similarity_threshold: 0.1,
+        minimum_similarity_threshold: 0.1,
+        scope: 'internal',
+        metadata: 'true', // ensure metadata is returned
+        body_metadata: {
+            groupName: groups,
+        },
+    };
+    const res = await client.v1.context.search(params);
+    const contexts = res?.contexts ?? [];
+    const matches = [];
+    const seen = new Set();
+    for (const ctx of contexts) {
+        const content = String(ctx?.content ?? '');
+        const key = extractKey(content);
+        if (!key)
+            continue;
+        if (seen.has(key))
+            continue;
+        seen.add(key);
+        matches.push({
+            key,
+            content,
+            file_name: ctx?.metadata?.file_name ?? ctx?.metadata?.fileName,
+            score: ctx?.score,
+        });
+    }
+    return matches;
+}
+function extractKey(content) {
+    // Each seed doc embeds its key literally at the start, e.g. "ENG_V1_DOC Engineering notes ...".
+    // After chunking the key may be anywhere in the chunk, so scan for any known key.
+    const known = [
+        'ENG_V1_DOC',
+        'ENG_V2_DOC',
+        'PRODUCT_V1_DOC',
+        'PRODUCT_V2_DOC',
+    ];
+    for (const k of known) {
+        if (content.includes(k))
+            return k;
+    }
+    return null;
+}
+// ----- Main -----
+async function main() {
+    const groups = parseArgs(process.argv.slice(2));
+    if (groups.length === 0) {
+        process.stderr.write('Usage: node dist/main.js --groups <g1> [<g2> ...]\n');
+        process.exit(2);
+    }
+    const runId = readRunId();
+    process.stderr.write(`[run] run-id=${runId}\n`);
+    process.stderr.write(`[run] groups=${JSON.stringify(groups)}\n`);
+    const apiKey = process.env.ALCHEMYST_AI_API_KEY;
+    if (!apiKey) {
+        process.stderr.write('[run] ALCHEMYST_AI_API_KEY is not set\n');
+        process.exit(2);
+    }
+    const client = new sdk_1.default({ apiKey });
+    const seeds = buildSeedDocs();
+    await ingest(client, runId, seeds);
+    // Give the indexer a brief moment to settle on a re-run-with-conflicts path
+    await new Promise((r) => setTimeout(r, 500));
+    const matches = await runSearch(client, groups);
+    // Single JSON array on stdout, nothing else.
+    process.stdout.write(JSON.stringify(matches) + '\n');
+}
+main().catch((err) => {
+    process.stderr.write(`[error] ${(err && (err.stack || err.message || err))}\n`);
+    process.exit(1);
+});

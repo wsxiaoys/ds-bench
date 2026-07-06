@@ -1,0 +1,44 @@
+import json
+from bytewax import operators as op
+from bytewax.connectors.files import FileSource
+from bytewax.connectors.stdio import StdOutSink
+from bytewax.dataflow import Dataflow
+
+flow = Dataflow("multi_stage_agg")
+
+# Stage 0: Read input.jsonl line by line and parse JSON
+inp = op.input(
+    "input",
+    flow,
+    FileSource("input.jsonl"),
+)
+
+# Parse each line (string) into a dict
+parsed = op.map("parse_json", inp, lambda line: json.loads(line))
+
+# Stage 1: Local Aggregation by sensor_id
+# Map dict to (sensor_id, val) tuple to create a KeyedStream
+keyed = op.map("key_on_sensor", parsed, lambda rec: (rec["sensor_id"], rec["val"]))
+
+# Use fold_final for finite stream aggregation
+local_sums = op.fold_final(
+    "local_sum",
+    keyed,
+    lambda: 0,
+    lambda acc, val: acc + val,
+)
+
+# Stage 2: Global Aggregation
+# Re-key all items to "global" using map to keep it as a KeyedStream
+global_keyed = op.map("rekey_global", local_sums, lambda item: ("global", item[1]))
+
+# Compute the grand total
+grand_total = op.fold_final(
+    "global_sum",
+    global_keyed,
+    lambda: 0,
+    lambda acc, val: acc + val,
+)
+
+# Output to stdout
+op.output("stdout", grand_total, StdOutSink())

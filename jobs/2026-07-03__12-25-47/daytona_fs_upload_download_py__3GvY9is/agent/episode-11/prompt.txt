@@ -1,0 +1,93 @@
+New Terminal Output:
+
+root@bee7247a-5980-4279-830c-31166d303bb2:/home/user/myproject# grep -n 'def upload_file' $(python3 -c 'import daytona._sync.filesystem as f; import os; print(o
+s.path.abspath(f.__file__))')
+811:    def upload_file(self, file: bytes, remote_path: str, timeout: int = 30 * 60) -> None:
+842:    def upload_file(self, local_path: str, remote_path: str, timeout: int = 30 * 60) -> None:
+861:    def upload_file(  # pyright: ignore[reportInconsistentOverload]
+868:    def upload_files(self, files: list[FileUpload], timeout: int = 30 * 60) -> None:
+936:    def upload_file_stream(
+root@bee7247a-5980-4279-830c-31166d303bb2:/home/user/myproject# sed -n '170,250p' $(python3 -c 'import daytona._sync.filesystem as f; import os; print(os.path.a
+bspath(f.__file__))')
+            if isinstance(result, str):
+                result = result.encode("utf-8")
+            return result
+
+        remote_path = args[0]
+        local_path = args[1]
+        timeout = int(args[2]) if len(args) == 3 else 30 * 60
+        response = (
+            self.download_files([FileDownloadRequest(source=remote_path, destination=local_path)], timeout=timeout)
+        )[0]
+        if response.error:
+            raise create_file_download_error(response)
+        return None
+
+    @intercept_errors(message_prefix="Failed to download file: ")
+    @with_instrumentation()
+    def download_file_stream(
+        self,
+        remote_path: str,
+        timeout: int = 30 * 60,
+        on_progress: Callable[[DownloadProgress], None] | None = None,
+        cancel_event: CancelEvent | None = None,
+    ) -> Iterator[bytes]:
+        """Downloads a single file from the Sandbox as a stream without buffering the entire file
+        into memory. Returns an iterator that yields file content in chunks, which can be piped
+        directly to an HTTP response, written to a file incrementally, or processed on the fly.
+
+        Args:
+            remote_path (str): Path to the file in the Sandbox. Relative paths are resolved based
+                on the sandbox working directory.
+            timeout (int): Timeout for the download operation in seconds. 0 means no timeout.
+                Default is 30 minutes.
+            on_progress (Callable[[DownloadProgress], None] | None): Optional callback invoked with
+                cumulative bytes received and total bytes, when known, as the download progresses.
+                Default is None.
+            cancel_event (CancelEvent | None): Optional ``threading.Event``-compatible token. When
+                set during streaming, the next chunk raises ``DaytonaError`` and the underlying
+                HTTP connection is closed.
+
+        Returns:
+            Iterator[bytes]: An iterator yielding chunks of file content as bytes.
+
+        Raises:
+            DaytonaError: If the file does not exist, access is denied, or the download is
+                cancelled via ``cancel_event``.
+
+        Example:
+            ```python
+            # Stream to a local file without loading into memory
+            with open("local_copy.bin", "wb") as f:
+                for chunk in sandbox.fs.download_file_stream("workspace/large-file.bin"):
+                    f.write(chunk)
+
+            # Cancel an in-progress download from another thread
+            import threading
+            cancel = threading.Event()
+            threading.Timer(5.0, cancel.set).start()
+            for chunk in sandbox.fs.download_file_stream("workspace/big.bin", cancel_event=cancel):
+                process(chunk)
+            ```
+        """
+
+        def stream_generator() -> Iterator[bytes]:
+            method, url, headers, body = serialize_download_request(self._api_client, remote_path)
+
+            mode: str | None = None
+            part_content_type: str | None = None
+            header_field = bytearray()
+            header_value = bytearray()
+            part_headers: dict[str, str] = {}
+            error_buffer = bytearray()
+            pending_chunks: list[bytes] = []
+            error_text: str | None = None
+            error_details: FileDownloadErrorDetails | None = None
+            received_file_data = False
+            bytes_received = 0
+            total_bytes: int | None = None
+
+            def on_part_begin() -> None:
+                nonlocal total_bytes
+                part_headers.clear()
+root@bee7247a-5980-4279-830c-31166d303bb2:/home/user/myproject#

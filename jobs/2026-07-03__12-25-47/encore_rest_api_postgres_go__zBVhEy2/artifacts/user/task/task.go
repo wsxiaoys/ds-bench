@@ -1,0 +1,135 @@
+package task
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+
+	"encore.dev/storage/sqldb"
+)
+
+// Task represents a task in the task manager.
+type Task struct {
+	ID          int64  `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Done        bool   `json:"done"`
+}
+
+// CreateTaskParams defines the parameters for creating a task.
+type CreateTaskParams struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// ListTasksResponse defines the response for listing tasks.
+type ListTasksResponse struct {
+	Tasks []Task `json:"tasks"`
+}
+
+// UpdateTaskParams defines the parameters for updating a task.
+type UpdateTaskParams struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Done        bool   `json:"done"`
+}
+
+// taskdb is the PostgreSQL database used by the task service.
+var taskdb = sqldb.NewDatabase("taskdb", sqldb.DatabaseConfig{
+	Migrations: "./migrations",
+})
+
+// CreateTask creates a new task.
+//encore:api public method=POST path=/tasks
+func CreateTask(ctx context.Context, params *CreateTaskParams) (*Task, error) {
+	t := &Task{
+		Title:       params.Title,
+		Description: params.Description,
+		Done:        false,
+	}
+	err := taskdb.QueryRow(ctx, `
+		INSERT INTO tasks (title, description, done)
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, t.Title, t.Description, t.Done).Scan(&t.ID)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// ListTasks lists all tasks.
+//encore:api public method=GET path=/tasks
+func ListTasks(ctx context.Context) (*ListTasksResponse, error) {
+	rows, err := taskdb.Query(ctx, `SELECT id, title, description, done FROM tasks ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tasks := []Task{}
+	for rows.Next() {
+		var t Task
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Done); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return &ListTasksResponse{Tasks: tasks}, nil
+}
+
+// GetTask gets a single task by ID.
+//encore:api public method=GET path=/tasks/:id
+func GetTask(ctx context.Context, id int64) (*Task, error) {
+	t := &Task{}
+	err := taskdb.QueryRow(ctx, `
+		SELECT id, title, description, done FROM tasks WHERE id = $1
+	`, id).Scan(&t.ID, &t.Title, &t.Description, &t.Done)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, &errNotFound{fmt.Sprintf("task %d not found", id)}
+		}
+		return nil, err
+	}
+	return t, nil
+}
+
+// UpdateTask updates a task's title, description, and done status.
+//encore:api public method=PUT path=/tasks/:id
+func UpdateTask(ctx context.Context, id int64, params *UpdateTaskParams) (*Task, error) {
+	t := &Task{}
+	err := taskdb.QueryRow(ctx, `
+		UPDATE tasks SET title = $1, description = $2, done = $3
+		WHERE id = $4
+		RETURNING id, title, description, done
+	`, params.Title, params.Description, params.Done, id).Scan(&t.ID, &t.Title, &t.Description, &t.Done)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, &errNotFound{fmt.Sprintf("task %d not found", id)}
+		}
+		return nil, err
+	}
+	return t, nil
+}
+
+// DeleteTask deletes a task by ID.
+//encore:api public method=DELETE path=/tasks/:id
+func DeleteTask(ctx context.Context, id int64) error {
+	res, err := taskdb.Exec(ctx, `DELETE FROM tasks WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	n := res.RowsAffected()
+	if n == 0 {
+		return &errNotFound{fmt.Sprintf("task %d not found", id)}
+	}
+	return nil
+}
+
+type errNotFound struct{ msg string }
+
+func (e *errNotFound) Error() string { return e.msg }

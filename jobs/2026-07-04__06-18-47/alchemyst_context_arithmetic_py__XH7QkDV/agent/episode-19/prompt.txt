@@ -1,0 +1,243 @@
+New Terminal Output:
+
+root@64f400a2-f29a-498e-bb39-278b36d691ec:~# cat > /home/user/myproject/main.py << 'PYEOF'
+> #!/usr/bin/env python3
+> """
+> Context Arithmetic (Intersection) demo CLI using Alchemyst AI Python SDK.
+>
+t> On every invocation this CLI:
+> 1. Reads the per-run id from /logs/artifacts/run-id.
+> 2. Removes any documents previously ingested under that run id (idempotent reruns).
+> 3. Ingests 3 documents whose `group_name` arrays overlap so the intersection
+>    semantics of Context Arithmetic can be verified.
+> 4. Performs `client.v1.context.search(...)` filtered by `body_metadata={"group_name": [<groups from --groups>]}`
+>    and prints the matching documents as a single JSON array to stdout.
+> """
+>
+> from __future__ import annotations
+>
+> import argparse
+> import json
+> import os
+> import sys
+> import time
+> from pathlib import Path
+> from typing import Any, Dict, Iterable, List
+>
+> from alchemyst_ai import AlchemystAI
+>
+> RUN_ID_FILE = Path("/logs/artifacts/run-id")
+>
+>
+> def read_run_id() -> str:
+>     """Read the run id from the canonical location."""
+>     return RUN_ID_FILE.read_text().strip()
+>
+>
+> def parse_args() -> List[str]:
+>     parser = argparse.ArgumentParser(
+>         description="Demonstrate Context Arithmetic (group_name intersection)."
+>     )
+>     parser.add_argument(
+>         "--groups",
+>         nargs="+",
+>         required=True,
+>         help="One or more group names to AND-filter on (intersection semantics).",
+>     )
+>     args = parser.parse_args()
+>     return list(args.groups)
+>
+>
+t> def make_client() -> AlchemystAI:
+>     api_key = os.environ.get("ALCHEMYST_AI_API_KEY")
+>     if not api_key:
+>         print(
+>             "ERROR: ALCHEMYST_AI_API_KEY environment variable is not set.",
+>             file=sys.stderr,
+>         )
+>         sys.exit(1)
+>     return AlchemystAI(api_key=api_key)
+>
+>
+> def ingest_documents(
+>     client: AlchemystAI, run_id: str, source: str
+> ) -> List[Dict[str, Any]]:
+>     """Delete any documents previously ingested for this run id, then add fresh ones."""
+>
+>     # Best-effort cleanup so reruns with the same run-id don't 409.
+>     # We delete by document and by source using the run-id namespaced file names.
+>     for fname in (
+>         f"docA-{run_id}.md",
+>         f"docB-{run_id}.md",
+>         f"docC-{run_id}.md",
+>     ):
+>         try:
+) or >             client.v1.context.delete(
+>                 organization_id="default",
+>                 source=source,
+>                 by_doc=True,
+>                 user_id=fname,
+>             )
+>         except Exception as exc:  # noqa: BLE001
+>             print(f"[cleanup] delete {fname}: {exc}", file=sys.stderr)
+>
+>     documents = [
+>         {
+>             "content": (
+>                 f"# Document A ({run_id})\n\n"
+>                 "This is engineering v1 release notes covering the platform team\n"
+>                 "Q1 launch: new deployment pipeline, observability dashboards,\n"
+>                 "and on-call rotations. Marker: docA."
+>             ),
+>             "metadata": {
+>                 "file_name": f"docA-{run_id}.md",
+>                 "group_name": ["eng", "v1"],
+>             },
+>         },
+>         {
+>             "content": (
+>                 f"# Document B ({run_id})\n\n"
+>                 "Engineering v2 changelog: refactored auth, switched to the new\n"
+>                 "build system, upgraded the database driver. Marker: docB."
+>             ),
+>             "metadata": {
+>                 "file_name": f"docB-{run_id}.md",
+>                 "group_name": ["eng", "v2"],
+>             },
+>         },
+>         {
+>             "content": (
+>                 f"# Document C ({run_id})\n\n"
+>                 "Public-facing docs v1: user guide, installation, and FAQ for the\n"
+>                 "initial GA release. Marker: docC."
+>             ),
+>             "metadata": {
+>                 "file_name": f"docC-{run_id}.md",
+>                 "group_name": ["docs", "v1"],
+>             },
+>         },
+>     ]
+>
+>     # Try add with graceful handling of 409 Conflict in case cleanup missed.
+>     try:
+>         client.v1.context.add(
+>             context_type="resource",
+>             documents=documents,
+>             scope="internal",
+>             source=source,
+>             metadata={
+>                 "run_id": run_id,
+>                 "file_name": f"batch-{run_id}.md",
+>                 "group_name": ["eng", "v1", "v2", "docs"],
+>             },
+>         )
+>         print(f"[ingest] added {len(documents)} documents", file=sys.stderr)
+>     except Exception as exc:  # noqa: BLE001
+>         # If the batch add fails (e.g., due to conflict on the batch envelope),
+>         # add each document individually so partial failures don't break reruns.
+>         print(f"[ingest] batch add failed ({exc}); falling back to per-doc", file=sys.stderr)
+>         for doc in documents:
+>             try:
+>                 client.v1.context.add(
+>                     context_type="resource",
+>                     documents=[doc],
+>                     scope="internal",
+>                     source=source,
+>                     metadata=doc["metadata"],
+>                 )
+>             except Exception as inner_exc:  # noqa: BLE001
+>                 print(
+>                     f"[ingest] per-doc add failed for {doc['metadata'].get('file_name')}: {inner_exc}",
+>                     file=sys.stderr,
+>                 )
+>
+>     return documents  # type: ignore[return-value]
+>
+>
+> def run_search(
+>     client: AlchemystAI, groups: List[str], source: str
+> ) -> List[Dict[str, Any]]:
+>     """Perform the filtered search and return deduplicated matches."""
+>
+>     query = (
+>         "engineering platform deployment release notes and public documentation"
+>     )
+>
+>     matches: List[Dict[str, Any]] = []
+>     seen: set[str] = set()
+>
+>     # Short bounded retry loop: vector indexing can take a moment to settle.
+>     last_response: Any = None
+>     for attempt in range(5):
+>         try:
+>             response = client.v1.context.search(
+>                 query=query,
+>                 minimum_similarity_threshold=0.1,
+>                 similarity_threshold=0.9,
+>                 metadata="true",
+>                 body_metadata={"group_name": groups},
+>                 scope="internal",
+>                 user_id=source,
+>             )
+>         except Exception as exc:  # noqa: BLE001
+>             print(f"[search] attempt {attempt + 1} failed: {exc}", file=sys.stderr)
+>             time.sleep(1.0)
+>             continue
+>
+>         last_response = response
+>         contexts = getattr(response, "contexts", None) or []
+>         if contexts:
+>             break
+>         time.sleep(1.0)
+>
+>     contexts = getattr(last_response, "contexts", None) or []
+>     for ctx in contexts:
+>         meta = getattr(ctx, "metadata", None) or {}
+>         # metadata may be dict-like or pydantic model
+>         if hasattr(meta, "model_dump"):
+>             meta = meta.model_dump()
+>         elif hasattr(meta, "dict"):
+>             meta = meta.dict()
+>         if not isinstance(meta, dict):
+>             meta = {}
+>
+>         file_name = meta.get("file_name") or meta.get("fileName")
+>         if not file_name:
+>             # Fallback: pull a deterministic marker out of the content.
+>             content = getattr(ctx, "content", "") or ""
+>             for marker in ("docA", "docB", "docC"):
+>                 if marker in content:
+>                     # Recover the run-id namespaced file_name if possible.
+>                     for fname in meta.get("file_name_candidates", []) if isinstance(meta, dict) else []:
+>                         pass
+>                     file_name = None
+>                     break
+>
+>         if file_name and file_name not in seen:
+>             seen.add(file_name)
+>             matches.append({"file_name": file_name})
+>
+>     return matches
+>
+>
+> def main() -> int:
+>     groups = parse_args()
+>     run_id = read_run_id()
+>     source = f"docs-{run_id}"
+>
+>     print(f"[start] run_id={run_id} groups={groups} source={source}", file=sys.stderr)
+>
+>     client = make_client()
+>     ingest_documents(client, run_id=run_id, source=source)
+>     matches = run_search(client, groups=groups, source=source)
+>
+>     # Final JSON array on the last line of stdout.
+>     sys.stdout.write(json.dumps(matches, indent=2))
+>     sys.stdout.write("\n")
+>     return 0
+>
+>
+> if __name__ == "__main__":
+>     raise SystemExit(main())
+> PYEOF
+root@64f400a2-f29a-498e-bb39-278b36d691ec:~#

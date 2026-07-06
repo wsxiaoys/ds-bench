@@ -1,0 +1,179 @@
+New Terminal Output:
+
+root@9f1f49b1-fbd4-494e-a68e-85966526b44b:/home/user/pb# sed -n '600,780p' /root/go/pkg/mod/github.com/pocketbase/pocketbase@v0.39.5/core/settings_model.go
+// Validate makes RateLimitRule validatable by implementing [validation.Validatable] interface.
+func (c TrustedProxyConfig) Validate() error {
+        return nil
+}
+
+// -------------------------------------------------------------------
+
+type RateLimitsConfig struct {
+        Rules       []RateLimitRule `form:"rules" json:"rules"`
+        ExcludedIPs []string        `form:"excludedIPs" json:"excludedIPs"`
+        Enabled     bool            `form:"enabled" json:"enabled"`
+}
+
+// FindRateLimitRule returns the first matching rule based on the provided labels.
+//
+// Optionally you can further specify a list of valid RateLimitRule.Audience values to further filter the matching rule
+// (aka. the rule Audience will have to exist in one of the specified options).
+func (c *RateLimitsConfig) FindRateLimitRule(searchLabels []string, optOnlyAudience ...string) (RateLimitRule, bool) {
+        var prefixRules []int
+
+        for i, label := range searchLabels {
+                // check for direct match
+                for j := range c.Rules {
+                        if label == c.Rules[j].Label &&
+                                (len(optOnlyAudience) == 0 || slices.Contains(optOnlyAudience, c.Rules[j].Audience)) {
+                                return c.Rules[j], true
+                        }
+
+                        if i == 0 && strings.HasSuffix(c.Rules[j].Label, "/") {
+                                prefixRules = append(prefixRules, j)
+                        }
+                }
+
+                // check for prefix match
+                if len(prefixRules) > 0 {
+                        for j := range prefixRules {
+                                if strings.HasPrefix(label+"/", c.Rules[prefixRules[j]].Label) &&
+                                        (len(optOnlyAudience) == 0 || slices.Contains(optOnlyAudience, c.Rules[prefixRules[j]].Audience)) {
+                                        return c.Rules[prefixRules[j]], true
+                                }
+                        }
+                }
+        }
+
+        return RateLimitRule{}, false
+}
+
+// MarshalJSON implements the [json.Marshaler] interface.
+func (c RateLimitsConfig) MarshalJSON() ([]byte, error) {
+        type alias RateLimitsConfig
+
+        // serialize as empty array
+        if c.Rules == nil {
+                c.Rules = []RateLimitRule{}
+        }
+        if c.ExcludedIPs == nil {
+                c.ExcludedIPs = []string{}
+        }
+
+        return json.Marshal(alias(c))
+}
+
+// Validate makes RateLimitsConfig validatable by implementing [validation.Validatable] interface.
+func (c RateLimitsConfig) Validate() error {
+        return validation.ValidateStruct(&c,
+                validation.Field(
+                        &c.Rules,
+                        validation.When(c.Enabled, validation.Required),
+                        validation.By(checkUniqueRuleLabel),
+                ),
+                validation.Field(
+                        &c.ExcludedIPs,
+                        validation.Each(validation.Required, validation.By(validators.IPOrSubnet)),
+                ),
+        )
+}
+
+func checkUniqueRuleLabel(value any) error {
+        rules, ok := value.([]RateLimitRule)
+        if !ok {
+                return validators.ErrUnsupportedValueType
+        }
+
+        existing := make([]string, 0, len(rules))
+
+        for i, rule := range rules {
+                fullKey := rule.Label + "@@" + rule.Audience
+
+                var conflicts bool
+                for _, key := range existing {
+                        if strings.HasPrefix(key, fullKey) || strings.HasPrefix(fullKey, key) {
+                                conflicts = true
+                                break
+                        }
+                }
+
+                if conflicts {
+                        return validation.Errors{
+                                strconv.Itoa(i): validation.Errors{
+                                        "label": validation.NewError("validation_conflicting_rate_limit_rule", "Rate limit rule configuration with label {{.labe
+l}} already exists or conflicts with another rule.").
+                                                SetParams(map[string]any{"label": rule.Label}),
+                                },
+                        }
+                } else {
+                        existing = append(existing, fullKey)
+                }
+        }
+
+        return nil
+}
+
+var rateLimitRuleLabelRegex = regexp.MustCompile(`^(\w+\ \/[\w\/-]*|\/[\w\/-]*|^\w+\:\w+|\*\:\w+|\w+)$`)
+
+// The allowed RateLimitRule.Audience values
+const (
+        RateLimitRuleAudienceAll   = ""
+        RateLimitRuleAudienceGuest = "@guest"
+        RateLimitRuleAudienceAuth  = "@auth"
+)
+
+type RateLimitRule struct {
+        // Label is the identifier of the current rule.
+        //
+        // It could be a tag, complete path or path prerefix (when ends with `/`).
+        //
+        // Example supported labels:
+        //   - test_a (plain text "tag")
+        //   - users:create
+        //   - *:create
+        //   - /
+        //   - /api
+        //   - POST /api/collections/
+        Label string `form:"label" json:"label"`
+
+        // Audience specifies the auth group the rule should apply for:
+        //   - ""      - both guests and authenticated users (default)
+        //   - "@guest" - only for guests
+        //   - "@auth"  - only for authenticated users
+        Audience string `form:"audience" json:"audience"`
+
+        // Duration specifies the interval (in seconds) per which to reset
+        // the counted/accumulated rate limiter tokens.
+        Duration int64 `form:"duration" json:"duration"`
+
+        // MaxRequests is the max allowed number of requests per Duration.
+        MaxRequests int `form:"maxRequests" json:"maxRequests"`
+}
+
+// Validate makes RateLimitRule validatable by implementing [validation.Validatable] interface.
+func (c RateLimitRule) Validate() error {
+        return validation.ValidateStruct(&c,
+                validation.Field(&c.Label, validation.Required, validation.Match(rateLimitRuleLabelRegex)),
+                validation.Field(&c.MaxRequests, validation.Required, validation.Min(1)),
+                validation.Field(&c.Duration, validation.Required, validation.Min(1)),
+                validation.Field(&c.Audience,
+                        validation.In(RateLimitRuleAudienceAll, RateLimitRuleAudienceGuest, RateLimitRuleAudienceAuth),
+                ),
+        )
+}
+
+// DurationTime returns the tag's Duration as [time.Duration].
+func (c RateLimitRule) DurationTime() time.Duration {
+        return time.Duration(c.Duration) * time.Second
+}
+
+// String returns a string representation of the rule.
+func (c RateLimitRule) String() string {
+        raw, err := json.Marshal(c)
+        if err != nil {
+                return c.Label // extremely rare case
+        }
+
+        return string(raw)
+}
+root@9f1f49b1-fbd4-494e-a68e-85966526b44b:/home/user/pb#

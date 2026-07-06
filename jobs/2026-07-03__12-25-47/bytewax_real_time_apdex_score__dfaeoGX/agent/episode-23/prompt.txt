@@ -1,0 +1,75 @@
+New Terminal Output:
+
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex# cat > /tmp/test_debug2.py << 'EOF'
+> import json
+> import os
+> from datetime import datetime, timedelta, timezone
+> from bytewax.dataflow import Dataflow
+> import bytewax.operators as op
+> from bytewax.operators.windowing import EventClock, TumblingWindower, fold_window
+> from bytewax.testing import TestingSource, run_main
+>
+> INPUT_PATH = "input.jsonl"
+>
+> class Acc:
+>     __slots__ = ("s", "t", "f")
+>     def __init__(self):
+>         self.s = self.t = self.f = 0
+>     def add(self, rt):
+>         if rt <= 500: self.s += 1
+>         elif rt <= 2000: self.t += 1
+>         else: self.f += 1
+>         return self
+>     def merge(self, o):
+>         self.s += o.s; self.t += o.t; self.f += o.f
+>         return self
+>
+> def builder(): return Acc()
+> def folder(a, v): return a.add(v[1])
+> def merger(a, b): return a.merge(b)
+>
+> flow = Dataflow("d")
+> events = []
+> with open(INPUT_PATH) as fh:
+>     for line in fh:
+>         line = line.strip()
+>         if not line: continue
+>         r = json.loads(line)
+>         ts = datetime.fromisoformat(r["timestamp"].replace("Z", "+00:00"))
+>         if ts.tzinfo is None: ts = ts.replace(tzinfo=timezone.utc)
+>         events.append((r["service"], int(r["response_time_ms"]), ts))
+>
+> up = op.input("in", flow, TestingSource(events))
+> keyed = op.key_on("k", up, lambda x: x[0])
+> clock = EventClock(ts_getter=lambda x: x[2], wait_for_system_duration=timedelta(0))
+> epoch = datetime.fromtimestamp(0, tz=timezone.utc)
+> align = events[0][2]
+> secs = int((align - epoch).total_seconds())
+> snapped = secs - (secs % 10)
+> align = epoch + timedelta(seconds=snapped)
+> win = TumblingWindower(length=timedelta(seconds=10), align_to=align)
+> windowed = fold_window("w", keyed, clock, win, builder=builder, folder=folder, merger=merger)
+>
+> # Just call map_value and see what type comes through
+> def show(x):
+>     print("RECEIVED:", type(x).__name__, "=>", repr(x))
+>     return x
+>
+> op.map_value("mapv", windowed.down, show)
+> run_main(flow)
+> EOF
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex# python /tmp/test_debug2.py 2>&1 | head -30
+thread '<unnamed>' panicked at src/run.rs:128:17:
+Box<dyn Any>
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+ValueError: (src/worker.rs:482:24) Dataflow needs to contain at least one output or inspect step; add with `bytewax.operators.output` or `bytewax.operators.insp
+ect`
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/tmp/test_debug2.py", line 56, in <module>
+    run_main(flow)
+bytewax.errors.BytewaxRuntimeError: (src/worker.rs:149:10): error building production dataflow
+root@12accb2e-00c6-4ecd-b227-db18e43324a9:/home/user/bytewax-apdex#

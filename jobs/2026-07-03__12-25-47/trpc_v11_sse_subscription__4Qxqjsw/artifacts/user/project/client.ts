@@ -1,0 +1,45 @@
+import { createTRPCClient, httpSubscriptionLink } from '@trpc/client';
+// @ts-ignore
+import { EventSource } from 'eventsource';
+import type { AppRouter } from './server';
+import * as fs from 'fs';
+
+async function main() {
+  const client = createTRPCClient<AppRouter>({
+    links: [
+      httpSubscriptionLink({
+        url: 'http://localhost:3000/trpc',
+        // @ts-ignore
+        EventSource: EventSource,
+      }),
+    ],
+  });
+
+  const numbers: number[] = [];
+
+  await new Promise<void>((resolve, reject) => {
+    const subscription = client.countdown.subscribe(undefined, {
+      onData: (data) => {
+        numbers.push(data);
+        console.log('Received:', data);
+      },
+      onComplete: () => {
+        console.log('Subscription complete');
+        resolve();
+      },
+      onError: (err) => {
+        console.error('Subscription error:', err);
+        reject(err);
+      },
+    });
+  });
+
+  console.log('All numbers received:', numbers);
+  fs.writeFileSync('/home/user/project/output.json', JSON.stringify(numbers));
+  process.exit(0);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

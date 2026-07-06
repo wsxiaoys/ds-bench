@@ -1,0 +1,138 @@
+import reflex as rx
+from sqlmodel import select
+from typing import List
+
+from myproject.models import Note, Tag, NoteTagLink
+
+
+def _get_or_create_tag(session, name: str) -> Tag:
+    """Get an existing tag by name, or create a new one."""
+    name = name.strip()
+    if not name:
+        return None
+    existing = session.exec(select(Tag).where(Tag.name == name)).first()
+    if existing:
+        return existing
+    tag = Tag(name=name)
+    session.add(tag)
+    session.commit()
+    session.refresh(tag)
+    return tag
+
+
+class State(rx.State):
+    """The app state."""
+
+    notes: List[dict] = []
+    selected_tags: List[str] = []
+
+    @rx.var(cache=True)
+    def all_tags(self) -> List[str]:
+        """Return the sorted union of tag names attached to at least one note."""
+        with rx.session() as session:
+            stmt = select(Tag.name).join(NoteTagLink, NoteTagLink.tag_id == Tag.id).distinct()
+            rows = session.exec(stmt).all()
+            return sorted(list(rows))
+
+    def load_notes(self):
+        """Load all notes (sorted by id) with their tags."""
+        with rx.session() as session:
+            db_notes = session.exec(select(Note).order_by(Note.id)).all()
+            result = []
+            for n in db_notes:
+                tags = session.exec(select(Tag).join(NoteTagLink, NoteTagLink.tag_id == Tag.id).where(NoteTagLink.note_id == n.id)).all()
+                result.append({
+                    "id": n.id,
+                    "content": n.content,
+                    "tags": sorted([t.name for t in tags]),
+                })
+            self.notes = result
+
+    def _resolve_tags(self, session, tag_names: List[str]) -> List[Tag]:
+        """Resolve tag names into Tag rows, creating any missing tags."""
+        out = []
+        for raw in tag_names:
+            name = (raw or "").strip()
+            if not name:
+                continue
+            tag = _get_or_create_tag(session, name)
+            if tag is not None:
+                out.append(tag)
+        return out
+
+    def add_note(self, content: str, tags_text: str):
+        """Create a new note with the given content and tags (comma separated)."""
+        content = (content or "").strip()
+        if not content:
+            return
+        tag_names = [t.strip() for t in (tags_text or "").split(",") if t.strip()]
+        with rx.session() as session:
+            note = Note(content=content)
+            session.add(note)
+            session.commit()
+            session.refresh(note)
+            for tag in self._resolve_tags(session, tag_names):
+                session.add(NoteTagLink(note_id=note.id, tag_id=tag.id))
+            session.commit()
+        self.load_notes()
+
+    def update_note_content(self, note_id: int, content: str):
+        """Update the content of an existing note."""
+        content = (content or "").strip()
+        with rx.session() as session:
+            note = session.get(Note, note_id)
+            if note is None:
+                return
+            note.content = content
+            session.add(note)
+            session.commit()
+        self.load_notes()
+
+    def set_note_tags(self, note_id: int, tags_text: str):
+        """Replace the entire tag set of a note."""
+        tag_names = [t.strip() for t in (tags_text or "").split(",") if t.strip()]
+        with rx.session() as session:
+            note = session.get(Note, note_id)
+            if note is None:
+                return
+            # Remove existing links
+            existing_links = session.exec(select(NoteTagLink).where(NoteTagLink.note_id == note_id)).all()
+            for link in existing_links:
+                session.delete(link)
+            session.commit()
+            # Add new tags
+            for tag in self._resolve_tags(session, tag_names):
+                session.add(NoteTagLink(note_id=note.id, tag_id=tag.id))
+            session.commit()
+        self.load_notes()
+
+    def delete_note(self, note_id: int):
+        """Delete a note and its link rows; do NOT delete Tag rows."""
+        with rx.session() as session:
+            note = session.get(Note, note_id)
+            if note is None:
+                return
+            existing_links = session.exec(select(NoteTagLink).where(NoteTagLink.note_id == note_id)).all()
+            for link in existing_links:
+                session.delete(link)
+            session.commit()
+            session.delete(note)
+            session.commit()
+        self.load_notes()
+
+    def toggle_tag(self, name: str):
+        """Toggle a tag name in selected_tags."""
+        if name in self.selected_tags:
+            self.selected_tags = [t for t in self.selected_tags if t != name]
+        else:
+            self.selected_tags = sorted(list(set(self.selected_tags + [name])))
+
+    def clear_filter(self):
+        """Clear all selected tags."""
+        self.selected_tags = []
+
+    def note_matches(self, note: dict) -> bool:
+        """Check whether a note matches the current filter."""
+        if not self.selected_tags:
+            return True
+        return any(t in self.selected_tags for t in note.get("tags", []))

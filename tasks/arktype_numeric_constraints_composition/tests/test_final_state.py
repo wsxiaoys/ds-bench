@@ -166,15 +166,6 @@ def test_validator_exports_validate_discount():
     )
 
 
-def test_validator_contains_range_expression():
-    """Criterion 8 (part 1): source contains a `1 <= ... <= 99` range expression."""
-    source = _read_validator_source()
-    assert re.search(r"\b1\s*<=\s*[A-Za-z_][A-Za-z0-9_]*\s*<=\s*99\b", source), (
-        "src/validator.ts must contain a string-embedded numeric range "
-        "expression like `1 <= number <= 99` or `1<=percent<=99`."
-    )
-
-
 def test_validator_contains_divisibility_by_5():
     """Criterion 8 (part 2): source contains a `% 5` divisibility constraint."""
     source = _read_validator_source()

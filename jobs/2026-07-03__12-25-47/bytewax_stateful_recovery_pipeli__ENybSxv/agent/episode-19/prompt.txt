@@ -1,0 +1,219 @@
+New Terminal Output:
+
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:~/project# cat > /root/project/pipeline.py << 'PYEOF'
+> """Bytewax sliding window temperature processing pipeline.
+>
+> Reads JSON lines from `input.jsonl`, computes sliding-window statistics
+> (mean and population standard deviation) of sensor temperatures using
+> event-time windows, and writes JSON lines to `output.jsonl`.
+>
+> All state used in windowing is composed of plain Python primitives so
+> that it is fully picklable and can be snapshotted by Bytewax's SQLite
+> recovery mechanism.
+> """
+>
+> import json
+> from datetime import datetime, timedelta, timezone
+> from pathlib import Path
+>
+> from bytewax.dataflow import Dataflow
+> import bytewax.operators as op
+> from bytewax.connectors.files import FileSource, FileSink
+> from bytewax.operators.windowing import (
+>     EventClock,
+>     SlidingWindower,
+>     fold_window,
+> )
+>
+>
+> INPUT_PATH = Path(__file__).parent / "input.jsonl"
+> OUTPUT_PATH = Path(__file__).parent / "output.jsonl"
+>
+> WINDOW_ALIGN = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+>
+>
+> def parse_ts(value):
+>     """Parse an ISO8601 string into a timezone-aware UTC datetime."""
+>     # Handle trailing 'Z' as UTC.
+>     if value.endswith("Z"):
+>         value = value[:-1] + "+00:00"
+>     dt = datetime.fromisoformat(value)
+>     if dt.tzinfo is None:
+>         dt = dt.replace(tzinfo=timezone.utc)
+>     else:
+>         dt = dt.astimezone(timezone.utc)
+>     return dt
+>
+>
+> def to_iso(dt):
+>     """Format a datetime as an ISO8601 string in UTC with `Z` suffix."""
+>     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+>
+>
+> def builder():
+>     """Build the initial accumulator for a window.
+>
+>     A plain dict is fully picklable.
+>     """
+>     return {"count": 0, "sum": 0.0, "sumsq": 0.0}
+>
+>
+> def folder(acc, value):
+>     """Fold a new temperature value into the accumulator."""
+>     acc["count"] += 1
+>     acc["sum"] += value
+>     acc["sumsq"] += value * value
+>     return acc
+>
+>
+> def merger(a, b):
+>     """Merge two accumulators when a window is merged."""
+>     return {
+>         "count": a["count"] + b["count"],
+>         "sum": a["sum"] + b["sum"],
+>         "sumsq": a["sumsq"] + b["sumsq"],
+>     }
+>
+>
+> def stats(acc):
+>     """Return mean and population stddev from the accumulator."""
+>     n = acc["count"]
+>     if n == 0:
+>         return 0.0, 0.0
+>     mean = acc["sum"] / n
+>     # Population variance from E[x^2] - E[x]^2
+>     var = (acc["sumsq"] / n) - (mean * mean)
+>     if var < 0.0:
+>         # Guard against tiny negative numbers caused by FP error.
+>         var = 0.0
+>     stddev = var ** 0.5
+>     return mean, stddev
+>
+>
+> flow = Dataflow("sensor_windowing")
+>
+> # --- Input: read JSON lines from input.jsonl ---------------------------------
+> src = FileSource(str(INPUT_PATH))
+> inp = op.input("input", flow, src)
+>
+> # Parse the JSON lines into dicts.
+> parsed = op.map("parse_json", inp, lambda line: json.loads(line))
+>
+> # Key the stream by sensor_id.
+> keyed = op.key_on("key_on_sensor", parsed, lambda x: x["sensor_id"])
+>
+>
+> def to_event(item):
+>     return {
+>         "sensor_id": item["sensor_id"],
+>         "temp": float(item["temp"]),
+>         "time": parse_ts(item["time"]),
+>     }
+>
+> events = op.map_value("to_event", keyed, to_event)
+>
+>
+> def extract_ts(event):
+>     return event["time"]
+>
+>
+> clock = EventClock(
+>     ts_getter=extract_ts,
+>     wait_for_system_duration=timedelta(seconds=0),
+> )
+>
+> windower = SlidingWindower(
+>     length=timedelta(seconds=60),
+>     offset=timedelta(seconds=30),
+>     align_to=WINDOW_ALIGN,
+> )
+>
+>
+> def folder_value(acc, event):
+>     return folder(acc, event["temp"])
+>
+>
+> windowed = fold_window(
+>     "fold_window",
+>     events,
+>     clock,
+>     windower,
+>     builder=builder,
+>     folder=folder_value,
+>     merger=merger,
+> )
+>
+> # --- Merge window values with metadata so we have open/close times -----------
+> # windowed.down keys: (sensor_id, (window_id, acc))
+> # windowed.meta keys: (sensor_id, (window_id, WindowMetadata))
+> joined = op.join(
+>     "join_meta",
+>     windowed.down,
+>     windowed.meta,
+> )
+>
+>
+> def format_output(item):
+>     # op.join emits ((key, (left_value, right_value)),).
+>     (sensor_id, _window_id) = item[0]
+>     left = item[1][0]
+>     right = item[1][1]
+>     acc = left[1]
+>     meta = right[1]
+>     mean, stddev = stats(acc)
+>     return {
+>         "sensor_id": sensor_id,
+>         "window_start": to_iso(meta.open_time),
+>         "window_end": to_iso(meta.close_time),
+>         "mean": mean,
+>         "stddev": stddev,
+>     }
+>
+>
+> formatted = op.map("format_output", joined, format_output)
+>
+>
+> def to_kv(record):
+>     # FileSink is partitioned, so items must be (key, value) tuples.
+>     # We use the sensor_id as the partition key and the JSON string as
+>     # the value. The sensor_id is preserved in the JSON itself.
+>     return (record["sensor_id"], json.dumps(record))
+>
+>
+> kv_stream = op.map("to_kv", formatted, to_kv)
+>
+> # --- Output: write JSON lines to output.jsonl --------------------------------
+> # FileSink requires the file to already exist; it's created by the runner.
+> op.output(
+>     "output",
+>     kv_stream,
+>     FileSink(str(OUTPUT_PATH)),
+> )
+> PYEOF
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:~/project# cd /root/project && python3 -m bytewax.run pipeline:flow 2>&1 | tail -30
+thread '<unnamed>' panicked at src/operators.rs:198:33:
+Box<dyn Any>
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/dist-packages/bytewax/operators/__init__.py", line 2552, in <genexpr>
+    return (mapper(x) for x in xs)
+            ^^^^^^^^^
+  File "/root/project/pipeline.py", line 155, in format_output
+    (sensor_id, _window_id) = item[0]
+    ^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: too many values to unpack (expected 2)
+
+The above exception was the direct cause of the following exception:
+
+bytewax.errors.BytewaxRuntimeError: (src/operators.rs:115:28): error while iterating through batch
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/usr/local/lib/python3.12/dist-packages/bytewax/run.py", line 355, in <module>
+    cli_main(**kwargs)
+bytewax.errors.BytewaxRuntimeError: (src/operators.rs:206:80): error calling `mapper` in step "sensor_windowing.format_output.flat_map_batch"
+root@2eacb342-88a4-4e90-86f7-a5580b74af48:~/project#

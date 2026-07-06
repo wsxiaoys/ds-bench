@@ -1,0 +1,274 @@
+New Terminal Output:
+
+root@9f1f49b1-fbd4-494e-a68e-85966526b44b:/home/user/pb# cat > main.go << 'EOF'
+> package main
+>
+> import (
+> "log"
+> "net/http"
+> "os"
+> "sync"
+> "time"
+>
+> "github.com/pocketbase/pocketbase"
+> "github.com/pocketbase/pocketbase/apis"
+> "github.com/pocketbase/pocketbase/core"
+> "github.com/pocketbase/pocketbase/tools/hook"
+> "golang.org/x/time/rate"
+> )
+>
+> // ipLimiter stores a per-IP rate limiter along with the last time it was used.
+> type ipLimiter struct {
+> limiter  *rate.Limiter
+> lastSeen time.Time
+> }
+>
+> // rateLimitStore keeps per-IP rate limiters in memory.
+> type rateLimitStore struct {
+> sync.Mutex
+> clients map[string]*ipLimiter
+> r       rate.Limit
+> b       int
+> tt      time.Time
+> }
+>
+> func newRateLimitStore() *rateLimitStore {
+> return &rateLimitStore{
+>
+go.mod   go.sum   main.go
+> clients: make(map[string]*ipLimiter),
+>
+go.mod   go.sum   main.go
+> // 5 requests per 1 minute: 1 token every 12 seconds, burst 5.
+>
+go.mod   go.sum   main.go
+> r:       rate.Every(time.Minute / 5),
+>
+go.mod   go.sum   main.go
+> b:       5,
+>
+go.mod   go.sum   main.go
+> tt:      time.Minute,
+> }
+> }
+>
+> func (s *rateLimitStore) getLimiter(ip string) *rate.Limiter {
+> s.Lock()
+> defer s.Unlock()
+>
+> client, ok := s.clients[ip]
+> if !ok {
+>
+go.mod   go.sum   main.go
+> limiter := rate.NewLimiter(s.r, s.b)
+>
+go.mod   go.sum   main.go
+> s.clients[ip] = &ipLimiter{limiter: limiter, lastSeen: time.Now()}
+>
+go.mod   go.sum   main.go
+> return limiter
+> }
+>
+> client.lastSeen = time.Now()
+> return client.limiter
+> }
+>
+> // periodicCleanup removes inactive client entries.
+> func (s *rateLimitStore) periodicCleanup() {
+> for range time.Tick(time.Minute) {
+>
+go.mod   go.sum   main.go
+> s.Lock()
+>
+go.mod   go.sum   main.go
+> for ip, client := range s.clients {
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+> if time.Since(client.lastSeen) > s.tt {
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+> delete(s.clients, ip)
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+> }
+>
+go.mod   go.sum   main.go
+> }
+>
+go.mod   go.sum   main.go
+> s.Unlock()
+> }
+> }
+>
+> // ipRateLimit returns a middleware that limits requests per IP address.
+> func ipRateLimit(store *rateLimitStore) *hook.Handler[*core.RequestEvent] {
+> return &hook.Handler[*core.RequestEvent]{
+>
+go.mod   go.sum   main.go
+> Id:   "pbIpRateLimit",
+>
+go.mod   go.sum   main.go
+> Func: func(e *core.RequestEvent) error {
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+> ip := e.RealIP()
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+> if ip == "" {
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+> ip = e.RemoteIP()
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+> }
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+> if !store.getLimiter(ip).Allow() {
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+> return e.Error(http.StatusTooManyRequests, "Too many requests. Please try again later.", nil)
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+> }
+>
+go.mod   go.sum   main.go
+>
+go.mod   go.sum   main.go
+> return e.Next()
+>
+go.mod   go.sum   main.go
+> },
+> }
+> }
+>
+> func main() {
+> app := pocketbase.New()
+>
+> app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+>
+go.mod   go.sum   main.go
+> // serves static files from the provided public dir (if exists)
+>
+go.mod   go.sum   main.go
+> se.Router.GET("/{path...}", apis.Static(os.DirFS("./pb_public"), false))
+>
+>
+go.mod   go.sum   main.go
+> // Rate limit store: 5 requests per minute per IP.
+>
+go.mod   go.sum   main.go
+> store := newRateLimitStore()
+>
+go.mod   go.sum   main.go
+> go store.periodicCleanup()
+>
+>
+go.mod   go.sum   main.go
+> // Register the custom signup route with per-IP rate limiting.
+>
+go.mod   go.sum   main.go
+> se.Router.POST("/api/custom_signup", customSignup, ipRateLimit(store))
+>
+>
+go.mod   go.sum   main.go
+> return se.Next()
+> })
+>
+> if err := app.Start(); err != nil {
+>
+go.mod   go.sum   main.go
+> log.Fatal(err)
+> }
+> }
+>
+> // customSignup handles POST /api/custom_signup.
+> //
+> // It accepts a JSON payload with email, password, and passwordConfirm,
+> // creates a new record in the users collection, and returns 200 OK on success.
+> func customSignup(e *core.RequestEvent) error {
+> type signupPayload struct {
+>
+go.mod   go.sum   main.go
+> Email           string `json:"email"`
+>
+go.mod   go.sum   main.go
+> Password        string `json:"password"`
+>
+go.mod   go.sum   main.go
+> PasswordConfirm string `json:"passwordConfirm"`
+> }
+>
+> payload := &signupPayload{}
+> if err := e.BindBody(payload); err != nil {
+>
+go.mod   go.sum   main.go
+> return e.BadRequestError("Failed to bind request body.", err)
+> }
+>
+> if payload.Email == "" || payload.Password == "" || payload.PasswordConfirm == "" {
+>
+go.mod   go.sum   main.go
+> return e.BadRequestError("email, password and passwordConfirm are required.", nil)
+> }
+>
+> if payload.Password != payload.PasswordConfirm {
+>
+go.mod   go.sum   main.go
+> return e.BadRequestError("Password and passwordConfirm do not match.", nil)
+> }
+>
+> collection, err := e.App.FindCollectionByNameOrId("users")
+> if err != nil {
+>
+go.mod   go.sum   main.go
+> return e.InternalServerError("Failed to load users collection.", err)
+> }
+>
+> record := core.NewRecord(collection)
+> record.Set("email", payload.Email)
+> record.Set("password", payload.Password)
+> record.Set("passwordConfirm", payload.PasswordConfirm)
+>
+> if err := e.App.Save(record); err != nil {
+>
+go.mod   go.sum   main.go
+> return e.BadRequestError("Failed to create user.", err)
+> }
+>
+> return e.JSON(http.StatusOK, map[string]any{
+>
+go.mod   go.sum   main.go
+> "id":    record.Id,
+>
+go.mod   go.sum   main.go
+> "email": record.Get("email"),
+> })
+> }
+> EOF
+root@9f1f49b1-fbd4-494e-a68e-85966526b44b:/home/user/pb#

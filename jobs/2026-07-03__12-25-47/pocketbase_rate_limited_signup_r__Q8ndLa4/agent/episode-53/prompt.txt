@@ -1,0 +1,84 @@
+New Terminal Output:
+
+root@fe2d402a-d04e-42f6-acaa-37f2a76e979a:~# kill %1 2>/dev/null; sleep 1; pkill -f pocketbase; sleep 2
+[1]+  Terminated              cd /home/user/myproject && bash start.sh > /tmp/pb.log 2>&1
+root@fe2d402a-d04e-42f6-acaa-37f2a76e979a:~# cat > /home/user/myproject/pb_hooks/rate_limit.pb.js << 'EOF'
+> console.log("HOOK LOADED");
+>
+> const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+> const RATE_LIMIT_MAX = 3;
+>
+> const rateLimitStore = {};
+>
+> onRecordCreateRequest((e) => {
+>     try {
+>         if (e.collection.name !== "users") {
+>             return;
+>         }
+>
+>         const ip = e.realIP();
+>         const now = Date.now();
+>         console.log("HOOK step 1:", ip, now);
+>
+>         if (!rateLimitStore[ip]) {
+>             rateLimitStore[ip] = [];
+>         }
+>         const timestamps = rateLimitStore[ip];
+>         console.log("HOOK step 2:", timestamps.length);
+>
+>         const cutoff = now - RATE_LIMIT_WINDOW_MS;
+>         while (timestamps.length > 0 && timestamps[0] <= cutoff) {
+>             timestamps.shift();
+>         }
+>         console.log("HOOK step 3:", timestamps.length);
+>
+>         if (timestamps.length >= RATE_LIMIT_MAX) {
+>             const oldest = timestamps[0];
+>             const retryAfterMs = (oldest + RATE_LIMIT_WINDOW_MS) - now;
+>             let retryAfterSec = Math.ceil(retryAfterMs / 1000);
+>             if (retryAfterSec < 1) retryAfterSec = 1;
+>             console.log("HOOK rate limited:", retryAfterSec);
+>             throw new ApiError(429, "Too many signup attempts", { retryAfter: retryAfterSec });
+>         }
+>
+>         timestamps.push(now);
+>         console.log("HOOK step 4: pushed");
+>     } catch (err) {
+>         console.log("HOOK ERROR: " + err + " stack: " + (err && err.stack ? err.stack : "no stack"));
+>         throw err;
+>     }
+> }, "users");
+> EOF
+root@fe2d402a-d04e-42f6-acaa-37f2a76e979a:~# cd /home/user/myproject && bash start.sh > /tmp/pb.log 2>&1 &
+[1] 3272
+root@fe2d402a-d04e-42f6-acaa-37f2a76e979a:~# sleep 2 && curl -s -i -X POST http://127.0.0.1:8090/api/collections/users/records -H "Content-Type: application/jso
+n" -d '{"email":"abc@example.com","password":"password12345678","passwordConfirm":"password12345678"}'
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Vary: Origin
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-Xss-Protection: 1; mode=block
+Date: Fri, 03 Jul 2026 14:53:41 GMT
+Content-Length: 89
+
+{"data":{},"message":"Something went wrong while processing your request.","status":400}
+root@fe2d402a-d04e-42f6-acaa-37f2a76e979a:~# tail -50 /tmp/pb.log
+2026/07/03 14:53:39 HOOK LOADED
+2026/07/03 14:53:39 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/
+
+(!) Launch the URL below in the browser if it hasn't been open already to create your first superuser account:
+http://0.0.0.0:8090/_/#/pbinstal/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjb2xsZWN0aW9uSWQiOiJwYmNfMzE0MjYzNTgyMyIsImV4cCI6MTc4MzA5MjIxOSwiaWQiOiJ3bzA2OXdhbzJhZ2
+d4MzYiLCJyZWZyZXNoYWJsZSI6ZmFsc2UsInR5cGUiOiJhdXRoIn0.MznAz9Xu70La5FG5k1GbyVWrr8-qcecUzXUz55cuTx8
+(you can also create your first superuser by running: /home/user/myproject/pocketbase superuser upsert EMAIL PASS)
+
+2026/07/03 14:53:41 HOOK step 1: 127.0.0.1 1783090421977
+2026/07/03 14:53:41 HOOK ERROR: ReferenceError: rateLimitStore is not defined stack: ReferenceError: rateLimitStore is not defined
+        at /home/user/myproject/pb.js:11:14(29)
+        at call (native)
+        at /home/user/myproject/pb.js:38:8(9)
+        at apply (native)
+        at /home/user/myproject/pb.js:38:31(4)
+root@fe2d402a-d04e-42f6-acaa-37f2a76e979a:~#

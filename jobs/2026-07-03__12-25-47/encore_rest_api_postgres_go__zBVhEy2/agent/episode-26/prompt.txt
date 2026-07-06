@@ -1,0 +1,104 @@
+New Terminal Output:
+
+root@02854430-6324-41cb-a6ad-ff96d0e23730:/home/user# head -100 /root/.encore/runtimes/go/storage/sqldb/sqldb.go
+// Package sqldb provides Encore services direct access to their databases.
+//
+// For the documentation on how to use databases within Encore see https://encore.dev/docs/develop/databases.
+package sqldb
+
+import (
+        "context"
+        "database/sql"
+
+        "github.com/jackc/pgx/v5"
+
+        "encore.dev/appruntime/exported/model"
+        "encore.dev/appruntime/exported/stack"
+        "encore.dev/appruntime/exported/trace2"
+        "encore.dev/beta/errs"
+)
+
+// ErrNoRows is an error reported by Scan when QueryRow doesn't return a row.
+// It must be tested against with errors.Is.
+var ErrNoRows = sql.ErrNoRows
+
+// ExecResult is the result of an Exec query.
+type ExecResult interface {
+        // RowsAffected returns the number of rows affected. If the result was not
+        // for a row affecting command (e.g. "CREATE TABLE") then it returns 0.
+        RowsAffected() int64
+}
+
+// Tx is a handle to a database transaction.
+//
+// See *database/sql.Tx for additional documentation.
+type Tx struct {
+        mgr *Manager
+        std pgx.Tx
+
+        startID model.TraceEventID
+}
+
+// Commit commits the given transaction.
+//
+// See (*database/sql.Tx).Commit() for additional documentation.
+func (tx *Tx) Commit() error { return tx.commit() }
+
+// Rollback rolls back the given transaction.
+//
+// See (*database/sql.Tx).Rollback() for additional documentation.
+func (tx *Tx) Rollback() error { return tx.rollback() }
+
+func (tx *Tx) commit() error {
+        err := tx.std.Commit(markTraced(context.Background()))
+        err = convertErr(err)
+
+        if curr := tx.mgr.rt.Current(); curr.Req != nil && curr.Trace != nil {
+                curr.Trace.DBTransactionEnd(trace2.DBTransactionEndParams{
+                        EventParams: trace2.EventParams{
+                                TraceID: curr.Req.TraceID,
+                                SpanID:  curr.Req.SpanID,
+                                Goid:    curr.Goctr,
+                                DefLoc:  0,
+                        },
+                        StartID: tx.startID,
+                        Commit:  true,
+                        Err:     err,
+                        Stack:   stack.Build(4),
+                })
+        }
+
+        return err
+}
+
+func (tx *Tx) rollback() error {
+        err := tx.std.Rollback(markTraced(context.Background()))
+        err = convertErr(err)
+
+        if curr := tx.mgr.rt.Current(); curr.Req != nil && curr.Trace != nil {
+                curr.Trace.DBTransactionEnd(trace2.DBTransactionEndParams{
+                        EventParams: trace2.EventParams{
+                                TraceID: curr.Req.TraceID,
+                                SpanID:  curr.Req.SpanID,
+                                Goid:    curr.Goctr,
+                                DefLoc:  0,
+                        },
+                        StartID: tx.startID,
+                        Commit:  false,
+                        Err:     err,
+                        Stack:   stack.Build(4),
+                })
+        }
+
+        return err
+}
+
+func (tx *Tx) Exec(ctx context.Context, query string, args ...interface{}) (ExecResult, error) {
+        return tx.exec(ctx, query, args...)
+}
+
+func (tx *Tx) exec(ctx context.Context, query string, args ...interface{}) (ExecResult, error) {
+        curr := tx.mgr.rt.Current()
+
+        var (
+root@02854430-6324-41cb-a6ad-ff96d0e23730:/home/user#

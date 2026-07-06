@@ -1,0 +1,403 @@
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# clear
+[?2004l[H[J[3J[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# ls -la /home/user/
+[?2004ltotal 520
+drwxr-xr-x 1 root root     31 Jul  3 12:26 [0m[01;34m.[0m
+drwxr-xr-x 1 root root     26 Jul  3 12:26 [01;34m..[0m
+-rw-r--r-- 1 root root 529244 Jul  3 12:26 [00;36minput.wav[0m
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# python3 --version && python3 -c "import librosa; print(librosa.__version__)"
+[?2004lPython 3.12.3
+0.11.0
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# python3 -c "import numpy; print(numpy.__version__); import scipy; print(scipy.__version__)"
+[?2004l2.4.6
+1.18.0
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# cat > /home/user/quantize.py << 'PYEOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> import json
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> import librosa
+[?2004l[?2004h> 
+[?2004l[?2004h> INPUT_PATH = '/home/user/input.wav'
+[?2004l[?2004h> OUTPUT_PATH = '/home/user/hits.json'
+[?2004l[?2004h> HOP_LENGTH = 512
+[?2004l[?2004h> 
+[?2004l[?2004h> # 1. Load
+[?2004l[?2004h> y, sr = librosa.load(INPUT_PATH, sr=None)
+[?2004l[?2004h> duration = float(librosa.get_duration(y=y, sr=sr))
+[?2004l[?2004h> print(f"Sample rate: {sr}, Duration: {duration:.4f}s, Samples: {len(y)}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # 2. HPSS to isolate percussive
+[?2004l[?2004h> y_perc, _ = librosa.effects.hpss(y)
+[?2004l[?2004h> 
+[?2004l[?2004h> # 3. Onset strength envelope on percussive (same hop_length throughout)
+[?2004l[?2004h> onset_env = librosa.onset.onset_strength(y=y_perc, sr=sr, hop_length=HOP_LENGTH)
+[?2004l[?2004h> print(f"Onset envelope length: {len(onset_env)}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # 4. Detect onsets (frame indices) using peak picking on the envelope
+[?2004l[?2004h> onset_frames = librosa.onset.onset_detect(
+[?2004l[?2004h>     onset_envelope=onset_env,
+[?2004l[?2004h>     sr=sr,
+[?2004l[?2004h>     hop_length=HOP_LENGTH,
+[?2004l[?2004h>     units='frames',
+[?2004l[?2004h>     backtrack=False,
+[?2004l[?2004h> )
+[?2004l[?2004h> print(f"Number of detected onsets: {len(onset_frames)}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # 5. Beat tracking on percussive to recover global tempo
+[?2004l[?2004h> tempo, _ = librosa.beat.beat_track(
+[?2004l[?2004h>     y=y_perc,
+[?2004l[?2004h>     sr=sr,
+[?2004l[?2004h>     hop_length=HOP_LENGTH,
+[?2004l[?2004h>     units='frames',
+[?2004l[?2004h> )
+[?2004l[?2004h> tempo = float(np.asarray(tempo).item())
+[?2004l[?2004h> print(f"Estimated tempo: {tempo:.4f} BPM")
+[?2004l[?2004h> 
+[?2004l[?2004h> # 6. 16th-note grid starting at time 0
+[?2004l[?2004h> step = 60.0 / tempo / 4.0
+[?2004l[?2004h> max_idx = int(np.floor(duration / step))
+[?2004l[?2004h> print(f"16th-note step: {step:.6f}s, grid indices 0..{max_idx}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # 7. Convert onset frames to raw times
+[?2004l[?2004h> raw_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=HOP_LENGTH)
+[?2004l[?2004h> 
+[?2004l[?2004h> # 8. Snap each onset to nearest grid position within [0, duration]
+[?2004l[?2004h> hits = []
+[?2004l[?2004h> for frame, raw_t in zip(onset_frames, raw_times):
+[?2004l[?2004h>     idx = int(round(float(raw_t) / step))
+[?2004l[?2004h>     if idx < 0:
+[?2004l[?2004h>         idx = 0
+[?2004l[?2004h>     if idx > max_idx:
+[?2004l[?2004h>         idx = max_idx
+[?2004l[?2004h>     snapped_t = float(idx * step)
+[?2004l[?2004h>     f = int(frame)
+[?2004l[?2004h>     if 0 <= f < len(onset_env):
+[?2004l[?2004h>         amp = float(onset_env[f])
+[?2004l[?2004h>     elif f >= len(onset_env) and len(onset_env) > 0:
+[?2004l[?2004h>         amp = float(onset_env[-1])
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         amp = 0.0
+[?2004l[?2004h>     hits.append({
+[?2004l[?2004h>         'time_seconds': snapped_t,
+[?2004l[?2004h>         'grid_index': idx,
+[?2004l[?2004h>         'velocity': amp,
+[?2004l[?2004h>         'raw_time_seconds': float(raw_t),
+[?2004l[?2004h>     })
+[?2004l[?2004h> 
+[?2004l[?2004h> # 9. Normalize velocities to (0, 1] - max == 1, min strictly > 0
+[?2004l[?2004h> amps = np.array([h['velocity'] for h in hits], dtype=np.float64)
+[?2004l[?2004h> if len(amps) > 0:
+[?2004l[?2004h>     max_amp = float(amps.max())
+[?2004l[?2004h>     if max_amp > 0:
+[?2004l[?2004h>         amps = amps / max_amp
+[?2004l[?2004h>     # Defensive: ensure strictly positive (percussive onsets should be > 0)
+[?2004l[?2004h>     zero_mask = amps <= 0
+[?2004l[?2004h>     if zero_mask.any():
+[?2004l[?2004h>         nonzero = amps[~zero_mask]
+[?2004l[?2004h>         fallback = float(nonzero.min()) * 0.5 if nonzero.size > 0 else 1e-6
+[?2004l[?2004h>         amps = np.where(zero_mask, fallback, amps)
+[?2004l[?2004h> 
+[?2004l[?2004h> for h, a in zip(hits, amps):
+[?2004l[?2004h>     h['velocity'] = float(a)
+[?2004l[?2004h> 
+[?2004l[?2004h> # 10. Order chronologically by snapped time (stable)
+[?2004l[?2004h> hits.sort(key=lambda h: (h['time_seconds'], h['raw_time_seconds']))
+[?2004l[?2004h> 
+[?2004l[?2004h> # 11. Write JSON array
+[?2004l[?2004h> with open(OUTPUT_PATH, 'w') as f:
+[?2004l[?2004h>     json.dump(hits, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Wrote {len(hits)} hits to {OUTPUT_PATH}")
+[?2004l[?2004h> if hits:
+[?2004l[?2004h>     vmin = min(h['velocity'] for h in hits)
+[?2004l[?2004h>     vmax = max(h['velocity'] for h in hits)
+[?2004l[?2004h>     print(f"Velocity range: [{vmin:.6f}, {vmax:.6f}]")
+[?2004l[?2004h>     print(f"Time range: [{hits[0]['time_seconds']:.4f}, {hits[-1]['time_seconds']:.4f}]")
+[?2004l[?2004h> PYEOF
+[?2004l[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# python3 /home/user/quantize.py
+[?2004lSample rate: 22050, Duration: 12.0000s, Samples: 264600
+Onset envelope length: 517
+Number of detected onsets: 78
+Estimated tempo: 60.0927 BPM
+16th-note step: 0.249615s, grid indices 0..48
+Wrote 78 hits to /home/user/hits.json
+Velocity range: [0.184699, 1.000000]
+Time range: [0.2496, 11.9815]
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# head -50 /home/user/hits.json
+[?2004l[
+  {
+    "time_seconds": 0.24961451247165534,
+    "grid_index": 1,
+    "velocity": 0.8882686682520149,
+    "raw_time_seconds": 0.2089795918367347
+  },
+  {
+    "time_seconds": 0.24961451247165534,
+    "grid_index": 1,
+    "velocity": 0.8541228115924981,
+    "raw_time_seconds": 0.2786394557823129
+  },
+  {
+    "time_seconds": 0.4992290249433107,
+    "grid_index": 2,
+    "velocity": 0.23997715051227905,
+    "raw_time_seconds": 0.4876190476190476
+  },
+  {
+    "time_seconds": 0.4992290249433107,
+    "grid_index": 2,
+    "velocity": 0.48802014383539605,
+    "raw_time_seconds": 0.5340589569160997
+  },
+  {
+    "time_seconds": 0.748843537414966,
+    "grid_index": 3,
+    "velocity": 0.7821209867405559,
+    "raw_time_seconds": 0.7894784580498866
+  },
+  {
+    "time_seconds": 0.9984580498866213,
+    "grid_index": 4,
+    "velocity": 0.7538614427482525,
+    "raw_time_seconds": 0.9520181405895691
+  },
+  {
+    "time_seconds": 0.9984580498866213,
+    "grid_index": 4,
+    "velocity": 0.3833622980262304,
+    "raw_time_seconds": 1.0448979591836736
+  },
+  {
+    "time_seconds": 1.2480725623582767,
+    "grid_index": 5,
+    "velocity": 0.6534392411412288,
+    "raw_time_seconds": 1.207437641723356
+  },
+  {
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# python3 -c "import json; d=json.load(open('/home/user/hits.json')); print(len(d)); print(set(k for h in d for k in h.keys()))"
+[?2004l78
+{'velocity', 'grid_index', 'time_seconds', 'raw_time_seconds'}
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# python3 << 'EOF'
+[?2004l[?2004h> import librosa
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> y, sr = librosa.load('/home/user/input.wav', sr=None)
+[?2004l[?2004h> y_perc, _ = librosa.effects.hpss(y)
+[?2004l[?2004h> # Try with default
+[?2004l[?2004h> tempo1, _ = librosa.beat.beat_track(y=y_perc, sr=sr)
+[?2004l[?2004h> tempo2, _ = librosa.beat.beat_track(y=y_perc, sr=sr, start_bpm=120.0)
+[?2004l[?2004h> tempo3, _ = librosa.beat.beat_track(y=y_perc, sr=sr, start_bpm=120.0, tightness=200)
+[?2004l[?2004h> print(f"Default: {float(np.asarray(tempo1).item())}")
+[?2004l[?2004h> print(f"start_bpm=120: {float(np.asarray(tempo2).item())}")
+[?2004l[?2004h> print(f"start_bpm=120, tight: {float(np.asarray(tempo3).item())}")
+[?2004l[?2004h> # Try with aggregate=np.mean
+[?2004l[?2004h> tempo4, _ = librosa.beat.beat_track(y=y_perc, sr=sr, aggregate=np.mean)
+[?2004l[?2004h> print(f"aggregate=mean: {float(np.asarray(tempo4).item())}")
+[?2004l[?2004h> # Use librosa.feature.tempo directly
+[?2004l[?2004h> tempo5 = librosa.feature.tempo(y=y_perc, sr=sr)
+[?2004l[?2004h> print(f"feature.tempo: {tempo5}")
+[?2004l[?2004h> EOF
+[?2004lDefault: 60.09265988372093
+start_bpm=120: 60.09265988372093
+start_bpm=120, tight: 60.09265988372093
+Traceback (most recent call last):
+  File "<stdin>", line 13, in <module>
+TypeError: beat_track() got an unexpected keyword argument 'aggregate'
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# python3 << 'EOF'
+[?2004l[?2004h> import librosa
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> y, sr = librosa.load('/home/user/input.wav', sr=None)
+[?2004l[?2004h> y_perc, _ = librosa.effects.hpss(y)
+[?2004l[?2004h> hop_length = 512
+[?2004l[?2004h> 
+[?2004l[?2004h> # Use librosa.feature.tempo directly
+[?2004l[?2004h> tempo_arr = librosa.feature.tempo(y=y_perc, sr=sr, hop_length=hop_length)
+[?2004l[?2004h> print(f"feature.tempo array: {tempo_arr}")
+[?2004l[?2004h> print(f"feature.tempo[0]: {tempo_arr[0]}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # onset envelope
+[?2004l[?2004h> oe = librosa.onset.onset_strength(y=y_perc, sr=sr, hop_length=hop_length)
+[?2004l[?2004h> print(f"Onset env shape: {oe.shape}, max: {oe.max():.3f}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Onset detect with default params
+[?2004l[?2004h> onset_frames = librosa.onset.onset_detect(onset_envelope=oe, sr=sr, hop_length=hop_length, units='frames')
+[?2004l[?2004h> print(f"Default onset_detect (with envelope): {len(onset_frames)} onsets")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Onset detect without envelope
+[?2004l[?2004h> ov2 = librosa.onset.onset_detect(y=y_perc, sr=sr, hop_length=hop_length, units='frames')
+[?2004l[?2004h> print(f"Default onset_detect (no envelope): {len(ov2)} onsets")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Test with stricter peak picking
+[?2004l[?2004h> import librosa.util
+[?2004l[?2004h> ov3 = librosa.onset.onset_detect(onset_envelope=oe, sr=sr, hop_length=hop_length, 
+[?2004l[?2004h>                                   units='frames', pre_avg=20, post_avg=20, 
+[?2004l[?2004h>                                   pre_max=20, post_max=20, delta=0.1, wait=10)
+[?2004l[?2004h> print(f"Strict onset_detect: {len(ov3)} onsets")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Check REDACTEDcorrelation peak
+[?2004l[?2004h> from librosa.feature import tempo as tempo_feature
+[?2004l[?2004h> import librosa.feature.rhythm
+[?2004l[?2004h> ac = librosa.feature.rhythm.tempogram(onset_envelope=oe, sr=sr, hop_length=hop_length)
+[?2004l[?2004h> print(f"Tempogram shape: {ac.shape}")
+[?2004l[?2004h> EOF
+[?2004lfeature.tempo array: [60.09265988]
+feature.tempo[0]: 60.09265988372093
+Onset env shape: (517,), max: 13.751
+Default onset_detect (with envelope): 78 onsets
+Default onset_detect (no envelope): 78 onsets
+Strict onset_detect: 18 onsets
+Tempogram shape: (384, 517)
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# python3 << 'EOF'
+[?2004l[?2004h> import librosa
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> y, sr = librosa.load('/home/user/input.wav', sr=None)
+[?2004l[?2004h> y_perc, _ = librosa.effects.hpss(y)
+[?2004l[?2004h> hop_length = 512
+[?2004l[?2004h> oe = librosa.onset.onset_strength(y=y_perc, sr=sr, hop_length=hop_length)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Get onset times
+[?2004l[?2004h> ov = librosa.onset.onset_detect(onset_envelope=oe, sr=sr, hop_length=hop_length, units='frames')
+[?2004l[?2004h> ot = librosa.frames_to_time(ov, sr=sr, hop_length=hop_length)
+[?2004l[?2004h> print("First 30 onset times:")
+[?2004l[?2004h> for t in ot[:30]:
+[?2004l[?2004h>     print(f"  {t:.4f}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Compute intervals
+[?2004l[?2004h> intervals = np.diff(ot)
+[?2004l[?2004h> print(f"\nMin interval: {intervals.min():.4f}, Max: {intervals.max():.4f}, Mean: {intervals.mean():.4f}")
+[?2004l[?2004h> print(f"Median interval: {np.median(intervals):.4f}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Autocorrelation of onset envelope
+[?2004l[?2004h> from scipy.signal import find_peaks
+[?2004l[?2004h> ac = librosa.feature.tempogram(onset_envelope=oe, sr=sr, hop_length=hop_length)
+[?2004l[?2004h> mean_ac = ac.mean(axis=1)
+[?2004l[?2004h> bpm_axis = librosa.tempo_frequencies(mean_ac.shape[0], sr=sr, hop_length=hop_length)
+[?2004l[?2004h> # Find peaks in REDACTEDcorrelation
+[?2004l[?2004h> peaks, _ = find_peaks(mean_ac, height=0)
+[?2004l[?2004h> if len(peaks) > 0:
+[?2004l[?2004h>     # Get top peaks
+[?2004l[?2004h>     sorted_idx = np.argsort(mean_ac[peaks])[::-1][:10]
+[?2004l[?2004h>     top_peaks = peaks[sorted_idx]
+[?2004l[?2004h>     print("\nTop REDACTEDcorrelation peaks (BPM, AC value):")
+[?2004l[?2004h>     for p in top_peaks:
+[?2004l[?2004h>         print(f"  BPM={bpm_axis[p]:.2f}, AC={mean_ac[p]:.3f}")
+[?2004l[?2004h> EOF
+[?2004lFirst 30 onset times:
+  0.2090
+  0.2786
+  0.4876
+  0.5341
+  0.7895
+  0.9520
+  1.0449
+  1.2074
+  1.3003
+  1.5093
+  1.6718
+  1.7879
+  1.9505
+  2.0434
+  2.2059
+  2.2988
+  2.5310
+  2.6703
+  2.7864
+  2.9489
+  3.0418
+  3.2044
+  3.2972
+  3.5294
+  3.7849
+  3.9474
+  4.0403
+  4.2028
+  4.2957
+  4.5279
+
+Min interval: 0.0464, Max: 0.2786, Mean: 0.1526
+Median interval: 0.1625
+
+Top REDACTEDcorrelation peaks (BPM, AC value):
+  BPM=60.09, AC=0.857
+  BPM=30.05, AC=0.615
+  BPM=234.91, AC=0.595
+  BPM=80.75, AC=0.564
+  BPM=47.85, AC=0.502
+  BPM=117.45, AC=0.478
+  BPM=184.57, AC=0.471
+  BPM=89.10, AC=0.457
+  BPM=34.45, AC=0.429
+  BPM=39.75, AC=0.397
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# python3 << 'EOF'
+[?2004l[?2004h> import json
+[?2004l[?2004h> from collections import Counter
+[?2004l[?2004h> d = json.load(open('/home/user/hits.json'))
+[?2004l[?2004h> grid_indices = [h['grid_index'] for h in d]
+[?2004l[?2004h> print(f"Total hits: {len(d)}")
+[?2004l[?2004h> print(f"Unique grid indices: {len(set(grid_indices))}")
+[?2004l[?2004h> c = Counter(grid_indices)
+[?2004l[?2004h> print(f"Grid indices with multiple hits: {sum(1 for v in c.values() if v > 1)}")
+[?2004l[?2004h> print(f"Max hits per grid: {max(c.values())}")
+[?2004l[?2004h> # Show distribution
+[?2004l[?2004h> print("\nFirst 10 grid positions and their hits:")
+[?2004l[?2004h> for gi in sorted(set(grid_indices))[:10]:
+[?2004l[?2004h>     hits_at = [h for h in d if h['grid_index'] == gi]
+[?2004l[?2004h>     print(f"  grid {gi}: {len(hits_at)} hits, velocities={[round(h['velocity'],3) for h in hits_at]}")
+[?2004l[?2004h> EOF
+[?2004lTotal hits: 78
+Unique grid indices: 48
+Grid indices with multiple hits: 28
+Max hits per grid: 3
+
+First 10 grid positions and their hits:
+  grid 1: 2 hits, velocities=[0.888, 0.854]
+  grid 2: 2 hits, velocities=[0.24, 0.488]
+  grid 3: 1 hits, velocities=[0.782]
+  grid 4: 2 hits, velocities=[0.754, 0.383]
+  grid 5: 2 hits, velocities=[0.653, 0.768]
+  grid 6: 1 hits, velocities=[0.303]
+  grid 7: 2 hits, velocities=[0.197, 0.805]
+  grid 8: 2 hits, velocities=[0.687, 0.367]
+  grid 9: 2 hits, velocities=[0.622, 0.852]
+  grid 10: 1 hits, velocities=[0.532]
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# python3 << 'EOF'
+[?2004l[?2004h> import json
+[?2004l[?2004h> d = json.load(open('/home/user/hits.json'))
+[?2004l[?2004h> # Verify structure
+[?2004l[?2004h> assert isinstance(d, list), f"Expected list, got {type(d)}"
+[?2004l[?2004h> for i, h in enumerate(d):
+[?2004l[?2004h>     assert set(h.keys()) == {'time_seconds', 'grid_index', 'velocity', 'raw_time_seconds'}, f"Hit {i} keys: {h.keys()}"
+[?2004l[?2004h>     assert isinstance(h['time_seconds'], (int, float))
+[?2004l[?2004h>     assert isinstance(h['grid_index'], int)
+[?2004l[?2004h>     assert isinstance(h['velocity'], (int, float))
+[?2004l[?2004h>     assert isinstance(h['raw_time_seconds'], (int, float))
+[?2004l[?2004h>     assert h['velocity'] > 0.0 and h['velocity'] <= 1.0, f"Hit {i} velocity out of range: {h['velocity']}"
+[?2004l[?2004h> # Check ordering
+[?2004l[?2004h> times = [h['time_seconds'] for h in d]
+[?2004l[?2004h> assert times == sorted(times), "Hits not chronologically ordered"
+[?2004l[?2004h> print(f"All {len(d)} hits verified successfully!")
+[?2004l[?2004h> print(f"First hit: {d[0]}")
+[?2004l[?2004h> print(f"Last hit: {d[-1]}")
+[?2004l[?2004h> print(f"Time range: [{times[0]:.4f}, {times[-1]:.4f}]")
+[?2004l[?2004h> print(f"Velocity range: [{min(h['velocity'] for h in d):.6f}, {max(h['velocity'] for h in d):.6f}]")
+[?2004l[?2004h> # Check grid spacing consistency
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> y, sr = __import__('librosa').load('/home/user/input.wav', sr=None)
+[?2004l[?2004h> duration = float(__import__('librosa').get_duration(y=y, sr=sr))
+[?2004l[?2004h> print(f"Duration: {duration}s")
+[?2004l[?2004h> print(f"Max time: {times[-1]} <= {duration}")
+[?2004l[?2004h> assert times[-1] <= duration + 0.01
+[?2004l[?2004h> EOF
+[?2004lAll 78 hits verified successfully!
+First hit: {'time_seconds': 0.24961451247165534, 'grid_index': 1, 'velocity': 0.8882686682520149, 'raw_time_seconds': 0.2089795918367347}
+Last hit: {'time_seconds': 11.981496598639456, 'grid_index': 48, 'velocity': 0.7980719348978937, 'raw_time_seconds': 11.95827664399093}
+Time range: [0.2496, 11.9815]
+Velocity range: [0.184699, 1.000000]
+Duration: 12.0s
+Max time: 11.981496598639456 <= 12.0
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# ls -la /home/user/hits.json && echo '---' && python3 -c "import json; d=json.load(open('/home/user/hits.json')); print(f'Type: {type(d).__name__}, Length: {len(d)}')"
+[?2004l-rw-r--r-- 1 root root 11587 Jul  3 12:28 /home/user/hits.json
+---
+Type: list, Length: 78
+[?2004hroot@86c29de0-9290-4fb5-b93b-da9d39674a42:~# 

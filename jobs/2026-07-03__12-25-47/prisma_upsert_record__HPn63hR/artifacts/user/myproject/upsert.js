@@ -1,0 +1,43 @@
+const { PrismaClient } = require('@prisma/client');
+const fs = require('fs');
+
+const prisma = new PrismaClient();
+
+async function main() {
+  // First run: should create the record
+  const firstUpsert = await prisma.user.upsert({
+    where: { email: 'upsert@example.com' },
+    create: { email: 'upsert@example.com', name: 'First Run' },
+    update: { name: 'Second Run' },
+  });
+  console.log('First upsert result:', firstUpsert);
+
+  // Second run: should update the record
+  const secondUpsert = await prisma.user.upsert({
+    where: { email: 'upsert@example.com' },
+    create: { email: 'upsert@example.com', name: 'First Run' },
+    update: { name: 'Second Run' },
+  });
+  console.log('Second upsert result:', secondUpsert);
+
+  // Find the user to confirm the final state
+  const user = await prisma.user.findUnique({
+    where: { email: 'upsert@example.com' },
+  });
+  console.log('Final user state:', user);
+
+  // Write the resulting user object as JSON
+  fs.writeFileSync(
+    '/home/user/myproject/upsert_result.json',
+    JSON.stringify(user, null, 2)
+  );
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

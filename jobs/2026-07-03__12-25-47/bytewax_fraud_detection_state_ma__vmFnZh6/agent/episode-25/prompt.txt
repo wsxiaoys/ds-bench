@@ -1,0 +1,115 @@
+New Terminal Output:
+
+root@be5de8b4-2ef7-4b40-aa15-0c4ba857c283:/home/user/fraud_detection# sed -n '136,200p' /usr/local/lib/python3.12/dist-packages/bytewax/connectors/files.py
+class FileSource(FixedPartitionedSource[str, int]):
+    """Read a path line-by-line from the filesystem.
+
+    The path must exist on at least one worker. Each worker can have a
+    unique file at the path if each worker mounts a distinct
+    filesystem. Tries to read only one instance of each unique file in
+    the whole cluster by deduplicating paths by filesystem ID. See
+    `get_fs_id` argument to adjust this.
+
+    Unique files are the unit of parallelism; only one worker will
+    read each unique file. Thus, lines from different files are
+    interleaved.
+
+    """
+
+    def __init__(
+        self,
+        path: Union[Path, str],
+        batch_size: int = 1000,
+        get_fs_id: Callable[[Path], str] = _get_path_dev,
+    ):
+        """Init.
+
+        :arg path: Path to file.
+
+        :arg batch_size: Number of lines to read per batch. Defaults
+            to 1000.
+
+        :arg get_fs_id: Called with the parent directory and must
+            return a consistent (across workers and restarts) unique
+            ID for the filesystem of that directory. Defaults to using
+            {py:obj}`os.stat_result.st_dev`.
+
+            If you know all workers have access to identical files,
+            you can have this return a constant: `lambda _dir:
+            "SHARED"`.
+
+        """
+        if not isinstance(path, Path):
+            path = Path(path)
+
+        self._path = path
+        self._batch_size = batch_size
+        self._fs_id = get_fs_id(path.parent)
+        if "::" in self._fs_id:
+            msg = f"result of `get_fs_id` must not contain `::`; got {self._fs_id!r}"
+            raise ValueError(msg)
+
+    @override
+    def list_parts(self) -> List[str]:
+        if self._path.exists():
+            return [f"{self._fs_id}::{self._path}"]
+        else:
+            return []
+
+    @override
+    def build_part(
+        self, step_id: str, for_part: str, resume_state: Optional[int]
+    ) -> _FileSourcePartition:
+        _fs_id, path = for_part.split("::", 1)
+        # TODO: Warn and return None. Then we could support
+        # continuation from a different file.
+        assert path == str(self._path), "Can't resume reading from different file"
+        return _FileSourcePartition(self._path, self._batch_size, resume_state)
+
+root@be5de8b4-2ef7-4b40-aa15-0c4ba857c283:/home/user/fraud_detection# sed -n '419,480p' /usr/local/lib/python3.12/dist-packages/bytewax/connectors/files.py
+class FileSink(FixedPartitionedSink[str, int]):
+    """Write to a single file line-by-line on the filesystem.
+
+    Items consumed from the dataflow must look like a string. Use a
+    proceeding map step to do custom formatting.
+
+    The file must exist and be identical on all workers.
+
+    There is no parallelism; only one worker will actually write to
+    the file.
+
+    Can support exactly-once processing in a batch context. The file
+    will be truncated during resume so duplicates are
+    prevented. Tailing the output file will result in undefined
+    behavior.
+    """
+
+    def __init__(self, path: Path, end: str = "\n"):
+        """Init.
+
+        :arg path: Path to file.
+
+        :arg end: String to write after each item. Defaults to
+            newline.
+
+        """
+        self._path = path
+        self._end = end
+
+    @override
+    def list_parts(self) -> List[str]:
+        return [str(self._path)]
+
+    @override
+    def part_fn(self, item_key: str) -> int:
+        return 0
+
+    @override
+    def build_part(
+        self, step_id: str, for_part: str, resume_state: Optional[int]
+    ) -> _FileSinkPartition:
+        # TODO: Warn and return None. Then we could support
+        # continuation from a different file.
+        assert for_part == str(self._path), "Can't resume writing to different file"
+        return _FileSinkPartition(self._path, resume_state, self._end)
+root@be5de8b4-2ef7-4b40-aa15-0c4ba857c283:/home/user/fraud_detection#

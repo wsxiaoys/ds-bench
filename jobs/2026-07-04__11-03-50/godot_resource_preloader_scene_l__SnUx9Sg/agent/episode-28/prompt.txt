@@ -1,0 +1,61 @@
+New Terminal Output:
+
+root@2ddb40e7-6539-4978-8014-bd0c7e500423:/home/user/myproject# cat REDACTEDloads/SceneLoader.gd
+extends Node
+
+signal progress_updated(fraction)
+signal load_completed(scene)
+signal load_failed(reason)
+
+var _state: int = 0
+var _polling_timer: Timer = null
+var _thread_path: String = ""
+var _thread_progress_array: Array = []
+
+func start_load(path: String) -> bool:
+        if _state == 1:
+                return false
+        _thread_path = path
+        _thread_progress_array = [0.0]
+        var err: int = ResourceLoader.load_threaded_request(path)
+        if err != OK:
+                _state = 0
+                load_failed.emit("ResourceLoader error: %d" % err)
+                return true
+        _state = 1
+        if _polling_timer == null:
+                _polling_timer = Timer.new()
+                _polling_timer.wait_time = 0.05
+                _polling_timer.one_shot = false
+                add_child(_polling_timer)
+                _polling_timer.timeout.connect(_poll)
+        _polling_timer.start()
+        return true
+
+func _poll() -> void:
+        if _state != 1:
+                return
+        var status: int = ResourceLoader.load_threaded_get_status(_thread_path, _thread_progress_array)
+        var fraction: float = float(_thread_progress_array[0])
+        fraction = clamp(fraction, 0.0, 1.0)
+        progress_updated.emit(fraction)
+        if status == ResourceLoader.THREAD_LOAD_LOADED:
+                _polling_timer.stop()
+                var res: Resource = ResourceLoader.load_threaded_get(_thread_path)
+                _state = 2
+                load_completed.emit(res)
+        elif status == ResourceLoader.THREAD_LOAD_FAILED or status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+                _polling_timer.stop()
+                _state = 0
+                load_failed.emit("Thread load failed: %d" % status)
+
+func cancel() -> void:
+        if _state == 1:
+                if _polling_timer != null:
+                        _polling_timer.stop()
+                _state = 0
+                _thread_path = ""
+
+func is_loading() -> bool:
+        return _state == 1
+root@2ddb40e7-6539-4978-8014-bd0c7e500423:/home/user/myproject#

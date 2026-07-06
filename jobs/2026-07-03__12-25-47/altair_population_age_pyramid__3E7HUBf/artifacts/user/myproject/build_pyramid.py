@@ -1,0 +1,98 @@
+"""Build a back-to-back population age pyramid with Vega-Altair.
+
+Generates:
+  * pyramid.html - the rendered Altair chart
+  * pyramid_spec.json - the underlying Vega-Lite spec
+"""
+
+from __future__ import annotations
+
+import altair as alt
+from altair.datasets import data
+
+POPULATION_URL = data.population.url
+
+
+def build_chart() -> alt.Chart:
+    # Single year-selector parameter with a select (dropdown) binding.
+    # Options are the distinct years present in the dataset. The initial
+    # selection is 1980, as required.
+    year_param = alt.param(
+        name="year",
+        value=1980,
+        bind=alt.binding_select(
+            options=[
+                1850, 1860, 1870, 1880, 1890, 1900, 1910, 1920, 1930, 1940,
+                1950, 1960, 1970, 1980, 1990, 2000,
+            ],
+            name="Census year ",
+        ),
+    )
+
+    chart = (
+        alt.Chart(POPULATION_URL)
+        # Filter the dataset down to the year selected by the dropdown.
+        .transform_filter(f"datum.year === year")
+        # Build the signed bar value inside the spec using a Vega expression
+        # that branches on `datum.sex`. Do NOT pre-compute this in pandas.
+        .transform_calculate(
+            signed="datum.sex === 1 ? -datum.people : datum.people"
+        )
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                "signed:Q",
+                title="Population",
+                axis=alt.Axis(
+                    # 's' produces SI-style labels like 10M, 20M, etc.
+                    # labelExpr wraps each tick value in abs() so the left
+                    # side reads positive (e.g. 10M) instead of -10M.
+                    format="s",
+                    labelExpr="abs(datum.value)",
+                ),
+                # Stack males/females to opposite sides of zero.
+                stack=None,
+            ),
+            y=alt.Y(
+                "age:O",
+                title="Age",
+                # Flip the natural ascending order so the oldest age sits
+                # at the top of the pyramid.
+                sort="-y",
+            ),
+            color=alt.Color(
+                "sex:N",
+                title="Sex",
+                scale=alt.Scale(
+                    # Custom mapping: 1 -> Male (steelblue), 2 -> Female (salmon).
+                    domain=[1, 2],
+                    range=["#4682B4", "#FA8072"],
+                ),
+                legend=alt.Legend(
+                    # Replace the raw 1/2 labels with "Male" / "Female".
+                    labelExpr="datum.value === 1 ? 'Male' : 'Female'",
+                ),
+            ),
+        )
+        .properties(
+            title="US Population Age Pyramid",
+            width=420,
+            height=320,
+        )
+        .add_params(year_param)
+    )
+    return chart
+
+
+def main() -> None:
+    chart = build_chart()
+    # Persist the rendered chart and the underlying Vega-Lite spec.
+    chart.save("/home/user/myproject/pyramid.html")
+    spec = chart.to_dict()
+    with open("/home/user/myproject/pyramid_spec.json", "w", encoding="utf-8") as fh:
+        import json
+        json.dump(spec, fh, indent=2)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,116 @@
+New Terminal Output:
+
+root@9b52c3d6-12b0-4f75-a43c-30b78228fa01:/tmp# cat > /tmp/test_gallery2.py << 'EOF'
+> import asyncio
+> from playwright.async_api import async_playwright
+> import base64
+> import os
+> import re
+>
+> JPEG_B64 = (
+>     "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB"
+>     "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB/9sAQwEBAQEBAQEBAQEBAQEB"
+>     "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB/8AA"
+>     "QECAwQFBgcICQoL/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9o"
+>     "ADAMBAAIRAxEAPwBVAAH//9k="
+> )
+>
+> def make_jpeg():
+>     b64 = JPEG_B64 + "=" * (-len(JPEG_B64) % 4)
+>     jpeg_bytes = base64.b64decode(b64)
+>     path = '/tmp/test2.jpg'
+>     with open(path, 'wb') as f:
+>         f.write(jpeg_bytes)
+>     return path
+>
+> async def dump_idb(page):
+>     """Dump all IndexedDB databases and their contents."""
+>     return await page.evaluate("""async () => {
+>         const result = {};
+>         const dbs = await indexedDB.databases();
+>         for (const d of dbs) {
+>             const db = await new Promise((resolve, reject) => {
+>                 const req = indexedDB.open(d.name);
+>                 req.onsuccess = () => resolve(req.result);
+>                 req.onerror = () => reject(req.error);
+>             });
+>             const stores = Array.from(db.objectStoreNames);
+>             result[d.name] = {};
+>             for (const s of stores) {
+>                 const tx = db.transaction(s, 'readonly');
+>                 const store = tx.objectStore(s);
+>                 const items = await new Promise((resolve, reject) => {
+>                     const req = store.getAll();
+>                     req.onsuccess = () => resolve(req.result);
+>                     req.onerror = () => reject(req.error);
+>                 });
+>                 result[d.name][s] = items;
+>             }
+>             db.close();
+>         }
+>         return result;
+>     }""")
+>
+> async def main():
+>     jpeg_path = make_jpeg()
+>     print(f"Created test JPEG: {jpeg_path}, size: {os.path.getsize(jpeg_path)} bytes")
+>
+>     async with async_playwright() as p:
+>         browser = await p.chromium.launch(headless=True, args=['--no-sandbox'])
+>         context = await browser.new_context()
+>         page = await context.new_page()
+>
+>         page.on('console', lambda msg: print(f"[console.{msg.type}]: {msg.text}"))
+>
+>         await page.goto('http://127.0.0.1:4173/')
+>         await page.wait_for_load_state('networkidle')
+>
+>         async with page.expect_file_chooser() as fc_info:
+>             click_task = asyncio.create_task(page.click('#capture-btn'))
+>         file_chooser = await fc_info.value
+>         await file_chooser.set_files(jpeg_path)
+>         await click_task
+>
+>         await page.wait_for_function(
+>             "() => document.getElementById('capture-status').textContent === 'saved'",
+>             timeout=15000
+>         )
+>
+>         photos = await page.evaluate("window.gallery.listPhotos()")
+>         print(f"Photos: {photos}")
+>
+>         idb = await dump_idb(page)
+>         print("IndexedDB contents:")
+>         for db_name, stores in idb.items():
+>             print(f"  DB: {db_name}")
+>             for store, items in stores.items():
+>                 print(f"    Store: {store} ({len(items)} items)")
+>                 for item in items[:5]:
+>                     print(f"      {repr(item)[:200]}")
+>
+>         # Verify the Filesystem file is stored in IndexedDB
+>         fs_files = idb.get('Filesystem', {})
+>         print(f"\nFilesystem stores: {list(fs_files.keys())}")
+>         for store, items in fs_files.items():
+>             for item in items:
+>                 print(f"  [{store}]: {repr(item)[:300]}")
+>
+>         await browser.close()
+>
+> asyncio.run(main())
+> EOF
+root@9b52c3d6-12b0-4f75-a43c-30b78228fa01:/tmp# python3 /tmp/test_gallery2.py
+Created test JPEG: /tmp/test2.jpg, size: 247 bytes
+[console.error]: Unable to load PWA Element 'pwa-camera-modal'. See the docs: https://capacitorjs.com/docs/web/pwa-elements.
+[console.warning]: Failed to get image resolution: InvalidStateError: The source image could not be decoded.
+[console.log]: Saved photo at photos/2026-07-03T13:31:35.908Z.jpeg
+Photos: ['photos/2026-07-03T13:31:35.908Z.jpeg']
+IndexedDB contents:
+  DB: Disc
+    Store: FileStorage (2 items)
+      {'path': '/DATA/photos', 'folder': '/DATA', 'type': 'directory', 'size': 0, 'ctime': 1783085495918, 'mtime': 1783085495918}
+      {'path': '/DATA/photos/2026-07-03T13:31:35.908Z.jpeg', 'folder': '/DATA/photos', 'type': 'file', 'size': 332, 'ctime': 1783085495918, 'mtime': 17830854959
+18, 'content': '/9j/4AAQSkZJRgABAQEAYABgAAD/2w
+
+Filesystem stores: []
+root@9b52c3d6-12b0-4f75-a43c-30b78228fa01:/tmp#

@@ -1,0 +1,147 @@
+New Terminal Output:
+
+root@8f6fc158-7c17-4657-9015-32ba31bc16db:~# cat > /home/user/myproject/run.py << 'PYEOF'
+> #!/usr/bin/env python3
+> """Parse-then-Extract chain with LlamaCloud (v2 SDK)."""
+>
+> import json
+> import os
+> from pathlib import Path
+> from typing import List
+>
+> from pydantic import BaseModel
+>
+> from llama_cloud import LlamaCloud
+>
+>
+> # ------------------------------------------------------------------
+> # Paths / config
+> # ------------------------------------------------------------------
+> PROJECT_DIR = Path("/home/user/myproject")
+> PDF_PATH = PROJECT_DIR / "data" / "invoice.pdf"
+> PARSED_MD_PATH = PROJECT_DIR / "parsed.md"
+> EXTRACTED_JSON_PATH = PROJECT_DIR / "extracted.json"
+> LOG_PATH = PROJECT_DIR / "output.log"
+> RUN_ID_PATH = Path("/logs/artifacts/run-id")
+>
+>
+> # ------------------------------------------------------------------
+> # Pydantic schema for invoices
+> # ------------------------------------------------------------------
+> class InvoiceSchema(BaseModel):
+>     vendor: str
+>     invoice_number: str
+>     total_amount: float
+>     line_items: List[str]
+>
+>
+> def main() -> None:
+>     # ------------------------------------------------------------------
+>     # Initialise the client (LLAMA_CLOUD_API_KEY read from env)
+>     # ------------------------------------------------------------------
+>     client = LlamaCloud()
+>
+>     run_id = RUN_ID_PATH.read_text().strip()
+>     external_file_id = f"invoice-{run_id}"
+>
+>     # ------------------------------------------------------------------
+>     # 1) Upload the file with purpose="parse"
+>     # ------------------------------------------------------------------
+>     with open(PDF_PATH, "rb") as fh:
+>         uploaded = client.files.create(
+>             file=fh,
+>             purpose="parse",
+>             external_file_id=external_file_id,
+>         )
+>     print(f"Uploaded file id={uploaded.id} external_id={uploaded.external_file_id}")
+>
+>     # ------------------------------------------------------------------
+>     # 2) Run a Parse job (tier=agentic, version=latest) requesting markdown
+>     # ------------------------------------------------------------------
+>     parse_job = client.parsing.create(
+>         tier="agentic",
+>         version="latest",
+>         file_id=uploaded.id,
+>         output_options={"markdown": {}},
+>     )
+>     parse_job_id = parse_job.id
+>     print(f"Created parse job {parse_job_id}")
+>
+>     completed_parse = client.parsing.wait_for_completion(parse_job_id, verbose=True)
+>     print(f"Parse job {completed_parse.id} status={completed_parse.status}")
+>
+>     # Fetch expanded content (markdown) for the completed job
+>     parse_result = client.parsing.get(completed_parse.id, expand=["markdown"])
+>
+>     # ------------------------------------------------------------------
+>     # 3) Save the markdown of the first page
+>     # ------------------------------------------------------------------
+>     first_page_md = ""
+>     if parse_result.markdown and parse_result.markdown.pages:
+>         page1 = parse_result.markdown.pages[0]
+>         if getattr(page1, "success", True):
+>             first_page_md = page1.markdown
+>         else:
+>             first_page_md = f"_parse failed_: {getattr(page1, 'error', '')}"
+>     PARSED_MD_PATH.write_text(first_page_md)
+>     print(f"Wrote {len(first_page_md)} chars of markdown to {PARSED_MD_PATH}")
+>
+>     # ------------------------------------------------------------------
+>     # 4) Reuse the parse-job ID as file_input for the Extract job
+>     # ------------------------------------------------------------------
+>     extract_config = {
+>         "data_schema": InvoiceSchema.model_json_schema(),
+>         "tier": "agentic",
+>         "version": "latest",
+>     }
+>
+>     extract_job = client.extract.create(
+>         file_input=completed_parse.id,
+>         configuration=extract_config,
+>     )
+>     extract_job_id = extract_job.id
+>     print(f"Created extract job {extract_job_id}")
+>
+>     completed_extract = client.extract.wait_for_completion(extract_job_id, verbose=True)
+>     print(f"Extract job {completed_extract.id} status={completed_extract.status}")
+>
+>     # ------------------------------------------------------------------
+>     # 5) Persist the structured extraction result
+>     # ------------------------------------------------------------------
+>     EXTRACTED_JSON_PATH.write_text(json.dumps(completed_extract.extract_result, indent=2))
+>     print(f"Wrote extract result to {EXTRACTED_JSON_PATH}")
+>
+>     # ------------------------------------------------------------------
+>     # 6) Append summary lines to output.log
+>     # ------------------------------------------------------------------
+>     with open(LOG_PATH, "a") as logf:
+>         logf.write(f"Parse Job ID: {completed_parse.id}\n")
+>         logf.write(f"Extract Job ID: {completed_extract.id}\n")
+>     print(f"Appended summary lines to {LOG_PATH}")
+>
+>
+> if __name__ == "__main__":
+>     main()
+> PYEOF
+root@8f6fc158-7c17-4657-9015-32ba31bc16db:~# cat /home/user/myproject/run.py | head -20
+#!/usr/bin/env python3
+"""Parse-then-Extract chain with LlamaCloud (v2 SDK)."""
+
+import json
+import os
+from pathlib import Path
+from typing import List
+
+from pydantic import BaseModel
+
+from llama_cloud import LlamaCloud
+
+
+# ------------------------------------------------------------------
+# Paths / config
+# ------------------------------------------------------------------
+PROJECT_DIR = Path("/home/user/myproject")
+PDF_PATH = PROJECT_DIR / "data" / "invoice.pdf"
+PARSED_MD_PATH = PROJECT_DIR / "parsed.md"
+EXTRACTED_JSON_PATH = PROJECT_DIR / "extracted.json"
+root@8f6fc158-7c17-4657-9015-32ba31bc16db:~#

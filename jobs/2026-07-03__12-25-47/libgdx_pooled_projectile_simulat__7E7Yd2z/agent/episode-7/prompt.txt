@@ -1,0 +1,240 @@
+New Terminal Output:
+
+root@f969055e-d19d-4744-b708-55ec51f6885f:/home/user/projectile_sim# cat > /home/user/projectile_sim/headless/src/main/java/com/example/sim/SimulationListener.j
+ava << 'EOF'
+> package com.example.sim;
+>
+b> import com.badlogic.gdx.ApplicationAdapter;
+> import com.badlogic.gdx.Gdx;
+> import com.badlogic.gdx.files.FileHandle;
+> import com.badlogic.gdx.utils.Pool;
+>
+> import java.io.BufferedWriter;
+> import java.io.IOException;
+> import java.nio.charset.StandardCharsets;
+> import java.nio.file.Files;
+> import java.nio.file.Path;
+> import java.nio.file.Paths;
+> import java.util.ArrayList;
+> import java.util.Collections;
+> import java.util.HashMap;
+> import java.util.List;
+> import java.util.Map;
+>
+> public class SimulationListener extends ApplicationAdapter {
+>
+>     private final String scenarioPath;
+>     private final String outputPath;
+>
+>     private int totalTicks = 0;
+>     private int gravityX = 0;
+>     private int gravityY = 0;
+>     private int floorY = 0;
+>     private final Map<Integer, List<int[]>> spawnsByTick = new HashMap<>();
+>     private int totalSpawns = 0;
+>
+>     private final Pool<Projectile> pool = new Pool<Projectile>() {
+>         @Override
+>         protected Projectile newObject() {
+>             return new Projectile();
+>         }
+>     };
+>
+>     private final List<Projectile> active = new ArrayList<>();
+>
+>     private int currentTick = 0;
+>     private int groundedCount = 0;
+>     private int peakActive = 0;
+>
+>     private BufferedWriter writer;
+>
+>     public SimulationListener(String scenarioPath, String outputPath) {
+>         this.scenarioPath = scenarioPath;
+>         this.outputPath = outputPath;
+>     }
+>
+>     @Override
+>     public void create() {
+>         try {
+>             // Open output writer first.
+>             Path outFile = Paths.get(outputPath);
+>             if (outFile.getParent() != null) {
+>                 Files.createDirectories(outFile.getParent());
+>             }
+>             writer = Files.newBufferedWriter(outFile, StandardCharsets.UTF_8);
+>
+>             // Parse scenario file via Gdx.files.absolute.
+>             FileHandle fh = Gdx.files.absolute(scenarioPath);
+>             String contents = fh.readString("UTF-8");
+>             parseScenario(contents);
+>
+>             // Write header.
+>             writeLine("TICKS " + totalTicks);
+>         } catch (IOException e) {
+>             throw new RuntimeException("Failed to initialise simulation", e);
+>         }
+>     }
+>
+>     private void parseScenario(String contents) {
+>         String[] lines = contents.split("\r?\n");
+>         for (String raw : lines) {
+>             String line = raw.trim();
+>             if (line.isEmpty() || line.startsWith("#")) {
+>                 continue;
+>             }
+>             String[] parts = line.split("\\s+");
+>             String head = parts[0];
+>             switch (head) {
+>                 case "TICKS": {
+>                     totalTicks = Integer.parseInt(parts[1]);
+>                     break;
+>                 }
+>                 case "GRAVITY": {
+>                     gravityX = Integer.parseInt(parts[1]);
+>                     gravityY = Integer.parseInt(parts[2]);
+>                     break;
+>                 }
+>                 case "FLOOR": {
+>                     floorY = Integer.parseInt(parts[1]);
+>                     break;
+>                 }
+>                 case "SPAWN": {
+>                     int tick = Integer.parseInt(parts[1]);
+>                     int x = Integer.parseInt(parts[2]);
+>                     int y = Integer.parseInt(parts[3]);
+>                     int vx = Integer.parseInt(parts[4]);
+>                     int vy = Integer.parseInt(parts[5]);
+>                     spawnsByTick.computeIfAbsent(tick, k -> new ArrayList<>()).add(new int[]{x, y, vx, vy});
+>                     totalSpawns++;
+>                     break;
+>                 }
+>                 default:
+>                     throw new IllegalArgumentException("Unknown directive: " + head);
+>             }
+>         }
+>     }
+>
+>     @Override
+>     public void render() {
+>         if (currentTick >= totalTicks) {
+>             // Already done; ensure we exit.
+>             Gdx.app.exit();
+>             return;
+>         }
+>
+>         int tick = currentTick;
+>
+>         // 1. Spawn scheduled projectiles.
+>         List<int[]> spawns = spawnsByTick.getOrDefault(tick, Collections.emptyList());
+>         for (int[] s : spawns) {
+>             Projectile p = pool.obtain();
+>             // Assign id based on total spawn order. The id counter increments
+>             // each time we issue a spawn, regardless of tick.
+>             p.id = nextSpawnId();
+>             p.position.set(s[0], s[1]);
+>             p.velocity.set(s[2], s[3]);
+>             active.add(p);
+>         }
+>
+>         // 2. Integrate: gravity -> position update, in spawn-id order.
+>         // Sort active by id to guarantee deterministic order (already in
+>         // insertion order, but be defensive).
+>         active.sort((a, b) -> Integer.compare(a.id, b.id));
+>
+>         // Apply gravity to velocity.
+>         for (Projectile p : active) {
+>             p.velocity.x += gravityX;
+>             p.velocity.y += gravityY;
+>         }
+>         // Add velocity to position.
+>         for (Projectile p : active) {
+>             p.position.x += p.velocity.x;
+>             p.position.y += p.velocity.y;
+>         }
+>
+>         // 3. Ground check.
+>         List<Projectile> stillActive = new ArrayList<>(active.size());
+>         List<Projectile> groundedThisTick = new ArrayList<>();
+>         for (Projectile p : active) {
+>             if (p.position.y <= floorY) {
+>                 groundedThisTick.add(p);
+>             } else {
+>                 stillActive.add(p);
+>             }
+>         }
+>         // Sort grounded by id for output.
+>         groundedThisTick.sort((a, b) -> Integer.compare(a.id, b.id));
+>
+>         for (Projectile p : groundedThisTick) {
+>             pool.free(p);
+>             groundedCount++;
+>         }
+>
+>         // Write grounded lines BEFORE tick summary so output order matches spec.
+>         for (Projectile p : groundedThisTick) {
+>             writeLine("GROUNDED P" + p.id + " tick=" + tick);
+>         }
+>
+>         // Update active list.
+>         active.clear();
+>         active.addAll(stillActive);
+>
+>         // Track peak.
+>         if (active.size() > peakActive) {
+>             peakActive = active.size();
+>         }
+>
+>         // Emit tick summary.
+>         writeLine("TICK " + tick + " ACTIVE " + active.size());
+>         for (Projectile p : active) {
+>             writeLine("P" + p.id + " x=" + (int) p.position.x
+>                     + " y=" + (int) p.position.y
+>                     + " vx=" + (int) p.velocity.x
+>                     + " vy=" + (int) p.velocity.y);
+>         }
+>
+>         currentTick++;
+>
+>         if (currentTick >= totalTicks) {
+>             // Write final summary.
+>             writeLine("SUMMARY spawned=" + totalSpawns
+>                     + " grounded=" + groundedCount
+>                     + " pool_free=" + pool.getFree()
+>                     + " peak_active=" + peakActive);
+>             Gdx.app.exit();
+>         }
+>     }
+>
+>     // Counter for assigning spawn ids in the order SPAWN lines appear.
+>     private int spawnIdCounter = 0;
+>
+>     private int nextSpawnId() {
+>         return spawnIdCounter++;
+>     }
+>
+>     private void writeLine(String s) {
+>         try {
+>             writer.write(s);
+>             writer.write("\n");
+>         } catch (IOException e) {
+>             throw new RuntimeException("Failed to write log line", e);
+>         }
+>     }
+>
+>     @Override
+>     public void dispose() {
+>         if (writer != null) {
+>             try {
+>                 writer.flush();
+>                 writer.close();
+>             } catch (IOException ignored) {
+>             }
+>             writer = null;
+>         }
+>     }
+> }
+> EOF
+root@f969055e-d19d-4744-b708-55ec51f6885f:/home/user/projectile_sim# wc -l /home/user/projectile_sim/headless/src/main/java/com/example/sim/SimulationListener.j
+ava
+231 /home/user/projectile_sim/headless/src/main/java/com/example/sim/SimulationListener.java
+root@f969055e-d19d-4744-b708-55ec51f6885f:/home/user/projectile_sim#

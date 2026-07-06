@@ -1,0 +1,97 @@
+New Terminal Output:
+
+
+root@01aa9e18-2703-48f5-91f1-cc64ecbdfd76:/home/user/bytewax_project# cat > /tmp/debug_join.py << 'PYEOF'
+> import json
+> from datetime import datetime, timedelta, timezone
+> from typing import Iterable, Optional
+>
+> import bytewax.operators as op
+> from bytewax.dataflow import Dataflow
+> from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
+> from bytewax.operators.windowing import EventClock, TumblingWindower, fold_window
+>
+> class JSONLinesSource(FixedPartitionedSource[dict, int]):
+>     def __init__(self, path: str):
+>         self._path = path
+>
+>     def list_parts(self) -> list[str]:
+>         return ["singleton"]
+>
+>     def build_part(self, step_id, for_part, resume_state):
+>         return _JSONLinesPartition(self._path, resume_state)
+>
+>
+> class _JSONLinesPartition(StatefulSourcePartition[dict, int]):
+>     def __init__(self, path: str, start_offset):
+>         self._path = path
+>         self._offset = start_offset if start_offset is not None else 0
+>
+>     def next_batch(self) -> Iterable[dict]:
+>         batch = []
+>         with open(self._path, "r") as f:
+>             f.seek(self._offset)
+>             for line in f:
+>                 line = line.strip()
+>                 if not line:
+>                     continue
+>                 batch.append(json.loads(line))
+>             self._offset = f.tell()
+>         if not batch:
+>             raise StopIteration()
+>         return batch
+>
+>     def snapshot(self) -> int:
+>         return self._offset
+>
+>
+> flow = Dataflow("debug")
+>
+> raw = op.input("transactions", flow, JSONLinesSource("transactions.jsonl"))
+>
+> # Parse and create (category, revenue, timestamp)
+> def parse_and_enrich(event: dict) -> Optional[tuple]:
+>     ts = datetime.fromisoformat(event["timestamp"].replace("Z", "+00:00"))
+>     return ("cat1", event.get("quantity", 1) * 10.0, ts)
+>
+> parsed = op.filter_map("parse", raw, parse_and_enrich)
+> keyed = op.key_on("by_cat", parsed, lambda e: e[0])
+>
+> clock = EventClock(ts_getter=lambda e: e[2], wait_for_system_duration=timedelta(seconds=1))
+> windower = TumblingWindower(length=timedelta(minutes=1), align_to=datetime(2026, 1, 1, tzinfo=timezone.utc))
+>
+> windowed = fold_window(
+>     "fold",
+>     keyed,
+>     clock,
+>     windower,
+>     builder=lambda: 0.0,
+>     folder=lambda acc, x: acc + x[1],
+>     merger=lambda a, b: a + b,
+> )
+>
+> def inspect_down(x):
+>     print("DOWN:", x, type(x))
+>     return x
+>
+> def inspect_meta(x):
+>     print("META:", x, type(x))
+>     return x
+>
+> op.inspect("down", windowed.down)
+> op.inspect("meta", windowed.meta)
+>
+> joined = op.join("join", windowed.down, windowed.meta)
+>
+> def inspect_join(x):
+>     print("JOIN:", x, type(x))
+>     if isinstance(x, tuple) and len(x) == 2:
+>         k, v = x
+>         print("  key:", k, type(k))
+>         print("  value:", v, type(v))
+>     return x
+>
+> op.inspect("joined", joined)
+> PYEOF
+root@01aa9e18-2703-48f5-91f1-cc64ecbdfd76:/home/user/bytewax_project# python3 /tmp/debug_join.py
+root@01aa9e18-2703-48f5-91f1-cc64ecbdfd76:/home/user/bytewax_project#

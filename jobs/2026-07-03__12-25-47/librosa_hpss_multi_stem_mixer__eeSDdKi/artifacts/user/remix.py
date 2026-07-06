@@ -1,0 +1,46 @@
+import numpy as np
+import librosa
+import soundfile as sf
+
+# Step 0: Read input preserving native sample rate
+input_path = '/home/user/input.wav'
+y, sr = librosa.load(input_path, sr=None)
+print(f"Loaded audio: len={len(y)}, sr={sr}")
+
+# Step 1: HPSS with margin=(1.0, 5.0) - strong percussive mask
+harmonic, percussive = librosa.effects.hpss(y, margin=(1.0, 5.0))
+print(f"HPSS done. harmonic len={len(harmonic)}, percussive len={len(percussive)}")
+
+# Step 2: Pitch-shift harmonic up by 7 semitones
+harmonic_shifted = librosa.effects.pitch_shift(harmonic, sr=sr, n_steps=7)
+print(f"Pitch-shifted harmonic len={len(harmonic_shifted)}")
+
+# Step 3: Time-stretch percussive by 0.85 (slow down)
+percussive_stretched = librosa.effects.time_stretch(percussive, rate=0.85)
+print(f"Time-stretched percussive len={len(percussive_stretched)}")
+
+# Step 4: Align lengths to original input length
+target_len = len(y)
+
+def align_length(sig, target):
+    if len(sig) < target:
+        # pad with zeros
+        out = np.zeros(target, dtype=sig.dtype)
+        out[:len(sig)] = sig
+        return out
+    else:
+        return sig[:target]
+
+h_aligned = align_length(harmonic_shifted, target_len)
+p_aligned = align_length(percussive_stretched, target_len)
+
+mix = 0.7 * h_aligned + 0.5 * p_aligned
+print(f"Mix len={len(mix)}")
+
+# Step 5: Trim leading/trailing silence with top_db=30
+mix_trimmed, _ = librosa.effects.trim(mix, top_db=30)
+print(f"Trimmed mix len={len(mix_trimmed)}")
+
+# Step 6: Write to output.wav at same sample rate
+sf.write('/home/user/output.wav', mix_trimmed, sr)
+print("Done. Wrote /home/user/output.wav")
