@@ -10,7 +10,7 @@ type TaskTrial = {
 	provider: string;
 	passed: boolean;
 	reward: number | null;
-	error: boolean;
+	error: string | boolean;
 	latency_sec: number | null;
 	latency_breakdown: {
 		env_setup: number | null;
@@ -237,7 +237,10 @@ async function main() {
 
 		const reward = data.verifier_result?.rewards?.reward;
 		const passed = reward === 1.0;
-		const hasError = !!data.exception_info;
+		let hasError: string | boolean = false;
+		if (data.exception_info) {
+			hasError = (data.exception_info as any).exception_type || true;
+		}
 
 		const model =
 			data.config?.agent?.model_name ||

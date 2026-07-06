@@ -18,7 +18,7 @@ type RawTaskTrial = {
 	model?: string;
 	passed?: boolean;
 	reward?: number | null;
-	error?: boolean;
+	error?: string | boolean;
 	latency_sec?: number | null;
 	latency_breakdown?: {
 		env_setup?: number | null;
@@ -67,7 +67,7 @@ function toCompactTrial(
 		agent,
 		passed: Boolean(trial.passed),
 		reward: trial.reward ?? null,
-		error: Boolean(trial.error),
+		error: trial.error ?? false,
 		latency_sec: trial.latency_sec ?? null,
 		latency_breakdown: latencyBreakdown,
 		taskName: canonicalTaskName,

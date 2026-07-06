@@ -9,6 +9,7 @@ import {
 	ArrowUp,
 	ArrowUpDown,
 	Check,
+	Clock,
 	ExternalLink,
 	Filter,
 	Search,
@@ -63,7 +64,7 @@ export type CompactTrial = {
 	agent: string;
 	passed: boolean;
 	reward: number | null;
-	error: boolean;
+	error: string | boolean;
 	latency_sec: number | null;
 	latency_breakdown: {
 		env_setup: number | null;
@@ -1040,9 +1041,7 @@ const VirtualTaskRow = memo(function VirtualTaskRow({
 								onBlur={hideCellPreview}
 								onClick={hideCellPreview}
 							>
-								{trial.error ? (
-									<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500/90 md:h-4 md:w-4" />
-								) : trial.passed ? (
+								{trial.passed ? (
 									<Check
 										className="h-3.5 w-3.5 shrink-0 text-emerald-500/90 md:h-4 md:w-4"
 										strokeWidth={3}
@@ -1053,11 +1052,21 @@ const VirtualTaskRow = memo(function VirtualTaskRow({
 										strokeWidth={3}
 									/>
 								)}
-								<span className="font-mono text-muted-foreground/80 text-xs transition-colors group-hover/cell:text-foreground group-hover/cell:underline md:text-sm">
-									{trial.exec_duration
-										? `${trial.exec_duration.toFixed(1)}s`
-										: "-"}
-								</span>
+								{trial.error === "AgentTimeoutError" ? (
+									<span title="AgentTimeoutError">
+										<Clock className="h-3.5 w-3.5 shrink-0 text-red-400/80 md:h-4 md:w-4" />
+									</span>
+								) : trial.error ? (
+									<span title={typeof trial.error === "string" ? trial.error : "Error"}>
+										<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-400/80 md:h-4 md:w-4" />
+									</span>
+								) : (
+									<span className="font-mono text-muted-foreground/80 text-xs transition-colors group-hover/cell:text-foreground group-hover/cell:underline md:text-sm">
+										{trial.exec_duration
+											? `${trial.exec_duration.toFixed(1)}s`
+											: "-"}
+									</span>
+								)}
 							</Link>
 						) : (
 							<div
