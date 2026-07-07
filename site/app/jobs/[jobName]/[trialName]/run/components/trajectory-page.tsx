@@ -9,6 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HttpError } from "@/lib/http-error";
+import { AgentTrajectoryViewer } from "./agent-trajectory-viewer";
 import { AnsiLog } from "./ansi-log";
 import { type ArtifactNodeWithUrl, ArtifactsPanel } from "./artifacts-panel";
 
@@ -18,7 +19,8 @@ export type TabConfig = {
 };
 
 type TrajectoryPageProps = {
-	trajectoryUrl: string;
+	trajectoryUrl: string | null;
+	agentTrajectoryUrl?: string | null;
 	browserVerificationUrls: { name: string; url: string }[];
 	fallbackUrl: string;
 	stderrLogUrl: string | null;
@@ -46,6 +48,7 @@ export async function fetchLogText(url: string): Promise<string> {
 
 export function TrajectoryPage({
 	trajectoryUrl,
+	agentTrajectoryUrl,
 	browserVerificationUrls,
 	fallbackUrl,
 	stderrLogUrl,
@@ -98,11 +101,16 @@ export function TrajectoryPage({
 	const iframeTheme = mounted && resolvedTheme === "light" ? "light" : "dark";
 
 	const iframeUrl = useMemo(() => {
-		const url = new URL(trajectoryUrl);
-		const hashParams = new URLSearchParams(url.hash.slice(1));
-		hashParams.set("theme", iframeTheme);
-		url.hash = hashParams.toString();
-		return url.toString();
+		if (!trajectoryUrl) return "";
+		try {
+			const url = new URL(trajectoryUrl);
+			const hashParams = new URLSearchParams(url.hash.slice(1));
+			hashParams.set("theme", iframeTheme);
+			url.hash = hashParams.toString();
+			return url.toString();
+		} catch {
+			return trajectoryUrl;
+		}
 	}, [trajectoryUrl, iframeTheme]);
 
 	const activeBrowserVerificationBaseUrl = useMemo(() => {
@@ -231,19 +239,29 @@ export function TrajectoryPage({
 						className="relative min-h-0 flex-1 overflow-hidden"
 						forceMount
 					>
-						<div
-							className={`absolute inset-0 z-10 overflow-auto bg-background/80 transition-opacity delay-220 duration-420 ease-out ${!mounted || iframeLoading ? "opacity-100" : "pointer-events-none opacity-0"}`}
-						>
-							<TrajectorySkeleton />
-						</div>
-						{mounted && (
-							<iframe
-								src={iframeUrl}
-								className={`h-full w-full border-0 transition-opacity duration-260 ease-out ${iframeLoading ? "opacity-0" : "opacity-100"}`}
-								title="Trajectory Details"
-								onLoad={handleIframeLoad}
-								onError={handleIframeError}
-							/>
+						{trajectoryUrl ? (
+							<>
+								<div
+									className={`absolute inset-0 z-10 overflow-auto bg-background/80 transition-opacity delay-220 duration-420 ease-out ${!mounted || iframeLoading ? "opacity-100" : "pointer-events-none opacity-0"}`}
+								>
+									<TrajectorySkeleton />
+								</div>
+								{mounted && (
+									<iframe
+										src={iframeUrl}
+										className={`h-full w-full border-0 transition-opacity duration-260 ease-out ${iframeLoading ? "opacity-0" : "opacity-100"}`}
+										title="Trajectory Details"
+										onLoad={handleIframeLoad}
+										onError={handleIframeError}
+									/>
+								)}
+							</>
+						) : agentTrajectoryUrl ? (
+							<AgentTrajectoryViewer url={agentTrajectoryUrl} />
+						) : (
+							<div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+								No trajectory available.
+							</div>
 						)}
 					</TabsContent>
 

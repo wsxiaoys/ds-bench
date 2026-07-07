@@ -38,6 +38,8 @@ type TrialEntry = {
 	trajectory_id?: string;
 	browser_verification_cases?: string[];
 	artifacts?: ArtifactNode[];
+	has_pochi_trajectory?: boolean;
+	has_harbor_trajectory?: boolean;
 };
 
 function formatStartTime(jobName: string): string {
@@ -133,7 +135,12 @@ function getStatusMeta(status: "error" | "passed" | "failed" | "unknown") {
 }
 
 function getGithubBranchName(): string {
-	return process.env.GITHUB_HEAD_REF || "main";
+	const ref =
+		process.env.GITHUB_HEAD_REF ||
+		process.env.NEXT_PUBLIC_GITHUB_HEAD_REF ||
+		"main";
+	// Strip refs/heads/ prefix if present
+	return ref.replace(/^refs\/heads\//, "");
 }
 
 function buildFallbackUrl(jobName: string, trialName: string) {
@@ -321,11 +328,25 @@ export default async function TrajectoryRoutePage({
 	const statusMeta = getStatusMeta(trialStatus);
 	const StatusIcon = statusMeta.Icon;
 
-	const trajectoryUrl = trialEntry
-		? buildClipUrl(
+	// Use pochi clip URL when pochi trajectory exists (or is unknown for older entries).
+	// Fall back to agent/trajectory.json URL when we know pochi doesn't exist.
+	const trajectoryUrl =
+		trialEntry &&
+		(trialEntry.has_pochi_trajectory === true ||
+			(trialEntry.has_pochi_trajectory === undefined &&
+				!trialEntry.has_harbor_trajectory))
+			? buildClipUrl(
+					trialEntry.job_name,
+					trialEntry.trial_name,
+					trialEntry.task_name,
+				)
+			: null;
+
+	const agentTrajectoryUrl = trialEntry?.has_harbor_trajectory
+		? buildRawGithubContentUrl(
 				trialEntry.job_name,
 				trialEntry.trial_name,
-				trialEntry.task_name,
+				"agent/trajectory.json",
 			)
 		: null;
 	const browserVerificationUrls = trialEntry?.browser_verification_cases
@@ -354,8 +375,8 @@ export default async function TrajectoryRoutePage({
 		},
 	];
 
-	// Redirect
-	if (!trajectoryUrl || !trialEntry) {
+	// Redirect if neither trajectory source is available
+	if (!trialEntry || (!trajectoryUrl && !agentTrajectoryUrl)) {
 		redirect(fallbackUrl ?? "/tasks");
 	}
 
@@ -454,6 +475,7 @@ export default async function TrajectoryRoutePage({
 				<Suspense fallback={null}>
 					<TrajectoryPage
 						trajectoryUrl={trajectoryUrl}
+						agentTrajectoryUrl={agentTrajectoryUrl}
 						browserVerificationUrls={browserVerificationUrls}
 						fallbackUrl={fallbackUrl ?? ""}
 						stderrLogUrl={stderrLogUrl}
