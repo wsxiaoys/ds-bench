@@ -199,7 +199,11 @@ function buildRawGithubContentUrl(
 ): string {
 	const ownerRepo = getGithubOwnerRepo();
 	const branch = getGithubBranchName();
-	return `https://raw.githubusercontent.com/${ownerRepo}/refs/heads/${branch}/jobs/${jobName}/${trialName}/${filePath}`;
+	const url = new URL(
+		`/t/raw.githubusercontent.com/${ownerRepo}/refs/heads/${branch}/jobs/${jobName}/${trialName}/${filePath}`,
+		getServerBaseUrl(),
+	);
+	return url.toString();
 }
 
 function attachArtifactUrls(
