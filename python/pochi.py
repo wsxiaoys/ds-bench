@@ -140,6 +140,16 @@ class Pochi(BaseInstalledAgent):
           "name": "gpt-5.4"
         }
       }
+    },
+    "minimax": {
+      "kind": "minimax",
+      "apiKey": "MINIMAX_API_KEY",
+      "models": {
+        "MiniMax-M3": {
+          "maxTokens": 10000,
+          "contextWindow": 1000000
+        }
+      }
     }
   }
 }"""
@@ -150,6 +160,7 @@ class Pochi(BaseInstalledAgent):
             "cat << 'EOF' | sed "
             '-e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" '
             '-e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" '
+            '-e "s/MINIMAX_API_KEY/${MINIMAX_API_KEY}/g" '
             "> ~/.pochi/config.jsonc\n"
             f"{config_json}\n"
             "EOF"
