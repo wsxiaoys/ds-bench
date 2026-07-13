@@ -52,7 +52,7 @@ def _pick_start_command() -> list[str]:
     if "start" in scripts:
         return ["npm", "run", "start"]
     if "dev" in scripts:
-        return ["npm", "run", "dev"]
+        return ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
     pytest.fail(
         "Neither 'start' nor 'dev' npm script is defined in package.json; "
         "cannot launch the application."

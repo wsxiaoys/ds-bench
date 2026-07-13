@@ -22,7 +22,7 @@ def start_app(xprocess):
 
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -37,7 +37,7 @@ def start_app(xprocess):
             xprocess calls this repeatedly until it returns True or times out.
             """
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 4273)) == 0
+                return s.connect_ex(("127.0.0.1", 4273)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -71,7 +71,7 @@ def start_app(xprocess):
 
 def test_home_page(start_app, browser_verifier):
     reason = "The application should have a Home page at / with a navigation menu where the Home link is active."
-    truth = 'Navigate to http://localhost:4273/. Verify that the page loads successfully. Check the navigation menu and verify that the link to "/" has the "active" CSS class applied to it. Verify that the links to "/about" and "/contact" do NOT have the "active" class.'
+    truth = 'Navigate to http://127.0.0.1:4273/. Verify that the page loads successfully. Check the navigation menu and verify that the link to "/" has the "active" CSS class applied to it. Verify that the links to "/about" and "/contact" do NOT have the "active" class.'
     
     result = browser_verifier.verify(
         reason=reason,
@@ -83,7 +83,7 @@ def test_home_page(start_app, browser_verifier):
 
 def test_about_page(start_app, browser_verifier):
     reason = "The application should have an About page at /about with a navigation menu where the About link is active."
-    truth = 'Navigate to http://localhost:4273/about. Verify that the page loads successfully. Check the navigation menu and verify that the link to "/about" has the "active" CSS class applied to it. Verify that the link to "/" does NOT have the "active" class.'
+    truth = 'Navigate to http://127.0.0.1:4273/about. Verify that the page loads successfully. Check the navigation menu and verify that the link to "/about" has the "active" CSS class applied to it. Verify that the link to "/" does NOT have the "active" class.'
     
     result = browser_verifier.verify(
         reason=reason,
@@ -95,7 +95,7 @@ def test_about_page(start_app, browser_verifier):
 
 def test_contact_page(start_app, browser_verifier):
     reason = "The application should have a Contact page at /contact with a navigation menu where the Contact link is active."
-    truth = 'Navigate to http://localhost:4273/contact. Verify that the page loads successfully. Check the navigation menu and verify that the link to "/contact" has the "active" CSS class applied to it.'
+    truth = 'Navigate to http://127.0.0.1:4273/contact. Verify that the page loads successfully. Check the navigation menu and verify that the link to "/contact" has the "active" CSS class applied to it.'
     
     result = browser_verifier.verify(
         reason=reason,

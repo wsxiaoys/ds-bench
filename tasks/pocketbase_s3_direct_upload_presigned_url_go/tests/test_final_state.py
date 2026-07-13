@@ -31,7 +31,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8090)) == 0
+                return s.connect_ex(("127.0.0.1", 8090)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -63,13 +63,13 @@ def start_app(xprocess):
 
 def test_missing_filename_parameter(start_app):
     """Verify that a request without the filename parameter returns status 400."""
-    response = requests.get("http://localhost:8090/api/s3-presign")
+    response = requests.get("http://127.0.0.1:8090/api/s3-presign")
     assert response.status_code == 400, f"Expected status 400 for missing filename, got {response.status_code}"
 
 def test_generate_presigned_url(start_app):
     """Verify that a valid request returns a presigned URL in the correct format."""
     run_id = open("/logs/artifacts/run-id").read().strip()
-    response = requests.get("http://localhost:8090/api/s3-presign?filename=test_video.mp4")
+    response = requests.get("http://127.0.0.1:8090/api/s3-presign?filename=test_video.mp4")
 
     assert response.status_code == 200, f"Expected status 200, got {response.status_code}. Response: {response.text}"
 

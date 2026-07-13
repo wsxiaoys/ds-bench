@@ -18,7 +18,7 @@ def start_app(xprocess):
     """
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -29,7 +29,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", PORT)) == 0
+                return s.connect_ex(("127.0.0.1", PORT)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -62,7 +62,7 @@ def start_app(xprocess):
 def test_tanstack_table_basic(start_app, browser_verifier):
     reason = "The application should display a basic data grid using TanStack Table with static data."
     truth = (
-        f"Navigate to http://localhost:{PORT}. "
+        f"Navigate to http://127.0.0.1:{PORT}. "
         "Verify that the page contains at least one `<table>` element. "
         "Verify that the table contains a `<thead>` element. "
         "Verify that the `<thead>` contains at least one `<tr>` with at least 3 `<th>` elements. "

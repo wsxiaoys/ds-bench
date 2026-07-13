@@ -18,7 +18,7 @@ def start_app(xprocess):
 
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -29,7 +29,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 4821)) == 0
+                return s.connect_ex(("127.0.0.1", 4821)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -64,7 +64,7 @@ def start_app(xprocess):
 
 def test_search_page_initial_load(start_app, browser_verifier):
     reason = "The /search page should read query parameters from the URL and populate the corresponding input fields."
-    truth = "Navigate to http://localhost:4821/search?q=apple&category=fruit&minPrice=10&maxPrice=50. Verify that the page loads successfully. Verify that the input with name='q' has the value 'apple', name='category' has 'fruit', name='minPrice' has '10', and name='maxPrice' has '50'."
+    truth = "Navigate to http://127.0.0.1:4821/search?q=apple&category=fruit&minPrice=10&maxPrice=50. Verify that the page loads successfully. Verify that the input with name='q' has the value 'apple', name='category' has 'fruit', name='minPrice' has '10', and name='maxPrice' has '50'."
 
     result = browser_verifier.verify(
         reason=reason,
@@ -76,7 +76,7 @@ def test_search_page_initial_load(start_app, browser_verifier):
 
 def test_search_page_update_inputs(start_app, browser_verifier):
     reason = "Updating the input fields should automatically sync their values to the URL search parameters without a full page reload."
-    truth = "Navigate to http://localhost:4821/search?q=apple&category=fruit&minPrice=10&maxPrice=50. Change the value of the input with name='q' to 'banana'. Verify that the URL updates to include 'q=banana'. Then change the value of the input with name='minPrice' to '20'. Verify that the URL updates to include 'minPrice=20'."
+    truth = "Navigate to http://127.0.0.1:4821/search?q=apple&category=fruit&minPrice=10&maxPrice=50. Change the value of the input with name='q' to 'banana'. Verify that the URL updates to include 'q=banana'. Then change the value of the input with name='minPrice' to '20'. Verify that the URL updates to include 'minPrice=20'."
 
     result = browser_verifier.verify(
         reason=reason,

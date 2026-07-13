@@ -94,9 +94,9 @@ def reflex_dev_server():
                 f"'uv run reflex run' exited early with code {proc.returncode}.\n"
                 f"Recent log:\n{tail}"
             )
-        if _port_open("localhost", 3000):
+        if _port_open("127.0.0.1", 3000):
             try:
-                with urllib.request.urlopen("http://localhost:3000/", timeout=10) as resp:
+                with urllib.request.urlopen("http://127.0.0.1:3000/", timeout=10) as resp:
                     if resp.status == 200:
                         ready = True
                         break
@@ -120,7 +120,7 @@ def reflex_dev_server():
         _kill_reflex_processes()
         log_file.close()
         pytest.fail(
-            "Reflex dev server did not become ready on http://localhost:3000 within timeout. "
+            "Reflex dev server did not become ready on http://127.0.0.1:3000 within timeout. "
             f"Last error: {last_error}.\nRecent log:\n{tail}"
         )
 
@@ -309,10 +309,10 @@ def test_exported_frontend_contains_required_labels():
 
 
 def test_dev_server_serves_root(reflex_dev_server):
-    with urllib.request.urlopen("http://localhost:3000/", timeout=15) as resp:
+    with urllib.request.urlopen("http://127.0.0.1:3000/", timeout=15) as resp:
         assert resp.status == 200, (
-            f"GET http://localhost:3000/ returned status {resp.status}; expected 200."
+            f"GET http://127.0.0.1:3000/ returned status {resp.status}; expected 200."
         )
         body = resp.read().decode("utf-8", errors="ignore")
 
-    assert len(body) > 0, "GET http://localhost:3000/ returned an empty body."
+    assert len(body) > 0, "GET http://127.0.0.1:3000/ returned an empty body."

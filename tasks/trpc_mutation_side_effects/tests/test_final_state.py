@@ -11,7 +11,7 @@ def wait_for_port(port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(5)
     return False
@@ -46,7 +46,7 @@ def start_app():
 
 def test_mutation_side_effect(start_app):
     reason = "The application should update the todo list automatically after a new todo is added without a manual page refresh."
-    truth = "Navigate to http://localhost:3000. Verify that an input field for adding new to-do items is visible. Click the input field, type 'Learn tRPC mutation', and press Enter (or click the Add button). Verify that 'Learn tRPC mutation' appears in the to-do list immediately without a manual page refresh."
+    truth = "Navigate to http://127.0.0.1:3000. Verify that an input field for adding new to-do items is visible. Click the input field, type 'Learn tRPC mutation', and press Enter (or click the Add button). Verify that 'Learn tRPC mutation' appears in the to-do list immediately without a manual page refresh."
 
     verifier = PochiVerifier()
     result = verifier.verify(

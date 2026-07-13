@@ -13,7 +13,7 @@ def wait_for_port(port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(2)
     return False
@@ -56,7 +56,7 @@ def test_user_endpoint(start_app):
     """Verify that the user.getUser endpoint works correctly."""
     input_data = '{"json":{"id":"1"}}'
     encoded_input = urllib.parse.quote(input_data)
-    url = f"http://localhost:3000/api/trpc/user.getUser?input={encoded_input}"
+    url = f"http://127.0.0.1:3000/api/trpc/user.getUser?input={encoded_input}"
     
     req = urllib.request.Request(url)
     try:
@@ -74,7 +74,7 @@ def test_post_endpoint(start_app):
     """Verify that the post.getPost endpoint works correctly."""
     input_data = '{"json":{"id":"1"}}'
     encoded_input = urllib.parse.quote(input_data)
-    url = f"http://localhost:3000/api/trpc/post.getPost?input={encoded_input}"
+    url = f"http://127.0.0.1:3000/api/trpc/post.getPost?input={encoded_input}"
     
     req = urllib.request.Request(url)
     try:

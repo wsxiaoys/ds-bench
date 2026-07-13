@@ -5,7 +5,7 @@ import pytest
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/project"
-BASE_URL = "http://localhost:3000"
+BASE_URL = "http://127.0.0.1:3000"
 
 @pytest.fixture(scope="session")
 def start_app(xprocess):
@@ -22,7 +22,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 3000)) == 0
+                return s.connect_ex(("127.0.0.1", 3000)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed

@@ -23,7 +23,7 @@ def start_app(setup_npm_install, xprocess):
     """
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
         env = os.environ.copy()
 
         # Pass required environment variables
@@ -41,7 +41,7 @@ def start_app(setup_npm_install, xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 5173)) == 0
+                return s.connect_ex(("127.0.0.1", 5173)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -77,7 +77,7 @@ def test_browser_add_task(start_app, browser_verifier):
     task_text = f"Test Task for {run_id}"
 
     reason = "The user should be able to add a new task."
-    truth = f"Navigate to http://localhost:5173. Locate the text input field, type '{task_text}', and click the submit button. Verify that the new task '{task_text}' appears in the task list."
+    truth = f"Navigate to http://127.0.0.1:5173. Locate the text input field, type '{task_text}', and click the submit button. Verify that the new task '{task_text}' appears in the task list."
 
     result = browser_verifier.verify(
         reason=reason,
@@ -92,7 +92,7 @@ def test_browser_update_task(start_app, browser_verifier):
     task_text = f"Test Task for {run_id}"
 
     reason = "The user should be able to update a task's status."
-    truth = f"Navigate to http://localhost:5173. Locate the task '{task_text}' in the list. Click its status toggle/button to change it from 'todo' to 'done'. Verify that the UI reflects the updated status (e.g., text strikethrough or status label change)."
+    truth = f"Navigate to http://127.0.0.1:5173. Locate the task '{task_text}' in the list. Click its status toggle/button to change it from 'todo' to 'done'. Verify that the UI reflects the updated status (e.g., text strikethrough or status label change)."
 
     result = browser_verifier.verify(
         reason=reason,
@@ -107,7 +107,7 @@ def test_browser_delete_task(start_app, browser_verifier):
     task_text = f"Test Task for {run_id}"
 
     reason = "The user should be able to delete a task."
-    truth = f"Navigate to http://localhost:5173. Locate the delete button for the task '{task_text}'. Click the delete button. Verify that the task '{task_text}' is removed from the list."
+    truth = f"Navigate to http://127.0.0.1:5173. Locate the delete button for the task '{task_text}'. Click the delete button. Verify that the task '{task_text}' is removed from the list."
 
     result = browser_verifier.verify(
         reason=reason,

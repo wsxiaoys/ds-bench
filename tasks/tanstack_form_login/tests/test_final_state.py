@@ -18,7 +18,7 @@ def start_app(xprocess):
 
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -29,7 +29,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", PORT)) == 0
+                return s.connect_ex(("127.0.0.1", PORT)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -63,7 +63,7 @@ def start_app(xprocess):
 
 def test_form_rendering(start_app, browser_verifier):
     reason = "The page should render an email input, a password input, and a submit button."
-    truth = "Navigate to http://localhost:8432. Verify that the page contains an input for email, an input for password, and a submit button."
+    truth = "Navigate to http://127.0.0.1:8432. Verify that the page contains an input for email, an input for password, and a submit button."
     
     result = browser_verifier.verify(
         reason=reason,
@@ -75,7 +75,7 @@ def test_form_rendering(start_app, browser_verifier):
 
 def test_email_validation(start_app, browser_verifier):
     reason = "Submitting with an invalid email should display a validation error."
-    truth = "Navigate to http://localhost:8432. Enter an invalid email (e.g., 'not-an-email'), enter a valid password (e.g., 'password123'), and submit. Verify that an error message related to invalid email appears."
+    truth = "Navigate to http://127.0.0.1:8432. Enter an invalid email (e.g., 'not-an-email'), enter a valid password (e.g., 'password123'), and submit. Verify that an error message related to invalid email appears."
     
     result = browser_verifier.verify(
         reason=reason,
@@ -87,7 +87,7 @@ def test_email_validation(start_app, browser_verifier):
 
 def test_password_validation(start_app, browser_verifier):
     reason = "Submitting with a password shorter than 8 characters should display a validation error."
-    truth = "Navigate to http://localhost:8432. Enter a valid email (e.g., 'test@example.com'), enter a short password (e.g., 'short'), and submit. Verify that an error message related to password length appears."
+    truth = "Navigate to http://127.0.0.1:8432. Enter a valid email (e.g., 'test@example.com'), enter a short password (e.g., 'short'), and submit. Verify that an error message related to password length appears."
     
     result = browser_verifier.verify(
         reason=reason,
@@ -99,7 +99,7 @@ def test_password_validation(start_app, browser_verifier):
 
 def test_successful_submission(start_app, browser_verifier):
     reason = "Submitting with valid data should display a success message."
-    truth = "Navigate to http://localhost:8432. Enter a valid email (e.g., 'test@example.com'), enter a valid password (e.g., 'password123'), and submit. Verify that the 'Login successful' message appears on the page."
+    truth = "Navigate to http://127.0.0.1:8432. Enter a valid email (e.g., 'test@example.com'), enter a valid password (e.g., 'password123'), and submit. Verify that the 'Login successful' message appears on the page."
     
     result = browser_verifier.verify(
         reason=reason,

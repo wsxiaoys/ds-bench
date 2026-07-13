@@ -15,7 +15,7 @@ def browser_verifier():
 def start_app(xprocess):
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -26,7 +26,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 5732)) == 0
+                return s.connect_ex(("127.0.0.1", 5732)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -59,7 +59,7 @@ def start_app(xprocess):
 def test_inline_edit_table(start_app, browser_verifier):
     reason = "The application must display a data table with inline editing capabilities using TanStack Table and Form."
     truth = (
-        "Navigate to http://localhost:5732. "
+        "Navigate to http://127.0.0.1:5732. "
         "Verify that a table is rendered with columns ID, Name, Email, and Role. "
         "Verify that there are at least 3 rows of data. "
         "Verify that each row has an 'Edit' button. "

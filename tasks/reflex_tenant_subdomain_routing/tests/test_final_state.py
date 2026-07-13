@@ -9,8 +9,8 @@ from xprocess import ProcessStarter
 
 
 PROJECT_DIR = "/home/user/myproject"
-BACKEND_URL = "http://localhost:8000"
-FRONTEND_URL = "http://localhost:3000"
+BACKEND_URL = "http://127.0.0.1:8000"
+FRONTEND_URL = "http://127.0.0.1:3000"
 
 
 def _port_open(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -39,7 +39,7 @@ def _wait_for_backend_ping(timeout: float = 240.0) -> None:
 def _wait_for_frontend(timeout: float = 240.0) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if _port_open("localhost", 3000):
+        if _port_open("127.0.0.1", 3000):
             return
         time.sleep(2.0)
     raise AssertionError(
@@ -69,7 +69,7 @@ def reflex_server(xprocess):
                     return False
             except requests.RequestException:
                 return False
-            return _port_open("localhost", 3000)
+            return _port_open("127.0.0.1", 3000)
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -127,7 +127,7 @@ def test_dashboard_renders_acme(browser_verifier):
         "dynamic segment, display the tenant's name, and clearly identify itself as the Dashboard page."
     )
     truth = (
-        "Navigate to http://localhost:3000/t/acme/dashboard. Wait for the page to finish loading and "
+        "Navigate to http://127.0.0.1:3000/t/acme/dashboard. Wait for the page to finish loading and "
         "hydrating. The visible page MUST contain the text 'Acme Corp' AND the text 'Dashboard'. The page "
         "MUST NOT contain the text 'Tenant Not Found'."
     )
@@ -146,7 +146,7 @@ def test_settings_renders_globex(browser_verifier):
         "dynamic segment and clearly identify itself as the Settings page."
     )
     truth = (
-        "Navigate to http://localhost:3000/t/globex/settings. Wait for the page to finish loading and "
+        "Navigate to http://127.0.0.1:3000/t/globex/settings. Wait for the page to finish loading and "
         "hydrating. The visible page MUST contain the text 'Globex Inc' AND the text 'Settings'. The page "
         "MUST NOT contain the text 'Tenant Not Found'."
     )
@@ -164,7 +164,7 @@ def test_dashboard_renders_initech(browser_verifier):
         "The third seed tenant 'initech' should be reachable via the dashboard dynamic route and display its name."
     )
     truth = (
-        "Navigate to http://localhost:3000/t/initech/dashboard. Wait for the page to finish loading and "
+        "Navigate to http://127.0.0.1:3000/t/initech/dashboard. Wait for the page to finish loading and "
         "hydrating. The visible page MUST contain the text 'Initech LLC' AND the text 'Dashboard'."
     )
     result = browser_verifier.verify(
@@ -182,7 +182,7 @@ def test_unknown_tenant_renders_404_marker(browser_verifier):
         "404 marker instead of leaking any other tenant's information."
     )
     truth = (
-        "Navigate to http://localhost:3000/t/no-such-tenant/dashboard. Wait for the page to finish loading and "
+        "Navigate to http://127.0.0.1:3000/t/no-such-tenant/dashboard. Wait for the page to finish loading and "
         "hydrating. The visible page MUST contain the text 'Tenant Not Found'. The page MUST NOT contain any of "
         "'Acme Corp', 'Globex Inc', or 'Initech LLC'."
     )

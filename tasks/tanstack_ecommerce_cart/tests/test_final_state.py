@@ -19,7 +19,7 @@ def start_app(xprocess):
 
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -30,7 +30,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8432)) == 0
+                return s.connect_ex(("127.0.0.1", 8432)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -75,7 +75,7 @@ def test_code_inspection():
 
 def test_ecommerce_cart_browser(start_app, browser_verifier):
     reason = "The application should display products, allow adding them to a cart, and sync the cart state to the URL search parameters."
-    truth = "Navigate to http://localhost:8432/. Verify that the page loads and displays a list of products. Simulate clicking an 'Add to Cart' button for a product. Verify that the URL updates to include the cart state in the search parameters, and the UI displays the item in the cart. Note the current URL. Then navigate directly to that URL in a new browser context. Verify that the cart UI correctly displays the item based purely on the URL search parameters."
+    truth = "Navigate to http://127.0.0.1:8432/. Verify that the page loads and displays a list of products. Simulate clicking an 'Add to Cart' button for a product. Verify that the URL updates to include the cart state in the search parameters, and the UI displays the item in the cart. Note the current URL. Then navigate directly to that URL in a new browser context. Verify that the cart UI correctly displays the item based purely on the URL search parameters."
 
     verifier = PochiVerifier()
     result = verifier.verify(

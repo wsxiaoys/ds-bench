@@ -32,7 +32,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8090)) == 0
+                return s.connect_ex(("127.0.0.1", 8090)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -65,7 +65,7 @@ def start_app(xprocess):
     info.terminate()
 
 def test_create_post_success(start_app):
-    url = "http://localhost:8090/api/collections/posts/records"
+    url = "http://127.0.0.1:8090/api/collections/posts/records"
     payload = {"title": "My First Post"}
     response = requests.post(url, json=payload)
     
@@ -76,7 +76,7 @@ def test_create_post_success(start_app):
     assert data.get("slug") == "my-first-post", f"Expected slug 'my-first-post', got: {data.get('slug')}"
 
 def test_create_post_validation_error(start_app):
-    url = "http://localhost:8090/api/collections/posts/records"
+    url = "http://127.0.0.1:8090/api/collections/posts/records"
     payload = {"title": ""}
     response = requests.post(url, json=payload)
     

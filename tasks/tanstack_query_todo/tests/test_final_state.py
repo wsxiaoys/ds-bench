@@ -8,7 +8,7 @@ from pochi_verifier import PochiVerifier
 
 PROJECT_DIR = "/home/user/tanstack-query-todo"
 PORT = 4821
-BASE_URL = f"http://localhost:{PORT}"
+BASE_URL = f"http://127.0.0.1:{PORT}"
 
 shared_state = {}
 
@@ -39,7 +39,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", PORT)) == 0
+                return s.connect_ex(("127.0.0.1", PORT)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed

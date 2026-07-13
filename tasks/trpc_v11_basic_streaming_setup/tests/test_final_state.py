@@ -29,7 +29,7 @@ def next_server():
     server_ready = False
     while time.time() - start_time < 30:
         try:
-            urllib.request.urlopen("http://localhost:3000")
+            urllib.request.urlopen("http://127.0.0.1:3000")
             server_ready = True
             break
         except urllib.error.URLError:
@@ -54,7 +54,7 @@ const { chromium } = require('playwright');
   const page = await browser.newPage();
   
   try {
-    await page.goto('http://localhost:3000');
+    await page.goto('http://127.0.0.1:3000');
     await page.waitForSelector('#stream-output', { timeout: 10000 });
     await page.waitForFunction(
       () => {

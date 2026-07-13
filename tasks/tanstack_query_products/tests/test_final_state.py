@@ -16,7 +16,7 @@ def browser_verifier():
 def start_app(xprocess):
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -27,7 +27,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", PORT)) == 0
+                return s.connect_ex(("127.0.0.1", PORT)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -59,7 +59,7 @@ def start_app(xprocess):
 
 def test_browser_verification(start_app, browser_verifier):
     reason = "The application should fetch and display a list of products."
-    truth = f"Navigate to http://localhost:{PORT}. Wait for the data to load. Verify that the page contains the text 'Laptop - $999'. Verify that the page contains the text 'Phone - $599'."
+    truth = f"Navigate to http://127.0.0.1:{PORT}. Wait for the data to load. Verify that the page contains the text 'Laptop - $999'. Verify that the page contains the text 'Phone - $599'."
     
     result = browser_verifier.verify(
         reason=reason,

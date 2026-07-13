@@ -21,7 +21,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8090)) == 0
+                return s.connect_ex(("127.0.0.1", 8090)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -52,7 +52,7 @@ def start_app(xprocess):
     info.terminate()
 
 def test_rate_limited_signup(start_app):
-    url = "http://localhost:8090/api/custom_signup"
+    url = "http://127.0.0.1:8090/api/custom_signup"
 
     # 1. First 5 Requests (Success)
     for i in range(1, 6):
@@ -75,7 +75,7 @@ def test_rate_limited_signup(start_app):
 
 def test_users_created(start_app):
     # Verify that the first 5 users were actually created by authenticating as them
-    auth_url = "http://localhost:8090/api/collections/users/auth-with-password"
+    auth_url = "http://127.0.0.1:8090/api/collections/users/auth-with-password"
 
     for i in range(1, 6):
         payload = {

@@ -11,7 +11,7 @@ def wait_for_port(port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(1)
     return False
@@ -45,7 +45,7 @@ def test_invalid_payload_returns_zod_error(start_app):
             "curl", "-s", "-X", "POST",
             "-H", "Content-Type: application/json",
             "-d", payload,
-            "http://localhost:3000/trpc/addPost"
+            "http://127.0.0.1:3000/trpc/addPost"
         ],
         capture_output=True, text=True
     )
@@ -75,7 +75,7 @@ def test_valid_payload_succeeds(start_app):
             "curl", "-s", "-X", "POST",
             "-H", "Content-Type: application/json",
             "-d", payload,
-            "http://localhost:3000/trpc/addPost"
+            "http://127.0.0.1:3000/trpc/addPost"
         ],
         capture_output=True, text=True
     )

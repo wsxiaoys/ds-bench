@@ -27,7 +27,7 @@ Create a basic Todo list application that fetches and creates items using TanSta
     }
     ```
 - Implement a React frontend that uses TanStack Query (`useQuery` and `useMutation`) to interact with the API.
-  - The main page must be accessible at `http://localhost:4821/`.
+  - The main page must be accessible at `http://127.0.0.1:4821/`.
   - The list of todos must be rendered inside a container with `id="todo-list"`. Each todo item should be an `<li>` element containing the todo text.
   - There must be an input field with `id="todo-input"` for entering new todo text.
   - There must be a submit button with `id="todo-submit"` to add the todo.

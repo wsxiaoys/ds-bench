@@ -6,7 +6,7 @@ import requests
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myapp"
-BASE_URL = "http://localhost:5173"
+BASE_URL = "http://127.0.0.1:5173"
 
 
 @pytest.fixture(scope="session")

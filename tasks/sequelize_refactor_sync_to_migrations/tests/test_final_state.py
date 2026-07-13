@@ -23,7 +23,7 @@ def app_server(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 3000)) == 0
+                return s.connect_ex(("127.0.0.1", 3000)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -78,13 +78,13 @@ def test_migrations_exist():
 
 def test_create_and_list_user(app_server):
     # Create User
-    response = requests.post("http://localhost:3000/users", json={"username": "alice"})
+    response = requests.post("http://127.0.0.1:3000/users", json={"username": "alice"})
     assert response.status_code == 201, f"Expected status 201, got {response.status_code}"
     data = response.json()
     assert data.get("username") == "alice", f"Expected username 'alice', got {data.get('username')}"
     
     # List Users
-    response = requests.get("http://localhost:3000/users")
+    response = requests.get("http://127.0.0.1:3000/users")
     assert response.status_code == 200, f"Expected status 200, got {response.status_code}"
     users = response.json()
     assert isinstance(users, list), "Expected response to be a list"
@@ -109,12 +109,12 @@ def test_data_persistence(app_server):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 3000)) == 0
+                return s.connect_ex(("127.0.0.1", 3000)) == 0
                 
     app_server.ensure(Starter.name, Starter)
     
     # Verify data still exists
-    response = requests.get("http://localhost:3000/users")
+    response = requests.get("http://127.0.0.1:3000/users")
     assert response.status_code == 200, f"Expected status 200, got {response.status_code}"
     users = response.json()
     assert any(u.get("username") == "alice" for u in users), "Data did not persist across restarts; 'alice' is missing."

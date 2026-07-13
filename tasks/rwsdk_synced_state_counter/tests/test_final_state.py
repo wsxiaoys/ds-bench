@@ -8,7 +8,7 @@ from pochi_verifier import PochiVerifier
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myapp"
-BASE_URL = "http://localhost:5173"
+BASE_URL = "http://127.0.0.1:5173"
 
 
 @pytest.fixture(scope="session")
@@ -103,7 +103,7 @@ def test_browser_counter_flow(start_app):
         "stateful client component with persistent server-side state."
     )
     truth = (
-        "Navigate to http://localhost:5173/counter. Locate the button labelled 'Reset' and click it. "
+        "Navigate to http://127.0.0.1:5173/counter. Locate the button labelled 'Reset' and click it. "
         "Verify the visible text shows 'Count: 0'. Then locate the button labelled 'Increment' and click it three times. "
         "Verify the visible text shows 'Count: 3'. Click the 'Reset' button again. "
         "Verify the visible text now shows 'Count: 0'."

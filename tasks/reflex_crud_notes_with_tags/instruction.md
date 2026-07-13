@@ -52,7 +52,7 @@ A non-Reflex CLI helper `probe.py` at the project root must expose the same data
 
 - The project path is `/home/user/myproject`.
 - Use the project setup flow from the research plan (`uv init`, `uv add reflex`, `uv run reflex init --template blank`, `uv run reflex db init/makemigrations/migrate`). Keep all Python deps inside the `uv`-managed virtual environment; the verifier will invoke Python through `uv run`.
-- The application should run on port `3000` (frontend) and `8000` (backend), and be startable using `uv run reflex run --loglevel info` from the project directory. The UI will be verified on `http://localhost:3000/`.
+- The application should run on port `3000` (frontend) and `8000` (backend), and be startable using `uv run reflex run --loglevel info` from the project directory. The UI will be verified on `http://127.0.0.1:3000/`.
 - The database must be an SQLite database located at `/home/user/myproject/reflex.db`. After `uv run reflex db migrate`, the schema must contain:
   - A `note` table (with at least `id` and `content` columns).
   - A `tag` table (with at least `id` and `name` columns).

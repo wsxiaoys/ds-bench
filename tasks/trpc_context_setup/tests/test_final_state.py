@@ -12,7 +12,7 @@ def wait_for_port(port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(5)
     return False
@@ -21,7 +21,7 @@ def wait_for_port(port, timeout=60):
 def start_app():
     # Start the app
     process = subprocess.Popen(
-        ["npm", "run", "dev"],
+        ["npm", "run", "dev", "--", "--hostname", "127.0.0.1"],
         cwd=PROJECT_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -43,7 +43,7 @@ def start_app():
     process.wait(timeout=30)
 
 def test_get_user_with_header(start_app):
-    url = "http://localhost:3000/api/trpc/getUser"
+    url = "http://127.0.0.1:3000/api/trpc/getUser"
     req = urllib.request.Request(url, headers={"x-user-id": "123"})
     
     try:
@@ -58,7 +58,7 @@ def test_get_user_with_header(start_app):
         pytest.fail(f"Request failed: {e}")
 
 def test_get_user_without_header(start_app):
-    url = "http://localhost:3000/api/trpc/getUser"
+    url = "http://127.0.0.1:3000/api/trpc/getUser"
     req = urllib.request.Request(url)
     
     try:

@@ -12,7 +12,7 @@ def wait_for_port(port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(5)
     return False
@@ -21,7 +21,7 @@ def wait_for_port(port, timeout=60):
 def start_app():
     # Start the app
     process = subprocess.Popen(
-        ["npm", "run", "dev"],
+        ["npm", "run", "dev", "--", "--hostname", "127.0.0.1"],
         cwd=PROJECT_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -42,7 +42,7 @@ def start_app():
 
 def test_infinite_queries(start_app):
     reason = "The application should display an initial list of posts and a 'Load More' button. Clicking the button should append more posts to the list until all posts are loaded, at which point the button should become disabled."
-    truth = "Navigate to http://localhost:3000. Verify that the first page of posts is rendered (e.g., check for specific post titles). Verify that the 'Load More' button exists and is enabled. Click the 'Load More' button. Verify that the next page of posts is appended to the list. Click the 'Load More' button until all posts are loaded. Verify that the 'Load More' button is disabled when hasNextPage is false."
+    truth = "Navigate to http://127.0.0.1:3000. Verify that the first page of posts is rendered (e.g., check for specific post titles). Verify that the 'Load More' button exists and is enabled. Click the 'Load More' button. Verify that the next page of posts is appended to the list. Click the 'Load More' button until all posts are loaded. Verify that the 'Load More' button is disabled when hasNextPage is false."
 
     verifier = PochiVerifier()
     result = verifier.verify(

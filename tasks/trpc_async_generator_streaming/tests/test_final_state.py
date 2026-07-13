@@ -11,7 +11,7 @@ def wait_for_port(port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(5)
     return False
@@ -43,7 +43,7 @@ def start_app():
 
 def test_chat_interface(start_app):
     reason = "The application should feature a streaming chat interface where a user can enter a message and see the response streamed character by character."
-    truth = "Navigate to http://localhost:3000. Verify that an input field with id 'chat-input' and a button with id 'chat-submit' are visible. Type 'Hello tRPC' into the input field and click the submit button. Verify that a response area with id 'chat-response' becomes visible and eventually displays the full text 'Hello tRPC' (streamed character by character)."
+    truth = "Navigate to http://127.0.0.1:3000. Verify that an input field with id 'chat-input' and a button with id 'chat-submit' are visible. Type 'Hello tRPC' into the input field and click the submit button. Verify that a response area with id 'chat-response' becomes visible and eventually displays the full text 'Hello tRPC' (streamed character by character)."
 
     verifier = PochiVerifier()
     result = verifier.verify(
