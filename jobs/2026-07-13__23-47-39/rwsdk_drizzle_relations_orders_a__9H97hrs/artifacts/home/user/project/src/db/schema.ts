@@ -1,0 +1,36 @@
+import { sqliteTable, integer, text } from "drizzle-orm/sqlite-core";
+import { relations } from "drizzle-orm";
+
+// orders table
+export const orders = sqliteTable("orders", {
+  id: integer("id").primaryKey(),
+  customerName: text("customer_name").notNull(),
+  status: text("status").notNull(),
+});
+
+// order_items table (one-to-many with orders)
+export const orderItems = sqliteTable("order_items", {
+  id: integer("id").primaryKey(),
+  orderId: integer("order_id")
+    .notNull()
+    .references(() => orders.id),
+  productName: text("product_name").notNull(),
+  quantity: integer("quantity").notNull(),
+  unitPrice: integer("unit_price").notNull(),
+});
+
+// Relations: orders has many order_items
+export const ordersRelations = relations(orders, ({ many }) => ({
+  items: many(orderItems),
+}));
+
+// Relations: order_items belongs to orders
+export const orderItemsRelations = relations(orderItems, ({ one }) => ({
+  order: one(orders, {
+    fields: [orderItems.orderId],
+    references: [orders.id],
+  }),
+}));
+
+export type Order = typeof orders.$inferSelect;
+export type OrderItem = typeof orderItems.$inferSelect;
