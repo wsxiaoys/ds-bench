@@ -242,6 +242,16 @@ async function main() {
 		let hasError: string | boolean = false;
 		if (data.exception_info) {
 			hasError = (data.exception_info as any).exception_type || true;
+			if (hasError === "NonZeroAgentExitCodeError") {
+				hasError = "NonZeroAgentExitCode";
+				const msg = (data.exception_info as any).exception_message;
+				if (typeof msg === "string") {
+					const match = msg.match(/Command failed \(exit (\d+)\)/);
+					if (match) {
+						hasError = `NonZeroAgentExitCode (${match[1]})`;
+					}
+				}
+			}
 		}
 
 		const model =
