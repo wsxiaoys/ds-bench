@@ -1,6 +1,7 @@
 FROM ubuntu:24.04
 
 ARG POCHI_VERSION
+ARG AGENT_BROWSER_VERSION=0.27.3-pochi
 
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -16,6 +17,8 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://github.com/TabbyML/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}/install.sh | bash && ln -s /root/.pochi/bin/agent-browser /usr/local/bin/agent-browser && \
+    agent-browser install
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
