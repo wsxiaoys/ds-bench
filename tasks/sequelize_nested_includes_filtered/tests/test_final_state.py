@@ -30,7 +30,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 3000)) == 0
+                return s.connect_ex(("127.0.0.1", 3000)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -92,7 +92,7 @@ def test_seed_database(start_app):
         }
     ]
     
-    response = requests.post("http://localhost:3000/seed", json=seed_payload)
+    response = requests.post("http://127.0.0.1:3000/seed", json=seed_payload)
     assert response.status_code == 200, f"Expected status 200 from POST /seed, got {response.status_code}. Response: {response.text}"
 
 
@@ -123,7 +123,7 @@ def test_verify_filtered_query(start_app):
         }
     ]
     
-    response = requests.get("http://localhost:3000/companies/filtered")
+    response = requests.get("http://127.0.0.1:3000/companies/filtered")
     assert response.status_code == 200, f"Expected status 200 from GET /companies/filtered, got {response.status_code}. Response: {response.text}"
     
     actual_data = response.json()

@@ -14,8 +14,8 @@ PROJECT_DIR = "/home/user/filtered_table"
 DB_PATH = os.path.join(PROJECT_DIR, "reflex.db")
 FRONTEND_PORT = 3000
 BACKEND_PORT = 8000
-FRONTEND_URL = f"http://localhost:{FRONTEND_PORT}"
-BACKEND_URL = f"http://localhost:{BACKEND_PORT}"
+FRONTEND_URL = f"http://127.0.0.1:{FRONTEND_PORT}"
+BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}"
 
 CATEGORIES = ["Electronics", "Books", "Clothing", "Home", "Toys", "Sports"]
 
@@ -67,8 +67,8 @@ def reflex_server(xprocess):
         terminate_on_interrupt = True
 
         def startup_check(self):
-            return _port_open("localhost", BACKEND_PORT) and _port_open(
-                "localhost", FRONTEND_PORT
+            return _port_open("127.0.0.1", BACKEND_PORT) and _port_open(
+                "127.0.0.1", FRONTEND_PORT
             )
 
     info = xprocess.getinfo(Starter.name)

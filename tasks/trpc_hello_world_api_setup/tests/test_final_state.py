@@ -14,7 +14,7 @@ def wait_for_port(port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(5)
     return False
@@ -23,7 +23,7 @@ def wait_for_port(port, timeout=60):
 def start_app():
     # Start the app
     process = subprocess.Popen(
-        ["npm", "run", "dev"],
+        ["npm", "run", "dev", "--", "--hostname", "127.0.0.1"],
         cwd=PROJECT_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -46,7 +46,7 @@ def start_app():
 
 def test_api_endpoint(start_app):
     """Priority 1: Verify the API endpoint directly."""
-    url = 'http://localhost:3000/api/trpc/hello?input=%22World%22'
+    url = 'http://127.0.0.1:3000/api/trpc/hello?input=%22World%22'
     req = urllib.request.Request(url)
     try:
         with urllib.request.urlopen(req) as response:
@@ -59,7 +59,7 @@ def test_api_endpoint(start_app):
 def test_browser_rendering(start_app):
     """Priority 2: Use PochiVerifier to check the browser rendering."""
     reason = "The main page should render the greeting fetched from the tRPC endpoint."
-    truth = "Navigate to http://localhost:3000. Verify that the page contains the exact text 'Hello World'."
+    truth = "Navigate to http://127.0.0.1:3000. Verify that the page contains the exact text 'Hello World'."
 
     verifier = PochiVerifier()
     result = verifier.verify(

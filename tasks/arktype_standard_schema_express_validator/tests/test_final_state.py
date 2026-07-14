@@ -8,7 +8,7 @@ import requests
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
-BASE_URL = "http://localhost:3000"
+BASE_URL = "http://127.0.0.1:3000"
 
 
 def _port_open(host: str, port: int) -> bool:
@@ -33,7 +33,7 @@ def server(xprocess):
         terminate_on_interrupt = True
 
         def startup_check(self):
-            return _port_open("localhost", 3000)
+            return _port_open("127.0.0.1", 3000)
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -82,7 +82,7 @@ def server(xprocess):
 
 def test_server_binds_to_port_3000(server):
     """Verification step 9: server listens on port 3000."""
-    assert _port_open("localhost", 3000), (
+    assert _port_open("127.0.0.1", 3000), (
         "Expected the Express server to be listening on port 3000."
     )
 

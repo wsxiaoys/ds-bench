@@ -12,7 +12,7 @@ def wait_for_port(port, timeout=60):
     start = time.time()
     while time.time() - start < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(("localhost", port)) == 0:
+            if s.connect_ex(("127.0.0.1", port)) == 0:
                 return True
         time.sleep(2)
     return False
@@ -20,7 +20,7 @@ def wait_for_port(port, timeout=60):
 
 def http_request(method, path, body=None, headers=None):
     import urllib.request, urllib.error
-    url = f"http://localhost:3000{path}"
+    url = f"http://127.0.0.1:3000{path}"
     data = json.dumps(body).encode() if body else None
     req_headers = {"Content-Type": "application/json"}
     if headers:

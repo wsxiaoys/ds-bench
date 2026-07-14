@@ -7,7 +7,7 @@ import time
 from xprocess import ProcessStarter
 
 PROJECT_DIR = "/home/user/myproject"
-APP_URL = "http://localhost:8090"
+APP_URL = "http://127.0.0.1:8090"
 
 @pytest.fixture(scope="session")
 def build_app():
@@ -38,7 +38,7 @@ def start_app(build_app, xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8090)) == 0
+                return s.connect_ex(("127.0.0.1", 8090)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed

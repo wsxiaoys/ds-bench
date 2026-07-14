@@ -11,7 +11,7 @@ def wait_for_port(port, timeout=120):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(5)
     return False
@@ -20,7 +20,7 @@ def wait_for_port(port, timeout=120):
 def start_app():
     # Start the app
     process = subprocess.Popen(
-        ["npm", "run", "dev"],
+        ["npm", "run", "dev", "--", "--hostname", "127.0.0.1"],
         cwd=PROJECT_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -67,7 +67,7 @@ def test_server_action_used_in_codebase():
 
 def test_server_action_integration(start_app):
     reason = "The application should have a form that triggers a Server Action which calls a tRPC mutation."
-    truth = "Navigate to http://localhost:3000. Fill the form with the test message 'Hello via Server Action' and submit it. Verify that the page displays the returned message confirming the Server Action was executed successfully (e.g. showing { success: true, message: 'Hello via Server Action' } or similar confirmation)."
+    truth = "Navigate to http://127.0.0.1:3000. Fill the form with the test message 'Hello via Server Action' and submit it. Verify that the page displays the returned message confirming the Server Action was executed successfully (e.g. showing { success: true, message: 'Hello via Server Action' } or similar confirmation)."
 
     verifier = PochiVerifier()
     result = verifier.verify(

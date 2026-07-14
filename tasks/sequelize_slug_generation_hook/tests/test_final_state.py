@@ -21,7 +21,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 3000)) == 0
+                return s.connect_ex(("127.0.0.1", 3000)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -52,7 +52,7 @@ def start_app(xprocess):
     info.terminate()
 
 def test_create_single_article(start_app):
-    url = "http://localhost:3000/articles"
+    url = "http://127.0.0.1:3000/articles"
     payload = {"title": "Hello World"}
     response = requests.post(url, json=payload)
     
@@ -64,7 +64,7 @@ def test_create_single_article(start_app):
     assert data["title"] == "Hello World", f"Expected title 'Hello World', got {data.get('title')}"
 
 def test_create_bulk_articles(start_app):
-    url = "http://localhost:3000/articles/bulk"
+    url = "http://127.0.0.1:3000/articles/bulk"
     payload = [{"title": "First Post"}, {"title": "Second Post"}]
     response = requests.post(url, json=payload)
     

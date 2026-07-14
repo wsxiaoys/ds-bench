@@ -12,7 +12,7 @@ def wait_for_port(port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(1)
     return False
@@ -45,8 +45,8 @@ def start_server():
     process.wait(timeout=10)
 
 def test_cors_options_request(start_server):
-    req = urllib.request.Request("http://localhost:4000/hello", method="OPTIONS")
-    req.add_header("Origin", "http://localhost:3000")
+    req = urllib.request.Request("http://127.0.0.1:4000/hello", method="OPTIONS")
+    req.add_header("Origin", "http://127.0.0.1:3000")
     req.add_header("Access-Control-Request-Method", "GET")
     
     try:
@@ -54,14 +54,14 @@ def test_cors_options_request(start_server):
         headers = dict(response.getheaders())
         
         allow_origin = headers.get("Access-Control-Allow-Origin")
-        assert allow_origin == "http://localhost:3000" or allow_origin == "*", \
-            f"Expected Access-Control-Allow-Origin to be http://localhost:3000 or *, got {allow_origin}"
+        assert allow_origin == "http://127.0.0.1:3000" or allow_origin == "*", \
+            f"Expected Access-Control-Allow-Origin to be http://127.0.0.1:3000 or *, got {allow_origin}"
     except urllib.error.HTTPError as e:
         pytest.fail(f"OPTIONS request failed with status {e.code}")
 
 def test_valid_get_request(start_server):
-    req = urllib.request.Request("http://localhost:4000/hello", method="GET")
-    req.add_header("Origin", "http://localhost:3000")
+    req = urllib.request.Request("http://127.0.0.1:4000/hello", method="GET")
+    req.add_header("Origin", "http://127.0.0.1:3000")
     
     try:
         response = urllib.request.urlopen(req)
@@ -69,13 +69,13 @@ def test_valid_get_request(start_server):
         
         headers = dict(response.getheaders())
         allow_origin = headers.get("Access-Control-Allow-Origin")
-        assert allow_origin == "http://localhost:3000" or allow_origin == "*", \
-            f"Expected Access-Control-Allow-Origin to be http://localhost:3000 or *, got {allow_origin}"
+        assert allow_origin == "http://127.0.0.1:3000" or allow_origin == "*", \
+            f"Expected Access-Control-Allow-Origin to be http://127.0.0.1:3000 or *, got {allow_origin}"
     except urllib.error.HTTPError as e:
         pytest.fail(f"GET request failed with status {e.code}")
 
 def test_invalid_origin_request(start_server):
-    req = urllib.request.Request("http://localhost:4000/hello", method="GET")
+    req = urllib.request.Request("http://127.0.0.1:4000/hello", method="GET")
     req.add_header("Origin", "http://example.com")
     
     try:
@@ -89,7 +89,7 @@ def test_invalid_origin_request(start_server):
             "CORS should not echo back an invalid origin."
         if allow_origin == "*":
             # If the server is configured to allow *, then any origin is allowed.
-            # But the task requires allowing http://localhost:3000 specifically.
+            # But the task requires allowing http://127.0.0.1:3000 specifically.
             pass 
     except urllib.error.HTTPError as e:
         # If the server rejects it with an error, that's fine too.

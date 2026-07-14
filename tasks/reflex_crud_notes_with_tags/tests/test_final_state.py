@@ -498,7 +498,7 @@ def test_frontend_reachable(reflex_server):
     last_exc = None
     for _ in range(30):
         try:
-            r = requests.get(f"http://localhost:{FRONTEND_PORT}/", timeout=10)
+            r = requests.get(f"http://127.0.0.1:{FRONTEND_PORT}/", timeout=10)
             if r.status_code == 200 and r.text:
                 body = r.text.lower()
                 assert "<html" in body or "<!doctype" in body, (
@@ -509,7 +509,7 @@ def test_frontend_reachable(reflex_server):
             last_exc = exc
         time.sleep(2)
     raise AssertionError(
-        f"Frontend at http://localhost:{FRONTEND_PORT}/ never returned HTTP 200. "
+        f"Frontend at http://127.0.0.1:{FRONTEND_PORT}/ never returned HTTP 200. "
         f"Last exception: {last_exc!r}"
     )
 

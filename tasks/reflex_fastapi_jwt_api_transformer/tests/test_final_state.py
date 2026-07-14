@@ -11,7 +11,7 @@ import requests
 
 PROJECT_DIR = "/home/user/myapp"
 APP_PKG_DIR = "/home/user/myapp/myapp"
-BACKEND = "http://localhost:8000"
+BACKEND = "http://127.0.0.1:8000"
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,7 @@ Reflex apps are powered by a FastAPI backend, and Reflex exposes the `api_transf
 - Sign / verify JWTs with the HS256 algorithm using PyJWT. The signing secret MUST be generated at application startup using a Python secure-random API (`secrets.token_urlsafe`, `secrets.token_hex`, or `os.urandom`). DO NOT read the secret from `os.environ` and DO NOT hardcode it as a literal constant.
 - Wire the FastAPI instance into Reflex with `app = rx.App(api_transformer=<fastapi_app>)`.
 - Declare a backend-only state var named `_current_user` (note the leading underscore) inside an `rx.State` subclass — it should be used to hold the decoded user identity once authenticated.
-- Add an event handler on the same state class that calls `POST /api/login` against `http://localhost:8000` and `GET /api/me`, and updates a frontend-visible state var (e.g. `is_logged_in: bool`) plus `_current_user` accordingly.
+- Add an event handler on the same state class that calls `POST /api/login` against `http://127.0.0.1:8000` and `GET /api/me`, and updates a frontend-visible state var (e.g. `is_logged_in: bool`) plus `_current_user` accordingly.
 - The `/` page must render the value of the frontend state var so a viewer can tell whether login has occurred.
 - Use `uv` to manage the Python environment for the Reflex app (this is required by the Reflex toolchain). Add `reflex`, `fastapi`, and `pyjwt` as dependencies.
 

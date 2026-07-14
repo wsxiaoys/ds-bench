@@ -34,7 +34,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8090)) == 0
+                return s.connect_ex(("127.0.0.1", 8090)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -66,7 +66,7 @@ def start_app(xprocess):
 
 def test_configs_collection_seeded_records(start_app):
     """Verify that the configs collection exists and contains the seeded records."""
-    url = "http://localhost:8090/api/collections/configs/records"
+    url = "http://127.0.0.1:8090/api/collections/configs/records"
     try:
         response = requests.get(url)
     except requests.exceptions.RequestException as e:

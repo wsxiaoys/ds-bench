@@ -13,7 +13,7 @@ def wait_for_port(port, timeout=30):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(1)
     return False
@@ -47,7 +47,7 @@ def start_app():
     process.wait(timeout=10)
 
 def test_greet_procedure(start_app):
-    url = 'http://localhost:3000/greet?input=%7B%22name%22%3A%22World%22%7D'
+    url = 'http://127.0.0.1:3000/greet?input=%7B%22name%22%3A%22World%22%7D'
     try:
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req) as response:

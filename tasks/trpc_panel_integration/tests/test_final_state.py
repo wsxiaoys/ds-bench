@@ -11,7 +11,7 @@ def wait_for_port(port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(2)
     return False
@@ -44,7 +44,7 @@ def start_app():
 def test_trpc_endpoint(start_app):
     """Verify the tRPC endpoint works correctly."""
     result = subprocess.run(
-        ["curl", "-s", "http://localhost:3000/trpc/greeting?input=%7B%22name%22%3A%22World%22%7D"],
+        ["curl", "-s", "http://127.0.0.1:3000/trpc/greeting?input=%7B%22name%22%3A%22World%22%7D"],
         capture_output=True, text=True
     )
     assert result.returncode == 0, f"curl failed: {result.stderr}"
@@ -61,7 +61,7 @@ def test_trpc_endpoint(start_app):
 def test_trpc_panel_html(start_app):
     """Verify the trpc-panel UI is served."""
     result = subprocess.run(
-        ["curl", "-s", "http://localhost:3000/panel"],
+        ["curl", "-s", "http://127.0.0.1:3000/panel"],
         capture_output=True, text=True
     )
     assert result.returncode == 0, f"curl failed: {result.stderr}"

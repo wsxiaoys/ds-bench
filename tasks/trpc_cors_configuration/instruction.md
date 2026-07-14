@@ -6,7 +6,7 @@ Configure CORS correctly for a standalone tRPC server using tRPC v11.
 ## Requirements
 - Create a standalone tRPC server using `@trpc/server/adapters/standalone`.
 - Implement a simple `hello` query that returns a greeting.
-- Configure CORS to allow requests from `http://localhost:3000`.
+- Configure CORS to allow requests from `http://127.0.0.1:3000`.
 
 ## Implementation Guide
 1. Initialize a Node.js project in `/home/user/project`.

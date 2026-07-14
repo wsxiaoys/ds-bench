@@ -8,7 +8,7 @@ Create a collaborative counter where multiple clients see updates instantly usin
 - Implement a shared counter that users can increment. The UI must feature a button with the exact text "Increment" that increments the count when clicked.
 - The counter state must be stored in Convex.
 - The UI must update reactively when the counter is incremented.
-- The application must run on port `5173` (accessible at `http://localhost:5173`) using `npm run dev`.
+- The application must run on port `5173` (accessible at `http://127.0.0.1:5173`) using `npm run dev`.
 - To prevent cross-run conflicts, you **MUST** isolate the counter data using the `run-id` from `/logs/artifacts/run-id`. Store the `run-id` in the counter document and filter by it in your queries and mutations.
 
 ## Implementation Hints

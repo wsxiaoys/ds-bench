@@ -11,7 +11,7 @@ def wait_for_port(port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(2)
     return False
@@ -39,7 +39,7 @@ def start_server():
 
 def test_unauthorized_request(start_server):
     result = subprocess.run(
-        ["curl", "-s", "-w", "%{http_code}", "http://localhost:3000/secretData"],
+        ["curl", "-s", "-w", "%{http_code}", "http://127.0.0.1:3000/secretData"],
         capture_output=True, text=True
     )
     assert result.returncode == 0, f"curl command failed: {result.stderr}"
@@ -59,7 +59,7 @@ def test_unauthorized_request(start_server):
 
 def test_authorized_request(start_server):
     result = subprocess.run(
-        ["curl", "-s", "-w", "%{http_code}", "-H", "Authorization: Bearer mysecrettoken", "http://localhost:3000/secretData"],
+        ["curl", "-s", "-w", "%{http_code}", "-H", "Authorization: Bearer mysecrettoken", "http://127.0.0.1:3000/secretData"],
         capture_output=True, text=True
     )
     assert result.returncode == 0, f"curl command failed: {result.stderr}"

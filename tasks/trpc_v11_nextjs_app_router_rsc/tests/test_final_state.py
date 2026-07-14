@@ -11,7 +11,7 @@ def wait_for_port(port, timeout=60):
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) == 0:
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
                 return True
         time.sleep(5)
     return False
@@ -53,7 +53,7 @@ def start_app():
 
 def test_app_router_data_fetching(start_app):
     reason = "The application should render data fetched from tRPC on the server and on the client."
-    truth = "Navigate to http://localhost:3000. Verify that the page contains an `h1` element with id `server-data` and text `Hello Server`. Verify that the page contains a `p` element with id `client-data` and text `Hello Client`."
+    truth = "Navigate to http://127.0.0.1:3000. Verify that the page contains an `h1` element with id `server-data` and text `Hello Server`. Verify that the page contains a `p` element with id `client-data` and text `Hello Client`."
 
     verifier = PochiVerifier()
     result = verifier.verify(

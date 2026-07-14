@@ -31,7 +31,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8081)) == 0
+                return s.connect_ex(("127.0.0.1", 8081)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -66,7 +66,7 @@ def test_reactive_list(start_app, browser_verifier):
     task_text = f"Test Task {run_id}"
     reason = "The web application should load, allow adding a task, and reactively display the newly added task."
     truth = f"""
-    1. Navigate to http://localhost:8081.
+    1. Navigate to http://127.0.0.1:8081.
     2. Verify that the page loads without errors.
     3. Find the input element with `data-testid="task-input"`.
     4. Type "{task_text}" into the input.

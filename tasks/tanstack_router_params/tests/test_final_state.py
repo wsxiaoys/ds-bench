@@ -14,7 +14,7 @@ def browser_verifier():
 def start_app(xprocess):
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -25,7 +25,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 8765)) == 0
+                return s.connect_ex(("127.0.0.1", 8765)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -57,7 +57,7 @@ def start_app(xprocess):
 
 def test_home_route(start_app, browser_verifier):
     reason = "The home route (`/`) should display the text 'Home Page'."
-    truth = "Navigate to http://localhost:8765/ and verify that the page contains the text 'Home Page'."
+    truth = "Navigate to http://127.0.0.1:8765/ and verify that the page contains the text 'Home Page'."
     
     result = browser_verifier.verify(
         reason=reason,
@@ -69,7 +69,7 @@ def test_home_route(start_app, browser_verifier):
 
 def test_dynamic_route_numeric(start_app, browser_verifier):
     reason = "The dynamic route `/users/$userId` should display the numeric userId."
-    truth = "Navigate to http://localhost:8765/users/123 and verify that the page contains the text 'User Profile: 123'."
+    truth = "Navigate to http://127.0.0.1:8765/users/123 and verify that the page contains the text 'User Profile: 123'."
     
     result = browser_verifier.verify(
         reason=reason,
@@ -81,7 +81,7 @@ def test_dynamic_route_numeric(start_app, browser_verifier):
 
 def test_dynamic_route_string(start_app, browser_verifier):
     reason = "The dynamic route `/users/$userId` should display the string userId."
-    truth = "Navigate to http://localhost:8765/users/alice and verify that the page contains the text 'User Profile: alice'."
+    truth = "Navigate to http://127.0.0.1:8765/users/alice and verify that the page contains the text 'User Profile: alice'."
     
     result = browser_verifier.verify(
         reason=reason,

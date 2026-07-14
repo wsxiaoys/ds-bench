@@ -49,13 +49,13 @@ def test_app_builds_and_runs():
     build_result = subprocess.run(["npm", "run", "build"], cwd=PROJECT_DIR, capture_output=True, text=True)
     assert build_result.returncode == 0, f"App failed to build: {build_result.stderr}\n{build_result.stdout}"
 
-    process = subprocess.Popen(["npm", "run", "start"], cwd=PROJECT_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen(["npm", "run", "start", "--", "--hostname", "127.0.0.1"], cwd=PROJECT_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     
     try:
         # Wait for the server to start
         for _ in range(30):
             try:
-                req = urllib.request.Request("http://localhost:3000")
+                req = urllib.request.Request("http://127.0.0.1:3000")
                 with urllib.request.urlopen(req) as response:
                     status_code = response.getcode()
                     if status_code == 200:

@@ -21,7 +21,7 @@ def start_app(xprocess):
 
     class Starter(ProcessStarter):
         name = "start_app"
-        args = ["npm", "run", "dev"]
+        args = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
         env = os.environ.copy()
         popen_kwargs = {
             "cwd": PROJECT_DIR,
@@ -32,7 +32,7 @@ def start_app(xprocess):
 
         def startup_check(self):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", 5123)) == 0
+                return s.connect_ex(("127.0.0.1", 5123)) == 0
 
     info = xprocess.getinfo(Starter.name)
     printed_log_lines = 0  # track how many lines have already been printed
@@ -64,7 +64,7 @@ def start_app(xprocess):
 
 def test_infinite_scroll(start_app, browser_verifier):
     reason = "The application should display a feed of items and have a 'Load More' button to fetch and append the next page of items using TanStack Query useInfiniteQuery."
-    truth = "Navigate to http://localhost:5123/. Verify that the page renders the first set of feed items. Count the number of item elements (e.g., list items). Find the button with the exact text 'Load More' and click it. Verify that the application fetches the next page and appends it to the list. The total number of item elements on the page should increase, proving that Page 2 was loaded and Page 1 was retained."
+    truth = "Navigate to http://127.0.0.1:5123/. Verify that the page renders the first set of feed items. Count the number of item elements (e.g., list items). Find the button with the exact text 'Load More' and click it. Verify that the application fetches the next page and appends it to the list. The total number of item elements on the page should increase, proving that Page 2 was loaded and Page 1 was retained."
 
     result = browser_verifier.verify(
         reason=reason,
