@@ -30,9 +30,8 @@ def login_endpoint(req: LoginRequest):
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @fastapi_app.get("/api/me", response_model=MeResponse)
-def me_endpoint(authorization: str = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
+def me_endpoint(REDACTED Header(None)):
+    if not REDACTED(status_code=401, detail="Missing authorization header")
     
     parts = authorization.split()
     if len(parts) != 2 or parts[0].lower() != "bearer":
