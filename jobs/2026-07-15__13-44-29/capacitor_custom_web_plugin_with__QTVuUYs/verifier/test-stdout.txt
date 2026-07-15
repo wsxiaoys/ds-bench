@@ -1,0 +1,96 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.4.0
+rootdir: /tests
+plugins: xprocess-1.0.2, json-ctrf-0.5.2
+collected 1 item
+
+../tests/test_final_state.py F                                           [100%]
+
+=================================== FAILURES ===================================
+______________________ test_custom_web_plugin_end_to_end _______________________
+
+serve_site = 'http://127.0.0.1:4173'
+
+    def test_custom_web_plugin_end_to_end(serve_site):
+        base_url = serve_site
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            errors = []
+            page.on("pageerror", lambda exc: errors.append(str(exc)))
+            try:
+                page.goto(base_url, wait_until="load")
+    
+                # Step 1: plugin registered on web, event sink present and empty.
+                ready = page.evaluate(
+                    "() => typeof window.MetricsAnalyzer !== 'undefined' "
+                    "&& typeof window.MetricsAnalyzer.analyze === 'function' "
+                    "&& Array.isArray(window.__analysisEvents)"
+                )
+                assert ready, (
+                    "window.MetricsAnalyzer (with an analyze method) and window.__analysisEvents "
+                    "array must be exposed on the page."
+                )
+                assert page.evaluate("() => window.__analysisEvents.length") == 0, (
+                    "window.__analysisEvents should be empty on initial load."
+                )
+    
+                # Step 2: statistics computation.
+                r1 = page.evaluate(
+                    "async () => await window.MetricsAnalyzer.analyze({ values: [2,4,4,4,5,5,7,9] })"
+                )
+                _assert_stats(
+                    r1,
+                    {"count": 8, "sum": 40, "mean": 5, "min": 2, "max": 9, "stdDev": 2},
+                    "analyze([2,4,4,4,5,5,7,9])",
+                )
+    
+                # Step 3: listener wired by the app receives the event.
+                _poll_events(page, 1)
+                ev1 = page.evaluate("() => window.__analysisEvents[window.__analysisEvents.length - 1]")
+                assert set(ev1.keys()) == {"sequence", "mean"}, (
+                    f"Event payload must have exactly keys sequence and mean, got {sorted(ev1.keys())}"
+                )
+                assert ev1["sequence"] == 1 and _approx_equal(ev1["mean"], 5), (
+                    f"First analysisComplete event should be {{sequence:1, mean:5}}, got {ev1!r}"
+                )
+                event_count_text = page.inner_text("#event-count").strip()
+                assert event_count_text == "1", (
+                    f"#event-count should display '1', got {event_count_text!r}"
+                )
+                result_text = page.inner_text("#result")
+>               assert "mean" in result_text and "5" in result_text, (
+                    f"#result should render the latest analysis JSON, got {result_text!r}"
+                )
+E               AssertionError: #result should render the latest analysis JSON, got ''
+E               assert ('mean' in '')
+
+/tests/test_final_state.py:164: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+=== npm run build stdout ===
+
+> capacitor-web-plugin-app@0.0.0 build
+> vite build
+
+vite v6.4.3 building for production...
+transforming...
+✓ 8 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                 0.67 kB │ gzip: 0.40 kB
+dist/assets/web-BplLtKvW.js     0.91 kB │ gzip: 0.52 kB
+dist/assets/index-eDA17oT-.js  10.95 kB │ gzip: 4.48 kB
+✓ built in 184ms
+
+=== npm run build stderr ===
+
+/tests/.pytest_cache/d/.xprocess/static_server$ python3 -m http.server 4173 --bind 127.0.0.1 --directory /home/user/myproject/dist
+process 'static_server' started pid=907
+static_server process startup detected
+=== static_server log ===
+@@__xproc_block_delimiter__@@
+127.0.0.1 - - [15/Jul/2026 05:48:34] "GET / HTTP/1.1" 200 -
+
+=========================== short test summary info ============================
+FAILED ../tests/test_final_state.py::test_custom_web_plugin_end_to_end - Asse...
+============================== 1 failed in 1.67s ===============================

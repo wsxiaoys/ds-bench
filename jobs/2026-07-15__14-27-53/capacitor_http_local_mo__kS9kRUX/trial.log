@@ -1,0 +1,114 @@
+Selected strategy: _DaytonaDirect
+Building environment from /home/kw/code/zealt/capacitor-benchmark/scratchpad/pending-tasks/capacitorhttp_local_mock_server_roundtrip/environment/Dockerfile
+Running command: set -euo pipefail; mkdir -p /logs/agent/pochi && pochi --version
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" -e "s/MINIMAX_API_KEY/${MINIMAX_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    },
+    "minimax": {
+      "kind": "openai",
+      "baseURL": "https://api.minimax.io/v1",
+      "apiKey": "MINIMAX_API_KEY",
+      "models": {
+        "MiniMax-M3": {
+          "name": "m3"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: cat > /tmp/pochi_cmd.sh << 'CMD_EOF'
+set -o pipefail
+pochi --model minimax/MiniMax-M3 --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl --experimental-stream-trajectory-strip-duplicates > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Capacitor HTTP: Typed API Client Against a Local Mock Server
+
+## Background
+Capacitor's `CapacitorHttp` plugin (bundled with `@capacitor/core`) provides native HTTP helpers that work across platforms and, on the web target, are backed by `fetch`. You will wire up a small TypeScript project that enables `CapacitorHttp` in the Capacitor configuration, runs a **local** mock HTTP API, and talks to it through a strongly‑typed API client.
+
+Everything runs locally inside the container. There is no device, emulator, or native build — verification happens purely through the Node CLI. Never call any external/third‑party service; all traffic must stay on `localhost`.
+
+## Requirements
+- Enable and configure `CapacitorHttp` in a Capacitor config file.
+- Implement a small **mock HTTP API server** that runs on `localhost` and exposes product/order endpoints.
+- Implement a **typed API client** built on `CapacitorHttp` that performs GET and POST requests, sends JSON bodies and custom headers, and converts non‑2xx responses into a typed error.
+- Provide a CLI "round‑trip" runner that exercises the client end‑to‑end against the running mock server and prints a machine‑readable summary.
+
+## Implementation Hints
+- Project path: `/home/user/capacitor-http-app`.
+- Node 22 and the packages `@capacitor/core`, `@capacitor/cli`, `typescript`, and `tsx` are already installed in the project; you do **not** have internet access, so rely only on what is present (Node's built‑in `http` module is a fine way to build the mock server).
+- The typed client MUST use `CapacitorHttp` imported from `@capacitor/core`. Remember that `CapacitorHttp` does **not** reject on non‑2xx responses — it resolves with the numeric `status` and parsed `data`, so your client is responsible for detecting non‑2xx and raising a typed error whose HTTP status is programmatically accessible.
+
+### Capacitor configuration (`capacitor.config.ts`)
+- `appId` must be `com.example.httpdemo`.
+- `appName` must be `HttpDemo`.
+- `webDir` must be `dist`.
+- `CapacitorHttp` must be enabled (`plugins.CapacitorHttp.enabled === true`).
+
+### Mock API server
+- Startable with `npm run mock` and listening on `http://localhost:8787`. Bind it so it is reachable via both `http://127.0.0.1:8787` and `http://localhost:8787` (listening without specifying an explicit host is the simplest way).
+- It must seed exactly these three products (fields `id`, `name`, `price`): `{ id: 1, name: "Notebook", price: 5 }`, `{ id: 2, name: "Pen", price: 2 }`, `{ id: 3, name: "Backpack", price: 40 }`.
+- Endpoints:
+  - `GET /api/products` → `200` with a JSON array of the product objects.
+  - `GET /api/products/:id` → `200` with the matching product object, or `404` with a JSON body `{ "error": <string> }` when no product has that id.
+  - `POST /api/orders` → accepts a JSON body `{ "productId": number, "quantity": number }` and requires the header `X-Api-Key`.
+    - Missing or incorrect `X-Api-Key` → `401` with `{ "error": <string> }`.
+    - Unknown `productId` → `404` with `{ "error": <string> }`.
+    - `quantity` less than 1 → `400` with `{ "error": <string> }`.
+    - Otherwise → `201` with `{ "orderId": <non-empty string>, "productId": number, "quantity": number, "total": number }`, where `total` is the product `price` multiplied by `quantity`.
+- The accepted API key value is `local-dev-key-123`.
+
+### Round‑trip CLI runner
+- Startable with `npm run roundtrip`. It assumes the mock server is already running on `http://localhost:8787` and drives the typed client through this exact scenario:
+  1. List all products.
+  2. Fetch the product with id `2`.
+  3. Create an order for `productId` `3`, `quantity` `2`, using the correct API key.
+  4. Attempt to fetch the product with id `999` and capture the HTTP status carried by the resulting typed error.
+  5. Attempt to create an order using an **incorrect** API key and capture the HTTP status carried by the resulting typed error.
+- After the scenario completes, print exactly one line to stdout that starts with `RESULT: ` followed by a single‑line JSON object containing exactly these keys: `productCount` (number), `product2Name` (string), `orderId` (string), `orderTotal` (number), `missingProductStatus` (number), and `unauthorizedStatus` (number). The process must exit with code `0`.
+
+
+EOF
+CMD_EOF
+setsid --wait bash /tmp/pochi_cmd.sh &
+SETSID_PID=$!
+echo $SETSID_PID > /tmp/setsid_bash_pochi_cmd.pid
+wait $SETSID_PID 2>/dev/null
+Running command: if [ -f /tmp/setsid_bash_pochi_cmd.pid ]; then
+SETSID_PID=$(cat /tmp/setsid_bash_pochi_cmd.pid)
+kill -TERM -- -$SETSID_PID 2>/dev/null || true
+sleep 2
+kill -9 -- -$SETSID_PID 2>/dev/null || true
+fi
+rm -f ~/.pochi/config.jsonc /tmp/pochi_cmd.sh /tmp/setsid_bash_pochi_cmd.pid
+Command outputs captured
+Collecting main service artifacts
