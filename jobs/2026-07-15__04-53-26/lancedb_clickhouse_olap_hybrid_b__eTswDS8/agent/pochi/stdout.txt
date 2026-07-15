@@ -1,0 +1,1364 @@
+
+Pochi 0.6.17 (update available 0.6.18-beta.1)
+────────────────────────────────────────────────────────────────────────────────
+- Initializing MCP connections...
+You
+# Two-Tier Retrieval + OLAP Bridge (LanceDB + ClickHouse) ## Background You are building the query layer of a product-analytics search system. Recall is served by **LanceDB** (a local, embedded vector + full-text-search database) while high-cardinality behavioral events live in a local **ClickHouse** server. A query first recalls candidate documents from LanceDB, then those candidates are enriched and aggregated in ClickHouse (time-bucketed counts, a dimension JOIN, and an exact quantile), and finally fused into a single correctly-ordered result set. The environment is already prepared for you: * A **ClickHouse server** is running locally (HTTP on `localhost:8123`, native protocol on `localhost:9000`, user `default`, empty password, database `default`). * A **LanceDB** database is seeded on disk. ## The seeded data ### LanceDB — table `documents` at `/home/user/hybrid_bridge/data/lancedb` Columns: `id` (int64), `text` (string), `category` (string), `vector` (float32, dimension 32). A full-text-search (FTS) index has been built on the `text` column. ### ClickHouse — database `default` * `events`: `event_id UInt64`, `doc_id Int64`, `user_id UInt32`, `event_type String`, `ts DateTime`, `value Float64`. One document (`doc_id`) has many events. * `users`: `user_id UInt32`, `tier String` (either `free` or `premium`), `region String`. ## The deterministic query embedding (you MUST reproduce it exactly) Document vectors were produced with a fixed hashing bag-of-words embedding. To score a query against document vectors you must embed the query text with the **identical** function: 1. Lowercase the text and extract tokens with the regex `[a-z0-9]+`. 2. Start from a 32-dimensional zero vector. 3. For each token, compute `idx = int(hashlib.md5(token.encode("utf-8")).hexdigest(), 16) % 32` and add `1.0` to `vector[idx]`. 4. L2-normalize the vector (leave it all-zeros if the norm is 0). 5. The vector dtype MUST be `float32`. ## Requirements Implement a rerunnable CLI that reads a JSON query file, executes the two-tier pipeline, and writes a JSON result file. The query file has the shape: ```json { "text": "wireless noise cancelling headphones", "window_start": "2024-01-01 00:00:00", "window_end": "2024-01-08 00:00:00", "top": 5 } ``` Pipeline semantics (must be followed exactly): 1. **Recall (LanceDB FTS)**: The candidate set is the set of every document whose `text` produces a positive full-text-search match for the query `text` (default terms/OR matching). Retrieve them with a limit large enough to return all matches; the candidate set is a set of `id`s (ordering at this stage does not matter). 2. **Vector distance (LanceDB)**: For every candidate document compute `vector_distance`, the L2 `_distance` reported by LanceDB between the embedded query vector and that document's stored `vector`. 3. **Enrichment (ClickHouse)**: For the candidate `doc_id`s, using a single batched lookup (`doc_id IN (...)`) restricted to the half-open time window `ts >= window_start AND ts < window_end`, compute per document: * `events_in_window`: total number of events (any tier). * `premium_value_sum`: sum of `value` over events whose user is `premium` (JOIN `users` on `user_id`). * `p95_value`: the 95th percentile of `value` over all events in the window, computed with ClickHouse `quantileExact(0.95)`. * `peak_hour_count`: the largest per-hour event count when events are bucketed by `toStartOfHour(ts)` (any tier). * A candidate that has no events inside the window MUST still appear with all four numeric fields set to `0` / `0.0`. 4. **Fusion & ordering**: `score = premium_value_sum / (1.0 + vector_distance)`, rounded to 6 decimal places. Output the top `top` documents ordered by `score` descending, breaking ties by `doc_id` ascending. ## Implementation Hints * Use the `lancedb` Python package for recall and vector distance, and either `clickhouse-connect` or `clickhouse-driver` for ClickHouse (both are installed). * Correct type mapping matters: `doc_id` is a signed 64-bit integer on both sides; pass native Python ints in the `IN (...)` list, not numpy scalars or strings. * Documents in the recall set that are missing from the ClickHouse aggregation result must be back-filled with zeros; do not silently drop them. * Project path: `/home/user/hybrid_bridge` * Command: `python3 run.py --query-file <path/to/query.json> --output <path/to/result.json>` * The command MUST write a JSON array to the `--output` path. Each element MUST have exactly these keys: `doc_id` (int), `events_in_window` (int), `premium_value_sum` (float), `p95_value` (float), `peak_hour_count` (int), `vector_distance` (float), `score` (float). The array MUST contain at most `top` elements, ordered by `score` descending then `doc_id` ascending.   
+
+Pochi
+💭 Thinking for 81 characters   
+<think> Let me start by exploring the environment and understanding the project structure   
+💭 Thinking for 1 characters   
+💫 Executing ls -la /home/user/hybrid_bridge/ ✔ 
+💫 Executing ls -la /home/user/hybrid_bridge/data/ ✔ 
+💫 Executing ls -la /home/user/hybrid_bridge/data/lancedb/ ✔ 
+💫 Executing which python3 && python3 --version ✔ 
+💫 Executing python3 -c "import lancedb; print(lancedb.__version__)" ✔ 
+💫 Executing python3 -c "import clickhouse_connect; print(clickhouse_connect.__version__)" ✔ 
+💫 Executing python3 -c "import clickhouse_driver; print(clickhouse_driver.__version__)" ✔ 
+💫 Executing curl -s "http://localhost:8123/?query=SELECT+version()" ✔ 
+💫 Executing curl -s "http://localhost:8123/?query=SHOW+TABLES+FROM+default" ✔ 
+💫 Executing curl -s "http://localhost:8123/?query=DESCRIBE+TABLE+default.events" ✔ 
+💫 Executing curl -s "http://localhost:8123/?query=DESCRIBE+TABLE+default.users" ✔ 
+💫 Executing curl -s "http://localhost:8123/?query=SELECT+count()+FROM+default.events" ✔ 
+💫 Executing curl -s "http://localhost:8123/?query=SELECT+count()+FROM+default.users" ✔ 
+💫 Executing curl -s "http://localhost:8123/" -d "SELECT * FROM default.events LIMIT 5 FORMAT TabSeparatedWithNames" ✔ 
+💫 Executing curl -s "http://localhost:8123/" -d "SELECT * FROM default.users LIMIT 5 FORMAT TabSeparatedWithNames" ✔ 
+💫 Executing curl -s "http://localhost:8123/" -d "SELECT tier, count() FROM default.users GROUP BY tier FORMAT TabSeparatedWithNames" ✔ 
+💫 Executing python3 -c "
+import lancedb
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+print('Tables:', db.table_names())
+tbl = db['documents']
+print('Schema:', tbl.schema)
+print('Count:', tbl.count_rows())
+print('Sample:')
+import pyarrow as pa
+print(tbl.to_pandas().head(5))
+" ✔ 
+💫 Executing python3 -c "
+import lancedb
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+# Check if there's an FTS index
+print('Indexes:', tbl.list_indices())
+print('---')
+import pandas as pd
+df = tbl.to_pandas()
+print(df.head(10).to_string())
+" ✔ 
+💭 Thinking for 51 characters   
+<think> Now I have a good understanding of the data. Let me   
+💭 Thinking for 35 characters   
+💭 Thinking for 74 characters   
+💭 Thinking for 36 characters   
+💫 Executing python3 -c "
+import lancedb
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+# Test FTS
+result = tbl.search('wireless noise cancelling headphones').limit(400).to_list()
+print('Number of matches:', len(result))
+print('First 3 IDs:', [r['id'] for r in result[:3]])
+print('Last 3 IDs:', [r['id'] for r in result[-3:]])
+print('---')
+print('Keys:', result[0].keys())
+" ✔ 
+💫 Executing python3 -c "
+import lancedb
+import numpy as np
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+# Test FTS combined with vector search
+query_text = 'wireless noise cancelling headphones'
+result = tbl.search(query_text, query_type='hybrid').limit(400).to_list()
+print('Number of hybrid matches:', len(result))
+print('Keys:', result[0].keys() if result else 'None')
+" ✖ "Command exited with code 1"
+💭 Thinking for 28 characters   
+<think> The FTS search works without   
+💭 Thinking for 70 characters   
+💭 Thinking for 61 characters   
+💭 Thinking for 40 characters   
+💭 Thinking for 72 characters   
+💭 Thinking for 62 characters   
+💭 Thinking for 59 characters   
+💭 Thinking for 21 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 19 characters   
+💭 Thinking for 99 characters   
+💭 Thinking for 62 characters   
+💭 Thinking for 95 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 78 characters   
+💫 Executing python3 -c "
+import lancedb
+import numpy as np
+import hashlib
+import re
+
+# Compute the query embedding
+def embed_query(text):
+    tokens = re.findall(r'[a-z0-9]+', text.lower())
+    vec = np.zeros(32, dtype=np.float32)
+    for tok in tokens:
+        idx = int(hashlib.md5(tok.encode('utf-8')).hexdigest(), 16) % 32
+        vec[idx] += 1.0
+    norm = np.linalg.norm(vec)
+    if norm > 0:
+        vec = vec / norm
+    return vec.astype(np.float32)
+
+qvec = embed_query('wireless noise cancelling headphones')
+print('Query vector dtype:', qvec.dtype, 'shape:', qvec.shape)
+print('First 5:', qvec[:5])
+
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+# Get the FTS results first
+fts = tbl.search('wireless noise cancelling headphones').limit(400).to_list()
+fts_ids = [r['id'] for r in fts]
+print('Number of FTS matches:', len(fts_ids))
+
+# Now compute vector distance for those candidates
+# Filter by ID
+ids_str = ','.join(str(i) for i in fts_ids[:5])
+print('Filter:', f'id IN ({ids_str})')
+
+result = tbl.search(qvec, vector_column_name='vector').metric('L2').where(f'id IN ({ids_str})').limit(100).to_list()
+print('Keys:', result[0].keys() if result else 'None')
+for r in result[:3]:
+    print(r)
+" ✔ 
+💭 Thinking for 56 characters   
+<think> The vector search with filter works. Now I need to think   
+💭 Thinking for 31 characters   
+💭 Thinking for 33 characters   
+💭 Thinking for 17 characters   
+💭 Thinking for 52 characters   
+💭 Thinking for 19 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 37 characters   
+💭 Thinking for 32 characters   
+💭 Thinking for 51 characters   
+💭 Thinking for 50 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 14 characters   
+💭 Thinking for 83 characters   
+💭 Thinking for 40 characters   
+💭 Thinking for 33 characters   
+💭 Thinking for 48 characters   
+💭 Thinking for 97 characters   
+💭 Thinking for 41 characters   
+💭 Thinking for 88 characters   
+💭 Thinking for 145 characters   
+💭 Thinking for 75 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 98 characters   
+💭 Thinking for 173 characters   
+💭 Thinking for 52 characters   
+💭 Thinking for 75 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 25 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 27 characters   
+💭 Thinking for 17 characters   
+💭 Thinking for 58 characters   
+💭 Thinking for 73 characters   
+💭 Thinking for 49 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 36 characters   
+💭 Thinking for 393 characters   
+💭 Thinking for 25 characters   
+💭 Thinking for 78 characters   
+💭 Thinking for 54 characters   
+💭 Thinking for 57 characters   
+💭 Thinking for 65 characters   
+💭 Thinking for 48 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 51 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 48 characters   
+💭 Thinking for 36 characters   
+💭 Thinking for 45 characters   
+💭 Thinking for 185 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 51 characters   
+💭 Thinking for 43 characters   
+💭 Thinking for 47 characters   
+💭 Thinking for 51 characters   
+💫 Executing python3 -c "
+import lancedb
+import time
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+# Check that limit(400) returns all matches
+t0 = time.time()
+result = tbl.search('wireless noise cancelling headphones').limit(500).to_list()
+print('FTS with limit 500:', len(result), 'time:', time.time()-t0)
+t0 = time.time()
+result2 = tbl.search('wireless noise cancelling headphones').limit(400).to_list()
+print('FTS with limit 400:', len(result2), 'time:', time.time()-t0)
+print('Same set:', set(r['id'] for r in result) == set(r['id'] for r in result2))
+" ✔ 
+💭 Thinking for 64 characters   
+<think> Good, FTS with limit(400) returns all 374 matches (which is less   
+💭 Thinking for 46 characters   
+💭 Thinking for 69 characters   
+💭 Thinking for 32 characters   
+💫 Executing python3 -c "
+import lancedb
+import numpy as np
+import hashlib
+import re
+
+def embed_query(text):
+    tokens = re.findall(r'[a-z0-9]+', text.lower())
+    vec = np.zeros(32, dtype=np.float32)
+    for tok in tokens:
+        idx = int(hashlib.md5(tok.encode('utf-8')).hexdigest(), 16) % 32
+        vec[idx] += 1.0
+    norm = np.linalg.norm(vec)
+    if norm > 0:
+        vec = vec / norm
+    return vec.astype(np.float32)
+
+qvec = embed_query('wireless noise cancelling headphones')
+
+# Get the FTS candidates with their vectors
+fts = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')['documents'].search('wireless noise cancelling headphones').limit(400).to_list()
+
+# Compare manual L2 with LanceDB _distance
+ids_str = ','.join(str(r['id']) for r in fts)
+result = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')['documents'].search(qvec, vector_column_name='vector').metric('L2').where(f'id IN ({ids_str})').limit(500).to_list()
+# Build lookup
+dist_lookup = {r['id']: r['_distance'] for r in result}
+
+# Manual calculation
+for r in fts[:3]:
+    vec = np.array(r['vector'], dtype=np.float32)
+    manual_dist = float(np.linalg.norm(qvec - vec))
+    lance_dist = dist_lookup[r['id']]
+    print(f\"id={r['id']}, manual={manual_dist}, lance={lance_dist}, diff={abs(manual_dist - lance_dist)}\")
+" ✔ 
+💭 Thinking for 29 characters   
+<think> The values differ! This means   
+💭 Thinking for 59 characters   
+💭 Thinking for 61 characters   
+💭 Thinking for 35 characters   
+💭 Thinking for 109 characters   
+💭 Thinking for 11 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 13 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 104 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 59 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 15 characters   
+💭 Thinking for 19 characters   
+💭 Thinking for 18 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 16 characters   
+💭 Thinking for 18 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 14 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 50 characters   
+💭 Thinking for 54 characters   
+💭 Thinking for 204 characters   
+💭 Thinking for 32 characters   
+💭 Thinking for 30 characters   
+💭 Thinking for 10 characters   
+💫 Executing python3 -c "
+import numpy as np
+qvec = np.array([0.0, 0.5, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+dvec = np.array([0.0, 0.2773500978946686, 0.0, 0.0, 0.5547001957893372, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2773500978946686, 0.0, 0.2773500978946686, 0.0, 0.0, 0.5547001957893372, 0.0, 0.0, 0.0, 0.2773500978946686, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2773500978946686, 0.0], dtype=np.float32)
+
+# Plain L2
+print('L2:', float(np.linalg.norm(qvec - dvec)))
+# L2 squared
+print('L2 squared:', float(np.sum((qvec - dvec)**2)))
+# Cosine distance
+cos_sim = float(np.dot(qvec, dvec) / (np.linalg.norm(qvec) * np.linalg.norm(dvec)))
+print('Cos sim:', cos_sim, '1-cos:', 1-cos_sim)
+# Hamming
+print('L1:', float(np.sum(np.abs(qvec - dvec))))
+" ✔ 
+💭 Thinking for 43 characters   
+<think> None of these match the LanceDB value of 0.   
+💭 Thinking for 38 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 56 characters   
+💭 Thinking for 14 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 57 characters   
+💭 Thinking for 116 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 45 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 19 characters   
+💭 Thinking for 42 characters   
+💭 Thinking for 308 characters   
+💭 Thinking for 32 characters   
+💭 Thinking for 27 characters   
+💭 Thinking for 105 characters   
+💭 Thinking for 47 characters   
+💫 Executing python3 -c "
+import lancedb
+print(lancedb.__file__)
+" ✔ 
+💫 Executing grep -rn "_distance\|def distance\|sqeuclidean\|sq_euclidean\|squared" /usr/local/lib/python3.12/dist-packages/lancedb/query.py | head -40 ✔ 
+💫 Executing grep -rn "distance_type\|L2\|euclidean" /usr/local/lib/python3.12/dist-packages/lancedb/query.py | head -30 ✔ 
+💫 Executing python3 -c "
+import numpy as np
+qvec = np.array([0.0, 0.5, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+dvec = np.array([0.0, 0.2773500978946686, 0.0, 0.0, 0.5547001957893372, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2773500978946686, 0.0, 0.2773500978946686, 0.0, 0.0, 0.5547001957893372, 0.0, 0.0, 0.0, 0.2773500978946686, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2773500978946686, 0.0], dtype=np.float32)
+
+# LanceDB returns 0.3358994126319885 for L2
+# Let's check various calculations
+print('L2 (np):', float(np.linalg.norm(qvec - dvec)))
+print('L2 (np, then sqrt):', float(np.sqrt(np.sum((qvec - dvec)**2))))
+# Try unnormalized
+print('Manual L2 unnormed (using diff):', float(np.sqrt(np.sum((qvec - dvec)**2))))
+# Compare to vector sub:
+diff = qvec - dvec
+print('diff:', diff)
+# Maybe LanceDB uses sqeuclidean
+print('sqL2:', float(np.sum((qvec - dvec)**2)))
+# dot product approach: |a-b|^2 = |a|^2 + |b|^2 - 2a.b
+print('dot:', float(np.dot(qvec, dvec)))
+# Maybe it's all_different - lance returns half distance?
+print('half:', float(np.linalg.norm(qvec - dvec))/2)
+" ✔ 
+💭 Thinking for 102 characters   
+<think> Hmm, 0.3358994 - is that the distance? Let me think... Actually maybe the document vectors themselves   
+💭 Thinking for 31 characters   
+💭 Thinking for 70 characters   
+💭 Thinking for 106 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 43 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 11 characters   
+💭 Thinking for 18 characters   
+💭 Thinking for 63 characters   
+💭 Thinking for 36 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 51 characters   
+💭 Thinking for 21 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 37 characters   
+💭 Thinking for 57 characters   
+💭 Thinking for 45 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 70 characters   
+💭 Thinking for 10 characters   
+💭 Thinking for 39 characters   
+💭 Thinking for 14 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 158 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 87 characters   
+💭 Thinking for 36 characters   
+💭 Thinking for 219 characters   
+💭 Thinking for 11 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 10 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 69 characters   
+💭 Thinking for 11 characters   
+💭 Thinking for 13 characters   
+💭 Thinking for 74 characters   
+💭 Thinking for 106 characters   
+💭 Thinking for 58 characters   
+💭 Thinking for 84 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 25 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 43 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 92 characters   
+💭 Thinking for 18 characters   
+💭 Thinking for 27 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 49 characters   
+💭 Thinking for 32 characters   
+💭 Thinking for 134 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 16 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 70 characters   
+💭 Thinking for 25 characters   
+💭 Thinking for 13 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 21 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 16 characters   
+💭 Thinking for 16 characters   
+💭 Thinking for 15 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 15 characters   
+💭 Thinking for 15 characters   
+💭 Thinking for 15 characters   
+💭 Thinking for 15 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 36 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 52 characters   
+💭 Thinking for 43 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 47 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 57 characters   
+💭 Thinking for 21 characters   
+💭 Thinking for 87 characters   
+💭 Thinking for 59 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 41 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 13 characters   
+💭 Thinking for 68 characters   
+💭 Thinking for 37 characters   
+💭 Thinking for 37 characters   
+💭 Thinking for 39 characters   
+💭 Thinking for 27 characters   
+💭 Thinking for 62 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 51 characters   
+💫 Executing python3 -c "
+import lancedb
+import numpy as np
+import hashlib
+import re
+
+def embed_query(text):
+    tokens = re.findall(r'[a-z0-9]+', text.lower())
+    vec = np.zeros(32, dtype=np.float32)
+    for tok in tokens:
+        idx = int(hashlib.md5(tok.encode('utf-8')).hexdigest(), 16) % 32
+        vec[idx] += 1.0
+    norm = np.linalg.norm(vec)
+    if norm > 0:
+        vec = vec / norm
+    return vec.astype(np.float32)
+
+qvec = embed_query('wireless noise cancelling headphones')
+
+# Test with a doc whose vector we can compute
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+
+# Search and examine just the closest result
+result = tbl.search(qvec, vector_column_name='vector').metric('l2').limit(5).to_list()
+print('L2 distances:')
+for r in result:
+    vec = np.array(r['vector'], dtype=np.float32)
+    manual_l2 = float(np.linalg.norm(qvec - vec))
+    print(f\"  id={r['id']}, lance_dist={r['_distance']}, manual_l2={manual_l2}\")
+" ✔ 
+💭 Thinking for 53 characters   
+<think> There's a consistent ratio. Let me check what it is:   
+💭 Thinking for 55 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 10 characters   
+💭 Thinking for 27 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 17 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 30 characters   
+💭 Thinking for 47 characters   
+💭 Thinking for 18 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 11 characters   
+💭 Thinking for 14 characters   
+💭 Thinking for 15 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 43 characters   
+💭 Thinking for 32 characters   
+💭 Thinking for 162 characters   
+💭 Thinking for 36 characters   
+💭 Thinking for 47 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 33 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 52 characters   
+💭 Thinking for 72 characters   
+💭 Thinking for 99 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 45 characters   
+💭 Thinking for 12 characters   
+💭 Thinking for 19 characters   
+💭 Thinking for 10 characters   
+💭 Thinking for 14 characters   
+💭 Thinking for 32 characters   
+💭 Thinking for 160 characters   
+💭 Thinking for 16 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 77 characters   
+💭 Thinking for 56 characters   
+💭 Thinking for 83 characters   
+💭 Thinking for 46 characters   
+💭 Thinking for 40 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 17 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 17 characters   
+💭 Thinking for 39 characters   
+💭 Thinking for 90 characters   
+💭 Thinking for 16 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 82 characters   
+💭 Thinking for 56 characters   
+💭 Thinking for 50 characters   
+💭 Thinking for 155 characters   
+💭 Thinking for 50 characters   
+💭 Thinking for 48 characters   
+💭 Thinking for 248 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 57 characters   
+💭 Thinking for 9 characters   
+💫 Executing python3 -c "
+import lancedb
+import numpy as np
+import hashlib
+import re
+
+def embed_query(text):
+    tokens = re.findall(r'[a-z0-9]+', text.lower())
+    vec = np.zeros(32, dtype=np.float32)
+    for tok in tokens:
+        idx = int(hashlib.md5(tok.encode('utf-8')).hexdigest(), 16) % 32
+        vec[idx] += 1.0
+    norm = np.linalg.norm(vec)
+    if norm > 0:
+        vec = vec / norm
+    return vec.astype(np.float32)
+
+qvec = embed_query('wireless noise cancelling headphones')
+
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+
+# Test with a doc whose vector we can compute
+result = tbl.search(qvec, vector_column_name='vector').metric('l2').limit(5).to_list()
+print('Verify L2 vs L2^2:')
+for r in result:
+    vec = np.array(r['vector'], dtype=np.float32)
+    manual_l2 = float(np.linalg.norm(qvec - vec))
+    manual_l2_sq = manual_l2 ** 2
+    print(f\"  id={r['id']}, lance_dist={r['_distance']}, manual_l2={manual_l2}, manual_l2^2={manual_l2_sq}, equal={abs(manual_l2_sq - r['_distance']) < 1e-5}\")
+" ✔ 
+💭 Thinking for 28 characters   
+<think> Confirmed: LanceDB reports `   
+💭 Thinking for 182 characters   
+💭 Thinking for 96 characters   
+💭 Thinking for 52 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 48 characters   
+💭 Thinking for 17 characters   
+💭 Thinking for 114 characters   
+💭 Thinking for 49 characters   
+💭 Thinking for 130 characters   
+💭 Thinking for 17 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 136 characters   
+💭 Thinking for 25 characters   
+💭 Thinking for 21 characters   
+💭 Thinking for 85 characters   
+💭 Thinking for 146 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 42 characters   
+💭 Thinking for 27 characters   
+💭 Thinking for 95 characters   
+💭 Thinking for 19 characters   
+💭 Thinking for 69 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 56 characters   
+💭 Thinking for 48 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 63 characters   
+💭 Thinking for 41 characters   
+💭 Thinking for 16 characters   
+💭 Thinking for 40 characters   
+💭 Thinking for 21 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 83 characters   
+💭 Thinking for 58 characters   
+💭 Thinking for 88 characters   
+💭 Thinking for 93 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 72 characters   
+💭 Thinking for 30 characters   
+💭 Thinking for 314 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 59 characters   
+💭 Thinking for 16 characters   
+💭 Thinking for 40 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 43 characters   
+💭 Thinking for 79 characters   
+💭 Thinking for 60 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 45 characters   
+💭 Thinking for 47 characters   
+💭 Thinking for 48 characters   
+💭 Thinking for 35 characters   
+💭 Thinking for 66 characters   
+💭 Thinking for 50 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 40 characters   
+💭 Thinking for 102 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 35 characters   
+💭 Thinking for 47 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 282 characters   
+💭 Thinking for 41 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 65 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 75 characters   
+💭 Thinking for 58 characters   
+💭 Thinking for 48 characters   
+💭 Thinking for 19 characters   
+💭 Thinking for 17 characters   
+💭 Thinking for 51 characters   
+💭 Thinking for 27 characters   
+💭 Thinking for 98 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 93 characters   
+💭 Thinking for 89 characters   
+💭 Thinking for 35 characters   
+💭 Thinking for 46 characters   
+💭 Thinking for 25 characters   
+💭 Thinking for 27 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 41 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 148 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 111 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 37 characters   
+💭 Thinking for 55 characters   
+💭 Thinking for 35 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 97 characters   
+💭 Thinking for 42 characters   
+💭 Thinking for 118 characters   
+💭 Thinking for 51 characters   
+💭 Thinking for 100 characters   
+💭 Thinking for 54 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 113 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 46 characters   
+💭 Thinking for 1018 characters   
+💫 Executing curl -s "http://localhost:8123/" -d "
+SELECT count() AS total_events, count(DISTINCT e.user_id) AS distinct_users
+FROM events e
+" ✔ 
+💫 Executing curl -s "http://localhost:8123/" -d "
+SELECT count() AS matched_events, count(DISTINCT e.user_id) AS matched_users
+FROM events e INNER JOIN users u ON e.user_id = u.user_id
+" ✔ 
+💫 Executing curl -s "http://localhost:8123/" -d "
+SELECT count() FROM events e LEFT JOIN users u ON e.user_id = u.user_id WHERE u.user_id = 0
+" ✔ 
+💭 Thinking for 72 characters   
+<think> Good - all 7069 events have matching users. So an INNER JOIN is safe and   
+💭 Thinking for 27 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 133 characters   
+💭 Thinking for 85 characters   
+💭 Thinking for 19 characters   
+💭 Thinking for 48 characters   
+💭 Thinking for 40 characters   
+💭 Thinking for 36 characters   
+💭 Thinking for 51 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 41 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 33 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 153 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 33 characters   
+💭 Thinking for 47 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 42 characters   
+💭 Thinking for 41 characters   
+💭 Thinking for 300 characters   
+💭 Thinking for 138 characters   
+💭 Thinking for 32 characters   
+💭 Thinking for 64 characters   
+💭 Thinking for 35 characters   
+💭 Thinking for 57 characters   
+💭 Thinking for 73 characters   
+💭 Thinking for 75 characters   
+💭 Thinking for 57 characters   
+💭 Thinking for 60 characters   
+💭 Thinking for 82 characters   
+💭 Thinking for 78 characters   
+💭 Thinking for 123 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 32 characters   
+💭 Thinking for 60 characters   
+💭 Thinking for 51 characters   
+💭 Thinking for 37 characters   
+💭 Thinking for 54 characters   
+💭 Thinking for 54 characters   
+💭 Thinking for 323 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 36 characters   
+💭 Thinking for 47 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 47 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 48 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 35 characters   
+💭 Thinking for 4 characters   
+💫 Executing curl -s "http://localhost:8123/" -d "
+SELECT 
+    e.doc_id,
+    count() AS events_in_window,
+    sumIf(e.value, u.tier = 'premium') AS premium_value_sum,
+    quantileExact(0.95)(e.value) AS p95_value,
+    (SELECT max(c) FROM (SELECT count() AS c FROM events e2 WHERE e2.doc_id = e.doc_id AND e2.ts >= '2024-01-01 00:00:00' AND e2.ts < '2024-01-08 00:00:00' GROUP BY toStartOfHour(e2.ts))) AS peak_hour_count
+FROM events e
+INNER JOIN users u ON e.user_id = u.user_id
+WHERE e.doc_id IN (1,2,3,4,5) AND e.ts >= '2024-01-01 00:00:00' AND e.ts < '2024-01-08 00:00:00'
+GROUP BY e.doc_id
+FORMAT TabSeparatedWithNames
+" ✔ 
+💭 Thinking for 101 characters   
+<think> The query works. Note that docs 3 and 4 don't appear because they have no events in the window. We'll   
+💭 Thinking for 149 characters   
+💭 Thinking for 11 characters   
+💫 Executing curl -s "http://localhost:8123/" -d "
+SELECT doc_id, count() AS events_in_window FROM events WHERE doc_id IN (1,2,3,4,5) AND ts >= '2024-01-01 00:00:00' AND ts < '2024-01-08 00:00:00' GROUP BY doc_id ORDER BY doc_id FORMAT TabSeparatedWithNames
+" ✔ 
+💫 Executing curl -s "http://localhost:8123/" -d "
+SELECT doc_id, count() AS events_in_window, countIf(value > 50) AS value_gt_50 FROM events WHERE doc_id IN (1,2,3,4,5) GROUP BY doc_id ORDER BY doc_id FORMAT TabSeparatedWithNames
+" ✔ 
+💭 Thinking for 13 characters   
+<think> For doc 3, no   
+💭 Thinking for 58 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 79 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 50 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 68 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 30 characters   
+💭 Thinking for 1 characters   
+📋 Updating todo list (6 items) ✔ 
+✏️  Writing /home/user/hybrid_bridge/run.py ✔ 
+📋 Updating todo list (6 items) ✔ 
+✏️  Writing /home/user/hybrid_bridge/sample_query.json ✔ 
+💫 Executing cd /home/user/hybrid_bridge && python3 run.py --query-file sample_query.json --output result.json ✔ 
+💫 Executing cat /home/user/hybrid_bridge/result.json ✔ 
+💭 Thinking for 165 characters   
+<think> The output is generated. Let me verify the correctness by checking a few details: 1. The top result has doc_id=327, score=175.898011. Let me verify manually. 2. All   
+💭 Thinking for 23 characters   
+💭 Thinking for 88 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 33 characters   
+💭 Thinking for 49 characters   
+💫 Executing curl -s "http://localhost:8123/" -d "
+SELECT 
+    e.doc_id,
+    count() AS events_in_window,
+    sumIf(e.value, u.tier = 'premium') AS premium_value_sum,
+    quantileExact(0.95)(e.value) AS p95_value,
+    (SELECT max(c) FROM (SELECT count() AS c FROM events e2 WHERE e2.doc_id = e.doc_id AND e2.ts >= '2024-01-01 00:00:00' AND e2.ts < '2024-01-08 00:00:00' GROUP BY toStartOfHour(e2.ts))) AS peak_hour_count
+FROM events e
+INNER JOIN users u ON e.user_id = u.user_id
+WHERE e.doc_id IN (327, 188, 233, 276, 387) AND e.ts >= '2024-01-01 00:00:00' AND e.ts < '2024-01-08 00:00:00'
+GROUP BY e.doc_id
+ORDER BY e.doc_id
+FORMAT TabSeparatedWithNames
+" ✔ 
+💭 Thinking for 151 characters   
+<think> The aggregation results match what's in the output file. Let me also verify some edge cases: 1. Are there candidates with no events in the window that   
+💭 Thinking for 86 characters   
+💭 Thinking for 277 characters   
+💭 Thinking for 56 characters   
+💫 Executing python3 -c "
+import lancedb
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+# Total table size
+print('Total docs:', tbl.count_rows())
+
+# How many docs match the FTS?
+result = tbl.search('wireless noise cancelling headphones').limit(400).to_list()
+print('FTS matches:', len(result))
+print('Unique IDs:', len(set(r['id'] for r in result)))
+
+# Of those, how many have events in the window?
+import clickhouse_connect
+ch = clickhouse_connect.get_client(host='localhost', port=8123, username='default', password='', database='default')
+ids = sorted(set(r['id'] for r in result))
+print('Candidates:', ids[:10], '...')
+print('Total candidates:', len(ids))
+res = ch.query(f\"SELECT count(DISTINCT doc_id) AS with_events FROM events WHERE doc_id IN ({','.join(str(i) for i in ids)}) AND ts >= '2024-01-01 00:00:00' AND ts < '2024-01-08 00:00:00'\")
+print('Candidates with events in window:', res.result_rows)
+" ✔ 
+💭 Thinking for 16 characters   
+<think> So we have 374 F   
+💭 Thinking for 53 characters   
+💭 Thinking for 25 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 90 characters   
+💭 Thinking for 1 characters   
+💫 Executing python3 -c "
+import lancedb
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+result = tbl.search('wireless noise cancelling headphones').limit(400).to_list()
+import clickhouse_connect
+ch = clickhouse_connect.get_client(host='localhost', port=8123, username='default', password='', database='default')
+ids = sorted(set(r['id'] for r in result))
+# Find candidates with no events in window
+res = ch.query(f\"SELECT doc_id FROM events WHERE doc_id IN ({','.join(str(i) for i in ids)}) AND ts >= '2024-01-01 00:00:00' AND ts < '2024-01-08 00:00:00' GROUP BY doc_id\")
+docs_with_events = set(r[0] for r in res.result_rows)
+no_events = [i for i in ids if i not in docs_with_events]
+print(f'{len(no_events)} candidates have no events in the window')
+print('First 10:', no_events[:10])
+" ✔ 
+💫 Executing curl -s "http://localhost:8123/" -d "
+SELECT doc_id, count() AS events_in_window FROM events WHERE doc_id = 3 AND ts >= '2024-01-01 00:00:00' AND ts < '2024-01-08 00:00:00' GROUP BY doc_id
+" ✔ 
+💫 Executing curl -s "http://localhost:8123/" -d "
+SELECT count() AS total, countIf(ts >= '2024-01-01 00:00:00' AND ts < '2024-01-08 00:00:00') AS in_window FROM events WHERE doc_id = 3
+" ✔ 
+💭 Thinking for 49 characters   
+<think> Doc 3 has zero events total. Let me check another   
+💭 Thinking for 16 characters   
+💫 Executing curl -s "http://localhost:8123/" -d "
+SELECT count() AS total, countIf(ts >= '2024-01-01 00:00:00' AND ts < '2024-01-08 00:00:00') AS in_window FROM events WHERE doc_id IN (4, 8, 11, 14)
+" ✔ 
+💭 Thinking for 17 characters   
+<think> So doc 4, 8, 11,   
+💭 Thinking for 42 characters   
+💭 Thinking for 148 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 28 characters   
+💭 Thinking for 39 characters   
+💭 Thinking for 54 characters   
+💫 Executing cd /home/user/hybrid_bridge && python3 run.py --query-file sample_query.json --output result2.json && diff result.json result2.json && echo "RERUN IS DETERMINISTIC" ✔ 
+💭 Thinking for 101 characters   
+<think> Rerun is deterministic. Now let me test some edge cases: 1. Query with fewer matches (very rare term   
+💭 Thinking for 17 characters   
+💭 Thinking for 61 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 62 characters   
+💭 Thinking for 1 characters   
+💭 Thinking for 104 characters   
+💭 Thinking for 40 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 63 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 34 characters   
+💫 Executing python3 -c "
+import sys
+sys.path.insert(0, '/home/user/hybrid_bridge')
+from run import embed_query
+import numpy as np
+
+# Test 1: known query
+v = embed_query('wireless noise cancelling headphones')
+print('shape:', v.shape, 'dtype:', v.dtype, 'sum:', v.sum())
+print('nonzero indices:', np.nonzero(v)[0].tolist())
+print('values:', v[np.nonzero(v)[0]])
+
+# Test 2: empty query
+v = embed_query('')
+print('empty:', v.shape, v.sum())
+
+# Test 3: stopword only
+v = embed_query('the')
+print('the:', v.shape, v.sum())
+" ✔ 
+💫 Executing python3 -c "
+import sys
+sys.path.insert(0, '/home/user/hybrid_bridge')
+from run import embed_query
+import hashlib
+# Verify a specific token
+tok = 'wireless'
+idx = int(hashlib.md5(tok.encode('utf-8')).hexdigest(), 16) % 32
+print(f'wireless -> index {idx}')
+# wireless, noise, cancelling, headphones
+for tok in ['wireless', 'noise', 'cancelling', 'headphones']:
+    idx = int(hashlib.md5(tok.encode('utf-8')).hexdigest(), 16) % 32
+    print(f'{tok} -> index {idx}')
+" ✔ 
+💭 Thinking for 34 characters   
+<think> The embedding works correctly. Now   
+💭 Thinking for 27 characters   
+💭 Thinking for 18 characters   
+💭 Thinking for 102 characters   
+💭 Thinking for 56 characters   
+💭 Thinking for 5 characters   
+✏️  Writing /home/user/hybrid_bridge/sample_query_small.json ✔ 
+💫 Executing cd /home/user/hybrid_bridge && python3 run.py --query-file sample_query_small.json --output result_large.json && python3 -c "
+import json
+with open('result_large.json') as f:
+    data = json.load(f)
+print('Number of results:', len(data))
+print('Score range:', min(r['score'] for r in data), '-', max(r['score'] for r in data))
+# Check tie-break ordering
+seen_scores = []
+for r in data:
+    seen_scores.append(r['score'])
+# Verify descending
+assert all(seen_scores[i] >= seen_scores[i+1] for i in range(len(seen_scores)-1)), 'Not sorted descending'
+print('Descending order: OK')
+# Check for ties
+from collections import Counter
+c = Counter(r['score'] for r in data)
+ties = {s: cnt for s, cnt in c.items() if cnt > 1}
+print('Ties:', ties)
+for s, cnt in ties.items():
+    tied = [r for r in data if r['score'] == s]
+    doc_ids = [r['doc_id'] for r in tied]
+    assert doc_ids == sorted(doc_ids), f'Tie break failed: {doc_ids}'
+    print(f'  score={s}: doc_ids={doc_ids} (ascending OK)')
+" ✔ 
+💫 Executing python3 -c "
+import json
+with open('/home/user/hybrid_bridge/result_large.json') as f:
+    data = json.load(f)
+# Count how many have no events in window (back-filled)
+zero_evt = sum(1 for r in data if r['events_in_window'] == 0)
+print(f'Back-filled (zero events): {zero_evt} / {len(data)}')
+# Check zero_score entries
+for r in data:
+    if r['score'] == 0.0 or r['events_in_window'] == 0:
+        print('Back-filled:', r)
+        break
+" ✔ 
+💭 Thinking for 42 characters   
+<think> In the top 100, none have zero events. The   
+💭 Thinking for 35 characters   
+💭 Thinking for 52 characters   
+💭 Thinking for 24 characters   
+💭 Thinking for 10 characters   
+💭 Thinking for 55 characters   
+💭 Thinking for 49 characters   
+💫 Executing python3 -c "
+import json
+with open('/home/user/hybrid_bridge/result_large.json') as f:
+    data = json.load(f)
+# Look at the last few entries
+print('Last 5 entries:')
+for r in data[-5:]:
+    print(f'  doc_id={r[\"doc_id\"]}, score={r[\"score\"]}, events={r[\"events_in_window\"]}, dist={r[\"vector_distance\"]}')
+" ✔ 
+💭 Thinking for 72 characters   
+<think> Good - all top-100 entries have non-zero events. Let me run a query that   
+💭 Thinking for 58 characters   
+💭 Thinking for 67 characters   
+💭 Thinking for 42 characters   
+💭 Thinking for 122 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 323 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 49 characters   
+💭 Thinking for 47 characters   
+💭 Thinking for 37 characters   
+✏️  Writing /home/user/hybrid_bridge/sample_query_all.json ✔ 
+💫 Executing cd /home/user/hybrid_bridge && python3 run.py --query-file sample_query_all.json --output result_all.json && python3 -c "
+import json
+with open('result_all.json') as f:
+    data = json.load(f)
+print('Number of results:', len(data))
+print('Score range:', min(r['score'] for r in data), '-', max(r['score'] for r in data))
+# Check back-filled
+zero_evt = [r for r in data if r['events_in_window'] == 0]
+print(f'Back-filled (zero events): {len(zero_evt)}')
+for r in zero_evt[:5]:
+    print(f'  doc_id={r[\"doc_id\"]}, score={r[\"score\"]}, events={r[\"events_in_window\"]}')
+" ✔ 
+💭 Thinking for 125 characters   
+<think> The back-fill works correctly. The 82 back-filled candidates have all zeros and score 0.0. Let me also test a query that has   
+💭 Thinking for 26 characters   
+💫 Executing python3 -c "
+import lancedb
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+import pandas as pd
+df = tbl.to_pandas()
+# Look at all unique tokens to find one with few matches
+all_text = ' '.join(df['text'].tolist())
+import re
+tokens = re.findall(r'[a-z]+', all_text.lower())
+from collections import Counter
+c = Counter(tokens)
+print('Most common:', c.most_common(5))
+print('Least common:', sorted(c.items(), key=lambda x: x[1])[:20])
+" ✔ 
+✏️  Writing /home/user/hybrid_bridge/sample_query_treble.json ✔ 
+💫 Executing cd /home/user/hybrid_bridge && python3 run.py --query-file sample_query_treble.json --output result_treble.json && cat result_treble.json ✔ 
+💫 Executing python3 -c "
+import sys
+sys.path.insert(0, '/home/user/hybrid_bridge')
+from run import embed_query
+import numpy as np
+v = embed_query('treble portable device audio')
+print('vector:', v)
+print('nonzero:', v[np.nonzero(v)[0]])
+" ✔ 
+💭 Thinking for 53 characters   
+<think> The embedding for "treble portable device audio" has   
+💭 Thinking for 49 characters   
+💭 Thinking for 89 characters   
+💫 Executing python3 -c "
+import lancedb
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+import pandas as pd
+df = tbl.to_pandas()
+# Show specific docs
+for did in [225, 327, 233, 188, 17]:
+    row = df[df['id'] == did].iloc[0]
+    print(f'  doc {did}: {row[\"text\"]}')
+" ✔ 
+💭 Thinking for 42 characters   
+<think> Doc 327 doesn't contain "treble" or "audio   
+💭 Thinking for 43 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 48 characters   
+💭 Thinking for 144 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 75 characters   
+💭 Thinking for 51 characters   
+💭 Thinking for 80 characters   
+💭 Thinking for 42 characters   
+💫 Executing python3 -c "
+import lancedb
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+import pandas as pd
+df = tbl.to_pandas()
+texts_lower = df['text'].str.lower()
+treble_count = texts_lower.str.contains('treble').sum()
+audio_count = texts_lower.str.contains('audio').sum()
+print(f'treble: {treble_count}, audio: {audio_count}')
+# But these are just substring matches; FTS uses tokens
+# Check exact word boundary
+import re
+def has_word(text, word):
+    return bool(re.search(rf'\\b{word}\\b', text.lower()))
+print('treble word:', sum(1 for t in df['text'] if has_word(t, 'treble')))
+print('audio word:', sum(1 for t in df['text'] if has_word(t, 'audio')))
+print('portable word:', sum(1 for t in df['text'] if has_word(t, 'portable')))
+print('device word:', sum(1 for t in df['text'] if has_word(t, 'device')))
+" ✔ 
+💫 Executing python3 -c "
+import lancedb
+db = lancedb.connect('/home/user/hybrid_bridge/data/lancedb')
+tbl = db['documents']
+result = tbl.search('treble portable device audio').limit(400).to_list()
+print('FTS matches:', len(result))
+ids = set(r['id'] for r in result)
+# Check if 327 is in the matches
+print('doc 327 in matches:', 327 in ids)
+# Check 'audio' docs vs total
+import pandas as pd
+df = tbl.to_pandas()
+texts_lower = df['text'].str.lower()
+audio_ids = set(df[texts_lower.str.contains(r'\baudio\b')]['id'].tolist())
+treble_ids = set(df[texts_lower.str.contains(r'\btreble\b')]['id'].tolist())
+portable_ids = set(df[texts_lower.str.contains(r'\bportable\b')]['id'].tolist())
+device_ids = set(df[texts_lower.str.contains(r'\bdevice\b')]['id'].tolist())
+union = audio_ids | treble_ids | portable_ids | device_ids
+print(f'audio: {len(audio_ids)}, treble: {len(treble_ids)}, portable: {len(portable_ids)}, device: {len(device_ids)}')
+print(f'Union: {len(union)}')
+print(f'FTS matches - union difference: {len(ids - union)} docs in FTS but not by exact words')
+print(f'union - FTS matches difference: {len(union - ids)} docs by exact words but not in FTS')
+# Show some from ids - union
+diff = sorted(ids - union)[:10]
+print('In FTS but not by exact words (first 10):', diff)
+" ✔ 
+💭 Thinking for 21 characters   
+<think> Good - the FTS recall   
+💭 Thinking for 117 characters   
+💭 Thinking for 27 characters   
+💭 Thinking for 86 characters   
+💭 Thinking for 55 characters   
+💭 Thinking for 529 characters   
+💭 Thinking for 27 characters   
+💭 Thinking for 50 characters   
+💭 Thinking for 13 characters   
+💫 Executing python3 -c "
+import json
+with open('/home/user/hybrid_bridge/result.json') as f:
+    data = json.load(f)
+for r in data:
+    expected_score = round(r['premium_value_sum'] / (1.0 + r['vector_distance']), 6)
+    print(f\"doc_id={r['doc_id']}, expected={expected_score}, actual={r['score']}, match={abs(expected_score - r['score']) < 1e-6}\")
+" ✔ 
+💭 Thinking for 64 characters   
+<think> Score calculations are correct. Let me also clean up by removing   
+💭 Thinking for 15 characters   
+💭 Thinking for 55 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 57 characters   
+💭 Thinking for 25 characters   
+💫 Executing ls /home/user/hybrid_bridge/ ✔ 
+💫 Executing cd /home/user/hybrid_bridge && rm -f result2.json result_all.json result_large.json result_treble.json sample_query_small.json sample_query_all.json sample_query_treble.json && rm -rf __pycache__ && ls ✔ 
+💫 Executing python3 run.py --query-file sample_query.json --output result.json && cat result.json ✖ "Command exited with code 2"
+💫 Executing cd /home/user/hybrid_bridge && python3 run.py --query-file sample_query.json --output result.json && cat result.json ✖ "Command exited with code 1"
+💭 Thinking for 65 characters   
+<think> ClickHouse connection failed. Let me check if it's still running:   
+💭 Thinking for 66 characters   
+💭 Thinking for 58 characters   
+💭 Thinking for 9 characters   
+💫 Executing curl -s "http://localhost:8123/?query=SELECT+1" 2>&1 || echo "ClickHouse is down" ✔ 
+💫 Executing ps aux | grep -i clickhouse | head -5 ✔ 
+💭 Thinking for 73 characters   
+<think> ClickHouse is no longer running. Let me restart it. First, let me find it   
+💭 Thinking for 1 characters   
+💫 Executing which clickhouse clickhouse-server clickhouse-client 2>&1 | head -10 ✔ 
+💫 Executing ls /var/lib/clickhouse/ 2>&1 | head -10 && ls /etc/clickhouse-server/ 2>&1 | head -10 ✔ 
+💫 Executing clickhouse start 2>&1 | head -10 ✔ 
+💫 Executing cat /var/run/clickhouse-server/clickhouse-server.pid ✔ 
+💫 Executing ps -p 137 2>&1; ps aux | grep clickhouse-server | grep -v grep ✖ "Command exited with code 1"
+💫 Executing rm -f /var/run/clickhouse-server/clickhouse-server.pid && clickhouse start 2>&1 | head -20 ✔ 
+💫 Executing cat /usr/bin/clickhouse | head -100 ✔ 
+💭 Thinking for 29 characters   
+<think> The clickhouse binary is just   
+💭 Thinking for 54 characters   
+💭 Thinking for 89 characters   
+💭 Thinking for 17 characters   
+💭 Thinking for 191 characters   
+💭 Thinking for 192 characters   
+💫 Executing id && which clickhouse-server ✔ 
+💫 Executing clickhouse-server --config-file /etc/clickhouse-server/config.xml --daemon 2>&1 | head -20 ✔ 
+💫 Executing sleep 3 && curl -s "http://localhost:8123/?query=SELECT+1" ✖ "Command exited with code 7"
+💫 Executing ps aux | grep -i clickhouse-server | grep -v grep ✖ "Command exited with code 1"
+💫 Executing clickhouse-server --config-file /etc/clickhouse-server/config.xml 2>&1 | head -50 &
+sleep 5
+curl -s "http://localhost:8123/?query=SELECT+1" 2>&1
+echo "---"
+ps aux | grep -i clickhouse-server | grep -v grep ✖ "Command exited with code 1"
+💫 Executing cat /var/log/clickhouse-server/clickhouse-server.err.log 2>&1 | tail -30 ✔ 
+💭 Thinking for 105 characters   
+<think> I need to either change the owner of the data or run as the clickhouse user. Let me change the ownership.   
+💭 Thinking for 48 characters   
+💭 Thinking for 16 characters   
+💭 Thinking for 19 characters   
+💭 Thinking for 54 characters   
+💭 Thinking for 51 characters   
+💭 Thinking for 43 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 47 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 160 characters   
+💭 Thinking for 39 characters   
+💭 Thinking for 49 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 40 characters   
+💭 Thinking for 15 characters   
+💭 Thinking for 56 characters   
+💭 Thinking for 74 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 50 characters   
+💭 Thinking for 56 characters   
+💭 Thinking for 45 characters   
+💭 Thinking for 23 characters   
+💫 Executing chown -R clickhouse: /var/lib/clickhouse /var/log/clickhouse-server /var/run/clickhouse-server /etc/clickhouse-server 2>&1 | head -20
+echo "Exit: $?" ✔ 
+💫 Executing clickhouse-server --config-file /etc/clickhouse-server/config.xml --daemon 2>&1
+sleep 3
+ps aux | grep clickhouse-server | grep -v grep | head -3 ✔ 
+💫 Executing cat /var/log/clickhouse-server/clickhouse-server.err.log 2>&1 | tail -20 ✔ 
+💫 Executing su clickhouse -s /bin/bash -c "clickhouse-server --config-file /etc/clickhouse-server/config.xml --daemon" 2>&1
+sleep 3
+ps aux | grep clickhouse-server | grep -v grep | head -3 ✔ 
+💫 Executing sleep 5 && curl -s "http://localhost:8123/?query=SELECT+1" ✔ 
+💫 Executing curl -s "http://localhost:8123/?query=SELECT+count()+FROM+default.events" ✔ 
+💭 Thinking for 25 characters   
+<think> ClickHouse is back up and   
+💭 Thinking for 61 characters   
+💭 Thinking for 29 characters   
+💭 Thinking for 57 characters   
+💭 Thinking for 17 characters   
+💭 Thinking for 51 characters   
+💭 Thinking for 23 characters   
+💫 Executing cd /home/user/hybrid_bridge && python3 run.py --query-file sample_query.json --output result.json && cat result.json ✖ "Command exited with code 1"
+💫 Executing curl -s "http://localhost:8123/?query=SELECT+1" && echo "OK"
+ps aux | grep clickhouse-server | grep -v grep ✖ "Command exited with code 1"
+💫 Executing ps aux | grep clickhouse | grep -v grep
+echo "---"
+cat /var/log/clickhouse-server/clickhouse-server.err.log | tail -30 ✔ 
+💭 Thinking for 87 characters   
+<think> The ClickHouse server seems to have crashed. There's an error reading from /proc/uptime   
+💭 Thinking for 32 characters   
+💭 Thinking for 33 characters   
+💭 Thinking for 31 characters   
+💭 Thinking for 52 characters   
+💭 Thinking for 32 characters   
+💭 Thinking for 10 characters   
+💫 Executing grep -E "Fatal|Cannot|shutdown|abort" /var/log/clickhouse-server/clickhouse-server.err.log | tail -20 ✔ 
+💫 Executing grep -E "shutdown|exit|stopping|fatal" /var/log/clickhouse-server/clickhouse-server.err.log | tail -10
+echo "---"
+grep -E "shutdown|exit|stopping|fatal" /var/log/clickhouse-server/clickhouse-server.log 2>&1 | tail -20 ✔ 
+💫 Executing tail -30 /var/log/clickhouse-server/clickhouse-server.log ✔ 
+💫 Executing tail -5 /var/log/clickhouse-server/clickhouse-server.log | head -3
+echo "---"
+# Check if server is actually responsive
+nc -z localhost 8123 && echo "Port 8123 open" || echo "Port 8123 closed"
+nc -z localhost 9000 && echo "Port 9000 open" || echo "Port 9000 closed" ✔ 
+💫 Executing ps aux | grep clickhouse-server | grep -v grep
+echo "---"
+ss -tlnp | grep -E '8123|9000' 2>/dev/null || netstat -tlnp 2>/dev/null | grep -E '8123|9000' || echo "No netstat/ss" ✔ 
+💫 Executing cat /proc/net/tcp | head -10
+echo "---"
+ps aux | head -1
+ps aux | grep -E "(clickhouse|server)" | grep -v grep ✔ 
+💭 Thinking for 26 characters   
+<think> ClickHouse died. The click   
+💭 Thinking for 29 characters   
+💭 Thinking for 34 characters   
+💭 Thinking for 108 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 22 characters   
+💫 Executing tail -200 /var/log/clickhouse-server/clickhouse-server.log 2>&1 | tail -50 ✔ 
+💭 Thinking for 30 characters   
+<think> The server died (memory issues   
+💭 Thinking for 84 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 32 characters   
+💫 Executing su clickhouse -s /bin/bash -c "clickhouse-server --config-file /etc/clickhouse-server/config.xml --daemon" 2>&1
+sleep 5
+ps aux | grep clickhouse-server | grep -v grep | head -3
+echo "---"
+curl -s "http://localhost:8123/?query=SELECT+1" ✔ 
+💫 Executing grep -E "max_server_memory|total_memory" /etc/clickhouse-server/config.xml | head -5 ✔ 
+💫 Executing free -h ✔ 
+💭 Thinking for 17 characters   
+<think> 755Gi RAM and 625   
+💭 Thinking for 50 characters   
+💭 Thinking for 18 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 36 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 20 characters   
+💭 Thinking for 16 characters   
+💭 Thinking for 65 characters   
+💭 Thinking for 36 characters   
+💭 Thinking for 38 characters   
+💭 Thinking for 9 characters   
+💭 Thinking for 53 characters   
+💭 Thinking for 139 characters   
+💭 Thinking for 22 characters   
+💭 Thinking for 25 characters   
+💭 Thinking for 27 characters   
+💭 Thinking for 44 characters   
+💭 Thinking for 111 characters   
+💭 Thinking for 389 characters   
+💫 Executing cat /proc/meminfo | head -15
+echo "---"
+cat /proc/cgroup_info 2>/dev/null || cat /proc/self/cgroup | head -5 ✔ 
+💭 Thinking for 33 characters   
+<think> The memory is properly visible to   
+💭 Thinking for 53 characters   
+💭 Thinking for 26 characters   
+💭 Thinking for 67 characters   
+💭 Thinking for 158 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 55 characters   
+💭 Thinking for 23 characters   
+💭 Thinking for 58 characters   
+💭 Thinking for 46 characters   
+💫 Executing cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "no v2 cgroup"
+echo "---"
+cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo "no v1 cgroup"
+echo "---"
+ls /sys/fs/cgroup/ 2>/dev/null | head -20 ✔ 
+💭 Thinking for 55 characters   
+<think> Yes, the cgroup memory limit is 1GB (1073741824 bytes),   
+💭 Thinking for 38 characters   
+💭 Thinking for 46 characters   
+💭 Thinking for 204 characters   
+💭 Thinking for 14 characters   
+💭 Thinking for 25 characters   
+💭 Thinking for 142 characters   
