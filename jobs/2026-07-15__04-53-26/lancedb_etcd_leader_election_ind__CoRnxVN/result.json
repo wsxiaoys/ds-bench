@@ -1,0 +1,128 @@
+{
+    "id": "264a7e9f-6b77-4dc1-b9dd-be95c021b855",
+    "task_name": "lancedb_etcd_leader_election_indexer_py",
+    "trial_name": "lancedb_etcd_leader_election_ind__CoRnxVN",
+    "trial_uri": "file:///home/kw/code/zealt/pochi-harbor/jobs/2026-07-15__04-53-26/lancedb_etcd_leader_election_ind__CoRnxVN",
+    "task_id": {
+        "path": "/home/kw/code/zealt/lancedb-benchmark/scratchpad/pending-tasks/etcd_leader_election_indexer_py"
+    },
+    "source": "pending-tasks",
+    "task_checksum": "5b1574e8fb39352e308509246782b28dc36d0251425c15c46de85f4bd047ae34",
+    "config": {
+        "task": {
+            "path": "/home/kw/code/zealt/lancedb-benchmark/scratchpad/pending-tasks/etcd_leader_election_indexer_py",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "pending-tasks"
+        },
+        "trial_name": "lancedb_etcd_leader_election_ind__CoRnxVN",
+        "trials_dir": "jobs/2026-07-15__04-53-26",
+        "install_only": false,
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": null,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": null,
+            "import_path": "agents.pochi:Pochi",
+            "model_name": "minimax/MiniMax-M3",
+            "n_concurrent": null,
+            "concurrency_group": null,
+            "skills": [],
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "extra_allowed_hosts": [],
+            "kwargs": {},
+            "env": {
+                "POCHI_API_KEY": "${POCHI_API_KEY}",
+                "MINIMAX_API_KEY": "${MINIMAX_API_KEY}"
+            },
+            "mcp_servers": []
+        },
+        "environment": {
+            "type": "daytona",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "cpu_enforcement_policy": "auto",
+            "memory_enforcement_policy": "auto",
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "override_tpu": null,
+            "mounts": [
+                {
+                    "type": "bind",
+                    "source": "test_initial_state.py",
+                    "target": "/bootstrap/test_initial_state.py"
+                }
+            ],
+            "extra_docker_compose": [],
+            "kwargs": {},
+            "extra_allowed_hosts": []
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "artifacts": [
+            "/home/user"
+        ],
+        "extra_instruction_paths": [],
+        "job_id": "4d431b94-a7ee-4b6e-aa47-d52b945a2d2f"
+    },
+    "agent_info": {
+        "name": "pochi",
+        "version": "0.6.17",
+        "model_info": {
+            "name": "MiniMax-M3",
+            "provider": "minimax"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": 0,
+        "n_cache_tokens": 0,
+        "n_output_tokens": 366041,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        }
+    },
+    "exception_info": {
+        "exception_type": "NetworkConnectionError",
+        "exception_message": "Command failed (exit 1): cat > /tmp/pochi_cmd.sh << 'CMD_EOF'\nset -o pipefail\npochi --model minimax/MiniMax-M3 --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl --experimental-stream-trajectory-strip-duplicates > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'\n# Distributed LanceDB Indexer Coordinator with etcd Leader Election\n\n## Background\nA fleet of identical worker processes shares one LanceDB dataset. Table maintenance (compaction via `optimize()` plus vector-index rebuilds) is expensive and MUST be performed by exactly one worker at a time — otherwise workers race, waste resources, and can corrupt the picture of index health. You will build a coordinator that uses a **local etcd v3** instance for leader election so that only the elected leader runs maintenance while every follower stays idle. When a leader loses its lease (graceful step-down or crash), a new leader must take over without ever double-running maintenance.\n\netcd v3 is already installed and running locally in this environment. It exposes the gRPC protocol and its JSON gRPC-gateway on `http://127.0.0.1:2379` (e.g. `POST /v3/lease/grant`, `/v3/lease/keepalive`, `/v3/lease/revoke`, `/v3/kv/txn`, `/v3/kv/range`, `/v3/kv/put`, `/v3/kv/deleterange`). You may talk to etcd with any client you like; the pure-HTTP/JSON gateway with the `requests` library is the most dependency-light option (remember `key`/`value` fields are base64-encoded in JSON). Do NOT depend on any remote/cloud service — everything must run against the local etcd and the local LanceDB dataset.\n\n## Requirements\n- Implement lease-based leader election on top of etcd: a candidate grants a lease with a bounded TTL, then attempts an atomic compare-and-create transaction on a single election key bound to that lease. Only the winner becomes leader; the lease is kept alive automatically for as long as the leader is healthy.\n- Provide a monotonically increasing **fencing token** for each leadership term so that a stale leader can be detected and rejected.\n- Only the current leader may run LanceDB maintenance. Maintenance compacts fragments and rebuilds/updates the vector index on the shared table, must be idempotent (no rows lost), and must be fenced so a leader that has already lost leadership cannot run it.\n- Support graceful failover (leader steps down and a follower takes over immediately) and ungraceful failover (leader crashes; the lease expires after its TTL and a follower then takes over). A new term's fencing token must always be strictly greater than every previous term's.\n\n## Implementation Hints\n- Use the etcd lease + a single election key with a create-revision (`CREATE`) transaction to guarantee single ownership; the election key's create-revision is a natural, globally-monotonic fencing token.\n- Keep the lease alive from a background thread; on graceful resign revoke the lease and remove the key, on crash simply stop refreshing the lease and let it expire.\n- Fence maintenance by re-checking, against etcd, that you still own the election key with your own term's token before touching the table.\n- For the LanceDB side, run `table.optimize()` (it compacts small fragments and updates the vector index); read index health with `table.index_stats(<index_name>)` and versions with `table.list_versions()`.\n- Project path: /home/user/myproject\n- The coordinator must live in `/home/user/myproject/solution.py` and expose a class `IndexerCoordinator` with this constructor and defaults:\n  `IndexerCoordinator(worker_id: str, *, election_key: str = \"/lancedb/indexer/leader\", ttl: int = 3, db_uri: str = \"/home/user/myproject/lancedb\", table_name: str = \"documents\", etcd_url: str = \"http://127.0.0.1:2379\")`.\n- Required methods and their exact behavior:\n  - `acquire() -> bool`: non-blocking attempt to become leader; returns `True` only if this instance won leadership, `False` otherwise. On failure it must not leak a lease.\n  - `is_leader() -> bool`: `True` only while this instance currently holds leadership.\n  - `fencing_token() -> int | None`: the integer token for this instance's current leadership term, or `None` if it does not currently hold leadership. Tokens are strictly increasing across successive terms.\n  - `run_maintenance() -> dict`: if this instance is not the current leader, raise `PermissionError`; otherwise run maintenance on the shared table and return a dict with exactly the keys `worker_id`, `fencing_token`, `version_before`, `version_after`, `unindexed_before`, `unindexed_after` (worker_id is a str, the rest are ints).\n  - `resign() -> None`: graceful step-down (revoke lease and delete the election key) so a follower can win immediately.\n  - `simulate_crash() -> None`: stop refreshing the lease WITHOUT revoking it (models a crashed/partitioned leader); leadership must become available only after the TTL elapses.\n  - `close() -> None`: release local resources/threads.\n- The shared LanceDB table already exists at `db_uri`/`table_name` and is seeded with a trained vector index plus a batch of freshly-appended, not-yet-indexed rows so that maintenance has real work to do. Maintenance must operate on that exact table.\n\n\nEOF\nCMD_EOF\nsetsid --wait bash /tmp/pochi_cmd.sh &\nSETSID_PID=$!\necho $SETSID_PID > /tmp/setsid_bash_pochi_cmd.pid\nwait $SETSID_PID 2>/dev/null\nstdout: \nPochi 0.6.17 (update available 0.6.18-beta.1)\n────────────────────────────────────────────────────────────────────────────────\n- Initializing MCP connections...\nYou\n# Distributed LanceDB Indexer Coordinator with etcd Leader Election ## Background A fleet of identical worker processes shares one LanceDB dataset. Table maintenance (compaction via `optimize()` plus vector-index rebuilds) is expensive and MUST be performed by exactly one worker at a time — otherwise workers race, waste resources, and can corrupt the picture of index health. You will build a coordinator that uses a **local etcd v3** instance for leader election so that only the elected leader runs maintenance while every follower stays idle. When a leader loses its lease (graceful step-down or crash), a new leader must take over without ever double-running maintenance. etcd v3 is already installed and running locally in this environment. It exposes the gRPC protocol and its JSON gRPC-gateway on `http://127.0.0.1:2379` (e.g ... [truncated]\nstderr: \u001b[37m2026-07-14 20:53:42.758\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[39m\u001b[0m\u001b[0m\t\u001b[37m\u001b[39m\u001b[0m\u001b[0m\u001b[1m\u001b[37m\tPochi\u001b[39m\u001b[22m\u001b[0m\u001b[0m\tpochi v0.6.17\n\u001b[37m2026-07-14 20:53:42.764\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[39m\u001b[0m\u001b[0m\t\u001b[37mnative:7\u001b[39m\u001b[0m\u001b[0m\u001b[1m\u001b[37m\tPochiConfigManager\u001b[39m\u001b[22m\u001b[0m\u001b[0m\tadd workspace config: /root/.pochi/config.jsonc\n\u001b[37m2026-07-14 20:53:43.013\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[39m\u001b[0m\u001b[0m\t\u001b[37mnative:7\u001b[39m\u001b[0m\u001b[0m\u001b[1m\u001b[37m\tBuiltInBundle\u001b[39m\u001b[22m\u001b[0m\u001b[0m\tMaterializing 16 built-in files to /tmp/pochi-builtin-2e56a4fb1f88f581\n\u001b[37m2026-07-14 20:53:43.200\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[39m\u001b[0m\u001b[0m\t\u001b[37m/$bunfs/pochi:524760\u001b[39m\u001b[0m\u001b[0m\u001b[1m\u001b[37m\tloadAgents\u001b[39m\u001b[22m\u001b[0m\u001b[0m\tLoaded 6 custom agents (6 valid, 0 invalid)\n\u001b[37m2026-07-14 20:53:43.242\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[39m\u001b[0m\u001b[0m\t\u001b[37m/$bunfs/pochi:524761\u001b[39m\u001b[0m\u001b[0m\u001b[1m\u001b[37m\tloadSkills\u001b[39m\u001b[22m\u001b[0m\u001b[0m\tLoaded 3 skills (3 valid, 0 invalid)\n\u001b[37m2026-07-14 20:53:43.320\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[3 ... [truncated]",
+        "exception_traceback": "Traceback (most recent call last):\n  File \"/home/kw/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/trial/single_step.py\", line 77, in _run_agent\n    await self._run_agent_phase(\n  File \"/home/kw/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/trial/trial.py\", line 442, in _run_agent_phase\n    await asyncio.wait_for(\n  File \"/opt/miniconda3/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/kw/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py\", line 105, in wrapper\n    return await fn(self, instruction, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/kw/code/zealt/pochi-harbor/agents/pochi.py\", line 230, in run\n    await self.exec_as_agent(\n  File \"/home/kw/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py\", line 477, in exec_as_agent\n    return await self._exec(\n           ^^^^^^^^^^^^^^^^^\n  File \"/home/kw/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py\", line 444, in _exec\n    raise self._classify_exec_error(command, result)\nharbor.agents.installed.base.NetworkConnectionError: Command failed (exit 1): cat > /tmp/pochi_cmd.sh << 'CMD_EOF'\nset -o pipefail\npochi --model minimax/MiniMax-M3 --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl --experimental-stream-trajectory-strip-duplicates > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'\n# Distributed LanceDB Indexer Coordinator with etcd Leader Election\n\n## Background\nA fleet of identical worker processes shares one LanceDB dataset. Table maintenance (compaction via `optimize()` plus vector-index rebuilds) is expensive and MUST be performed by exactly one worker at a time — otherwise workers race, waste resources, and can corrupt the picture of index health. You will build a coordinator that uses a **local etcd v3** instance for leader election so that only the elected leader runs maintenance while every follower stays idle. When a leader loses its lease (graceful step-down or crash), a new leader must take over without ever double-running maintenance.\n\netcd v3 is already installed and running locally in this environment. It exposes the gRPC protocol and its JSON gRPC-gateway on `http://127.0.0.1:2379` (e.g. `POST /v3/lease/grant`, `/v3/lease/keepalive`, `/v3/lease/revoke`, `/v3/kv/txn`, `/v3/kv/range`, `/v3/kv/put`, `/v3/kv/deleterange`). You may talk to etcd with any client you like; the pure-HTTP/JSON gateway with the `requests` library is the most dependency-light option (remember `key`/`value` fields are base64-encoded in JSON). Do NOT depend on any remote/cloud service — everything must run against the local etcd and the local LanceDB dataset.\n\n## Requirements\n- Implement lease-based leader election on top of etcd: a candidate grants a lease with a bounded TTL, then attempts an atomic compare-and-create transaction on a single election key bound to that lease. Only the winner becomes leader; the lease is kept alive automatically for as long as the leader is healthy.\n- Provide a monotonically increasing **fencing token** for each leadership term so that a stale leader can be detected and rejected.\n- Only the current leader may run LanceDB maintenance. Maintenance compacts fragments and rebuilds/updates the vector index on the shared table, must be idempotent (no rows lost), and must be fenced so a leader that has already lost leadership cannot run it.\n- Support graceful failover (leader steps down and a follower takes over immediately) and ungraceful failover (leader crashes; the lease expires after its TTL and a follower then takes over). A new term's fencing token must always be strictly greater than every previous term's.\n\n## Implementation Hints\n- Use the etcd lease + a single election key with a create-revision (`CREATE`) transaction to guarantee single ownership; the election key's create-revision is a natural, globally-monotonic fencing token.\n- Keep the lease alive from a background thread; on graceful resign revoke the lease and remove the key, on crash simply stop refreshing the lease and let it expire.\n- Fence maintenance by re-checking, against etcd, that you still own the election key with your own term's token before touching the table.\n- For the LanceDB side, run `table.optimize()` (it compacts small fragments and updates the vector index); read index health with `table.index_stats(<index_name>)` and versions with `table.list_versions()`.\n- Project path: /home/user/myproject\n- The coordinator must live in `/home/user/myproject/solution.py` and expose a class `IndexerCoordinator` with this constructor and defaults:\n  `IndexerCoordinator(worker_id: str, *, election_key: str = \"/lancedb/indexer/leader\", ttl: int = 3, db_uri: str = \"/home/user/myproject/lancedb\", table_name: str = \"documents\", etcd_url: str = \"http://127.0.0.1:2379\")`.\n- Required methods and their exact behavior:\n  - `acquire() -> bool`: non-blocking attempt to become leader; returns `True` only if this instance won leadership, `False` otherwise. On failure it must not leak a lease.\n  - `is_leader() -> bool`: `True` only while this instance currently holds leadership.\n  - `fencing_token() -> int | None`: the integer token for this instance's current leadership term, or `None` if it does not currently hold leadership. Tokens are strictly increasing across successive terms.\n  - `run_maintenance() -> dict`: if this instance is not the current leader, raise `PermissionError`; otherwise run maintenance on the shared table and return a dict with exactly the keys `worker_id`, `fencing_token`, `version_before`, `version_after`, `unindexed_before`, `unindexed_after` (worker_id is a str, the rest are ints).\n  - `resign() -> None`: graceful step-down (revoke lease and delete the election key) so a follower can win immediately.\n  - `simulate_crash() -> None`: stop refreshing the lease WITHOUT revoking it (models a crashed/partitioned leader); leadership must become available only after the TTL elapses.\n  - `close() -> None`: release local resources/threads.\n- The shared LanceDB table already exists at `db_uri`/`table_name` and is seeded with a trained vector index plus a batch of freshly-appended, not-yet-indexed rows so that maintenance has real work to do. Maintenance must operate on that exact table.\n\n\nEOF\nCMD_EOF\nsetsid --wait bash /tmp/pochi_cmd.sh &\nSETSID_PID=$!\necho $SETSID_PID > /tmp/setsid_bash_pochi_cmd.pid\nwait $SETSID_PID 2>/dev/null\nstdout: \nPochi 0.6.17 (update available 0.6.18-beta.1)\n────────────────────────────────────────────────────────────────────────────────\n- Initializing MCP connections...\nYou\n# Distributed LanceDB Indexer Coordinator with etcd Leader Election ## Background A fleet of identical worker processes shares one LanceDB dataset. Table maintenance (compaction via `optimize()` plus vector-index rebuilds) is expensive and MUST be performed by exactly one worker at a time — otherwise workers race, waste resources, and can corrupt the picture of index health. You will build a coordinator that uses a **local etcd v3** instance for leader election so that only the elected leader runs maintenance while every follower stays idle. When a leader loses its lease (graceful step-down or crash), a new leader must take over without ever double-running maintenance. etcd v3 is already installed and running locally in this environment. It exposes the gRPC protocol and its JSON gRPC-gateway on `http://127.0.0.1:2379` (e.g ... [truncated]\nstderr: \u001b[37m2026-07-14 20:53:42.758\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[39m\u001b[0m\u001b[0m\t\u001b[37m\u001b[39m\u001b[0m\u001b[0m\u001b[1m\u001b[37m\tPochi\u001b[39m\u001b[22m\u001b[0m\u001b[0m\tpochi v0.6.17\n\u001b[37m2026-07-14 20:53:42.764\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[39m\u001b[0m\u001b[0m\t\u001b[37mnative:7\u001b[39m\u001b[0m\u001b[0m\u001b[1m\u001b[37m\tPochiConfigManager\u001b[39m\u001b[22m\u001b[0m\u001b[0m\tadd workspace config: /root/.pochi/config.jsonc\n\u001b[37m2026-07-14 20:53:43.013\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[39m\u001b[0m\u001b[0m\t\u001b[37mnative:7\u001b[39m\u001b[0m\u001b[0m\u001b[1m\u001b[37m\tBuiltInBundle\u001b[39m\u001b[22m\u001b[0m\u001b[0m\tMaterializing 16 built-in files to /tmp/pochi-builtin-2e56a4fb1f88f581\n\u001b[37m2026-07-14 20:53:43.200\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[39m\u001b[0m\u001b[0m\t\u001b[37m/$bunfs/pochi:524760\u001b[39m\u001b[0m\u001b[0m\u001b[1m\u001b[37m\tloadAgents\u001b[39m\u001b[22m\u001b[0m\u001b[0m\tLoaded 6 custom agents (6 valid, 0 invalid)\n\u001b[37m2026-07-14 20:53:43.242\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[39m\u001b[0m\u001b[0m\t\u001b[37m/$bunfs/pochi:524761\u001b[39m\u001b[0m\u001b[0m\u001b[1m\u001b[37m\tloadSkills\u001b[39m\u001b[22m\u001b[0m\u001b[0m\tLoaded 3 skills (3 valid, 0 invalid)\n\u001b[37m2026-07-14 20:53:43.320\u001b[39m\u001b[0m\u001b[0m\t\u001b[32m\u001b[1mDEBUG\u001b[22m\u001b[3 ... [truncated]\n",
+        "occurred_at": "2026-07-15T04:57:17.214365"
+    },
+    "started_at": "2026-07-14T20:53:29.125509Z",
+    "finished_at": "2026-07-14T20:57:44.384595Z",
+    "environment_setup": {
+        "started_at": "2026-07-14T20:53:29.262638Z",
+        "finished_at": "2026-07-14T20:53:33.790541Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-07-14T20:53:33.790559Z",
+        "finished_at": "2026-07-14T20:53:39.584523Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-07-14T20:53:39.584573Z",
+        "finished_at": "2026-07-14T20:57:17.210680Z"
+    },
+    "verifier": {
+        "started_at": "2026-07-14T20:57:28.065639Z",
+        "finished_at": "2026-07-14T20:57:43.842615Z"
+    },
+    "step_results": null
+}

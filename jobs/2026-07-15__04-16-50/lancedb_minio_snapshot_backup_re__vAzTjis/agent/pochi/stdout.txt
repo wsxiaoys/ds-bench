@@ -1,0 +1,108 @@
+
+Pochi 0.6.17 (update available 0.6.18-beta.1)
+────────────────────────────────────────────────────────────────────────────────
+- Initializing MCP connections...
+You
+# LanceDB Point-in-Time Snapshot Backup & Restore to MinIO ## Background LanceDB stores each table as a self-contained, versioned dataset directory on disk. Operations such as `add`, `update`, and `delete` append new immutable fragments and manifest files, so every historical version stays reproducible through `table.list_versions()`, `table.checkout(v)`, and `table.checkout_latest()`. Your job is to build a point-in-time backup/restore tool that snapshots a local LanceDB table into a local **MinIO** (S3-compatible) object store, and later rebuilds a fully working local LanceDB table from that snapshot — **including the complete version history**, not just the newest rows. A MinIO server is already running locally inside this container and an empty bucket named `lance-backup` has already been created for you. There is no access to AWS or any external network; everything is local. ## Requirements Create a Python module at `/home/user/myproject/solution.py` that exposes exactly two functions: * `backup(local_table_path, s3_uri)` — replicate the LanceDB table stored at `local_table_path` (a `*.lance` dataset directory on the local filesystem) to the object-store location `s3_uri`. The snapshot MUST capture the whole dataset so that **every** version is restorable, not only the latest data. * `restore(s3_uri, new_local_table_path)` — rebuild a local LanceDB `*.lance` dataset directory at `new_local_table_path` from the snapshot previously written to `s3_uri`. After a successful restore, the table must open cleanly with LanceDB and expose the **identical latest data AND the identical version history** (same versions, same per-version row counts) as the original. * `restore` MUST fail cleanly by raising an exception when `s3_uri` points at a prefix that holds no backup, and it MUST NOT leave behind a half-written or openable table at `new_local_table_path` in that case. ## Implementation Hints * A LanceDB table on disk is a directory tree of manifest and fragment files (e.g. a `_versions/` directory of per-version manifests plus data fragments). A faithful snapshot copies the entire dataset tree so that all versions survive; exporting only the current rows and re-inserting them into a fresh table would silently discard the version history and fail verification. * Think of the snapshot as a recursive object-by-object copy of the dataset directory into the bucket (each local file becomes one object under the prefix), and the restore as the reverse copy back onto the local filesystem, preserving the relative directory layout. * Connect to the S3-compatible endpoint using the credentials provided as environment variables: `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, and `ALLOW_HTTP=true` (the endpoint is plain HTTP, not HTTPS). The `boto3` library is installed for talking to the object store. * `s3_uri` always has the form `s3://<bucket>/<prefix>`. * A restored table written to `<dir>/<name>.lance` must be openable via `lancedb.connect("<dir>").open_table("<name>")`, and calling `list_versions()` / `checkout(v)` on it must reproduce the original versions with their original row counts. * Importing the module must have no side effects (do not connect or copy anything at import time). The verifier imports `solution` from `/home/user/myproject` and calls `backup(...)` and `restore(...)` directly. * Project path: /home/user/myproject * Interface: `backup(local_table_path: str, s3_uri: str) -> None` and `restore(s3_uri: str, new_local_table_path: str) -> None`.   
+
+Pochi
+📂 Listing files in /home/user/myproject recursively ✔ 
+💭 Thinking for 614 characters   
+📋 Updating todo list (6 items) ✔ 
+📋 Updating todo list (6 items) ✔ 
+💭 Thinking for 277 characters   
+💫 Executing python3 -c "import boto3, lancedb, pyarrow; print('Imports successful!'); import os; print('AWS_ENDPOINT_URL:', os.environ.get('AWS_ENDPOINT_URL'))" ✔ 
+💫 Executing python3 -c "import os; print({k: v for k, v in os.environ.items() if 'AWS' in k or 'ALLOW' in k})" ✔ 
+📋 Updating todo list (6 items) ✔ 
+💭 Thinking for 836 characters   
+📋 Updating todo list (6 items) ✔ 
+💭 Thinking for 826 characters   
+💫 Executing python3 -c "
+import lancedb
+import pandas as pd
+import os
+
+db = lancedb.connect('/tmp/test_lancedb')
+table = db.create_table('my_table', data=[{'vector': [1.1, 1.2], 'id': 1}, {'vector': [2.1, 2.2], 'id': 2}])
+print('Version 1 created')
+table.add([{'vector': [3.1, 3.2], 'id': 3}])
+print('Version 2 created')
+table.delete('id = 1')
+print('Version 3 created')
+
+print('Versions in table:')
+print(table.list_versions())
+
+# List all files in /tmp/test_lancedb/my_table.lance
+print('Files in table directory:')
+path = '/tmp/test_lancedb/my_table.lance'
+for root, dirs, files in os.walk(path):
+    for f in files:
+        print(os.path.relpath(os.path.join(root, f), path))
+" ✔ 
+💭 Thinking for 3503 characters   
+📋 Updating todo list (6 items) ✔ 
+💭 Thinking for 3569 characters   
+✏️  Writing /home/user/myproject/solution.py ✔ 
+📋 Updating todo list (6 items) ✔ 
+💭 Thinking for 280 characters   
+✏️  Writing /home/user/myproject/test_solution.py ✔ 
+📋 Updating todo list (6 items) ✔ 
+💫 Executing python3 /home/user/myproject/test_solution.py ✔ 
+💭 Thinking for 280 characters   
+💫 Executing python3 -c "
+import os, sys, shutil, lancedb
+sys.path.insert(0, '/home/user/myproject')
+from solution import backup, restore
+
+original_path = '/tmp/test_original.lance'
+restored_path = '/tmp/test_restored.lance'
+
+# Clean up
+for path in [original_path, restored_path]:
+    if os.path.exists(path):
+        shutil.rmtree(path)
+
+# Create table
+db = lancedb.connect('/tmp')
+table = db.create_table('test_original', data=[{'vector': [1.0, 1.0], 'id': 1}])
+table.add([{'vector': [2.0, 2.0], 'id': 2}])
+
+# Backup to root of lance-backup bucket
+backup(original_path, 's3://lance-backup/')
+
+# Restore from root of lance-backup bucket
+restore('s3://lance-backup/', restored_path)
+
+restored_db = lancedb.connect('/tmp')
+restored_table = restored_db.open_table('test_restored')
+print('Restored latest rows:', len(restored_table.to_pandas()))
+print('Restored versions:', len(restored_table.list_versions()))
+" ✔ 
+💭 Thinking for 1108 characters   
+📂 Listing files in /home/user/myproject recursively ✔ 
+💫 Executing pytest /home/user/myproject/test_solution.py ✔ 
+📋 Updating todo list (6 items) ✔ 
+💭 Thinking for 177 characters   
+🎉 Task Completed
+I have successfully implemented the LanceDB point-in-time snapshot backup and restore module at `/home/user/myproject/solution.py`.
+
+### Implementation Details:
+1. **S3 URI Parsing**: The module robustly parses standard `s3://<bucket>/<prefix>` URIs, handling edge cases such as empty prefixes or trailing slashes.
+2. **Recursive Backup (`backup`)**:
+   - Recursively walks the entire local LanceDB table directory (`*.lance`).
+   - Clears any existing keys under the target S3 prefix to prevent orphaned or stale files from previous backups from corrupting future restores.
+   - Preserves the exact relative directory layout of the table (e.g. data fragments, transaction logs, manifests, deletions) to maintain full version history.
+   - Uploads files efficiently to the local MinIO instance using `boto3` client configured with environment-provided credentials and endpoints.
+3. **Atomic Restore (`restore`)**:
+   - Queries S3 to list all backup objects under the given prefix.
+   - Raises a `FileNotFoundError` immediately if no backup objects are found under the prefix, leaving the destination path completely untouched.
+   - Downloads all backup files to a temporary directory located on the same filesystem as the destination path.
+   - If any download fails or is interrupted, the temporary directory is cleaned up, ensuring no half-written or partially valid tables are left behind.
+   - Upon successful completion of all downloads, atomically replaces the existing table directory (if present) with the restored table using `shutil.move`.
+4. **Verification**:
+   - Created a comprehensive test suite at `/home/user/myproject/test_solution.py` which creates a LanceDB table, appends rows, deletes rows, and tracks version row counts.
+   - Verified that the restored table has identical latest data, the identical version history, and identical per-version row counts.
+   - Verified clean failure and zero side-effects on invalid/missing S3 prefixes.
+   - All tests passed successfully.   
+  
