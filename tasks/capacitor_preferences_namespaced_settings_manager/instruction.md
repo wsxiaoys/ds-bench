@@ -1,0 +1,34 @@
+# Namespaced Settings Manager over Capacitor Preferences
+
+## Background
+You are building the settings layer for a Capacitor web app. Raw key/value storage is too flat for a growing app, so you must implement a **namespaced settings manager** on top of `@capacitor/preferences` (the plugin's web implementation persists to `localStorage`). Settings are grouped under namespaces, every setting has a typed default value, and users can override, reset, list, export, and import settings per namespace. Namespaces must stay fully isolated: resetting one namespace must never affect another, even when one namespace name is a textual prefix of another.
+
+## Requirements
+Expose an asynchronous settings API and implement the following, backed by `@capacitor/preferences`:
+- **Typed defaults**: Each namespace declares a fixed schema of setting keys, each with a default value of a specific JavaScript type. Values must keep their original type across persistence (a number stays a `number`, a boolean stays a `boolean`).
+- **get-with-default**: Reading a setting returns the stored override when present, otherwise the schema default.
+- **set**: Persisting a setting stores it through Preferences.
+- **reset (per namespace)**: Removes only the stored overrides that belong to the given namespace; after a reset those settings fall back to their defaults, and every other namespace is untouched.
+- **keys (per namespace)**: Lists the setting keys that currently have a stored override in that namespace, derived from the Preferences `keys()` listing.
+- **export / import (per namespace)**: Export returns the complete effective settings object for a namespace (defaults merged with overrides); import persists a supplied object of settings back into that namespace.
+
+The app must ship these fixed namespace schemas exactly:
+- `app`: `theme` = `"light"` (string), `fontSize` = `14` (number), `notifications` = `true` (boolean)
+- `appearance`: `theme` = `"system"` (string), `accent` = `"blue"` (string)
+- `editor`: `tabSize` = `4` (number), `wordWrap` = `false` (boolean)
+
+## Implementation Hints
+- Use the `@capacitor/preferences` plugin for all persistence; on the web it stores under `localStorage` keys prefixed with `CapacitorStorage.`. Do not implement your own storage or bypass the plugin.
+- Group keys by encoding the namespace into each Preferences key so a single namespace's keys can be discovered via `Preferences.keys()` and filtered. Be careful that filtering by namespace is delimiter-aware so that the namespace `app` does not accidentally match keys of the namespace `appearance`.
+- Preferences only stores strings; use JSON to preserve non-string types on the way in and out.
+- Project path: /home/user/settings-manager
+- The web app is built with `npm run build` and served with `npm run preview -- --port 4173 --host 127.0.0.1`.
+- Port: 4173
+- The loaded page must attach a global object `window.settings` whose methods all return Promises:
+  - `get(namespace, key)`: resolves to the effective value (stored override, otherwise the default), preserving the value's JavaScript type. Rejects when the namespace or key is not part of a schema.
+  - `set(namespace, key, value)`: persists the value. Rejects when the namespace or key is not part of a schema.
+  - `reset(namespace)`: removes every stored override belonging only to that namespace.
+  - `keys(namespace)`: resolves to an array of the namespace's setting keys that currently have a stored override, sorted in ascending alphabetical order.
+  - `exportNamespace(namespace)`: resolves to a plain object mapping every schema key of the namespace to its effective value (defaults merged with overrides).
+  - `importNamespace(namespace, data)`: persists each known setting key found in the `data` object into the namespace; keys not present in the namespace schema are ignored.
+

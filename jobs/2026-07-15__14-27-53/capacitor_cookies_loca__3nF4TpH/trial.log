@@ -1,0 +1,109 @@
+Selected strategy: _DaytonaDirect
+Building environment from /home/kw/code/zealt/capacitor-benchmark/scratchpad/pending-tasks/capacitor_cookies_local_session/environment/Dockerfile
+Running command: set -euo pipefail; mkdir -p /logs/agent/pochi && pochi --version
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" -e "s/MINIMAX_API_KEY/${MINIMAX_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    },
+    "minimax": {
+      "kind": "openai",
+      "baseURL": "https://api.minimax.io/v1",
+      "apiKey": "MINIMAX_API_KEY",
+      "models": {
+        "MiniMax-M3": {
+          "name": "m3"
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: cat > /tmp/pochi_cmd.sh << 'CMD_EOF'
+set -o pipefail
+pochi --model minimax/MiniMax-M3 --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl --experimental-stream-trajectory-strip-duplicates > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Capacitor Cookies: Local Session Login/Logout Flow
+
+## Background
+You are building the web frontend of a Capacitor v8 app that keeps a user signed in with a **session cookie**. A small **local mock auth server is already provided** in the project (it runs on `http://localhost:8080` and also serves your built web assets). Your job is to enable Capacitor's cookie handling and implement the full session flow (login, session restore/persistence, an authenticated request, and a logout that clears the cookie) so it works end-to-end in a browser.
+
+The evaluation environment only has a CLI and a headless browser. There is **no** Android/iOS device, emulator, SDK, or native build. Everything runs locally against the provided mock server; do **not** call any external/third-party service or require internet access.
+
+## Requirements
+- Enable Capacitor's cookie handling in `capacitor.config.ts` by turning on the `CapacitorCookies` plugin (also enable `CapacitorHttp`). Keep `webDir` pointing at the build output directory `dist`.
+- Implement a single-page web UI that talks to the provided mock server and drives a cookie-based session:
+  - **Login**: submit a username and password to the server; on success the server responds with a `Set-Cookie: session=<token>` header and the UI must reflect the signed-in state.
+  - **Session persistence**: when the page (re)loads, restore the signed-in state from the existing session cookie by calling the authenticated endpoint. Reloading the page while logged in must keep the user logged in.
+  - **Authenticated request**: fetch the current user's profile from the protected endpoint using the session cookie.
+  - **Logout**: invalidate the session on the server **and clear the session cookie on the client** so the browser no longer holds it.
+  - **Error handling**: invalid credentials must show an error and must not create a session.
+
+## Provided Mock Server (do not modify its contract)
+The server lives under `mock-server/` in the project and is started by `npm run start`. It serves the built `dist/` at `/` and exposes these JSON endpoints on the same origin (`http://localhost:8080`):
+- `POST /api/login` — request body `{ "username": string, "password": string }`.
+  - Valid credentials: username `demo` / password `capacitor`, and username `alice` / password `wonderland`.
+  - On success: status `200`, body `{ "username": "<username>" }`, and a `Set-Cookie: session=<token>; Path=/; SameSite=Lax` header (the cookie is readable from `document.cookie`).
+  - On failure: status `401`, body `{ "error": "invalid credentials" }`.
+- `GET /api/me` — reads the `session` cookie. Valid session: status `200`, body `{ "username": "<username>" }`. Missing/invalid session: status `401`, body `{ "error": "unauthorized" }`.
+- `POST /api/logout` — reads the `session` cookie and **invalidates that token server-side**. It returns `200` with body `{ "ok": true }` but it does **not** send a cookie-clearing header, so the client is responsible for removing the browser cookie.
+
+## Implementation Hints
+- Project path: `/home/user/session-app`.
+- Build the web assets with `npm run build` (Vite, output directory `dist`). Start the app with `npm run start`, which serves the built assets and the mock API on **port 8080**.
+- Because the UI and API share the same origin, the browser sends the session cookie automatically on same-origin requests; use Capacitor's cookie APIs (bundled in `@capacitor/core`) to read the current cookie and to clear it on logout.
+- The page must expose these exact DOM element ids so the flow can be driven and observed:
+  - `#username` and `#password` text inputs, and a `#login-btn` button that logs in with their values.
+  - A `#logout-btn` button that logs out.
+  - `#status` element whose text is exactly `Logged out` when there is no session, and exactly `Logged in as <username>` (e.g. `Logged in as demo`) when signed in.
+  - `#profile` element that displays the authenticated username returned by `GET /api/me` when signed in, and is empty when logged out.
+  - `#cookie` element that displays the current `session` cookie value (the token) when signed in, and is empty when logged out.
+  - `#error` element that displays the server error text (containing `invalid`) after a failed login, and is empty otherwise.
+- On initial page load the app must query `GET /api/me` and render the signed-in state if a valid session cookie already exists (this is what makes reloads persist the session).
+- After logout, the browser must no longer contain a `session` cookie (verify with `document.cookie`), `#status` must read `Logged out`, and a subsequent `GET /api/me` must return `401`.
+
+
+EOF
+CMD_EOF
+setsid --wait bash /tmp/pochi_cmd.sh &
+SETSID_PID=$!
+echo $SETSID_PID > /tmp/setsid_bash_pochi_cmd.pid
+wait $SETSID_PID 2>/dev/null
+Command outputs captured
+Running command: if [ -f /tmp/setsid_bash_pochi_cmd.pid ]; then
+SETSID_PID=$(cat /tmp/setsid_bash_pochi_cmd.pid)
+kill -TERM -- -$SETSID_PID 2>/dev/null || true
+sleep 2
+kill -9 -- -$SETSID_PID 2>/dev/null || true
+fi
+rm -f ~/.pochi/config.jsonc /tmp/pochi_cmd.sh /tmp/setsid_bash_pochi_cmd.pid
+Command outputs captured
+Collecting main service artifacts
+The verifier.env contains an API key (often the case for LLM-based verifiers). You will incur costs associated with the API calls.
