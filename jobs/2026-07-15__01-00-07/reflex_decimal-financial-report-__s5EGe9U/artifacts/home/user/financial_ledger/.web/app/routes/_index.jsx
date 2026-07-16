@@ -1,0 +1,19 @@
+import {Box as RadixThemesBox,Card as RadixThemesCard,Container as RadixThemesContainer,Flex as RadixThemesFlex,Heading as RadixThemesHeading,Separator as RadixThemesSeparator,Table as RadixThemesTable,Text as RadixThemesText} from "@radix-ui/themes"
+import {Bare_comp_0e9a011946e66cdef0f12a500a30ad15_b9c15ae3,Bare_comp_a1993324ae6d3caeeb52ccb3858a2489_b9c15ae3,Bare_comp_e31eac9d6197608f8f385407e01b751d_b9c15ae3,Button_button_0ee1f714178b7ff305079a2b9522ff7f_b9c15ae3,Debounceinput_debounceinput_d87035adec230a65efff5b59b0771e92_b9c15ae3,Debounceinput_debounceinput_f16e992ed7b09e3a57d9035c53ad7fa9_b9c15ae3,Foreach_comp_87f178cece767b8f29acb469d0f5714d_b9c15ae3,Text_text_acc04146e63b1aac91955fbd17d3cc22_b9c15ae3} from "$/app_components/financial_ledger/financial_ledger"
+import {Fragment,useEffect} from "react"
+import {jsx} from "@emotion/react"
+
+
+
+
+
+export default function Component() {
+
+
+
+
+
+  return (
+    jsx(Fragment,{},jsx(RadixThemesContainer,{css:({ ["padding"] : "16px" }),size:"3"},jsx(RadixThemesFlex,{align:"start",className:"rx-Stack",css:({ ["padding"] : "2em", ["maxWidth"] : "800px", ["margin"] : "0 auto" }),direction:"column",gap:"4"},jsx(RadixThemesHeading,{css:({ ["marginBottom"] : "0.5em" }),size:"8"},"Financial Ledger Report"),jsx(RadixThemesBox,{css:({ ["width"] : "100%", ["border"] : "1px solid #e5e7eb", ["borderRadius"] : "6px", ["overflow"] : "hidden", ["marginBottom"] : "1.5em" })},jsx(RadixThemesTable.Root,{css:({ ["width"] : "100%" })},jsx(RadixThemesTable.Header,{},jsx(RadixThemesTable.Row,{},jsx(RadixThemesTable.ColumnHeaderCell,{},"Description"),jsx(RadixThemesTable.ColumnHeaderCell,{},"Amount"),jsx(RadixThemesTable.ColumnHeaderCell,{},"Timestamp"),jsx(RadixThemesTable.ColumnHeaderCell,{},"Balance"))),jsx(RadixThemesTable.Body,{},jsx(Foreach_comp_87f178cece767b8f29acb469d0f5714d_b9c15ae3,{},)))),jsx(RadixThemesCard,{css:({ ["width"] : "100%", ["marginBottom"] : "1.5em" })},jsx(RadixThemesFlex,{align:"start",className:"rx-Stack",css:({ ["width"] : "100%" }),direction:"column",gap:"2"},jsx(RadixThemesHeading,{css:({ ["marginBottom"] : "0.25em" }),size:"4"},"Summary Totals"),jsx(RadixThemesFlex,{align:"start",className:"rx-Stack",css:({ ["width"] : "100%" }),direction:"row",justify:"between",gap:"3"},jsx(RadixThemesText,{as:"p",css:({ ["fontWeight"] : "bold" })},"Total Credits: "),jsx(RadixThemesText,{as:"p",css:({ ["color"] : "green" })},jsx(Bare_comp_a1993324ae6d3caeeb52ccb3858a2489_b9c15ae3,{},))),jsx(RadixThemesFlex,{align:"start",className:"rx-Stack",css:({ ["width"] : "100%" }),direction:"row",justify:"between",gap:"3"},jsx(RadixThemesText,{as:"p",css:({ ["fontWeight"] : "bold" })},"Total Debits: "),jsx(RadixThemesText,{as:"p",css:({ ["color"] : "red" })},jsx(Bare_comp_e31eac9d6197608f8f385407e01b751d_b9c15ae3,{},))),jsx(RadixThemesSeparator,{size:"4"},),jsx(RadixThemesFlex,{align:"start",className:"rx-Stack",css:({ ["width"] : "100%" }),direction:"row",justify:"between",gap:"3"},jsx(RadixThemesText,{as:"p",css:({ ["fontWeight"] : "bold" })},"Net Balance: "),jsx(Text_text_acc04146e63b1aac91955fbd17d3cc22_b9c15ae3,{},jsx(Bare_comp_0e9a011946e66cdef0f12a500a30ad15_b9c15ae3,{},))))),jsx(RadixThemesCard,{css:({ ["width"] : "100%" })},jsx(RadixThemesFlex,{align:"start",className:"rx-Stack",css:({ ["width"] : "100%" }),direction:"column",gap:"3"},jsx(RadixThemesHeading,{css:({ ["marginBottom"] : "0.5em" }),size:"4"},"Add New Entry"),jsx(RadixThemesFlex,{align:"start",className:"rx-Stack",css:({ ["width"] : "100%" }),direction:"row",gap:"3"},jsx(Debounceinput_debounceinput_f16e992ed7b09e3a57d9035c53ad7fa9_b9c15ae3,{},),jsx(Debounceinput_debounceinput_d87035adec230a65efff5b59b0771e92_b9c15ae3,{},),jsx(Button_button_0ee1f714178b7ff305079a2b9522ff7f_b9c15ae3,{},"Add Entry")))))),jsx("title",{},"FinancialLedger | Index"),jsx("meta",{content:"favicon.ico",property:"og:image"},))
+  )
+}

@@ -1,0 +1,33 @@
+# Slope Graph Comparing Regional Revenue Across Two Years (Vega-Altair)
+
+## Background
+You are building a static analytics report with [Vega-Altair](https://altair-viz.github.io/). Management wants a *slope graph* that shows, for every sales region, how annual revenue moved from 2023 to 2024. A slope graph plots two x positions (the two years) and draws one line per category (region) connecting its value in each year, so the slope of the line instantly communicates growth or decline.
+
+All work is offline. The input data is already provided locally in the environment; you must NOT fetch any remote dataset, hit any network URL, or rely on `vega_datasets` remote URLs.
+
+## Provided Input
+A local CSV file is available at `/home/user/project/data/regional_revenue.csv` with exactly these columns (one row per region, six regions total):
+- `region` (string) — the sales region name.
+- `revenue_2023` (number) — revenue in the year 2023.
+- `revenue_2024` (number) — revenue in the year 2024.
+
+## Requirements
+- Build a single Altair chart that is a **layered composition of three marks**:
+  1. a **line** mark that draws one separate line per region connecting its 2023 value to its 2024 value (two x positions, one line segment per region),
+  2. a **point** mark drawn at both endpoints of every region's line, and
+  3. a **text** mark that labels the revenue value at both endpoints of every region's line.
+- **Color** each region's line (and its points) by whether that region's revenue **increased** or **decreased** from 2023 to 2024. This up/down classification MUST be derived **inside the chart specification using a `calculate` transform** — it must NOT be pre-computed as a column in the input CSV or added as a pandas column before charting.
+- Because multiple regions can share the same increase/decrease color, make sure each region is rendered as its **own** line (do not let lines jump between different regions).
+- Keep all data **local and embedded**: the resulting chart spec must contain the data inline (no `http`/`https` data URLs).
+- Save the finished chart as a **standalone HTML file** at `/home/user/project/slope_graph.html`.
+
+## Implementation Hints
+- Project path: `/home/user/project`
+- Reshaping the two-year-wide data into the two x positions is easiest done inside the spec (for example with a fold transform) so the original year columns remain available to the `calculate` transform that decides the trend.
+- The trend field produced by the `calculate` transform is what the color channel should encode; give it a nominal type so it maps to two distinct colors.
+- Use a separating channel (e.g. a detail encoding on region) so each region forms its own line rather than one connected path per color group.
+- The text labels must display the revenue value at each endpoint.
+- Save the chart with Altair's HTML export so the file is a self-contained page that embeds the Vega-Lite spec.
+- Command to build the artifact: `python3 /home/user/project/build_slope_graph.py`
+- Output artifact (checked by the verifier): `/home/user/project/slope_graph.html`
+
