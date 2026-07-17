@@ -26,6 +26,7 @@ type TrialEntry = {
 	job_name: string;
 	trial_name: string;
 	agent: string;
+	model?: string;
 	passed?: boolean;
 	error?: boolean;
 	latency_sec?: number | null;
@@ -470,6 +471,23 @@ export default async function TrajectoryRoutePage({
 								<span className="truncate text-muted-foreground">
 									Duration: {executionDurationLabel}
 								</span>
+								{(trialEntry?.model || trialEntry?.agent) && (
+									<span className="flex items-center gap-2 truncate text-muted-foreground before:hidden before:content-['•'] sm:before:block">
+										{trialEntry.model && (
+											<span className="truncate" title={trialEntry.model}>
+												Model: {trialEntry.model}
+											</span>
+										)}
+										{trialEntry.model && trialEntry.agent && (
+											<span className="hidden sm:inline">•</span>
+										)}
+										{trialEntry.agent && (
+											<span className="truncate" title={trialEntry.agent}>
+												Agent: {trialEntry.agent}
+											</span>
+										)}
+									</span>
+								)}
 							</div>
 						</div>
 					</div>
@@ -486,6 +504,8 @@ export default async function TrajectoryRoutePage({
 						verifierLogUrl={verifierLogUrl}
 						tabsConfig={tabsConfig}
 						artifactTree={artifactTree}
+						model={trialEntry?.model}
+						agent={trialEntry?.agent}
 					/>
 				</Suspense>
 			</div>

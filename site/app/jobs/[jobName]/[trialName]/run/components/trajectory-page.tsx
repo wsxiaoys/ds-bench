@@ -27,6 +27,8 @@ type TrajectoryPageProps = {
 	verifierLogUrl: string | null;
 	tabsConfig: TabConfig[];
 	artifactTree?: ArtifactNodeWithUrl[];
+	model?: string;
+	agent?: string;
 };
 
 export async function fetchLogText(url: string): Promise<string> {
@@ -55,6 +57,8 @@ export function TrajectoryPage({
 	verifierLogUrl,
 	tabsConfig,
 	artifactTree,
+	model,
+	agent,
 }: TrajectoryPageProps) {
 	const { resolvedTheme } = useTheme();
 	const searchParams = useSearchParams();

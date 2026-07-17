@@ -329,20 +329,13 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 			if (selectedModels.length > 0 && !selectedModels.includes(model))
 				return false;
 
-			if (
-				selectedAgents.length > 0 &&
-				!selectedAgents.includes(agent)
-			)
+			if (selectedAgents.length > 0 && !selectedAgents.includes(agent))
 				return false;
 			return true;
 		});
 
 		return combos;
-	}, [
-		allCombos,
-		selectedModels,
-		selectedAgents,
-	]);
+	}, [allCombos, selectedModels, selectedAgents]);
 
 	const noTrials = activeCombos.length === 0;
 
@@ -457,7 +450,6 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 		tasksData,
 		selectedStatuses.length,
 		selectedStatuses.includes,
-		selectedModels[0],
 		selectedTags.some,
 		selectedTags.length,
 	]);
@@ -812,7 +804,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 													</span>
 													{agent && (
 														<span
-															className="max-w-25 truncate text-xs text-muted-foreground md:max-w-32.5"
+															className="max-w-25 truncate text-muted-foreground text-xs md:max-w-32.5"
 															title={agent}
 														>
 															{agent}
@@ -934,10 +926,10 @@ function TableWrapper({ hasRows, children, viewportRef }: TableWrapperProps) {
 			>
 				{children}
 			</ScrollAreaPrimitive.Viewport>
-			<ScrollBar className="top-11 bottom-2 z-50 h-auto [&_[data-slot=scroll-area-thumb]]:transition-colors hover:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/30 active:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/45 dark:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/40 dark:active:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/70 dark:hover:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/55" />
+			<ScrollBar className="top-11 bottom-2 z-50 h-auto **:data-[slot=scroll-area-thumb]:transition-colors hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/30 active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/45 dark:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/40 dark:active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/70 dark:hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/55" />
 			<ScrollBar
 				orientation="horizontal"
-				className="z-50 [&_[data-slot=scroll-area-thumb]]:transition-colors hover:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/30 active:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/45 dark:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/40 dark:active:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/70 dark:hover:[&_[data-slot=scroll-area-thumb]]:bg-muted-foreground/55"
+				className="z-50 **:data-[slot=scroll-area-thumb]:transition-colors hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/30 active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/45 dark:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/40 dark:active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/70 dark:hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/55"
 			/>
 			<ScrollAreaPrimitive.Corner />
 		</ScrollAreaPrimitive.Root>
@@ -1035,7 +1027,11 @@ const VirtualTaskRow = memo(function VirtualTaskRow({
 										<Clock className="h-3.5 w-3.5 shrink-0 text-red-400/80 md:h-4 md:w-4" />
 									</span>
 								) : trial.error ? (
-									<span title={typeof trial.error === "string" ? trial.error : "Error"}>
+									<span
+										title={
+											typeof trial.error === "string" ? trial.error : "Error"
+										}
+									>
 										<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-400/80 md:h-4 md:w-4" />
 									</span>
 								) : (
