@@ -1,0 +1,25 @@
+# Wasp Custom Express Middleware
+
+## Background
+Every Wasp app runs on an Express server that ships with a default middleware stack (Helmet, CORS, Morgan, JSON/urlencoded body parsers, and a cookie parser). Wasp lets you customize this stack at three levels: globally, per URL path, and per individual HTTP `api` route. In this task you will configure custom middleware at all three levels and expose two custom HTTP API endpoints whose behavior is driven by that middleware.
+
+## Requirements
+- Configure a **global** server middleware function that:
+  - Extends the allowed CORS origins so requests from the local origin `http://localhost:5000` are accepted, while keeping the existing/default allowed origins (including the local client at `http://localhost:3000`) working.
+  - Adds a custom middleware entry that sets the response header `X-Global: enabled` on responses.
+- Expose custom HTTP `api` endpoints under the `/api` path.
+- Apply a **per-path** (namespace) middleware to everything under `/api` that sets the response header `X-Api-Namespace: v1`.
+- Give one endpoint a **per-api** middleware that replaces the default JSON body parser with a raw body parser (so the handler receives the unparsed request body as raw bytes) and also sets the response header `X-Echo: raw` on that route only.
+
+## Implementation Hints
+- Use Wasp's `server.middlewareConfigFn` on the `app` declaration for the global stack, an `apiNamespace` declaration for the per-path middleware, and an `api` declaration's `middlewareConfigFn` for the per-route middleware.
+- The middleware config is a `Map` of named entries: add, replace (e.g. swap the JSON parser for a raw parser), and delete entries on it, then return it. Custom middleware functions and API handlers belong in `src/`.
+- A fresh Wasp project created from the `minimal` template already exists at the project path; extend that project rather than recreating it.
+- Project path: /home/user/custom-middleware
+- Start command: wasp start
+- Client port: 3000. Server port: 3001 — the API endpoints below are served by the Express server on port 3001.
+- API endpoints (both public, no auth required):
+  - `GET /api/status` -> responds with status 200 and JSON body `{ "status": "ok" }`.
+  - `POST /api/echo` -> its route middleware must parse the body as raw bytes; respond with status 200 and JSON body `{ "bytes": <number> }`, where `<number>` is the exact byte length of the raw request body.
+- Middleware-driven response headers that must appear exactly as described: `X-Global: enabled` is set globally (present on the `/api/*` responses); `X-Api-Namespace: v1` is present on every `/api/*` response; `X-Echo: raw` is present only on the `/api/echo` response.
+
