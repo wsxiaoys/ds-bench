@@ -1,0 +1,34 @@
+# Threaded Nested Comments with Qwik City
+
+## Background
+Build a full-stack, server-rendered threaded comment system using Qwik and Qwik City (v1.11+). Comments form an arbitrarily deep tree via a self-referencing `parent_id` relationship and are stored in a local SQLite database. The page is server-rendered: a `routeLoader$` loads the entire comment tree on the server, a recursive Qwik component renders threads of any depth, and replies to any node are posted through a `routeAction$` validated with `zod$`.
+
+## Requirements
+- Persist comments in a local SQLite database file at `data/comments.db` (relative to the project root).
+- Use a single table `comments` with columns: `id` (integer primary key, autoincrement), `parent_id` (integer, nullable, references `comments.id`), `author` (text), `body` (text), `created_at` (text, ISO-8601, server-generated).
+- On first run, if the `comments` table is empty, seed it with exactly this thread:
+  - Root: author `alice`, body `Great article!`
+    - Reply: author `bob`, body `I agree.`
+      - Reply: author `carol`, body `Well said.`
+  - Root: author `dave`, body `Any updates?`
+- Load the full tree server-side with a `routeLoader$` and render it with a recursive component so threads of any depth display correctly.
+- Post replies to any node (or create a new root comment) with a `routeAction$` validated by `zod$`.
+
+## Implementation Hints
+- Use a recursive `component$` that renders a comment and then maps over its children, invoking itself for each child.
+- Keep all database access inside server-only boundaries (`routeLoader$` / `routeAction$`) so no database driver leaks into the client bundle.
+- Use a synchronous local SQLite driver and enable a write mode that tolerates concurrent writers.
+- The server must compute each comment's depth and assign `created_at`; never trust client-supplied depth or timestamps.
+- Project path: /home/user/qwik-app
+- Start command: `npm run dev -- --port 3000 --host 0.0.0.0`
+- Port: 3000
+- Rendering contract for `GET /`:
+  - Render every comment as an element carrying the attributes `data-testid="comment"`, `data-comment-id="<id>"`, `data-parent-id="<parent id, empty string for roots>"`, and `data-depth="<0-based depth, roots = 0>"`. The element must contain the comment's `author` and `body` text.
+  - A child comment's element must be a DOM descendant of its parent's element (DOM nesting reflects the tree). Order sibling comments by `id` ascending.
+- Reply form contract: for every comment and for creating a new root comment, render a Qwik `<Form>` (from `@builder.io/qwik-city`) bound to the reply action. Each form must include `data-testid="reply-form"`, a `data-parent-id` attribute equal to the target parent id (empty string for a new root comment), a hidden input named `parentId`, a text input named `author`, and a text input or textarea named `body`.
+- Reply action contract:
+  - Validate with Zod: `author` length >= 2 and `body` length >= 1 (non-empty). On validation failure, insert nothing and re-render the page including an element with `data-testid="error"` containing an error message.
+  - If `parentId` is provided but does not match an existing comment, reject the submission and insert nothing. An empty/absent `parentId` creates a new root comment.
+  - On success, insert exactly one new row (server-assigned `id` and `created_at`); the new comment must appear nested under its parent (depth = parent depth + 1; a new root is depth 0) on the next load.
+- Concurrency: concurrent valid reply submissions to the same parent must all be persisted — submitting N valid replies concurrently must create exactly N new rows.
+

@@ -1,0 +1,59 @@
+# Minimal Archetype-Based Entity Component System (GDScript)
+
+## Background
+Archetype-based Entity Component Systems (ECS) group entities by the exact set of component types they currently hold. Each distinct set of component types is an "archetype". Adding or removing a component moves ("migrates") an entity from one archetype to another, and the data of every component the entity keeps must survive the migration intact. This task asks you to implement such an ECS as a pure GDScript library that runs headlessly in Godot 4.3.
+
+## Requirements
+Implement a `World` class that manages entities, components, and archetypes:
+- Create and destroy entities, recycling the storage slots (indices) of destroyed entities.
+- Guard recycled slots with a generation/version counter so that stale handles referring to a destroyed entity are detected and rejected.
+- Add and remove typed components on an entity, migrating the entity between archetypes while preserving the data of every component the entity keeps.
+- Read a single component's data.
+- Query entities by a multi-component signature, and inspect an entity's exact archetype.
+
+## Implementation Hints
+- Project path: /home/user/ecs_project (a valid Godot 4.3 project containing `project.godot`). The headless Godot binary is available on PATH as `godot`.
+- Implement the class in the script file `res://ecs/world.gd`. The verifier loads it with `load("res://ecs/world.gd").new()`, so the script MUST be instantiable with no arguments (extend `RefCounted`) and MUST NOT depend on being attached to any scene, node, or autoload.
+- Component types are passed as `StringName` values. Component data is always a `Dictionary`.
+- An entity handle is a single non-negative `int` that encodes both a reusable slot index and a generation.
+
+Provide exactly these methods, with these signatures and behaviors:
+
+- `create_entity() -> int`
+  Creates a live entity that belongs to the empty archetype (it holds no components) and returns its handle.
+
+- `destroy_entity(entity: int) -> bool`
+  If `entity` is currently alive, destroys it, frees its slot index for reuse, and returns `true`. If `entity` is not alive (unknown or stale), returns `false` and changes nothing.
+
+- `is_alive(entity: int) -> bool`
+  Returns `true` iff `entity` refers to a currently living entity (its generation matches the current occupant of its slot).
+
+- `get_index(entity: int) -> int` and `get_generation(entity: int) -> int`
+  Pure decoders of a handle. Each MUST return the same value for a given handle regardless of whether that entity is still alive.
+
+- `add_component(entity: int, component_type: StringName, data: Dictionary) -> bool`
+  If `entity` is not alive, returns `false` and changes nothing. If the entity does not yet hold `component_type`, adds it with the given `data` and migrates the entity to the archetype whose type set is its previous set plus `component_type`, preserving the data of all previously held components. If the entity already holds `component_type`, replaces that component's data with `data` and leaves its archetype unchanged. Returns `true` on success.
+
+- `remove_component(entity: int, component_type: StringName) -> bool`
+  If `entity` is alive and holds `component_type`, removes it and migrates the entity to the archetype whose type set is its previous set minus `component_type`, preserving the data of all remaining components, then returns `true`. Otherwise returns `false` and changes nothing.
+
+- `has_component(entity: int, component_type: StringName) -> bool`
+  Returns `true` iff `entity` is alive and currently holds `component_type`.
+
+- `get_component(entity: int, component_type: StringName) -> Variant`
+  Returns the `Dictionary` currently stored for `component_type` on `entity`, or `null` if `entity` is not alive or does not hold that component.
+
+- `get_component_types(entity: int) -> Variant`
+  Returns `null` if `entity` is not alive. Otherwise returns an `Array` of the entity's component types (as StringName), sorted ascending by their string value; an entity with no components returns an empty array.
+
+- `query(required_types: Array) -> Array`
+  Returns the handles of all alive entities whose component-type set is a superset of `required_types` (they hold every required type; holding extra components is allowed). Duplicate entries in `required_types` are treated as a set. An empty `required_types` matches every alive entity. The result MUST be ordered by ascending `get_index`.
+
+- `get_entities_with_exact_types(types: Array) -> Array`
+  Returns the handles of all alive entities whose component-type set is exactly equal to the set of `types` (i.e., they belong to that archetype). An empty `types` matches entities in the empty archetype (entities with no components). The result MUST be ordered by ascending `get_index`.
+
+Recycling and generation rules:
+- When an entity is destroyed, its slot index becomes available for reuse by later `create_entity` calls. When exactly one slot is free, the next `create_entity` MUST reuse that freed slot's index.
+- A handle created for a recycled slot MUST have a different `get_generation` than the destroyed handle that previously occupied the same index, so the old handle is detected as stale (`is_alive` returns `false`).
+- Operations given a stale or unknown handle (`destroy_entity`, `add_component`, `remove_component`, `get_component`, `has_component`, `get_component_types`) MUST behave as specified for a non-alive entity and MUST NOT read or modify the state of the live entity that currently occupies the same slot index.
+
