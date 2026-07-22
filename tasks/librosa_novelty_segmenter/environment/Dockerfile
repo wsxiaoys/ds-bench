@@ -112,7 +112,9 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="librosa 0.11.0 environment with a deterministic 3-section /home/user/input.wav for Foote-style novelty segmentation."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

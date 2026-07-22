@@ -23,7 +23,9 @@ RUN curl -L https://encore.dev/install.sh | bash && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Task environment for Encore Go Hello World app, including Encore CLI and ssh."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

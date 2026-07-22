@@ -281,7 +281,9 @@ CMD ["/app/entrypoint.sh"]
 #   - /app/entrypoint.sh: seeds tables named docs_${ZEALT_RUN_ID} at startup, writes /app/data/config.json and /app/data/queries.json
 #   - /home/user/myproject: empty project directory where the agent writes solution.py
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

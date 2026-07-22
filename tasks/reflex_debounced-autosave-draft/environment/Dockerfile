@@ -50,7 +50,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - uv (Astral) installed and symlinked into /usr/local/bin
 #   - /home/user/note_app: blank uv-managed Reflex project (reflex added, `reflex init --template blank` run, frontend pre-warmed)
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -105,7 +105,9 @@ RUN mkdir -p /home/user/turn-based-game
 LABEL Author="generate-harbor-tasks"
 LABEL Description="libGDX headless backend task environment (JDK 17, Gradle 8.10, gdx 1.14.2 cache pre-warmed) for the turn_based_command_loop_headless task."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -50,7 +50,9 @@ PYEOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud Parse TypeScript SDK task: Node.js v24, Python verifier tooling, a prebuilt sample.pdf, and an empty TypeScript project workspace at /home/user/parse-task."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

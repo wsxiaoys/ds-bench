@@ -26,7 +26,9 @@ RUN mkdir -p /home/user && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB 0.25.3 native (non-Tantivy) FTS task environment on Ubuntu 24.04."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

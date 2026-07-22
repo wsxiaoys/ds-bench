@@ -73,7 +73,9 @@ RUN cd /home/user/pool && \
 #   - /home/user/pool/node_modules with all dependencies pre-installed locally
 #   - No manager.ts, cli.ts, pool-state.json, or scenario.log yet — those are produced by the user task
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

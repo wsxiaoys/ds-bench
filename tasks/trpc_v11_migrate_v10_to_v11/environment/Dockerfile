@@ -115,7 +115,9 @@ RUN cd /home/user/project && npm install
 #   - /home/user/project - tRPC v10 project.
 #   - server.ts and client.ts using tRPC v10 and superjson.
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

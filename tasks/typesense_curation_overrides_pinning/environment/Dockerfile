@@ -33,7 +33,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - typesense-server v26.0 standalone Linux binary installed at /usr/local/bin/typesense-server
 #   - /home/user/typesense-curation: project directory where the executor sets up the server, data, and overrides
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -27,7 +27,9 @@ RUN mkdir -p /home/user/myproject && chmod 0755 /home/user/myproject
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Reflex CRUD notes with tags many-to-many task environment with uv, Python 3, Node.js v24, and pytest tooling."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

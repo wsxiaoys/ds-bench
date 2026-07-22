@@ -77,7 +77,9 @@ RUN cd /home/user/myproject && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="ArkEnv 0.12.1 + ArkType 2.2.0 + Node.js v24 environment for the dotenv-backed env validator task."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

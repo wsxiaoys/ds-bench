@@ -33,7 +33,9 @@ RUN mkdir -p /home/user/myapp && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Reflex blank project bootstrapped under /home/user/myapp with uv, Node.js v24, python3, and pytest for evaluating a FastAPI JWT api_transformer task."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

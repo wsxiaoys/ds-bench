@@ -193,7 +193,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - ClickHouse pre-seeded 'events' and 'users' tables in database 'default'
 #   - /entrypoint.sh: sets RUN_ID and starts the local ClickHouse server before the container CMD
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -35,7 +35,9 @@ RUN mkdir -p /home/user && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="librosa 0.11.0 reassigned-spectrogram peak-tracking task environment with a deterministic 3-tone harmonic WAV at /home/user/input.wav."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

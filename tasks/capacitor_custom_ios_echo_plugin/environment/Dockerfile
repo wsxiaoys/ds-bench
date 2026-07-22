@@ -75,7 +75,9 @@ RUN test ! -e /home/user/myapp/ios/App/App/EchoPlugin.swift && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Capacitor v8 hybrid app pre-scaffolded at /home/user/myapp with the iOS platform added and a custom MyViewController.swift planted (no EchoPlugin yet)."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

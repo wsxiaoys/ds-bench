@@ -67,7 +67,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - /home/user/altair_boxplot/data/measurements.csv: local, deterministic synthetic dataset (720 rows; columns alloy, treatment, supplier, strength_mpa)
 #   - /home/user/altair_boxplot/output: empty directory where the agent writes grouped_boxplot.html
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

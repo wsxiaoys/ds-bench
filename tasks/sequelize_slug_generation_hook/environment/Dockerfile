@@ -37,7 +37,9 @@ EOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Express and Sequelize environment for the slug generation hook task."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

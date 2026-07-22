@@ -51,7 +51,9 @@ CMD ["/usr/local/bin/entrypoint.sh"]
 #   - /home/user/myproject: task project directory where the candidate writes run_consumer.py
 #   - /usr/local/bin/entrypoint.sh: boots redis-server (daemonized) then holds the container open
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

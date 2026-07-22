@@ -29,7 +29,9 @@ RUN mkdir -p /home/user/gdx-game && chmod 0755 /home/user/gdx-game
 LABEL Author="generate-harbor-tasks"
 LABEL Description="libGDX headless backend task environment with OpenJDK 17 and Gradle 8.10 pre-installed for the 2D shape overlap collision report task."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

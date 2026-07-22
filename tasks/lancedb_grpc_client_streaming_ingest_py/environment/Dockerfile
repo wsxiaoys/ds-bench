@@ -36,7 +36,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - grpcio==1.68.1, grpcio-tools==1.68.1: define/compile the .proto and run the local gRPC server + client
 #   - /home/user/myproject: empty project directory where the candidate builds server.py, client.py, and the proto stubs
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

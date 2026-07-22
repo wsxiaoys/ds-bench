@@ -29,7 +29,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - Node.js v22 (npm included) for building the Capacitor plugin npm package
 #   - /home/user/capacitor-stringkit: empty project directory where the agent scaffolds the plugin package
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

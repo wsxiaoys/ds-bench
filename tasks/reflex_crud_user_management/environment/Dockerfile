@@ -23,7 +23,9 @@ RUN mkdir -p /home/user && chmod 0755 /home/user
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Reflex CRUD task environment: Ubuntu 24.04 with uv, Node.js v24, sqlite3, and Python tooling for synchronous rx.session-based User CRUD."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

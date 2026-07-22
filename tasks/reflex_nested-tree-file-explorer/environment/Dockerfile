@@ -36,7 +36,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - extra pip3 packages for tests: pytest-xprocess (long-running server fixture), requests (readiness/HTTP checks)
 #   - /home/user: working directory root; the executor creates the Reflex project at /home/user/tree_explorer
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

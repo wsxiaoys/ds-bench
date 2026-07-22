@@ -27,7 +27,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - altair==5.5.0 and pandas installed via pip3 for the visualization task
 #   - /home/user/project: empty project directory where the agent creates build_heatmap.py and heatmap.html
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

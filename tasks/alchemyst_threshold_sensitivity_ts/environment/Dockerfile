@@ -19,7 +19,9 @@ RUN mkdir -p /home/user/myproject && chmod 0755 /home/user/myproject
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Alchemyst AI TypeScript SDK task environment for threshold sensitivity CLI built on Ubuntu 24.04 with Node.js v24."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

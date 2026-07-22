@@ -34,7 +34,9 @@ EOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud Split (beta) task environment: Python 3 with llama-cloud SDK and a bundled multi-document PDF fixture for the Split CLI task."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

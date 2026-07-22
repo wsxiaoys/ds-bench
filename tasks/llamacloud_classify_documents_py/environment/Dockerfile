@@ -197,7 +197,9 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LlamaCloud Classifier (Python) task environment with the llama-cloud SDK and pre-built invoice/contract PDF fixtures."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

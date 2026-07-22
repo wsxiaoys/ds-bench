@@ -118,7 +118,9 @@ CMD ["/bin/bash", "/home/user/myproject/entrypoint.sh"]
 #   - /home/user/myproject: project dir; _seed.py + entrypoint.sh seed search_docs_${ZEALT_RUN_ID}
 #   - fixture.json (written at boot): db_path, table_name, dim, num_rows for the verifier
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -181,7 +181,9 @@ RUN chmod +x /tmp/seed.sh && /tmp/seed.sh && rm /tmp/seed.sh
 LABEL Author="generate-harbor-tasks"
 LABEL Description="PocketBase v0.31.0 Go-embedded scaffold with seeded wallets A=100 and B=0 for the txbusy_retry_wallet_transfer_go task."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -78,7 +78,9 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Vega-Altair task environment with browser verification and a synthetic OHLCV CSV for the candlestick + volume dashboard."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

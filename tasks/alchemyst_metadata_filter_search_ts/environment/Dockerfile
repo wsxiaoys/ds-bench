@@ -19,7 +19,9 @@ RUN mkdir -p /home/user/myproject
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Alchemyst AI metadata-filter task: Ubuntu 24.04 + Node.js v24 + Python Alchemyst SDK for verification, with an empty /home/user/myproject scaffold."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
