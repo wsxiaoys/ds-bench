@@ -50,7 +50,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - Node.js v24 for the TypeScript task environment
 #   - /home/user/myproject: directory for the project with package.json
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

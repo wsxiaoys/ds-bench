@@ -67,7 +67,9 @@ PYEOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB query logging audit task: pre-seeded 200-row 64-d articles table; candidate implements LoggedSearcher in /home/user/myproject/solution.py."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

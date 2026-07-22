@@ -135,7 +135,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - Wasp CLI pinned to @wasp.sh/wasp-cli@0.24.0
 #   - /home/user/taskhub: pre-scaffolded Wasp Spec project (auth + User/Project/Task model, migrated local SQLite DB, no seeds yet)
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

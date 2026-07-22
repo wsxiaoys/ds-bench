@@ -50,7 +50,9 @@ CMD ["/bin/bash", "-c", "mkdir -p /tmp/nats-store && nats-server -js -a 127.0.0.
 #   - nats-server v2.11.6 static binary (JetStream) at /usr/local/bin/nats-server, started by CMD on 127.0.0.1:4222
 #   - /home/user/myproject: empty project directory where the agent writes solution.py
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -31,7 +31,9 @@ RUN mkdir -p /home/user/myproject && chmod 0755 /home/user/myproject
 LABEL Author="generate-harbor-tasks"
 LABEL Description="libGDX 1.14.2 headless polygon-geometry CLI task environment (OpenJDK 17 + Gradle 8.10)."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

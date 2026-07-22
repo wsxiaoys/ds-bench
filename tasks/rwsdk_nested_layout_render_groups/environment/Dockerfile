@@ -35,7 +35,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - pip3 packages for verification: pytest-xprocess (dev server lifecycle), requests (HTTP checks)
 #   - /home/user/project: scaffolded RedwoodSDK starter with node_modules pre-installed
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -75,7 +75,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #       devDependencies: jsdom, typescript, vitest (used for offline CLI verification)
 #   - The candidate implements /home/user/project/src/store.ts (not present initially)
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

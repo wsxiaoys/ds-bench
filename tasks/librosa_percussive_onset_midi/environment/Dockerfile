@@ -89,7 +89,9 @@ RUN mkdir -p /home/user && \
 LABEL Author="generate-harbor-tasks"
 LABEL Description="librosa 0.11.0 percussive onset / grid quantizer task environment with a pre-baked 12s ~120 BPM drum loop at /home/user/input.wav."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -22,7 +22,9 @@ RUN mkdir -p /home/user /home/user/db /home/user/output && chmod -R 0755 /home/u
 LABEL Author="generate-harbor-tasks"
 LABEL Description="LanceDB Python task environment for update_special_chars_py: lancedb 0.25.3 with a writable /home/user and empty /home/user/db storage root."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

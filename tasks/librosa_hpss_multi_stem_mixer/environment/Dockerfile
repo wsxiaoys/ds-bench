@@ -41,7 +41,9 @@ PY
 LABEL Author="generate-harbor-tasks"
 LABEL Description="librosa 0.11 environment with a pre-baked 'choice' music WAV at /home/user/input.wav for the hpss-multi-stem-mixer task."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

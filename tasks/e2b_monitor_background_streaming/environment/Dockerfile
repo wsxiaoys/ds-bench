@@ -26,7 +26,9 @@ RUN pip3 install --break-system-packages --ignore-installed e2b
 LABEL Author="e2b-task-builder"
 LABEL Description="E2B background command streaming task environment"
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

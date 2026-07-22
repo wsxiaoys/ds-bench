@@ -72,7 +72,9 @@ ENV MESA_GLSL_VERSION_OVERRIDE=330
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Godot 4.3 headless environment with software OpenGL/Vulkan for SubViewport render-to-texture tests."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

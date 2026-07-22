@@ -70,7 +70,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #       - prompts/.materialized/support-triage-agent.prompt.yaml: materialized versioned prompt
 #         (model openai/gpt-4o-mini; system + user messages referencing {{customer_name}}, {{account_tier}}, {{issue_summary}}, {{priority}})
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

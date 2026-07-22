@@ -22,7 +22,9 @@ LABEL Description="Prefect 3.0 environment with Docker integration for deploymen
 #   - prefect and prefect-docker installed.
 #   - /home/user - base directory for the user.
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

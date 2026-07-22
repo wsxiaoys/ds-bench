@@ -71,7 +71,9 @@ RUN cd /home/user/myproject && npm install --no-audit --no-fund --loglevel=error
 LABEL Author="generate-harbor-tasks"
 LABEL Description="ArkType project with arktype@2.2.0, @arktype/attest@0.56.0, and vitest preinstalled; the agent must wire up a vitest+attest test suite."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

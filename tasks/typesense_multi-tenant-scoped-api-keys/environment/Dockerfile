@@ -52,7 +52,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - /home/user/typesense-task: project directory
 #   - /home/user/typesense-task/data/documents.jsonl: seeded multi-tenant dataset (9 docs across acme/globex/initech)
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -26,7 +26,9 @@ RUN cd /home/user && \
 #   - Node.js v24 for the Next.js task environment
 #   - /home/user/myproject: base Next.js application with src directory
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

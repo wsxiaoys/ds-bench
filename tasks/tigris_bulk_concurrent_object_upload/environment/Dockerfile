@@ -37,7 +37,9 @@ ENV AWS_ENDPOINT_URL_S3="https://t3.storage.dev" \
 #     the image -- they are injected at run time via TIGRIS_STORAGE_ACCESS_KEY_ID
 #     and TIGRIS_STORAGE_SECRET_ACCESS_KEY from task.toml.
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

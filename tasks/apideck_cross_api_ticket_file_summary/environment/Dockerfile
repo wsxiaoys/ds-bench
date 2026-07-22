@@ -18,7 +18,9 @@ RUN mkdir -p /home/user/apideck_task && chmod 0755 /home/user/apideck_task
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Apideck Unify cross-API task: OneDrive uploads plus a GitHub-backed ticket summary."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

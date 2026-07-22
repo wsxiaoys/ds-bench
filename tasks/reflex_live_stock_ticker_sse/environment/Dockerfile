@@ -30,7 +30,9 @@ RUN mkdir -p /home/user && chmod 0755 /home/user
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Reflex live_stock_ticker_sse task: Ubuntu 24.04 with uv, Node.js 24, system python3 + requests + pytest-xprocess for backend REST verification of a Reflex background-task ticker."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

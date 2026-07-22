@@ -50,7 +50,9 @@ EOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Task environment with Encore CLI, Node.js v24, and a starting Express.js app."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

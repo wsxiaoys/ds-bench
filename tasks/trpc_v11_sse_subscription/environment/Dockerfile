@@ -27,7 +27,9 @@ RUN mkdir -p /home/user/project && \
 #   - Node.js v24 installed
 #   - /home/user/project: tRPC v11 project with express, zod, cors, and eventsource installed.
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

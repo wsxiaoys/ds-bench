@@ -139,7 +139,9 @@ RUN cd /home/user/myproject && npm install --no-audit --no-fund
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Node.js v24 project with @llamaindex/llama-cloud preinstalled and three sample text documents for LlamaCloud Classify in /home/user/myproject."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

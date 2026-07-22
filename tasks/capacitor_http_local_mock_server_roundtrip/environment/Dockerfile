@@ -55,7 +55,9 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - /home/user/capacitor-http-app: pre-baked project with @capacitor/core, @capacitor/cli,
 #     typescript, tsx, and express installed into node_modules (offline-ready)
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

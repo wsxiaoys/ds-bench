@@ -29,7 +29,9 @@ RUN pip3 install e2b pytest
 LABEL Author="e2b-task-builder"
 LABEL Description="E2B task environment for configuring sandbox environment variables."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

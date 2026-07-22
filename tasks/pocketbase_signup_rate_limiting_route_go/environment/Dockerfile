@@ -54,7 +54,9 @@ RUN cd /home/user/pb && go mod tidy
 LABEL Author="generate-harbor-tasks"
 LABEL Description="PocketBase Go custom route rate limiting task environment."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

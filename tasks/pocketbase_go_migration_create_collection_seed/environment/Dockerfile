@@ -45,7 +45,9 @@ EOF
 LABEL Author="generate-harbor-tasks"
 LABEL Description="PocketBase Go Migration task environment with Go 1.22 and PocketBase v0.22.13."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -28,7 +28,9 @@ RUN mkdir -p /home/user/myproject
 LABEL Author="generate-harbor-tasks"
 LABEL Description="Reflex tenant_subdomain_routing task environment: uv-managed Python for Reflex (frontend on :3000, FastAPI backend on :8000), Node.js v24, browser verification via pochi-verifier/agent-browser."
 
-# Setup entrypoint script
+# Setup initial tests and entrypoint script
+COPY test_initial_state.py /bootstrap/test_initial_state.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
