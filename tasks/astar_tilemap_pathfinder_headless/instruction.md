@@ -1,0 +1,47 @@
+# Weighted A* Tilemap Pathfinder on the libGDX Headless Backend
+
+## Background
+libGDX ships a non-rendering **headless** backend (`com.badlogicgames.gdx:gdx-backend-headless`) that boots a real `HeadlessApplication` with mock graphics/audio/input so that pure-logic game systems can run on servers and in CI. Build a deterministic, weighted **A\*** pathfinder for tile grids that runs entirely under a `HeadlessApplication`, reads a scenario from a text file, and writes machine-verifiable results to an output file.
+
+## Requirements
+- Load a rectangular integer tilemap and a list of pathfinding queries from a single text **scenario file**.
+- For every query, compute a **least-cost** path from the start cell to the goal cell over **8-connected** movement, honoring per-tile movement weights, impassable tiles, weighted diagonal movement, and a corner-cutting restriction.
+- Write exactly one result line per query, in the same order as the queries, to an **output file**.
+- The whole computation MUST run inside the libGDX headless backend.
+
+## Scenario file format
+The scenario file contains only whitespace-separated non-negative integers, structured as:
+- Line 1: `R C` — the number of rows `R` and columns `C` (`1 <= R, C <= 256`).
+- The next `R` lines: each line has exactly `C` integers giving tile **weights** for that row (row `0` first, top to bottom; column `0` first, left to right). A weight of `0` means the tile is **impassable** (a wall). A weight `w >= 1` (with `w <= 999`) means the tile is passable and has movement weight `w`.
+- The next line: `Q` — the number of queries (`0 <= Q <= 20000`).
+- The next `Q` lines: each line has four integers `SR SC GR GC` — the start cell `(SR, SC)` and the goal cell `(GR, GC)`. All coordinates are guaranteed to be inside the grid (`0 <= row < R`, `0 <= col < C`).
+
+## Movement and cost model
+Cells are addressed as `(row, col)`. Each cell has up to 8 neighbors (4 orthogonal, 4 diagonal).
+- A move is permitted only into an **in-bounds, passable** tile.
+- The cost to make an **orthogonal** step into a passable tile `t` equals `weight(t)`.
+- The cost to make a **diagonal** step into a passable tile `t` equals `weight(t) * sqrt(2)` (use `Math.sqrt(2.0)`).
+- **Corner-cutting is forbidden**: a diagonal move from `(r, c)` to `(r+dr, c+dc)` (with `dr, dc` each `+1` or `-1`) is allowed only if BOTH orthogonally-adjacent shared cells `(r+dr, c)` and `(r, c+dc)` are in-bounds AND passable. If either of those two cells is out of bounds or impassable, the diagonal move is not allowed.
+- The total cost of a path is the sum of its step costs; the start cell itself contributes `0`.
+- For each query you MUST report a path whose total cost is the minimum achievable (a least-cost path).
+
+## Output format
+Write the results to the output file, one line per query, in query order, and nothing else:
+- If the start tile or the goal tile is impassable, or no path exists between them, write the single token `NO_PATH`.
+- If the start equals the goal (and is passable), write `0.000 1 SR,SC`.
+- Otherwise write a line with space-separated tokens: `<length> <count> <cell_0> <cell_1> ... <cell_k>` where:
+  - `<length>` is the path's total cost formatted with **exactly three digits after the decimal point** (e.g. `2.828`).
+  - `<count>` is the integer number of cells in the path, including both start and goal.
+  - each `<cell_i>` is written as `row,col` (a comma with no surrounding spaces), listed in order from the start cell to the goal cell.
+
+## Implementation Hints
+- Project path: `/home/user/astar`.
+- Command (must be runnable repeatedly): `bash /home/user/astar/run.sh <scenario_path> <output_path>`. The first argument is the path to a scenario file to read; the second is the path of the output file to (over)write with the results. Both paths may be absolute.
+- The pathfinder MUST execute inside a libGDX `HeadlessApplication` (headless backend). Do not perform any OpenGL/GL rendering; code must not reference `Gdx.gl` or a `SpriteBatch`.
+- Use libGDX's `com.badlogic.gdx.utils` collections for the search: the open set / frontier MUST be a `com.badlogic.gdx.utils.BinaryHeap`.
+- Pin libGDX to version `1.14.2` (`com.badlogicgames.gdx:gdx:1.14.2`, `com.badlogicgames.gdx:gdx-backend-headless:1.14.2`, and the `com.badlogicgames.gdx:gdx-platform:1.14.2:natives-desktop` runtime natives).
+- The environment has **no network access at run time**; all required dependencies for libGDX `1.14.2` and a JVM build toolchain are already available in the local build caches. Everything must build and run offline and locally.
+- A JDK and a preinstalled Gradle (available as `gradle` on the PATH) are provided; the libGDX `1.14.2` Maven Central artifacts and JUnit are already primed in the local Gradle cache so an offline build succeeds. Do not depend on downloading a Gradle wrapper distribution or any other artifact at build/run time.
+- When more than one least-cost path exists, your program's output MUST be deterministic (identical across repeated runs on the same input). Break ties in a fixed way: among frontier entries with equal total estimated cost, prefer the one with the larger accumulated cost from the start, and break any remaining tie by the smaller row-major cell index (`row * C + col`).
+- The output file must contain exactly `Q` result lines in query order and no extra content.
+
