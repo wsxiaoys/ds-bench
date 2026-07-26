@@ -1,0 +1,58 @@
+# Cross-Page Bulk Selection & Optimistic Archive (TanStack Table + TanStack Query)
+
+## Background
+Build a single-page admin console for a large "Items" dataset. The UI is a server-paginated data grid built with **TanStack Table** whose row selection must survive page navigation, plus a **TanStack Query** powered bulk "archive" action with an optimistic UI update that is durably persisted to a local **SQLite** database through a small **Express** JSON API. Everything runs locally; there is no internet access at evaluation time.
+
+The hard part is correct **cross-page selection semantics**: a user can tick individual rows on different pages and the running total must stay correct, and a user can switch into a "select every matching item across ALL pages" mode whose bulk action affects rows that were never loaded into the browser.
+
+## Requirements
+- A data grid rendered with TanStack Table using **server-side pagination** (the browser only ever holds one page of rows at a time).
+- **Per-row checkboxes** and a **page-level "select all on this page" checkbox**.
+- A **"select all matching across every page"** mode that selects the entire filtered dataset, not just the current page.
+- Row selection is keyed by the item's stable id and **persists when navigating between pages** (selecting rows on page 1, moving to page 2, and returning to page 1 keeps the page-1 selections).
+- An always-accurate **selection summary** showing the count of currently selected items across all pages.
+- A **bulk archive action** that flips every selected item's status to `archived`, implemented as a TanStack Query mutation with an **optimistic UI update** (the affected rows reflect the change immediately, before the server responds) and **cache invalidation** on settle. On success the selection is cleared.
+- A **status filter** toggling between `active` and `archived` views.
+- All data is stored in and served from a local SQLite database; changes are **durable across server restarts**.
+
+## Implementation Hints
+- Project path: /home/user/app
+- Build command: `npm run build`
+- Start command: `npm start`
+- Port: 34517. The server MUST listen on the port taken from the `PORT` environment variable, defaulting to `34517`, and MUST serve both the built single-page app (at `/`) and the JSON API (under `/api`) from that one port.
+- The SQLite database MUST be a file located at `/home/user/app/data/app.db`.
+- The database MUST be seeded exactly once with **57** items, ids `1` through `57`, where item `i` has `name` equal to `Item ` followed by the id zero-padded to 4 digits (e.g. `Item 0007`), `category` equal to `['Alpha','Bravo','Charlie'][(i-1) % 3]`, and `status` equal to `active`. Seeding MUST be idempotent: restarting the server MUST NOT wipe, duplicate, or reset existing data.
+- On first load the app MUST show the `active` filter, page `1`, and a page size of `10`.
+- JSON API (all request and response bodies are JSON):
+  - `GET /api/items?status=<active|archived>&page=<n>&pageSize=<n>` returns status 200 with:
+    ```json
+    {
+      "rows": [ { "id": number, "name": string, "category": string, "status": "active" | "archived" } ],
+      "total": number,
+      "page": number,
+      "pageSize": number
+    }
+    ```
+    `page` is 1-based, `rows` contains only the requested page (length <= `pageSize`), and `total` is the count of ALL items matching `status` across every page.
+  - `POST /api/items/bulk-archive` accepts either of the two request shapes below and returns status 200 with `{ "archived": number }`, where `archived` is the number of items whose status is `archived` as a result of the call:
+    ```json
+    { "mode": "selected", "ids": number[] }
+    ```
+    ```json
+    { "mode": "all", "status": "active" | "archived" }
+    ```
+    For `mode: "all"` the server MUST archive EVERY item currently matching the given `status` across all pages, computed on the server (it MUST NOT rely on a client-supplied id list). Both shapes set the targeted items' `status` to `archived` and MUST be idempotent.
+- Required DOM contract on the page at `/` (attributes are `data-testid` values). The final evaluation drives a real browser against exactly these hooks:
+  - `total-count`: element whose text contains the integer total of items matching the current filter.
+  - `selection-count`: element whose text contains the integer number of items currently selected across all pages.
+  - `page-indicator`: element whose text matches `Page <current> of <last>`.
+  - `next-page`, `prev-page`: buttons to move between pages.
+  - `filter-active`, `filter-archived`: controls to switch the status filter (switching resets to page 1).
+  - Each visible data row: element `row-<id>`, containing an `<input type="checkbox">` with testid `row-checkbox-<id>`.
+  - `select-page-checkbox`: an `<input type="checkbox">` that toggles selection of every row on the current page.
+  - `select-all-matching`: a button that selects every item matching the current filter across all pages; it MUST be visible and enabled whenever all rows on the current page are selected, and after activating it `selection-count` MUST equal `total-count`.
+  - `clear-selection`: a button that deselects everything.
+  - `bulk-archive`: a button that runs the bulk archive over the entire current selection; it MUST be disabled when the selection is empty.
+  - `empty-state`: an element shown when the current filtered page has no rows.
+- No external network calls, cloud services, or external databases may be used.
+
