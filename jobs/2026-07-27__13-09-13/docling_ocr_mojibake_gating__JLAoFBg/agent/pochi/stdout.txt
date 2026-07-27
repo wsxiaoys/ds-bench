@@ -1,0 +1,414 @@
+- Initializing MCP connections...
+You
+# Two-Pass OCR Gating Pipeline for Docling ## Background Docling (`docling` v2.107.0, already installed in this offline container) extracts a PDF's embedded programmatic text layer by default and only falls back to optical character recognition (OCR) for pages it recognizes as bitmap scans. This produces two failure modes for real-world documents: (a) pages that are image-only scans yield little or no usable text from the programmatic layer, and (b) pages with broken/non-standard font encodings emit corrupted "mojibake" text. A robust ingestion pipeline must therefore *detect* per-page text corruption and selectively repair only the affected pages with OCR, while leaving clean pages untouched. You must build a command-line pipeline that performs exactly this two-pass "OCR gating" over a fixed input PDF and emits a repaired Markdown document plus a machine-readable gating report. The environment is fully offline: all model weights and the Tesseract engine are pre-baked into the image. No network access is available at any point. ## Requirements * Read the input PDF and, using only its embedded programmatic text layer (no OCR), extract the text of every page (Pass 1). * For every page, compute a numeric `garble_score` from its Pass-1 text using the exact definition given below, and decide whether the page's programmatic text is unusable and must be repaired via OCR. * For every page decided to need repair, obtain that page's text a second time such that the text is produced by optical character recognition of the rendered page image rather than the embedded text layer (Pass 2). Pass 2 must use the Tesseract OCR engine with English. * Produce a final "repaired" Markdown document that uses the programmatic-layer text for clean pages and the OCR text for pages flagged for repair. * Produce a per-page gating report as JSON. ## Implementation Hints * Project path: `/home/user/project` * Input PDF (already present, do not regenerate it): `/home/user/project/assets/source.pdf` * Command (runnable, no arguments, executed from the project path): `python3 main.py` * The command must write exactly these two output files: * `/home/user/project/output/gating_report.json` * `/home/user/project/output/repaired.md` * Running the command multiple times must be idempotent (each run fully regenerates both output files). ### Exact garble-score definition (must be followed precisely) For a given page, let `T` be the text obtained from ONLY that page's programmatic text layer (Pass 1, OCR disabled). Let `N` be the number of characters in `T` that are not Unicode whitespace. Let `S` be the number of those `N` characters whose Unicode code point is outside the inclusive printable-ASCII range `U+0020`–`U+007E`. Then: * `garble_score = S / N`, except that when `N == 0` the `garble_score` is defined to be exactly `1.0`. * Report each `garble_score` rounded to 4 decimal places. ### Exact gating decision (must be followed precisely) * `GARBLE_THRESHOLD = 0.30`. * A page needs OCR repair if and only if `garble_score >= GARBLE_THRESHOLD`. * Pages needing repair get `text_source = "ocr"`; all other pages get `text_source = "programmatic"`. * Pass 2 (OCR) must be run only for pages that need repair. ### `output/gating_report.json` schema (exact keys) A single JSON object: ```json { "source_pdf": "assets/source.pdf", "garble_threshold": 0.30, "page_count": <int>, "pages": [ { "page_no": <int, 1-based, ascending>, "garble_score": <float rounded to 4 decimals>, "programmatic_char_count": <int, count of non-whitespace chars in the Pass-1 text of this page>, "ocr_char_count": <int count of non-whitespace chars in this page's OCR text, or null when OCR was not performed for this page>, "text_source": <"programmatic" | "ocr">, "needs_ocr": <bool> } ] } ``` Invariants that must hold in the report: `page_count` equals `len(pages)`; `pages` are ordered by ascending `page_no` starting at 1; for every page `needs_ocr == (garble_score >= garble_threshold) == (text_source == "ocr")`; `ocr_char_count` is `null` for every `programmatic` page and a non-negative integer for every `ocr` page. ### `output/repaired.md` content * Concatenate, in ascending page order, each page's chosen text: the programmatic-layer text for `programmatic` pages and the OCR text for `ocr` pages. * Separate consecutive pages with a single blank line. ## Notes * The pipeline must run entirely offline using only components already present in the image. * OCR on CPU is slow; the pipeline may take several minutes to run.   
+
+Pochi
+Let me start by exploring the project structure and understanding what's available.   
+📂 Listing files in /home/user/project recursively ✔ 
+💫 Executing python3 -c "import docling; print(docling.__version__)" ✖ "Command exited with code 1"
+💫 Executing python3 -c "import docling; print(docling)" 2>&1; pip show docling 2>&1 ✖ "Command exited with code 1"
+💫 Executing tesseract --version 2>&1; which tesseract ✖ "Tool call was cancelled because a previous tool call failed."
+💫 Executing tesseract --version 2>&1 ✔ 
+💫 Executing python3 -c "
+import docling
+import inspect
+print(dir(docling))
+" ✔ 
+💫 Executing python3 -c "
+import docling.document_converter as dc
+print(dir(dc))
+" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption, PdfBackendOptions, InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+# Check the pipeline options
+print(dir(PdfPipelineOptions))
+" ✔ 
+💫 Executing python3 -c "
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+p = PdfPipelineOptions()
+print(p.model_fields)
+" ✔ 
+💫 Executing python3 -c "
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.ocr_options import OcrOptions, OcrAutoOptions
+print(dir(OcrOptions))
+print('---')
+print(dir(OcrAutoOptions))
+print('---')
+o = OcrAutoOptions()
+print(o.model_fields)
+" 2>&1 | head -60 ✔ 
+💫 Executing python3 -c "
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+p = PdfPipelineOptions()
+print(type(p.ocr_options))
+print(dir(p.ocr_options))
+" ✔ 
+💫 Executing python3 -c "
+from docling.datamodel.pipeline_options import PdfPipelineOptions, OcrAutoOptions, OcrTesseractOptions
+print(dir(OcrTesseractOptions))
+" 2>&1 ✖ "Command exited with code 1"
+💫 Executing python3 -c "
+from docling.datamodel.pipeline_options import PdfPipelineOptions, OcrAutoOptions, TesseractOcrOptions
+print(dir(TesseractOcrOptions))
+print('---')
+t = TesseractOcrOptions()
+print(t.model_fields.keys())
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+from docling.datamodel.pipeline_options import TesseractOcrOptions
+t = TesseractOcrOptions()
+print('lang:', t.lang)
+print('force_full_page_ocr:', t.force_full_page_ocr)
+print('bitmap_area_threshold:', t.bitmap_area_threshold)
+print('path:', t.path)
+print('psm:', t.psm)
+" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption, PdfBackendOptions, InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractOcrOptions
+
+# First, let's do a simple conversion to understand the result structure
+converter = DocumentConverter()
+result = converter.convert('/home/user/project/assets/source.pdf')
+print(type(result))
+print(dir(result))
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+
+converter = DocumentConverter()
+result = converter.convert('/home/user/project/assets/source.pdf')
+doc = result.document
+print('type(doc):', type(doc))
+print('dir(doc):', dir(doc))
+print()
+print('pages:', len(result.pages))
+print('type of pages[0]:', type(result.pages[0]))
+print('dir of pages[0]:', dir(result.pages[0]))
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+
+converter = DocumentConverter()
+result = converter.convert('/home/user/project/assets/source.pdf')
+doc = result.document
+
+# Check export_to_text for per-page text
+print('num_pages:', doc.num_pages)
+print('pages:', doc.pages)
+print()
+
+# Try export_to_text
+text = doc.export_to_text()
+print('Full text:')
+print(repr(text[:500]))
+print()
+
+# Check pages in doc
+for page_no, page in doc.pages.items():
+    print(f'Page {page_no}:')
+    print(f'  type: {type(page)}')
+    print(f'  dir: {[x for x in dir(page) if not x.startswith(\"_\")]}')
+    if hasattr(page, 'page_no'):
+        print(f'  page_no: {page.page_no}')
+    if hasattr(page, 'size'):
+        print(f'  size: {page.size}')
+" 2>&1 ✔ 
+Now I have a good understanding of the docling API. Let me explore how to get per-page text and how to configure OCR.   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+
+converter = DocumentConverter()
+result = converter.convert('/home/user/project/assets/source.pdf')
+doc = result.document
+
+# Get per-page text
+for text_item in doc.texts:
+    print(f'Text item: self_ref={text_item.self_ref}')
+    print(f'  prov: {text_item.prov}')
+    print(f'  text: {text_item.text[:100]}')
+    print()
+" 2>&1 ✔ 
+Now let me explore how to do Pass 1 with OCR disabled (force_backend_text) and how to do Pass 2 with OCR per-page.   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption, PdfBackendOptions
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+
+# Pass 1: programmatic text only, no OCR
+pipeline_opts = PdfPipelineOptions()
+pipeline_opts.do_ocr = False
+pipeline_opts.force_backend_text = True
+
+converter = DocumentConverter(
+    format_options={
+        'pdf': PdfFormatOption(
+            pipeline_options=pipeline_opts
+        )
+    }
+)
+result = converter.convert('/home/user/project/assets/source.pdf')
+doc = result.document
+
+for text_item in doc.texts:
+    print(f'  page_no={text_item.prov[0].page_no}: text={text_item.text[:100]}')
+" 2>&1 ✔ 
+Interesting — page 3 (the scanned page) produced no text when OCR is disabled. Now let me check if page 3 has any text at all in the programmatic layer, or if it's just empty. Let me also check what happens when OCR is enabled.   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+
+# Check what happens with default settings (OCR enabled)
+pipeline_opts = PdfPipelineOptions()
+pipeline_opts.do_ocr = True
+
+converter = DocumentConverter(
+    format_options={
+        'pdf': PdfFormatOption(
+            pipeline_options=pipeline_opts
+        )
+    }
+)
+result = converter.convert('/home/user/project/assets/source.pdf')
+doc = result.document
+
+for text_item in doc.texts:
+    print(f'  page_no={text_item.prov[0].page_no}: text={text_item.text[:100]}')
+" 2>&1 ✔ 
+Good. Now I understand the structure. Page 3 is a scanned page — with OCR disabled, it produces no text, and with OCR enabled, it produces text. Now let me understand the approach for per-page OCR. I need to: 1. Pass 1: Convert the PDF with `do_ocr=False` and `force_backend_text=True` to get programmatic text per page 2. Compute garble_score per page 3. For pages needing OCR, run Pass 2 with OCR enabled on just those pages 4. Combine results The challenge is doing per-page OCR. Let me explore how to render individual pages and use Tesseract directly.   
+💫 Executing python3 -c "
+# Can we get page images from docling?
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+
+pipeline_opts = PdfPipelineOptions()
+pipeline_opts.do_ocr = False
+pipeline_opts.force_backend_text = True
+pipeline_opts.generate_page_images = True
+
+converter = DocumentConverter(
+    format_options={
+        'pdf': PdfFormatOption(
+            pipeline_options=pipeline_opts
+        )
+    }
+)
+result = converter.convert('/home/user/project/assets/source.pdf')
+
+for page in result.pages:
+    print(f'Page {page.page_no}: image={page.image is not None}')
+    if page.image:
+        print(f'  image type: {type(page.image)}')
+        print(f'  image size: {page.image.size}')
+" 2>&1 ✔ 
+Now I can get page images. Let me check how to use Tesseract directly on those images, and also check if there's a way to do per-page OCR with docling itself.   
+💫 Executing python3 -c "
+import pytesseract
+print(pytesseract)
+print(pytesseract.get_tesseract_version())
+" ✖ "Command exited with code 1"
+💫 Executing pip list 2>/dev/null | grep -i tesseract; pip list 2>/dev/null | grep -i ocr ✔ 
+💫 Executing python3 -c "
+import tesserocr
+from PIL import Image
+print(dir(tesserocr))
+print(tesserocr.tesseract_version())
+" ✔ 
+Now let me check if docling has a way to do per-page OCR. Let me explore more of the API.   
+💫 Executing python3 -c "
+# Check if we can do page-level conversion
+from docling.document_converter import DocumentConverter, PdfFormatOption, InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractOcrOptions
+from docling.datamodel.base_models import InputDocument
+
+# Let's see if we can convert individual pages
+print(dir(InputDocument))
+" 2>&1 ✖ "Command exited with code 1"
+💫 Executing python3 -c "
+from docling.document_converter import InputDocument
+print(dir(InputDocument))
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import InputDocument
+print(InputDocument.model_fields.keys())
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractOcrOptions
+from docling.datamodel.base_models import PageRange
+
+# Check if we can do page range
+print(dir(PageRange))
+" 2>&1 ✖ "Command exited with code 1"
+💫 Executing python3 -c "
+from docling.document_converter import PageRange
+print(dir(PageRange))
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+import typing
+from docling.document_converter import PageRange
+# PageRange seems to be a type alias
+print(PageRange)
+print(PageRange.__args__)
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import PdfFormatOption
+print(PdfFormatOption.model_fields.keys())
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import PdfBackendOptions
+print(PdfBackendOptions.model_fields.keys())
+po = PdfBackendOptions()
+print('page_range:', po.page_range)
+" 2>&1 ✖ "Command exited with code 1"
+OK, so the approach will be: 1. **Pass 1**: Convert with `do_ocr=False` and `force_backend_text=True` to get programmatic text per page 2. Compute garble_score per page 3. **Pass 2**: For pages needing OCR, render the page image and use `tesserocr` directly to OCR each page 4. Combine results into the output files Let me now check if there's a simpler way — using docling with OCR enabled only for specific pages by using the page range feature.   
+💫 Executing python3 -c "
+# Check if DocumentConverter has page range support
+from docling.document_converter import DocumentConverter
+import inspect
+sig = inspect.signature(DocumentConverter.convert)
+print(sig)
+" 2>&1 ✔ 
+There's a `page_range` parameter on `convert()`. Let me check if I can use that to do per-page OCR conversion. But actually, the simplest approach is: 1. Pass 1: Convert with `do_ocr=False` and `force_backend_text=True` to get programmatic text per page and page images 2. For pages needing OCR, use tesserocr directly on the page images 3. Combine results Let me now also check the source PDF to understand what we're dealing with.   
+💫 Executing python3 -c "
+# Quick test of tesserocr on a page image
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+import tesserocr
+from PIL import Image
+
+pipeline_opts = PdfPipelineOptions()
+pipeline_opts.do_ocr = False
+pipeline_opts.force_backend_text = True
+pipeline_opts.generate_page_images = True
+
+converter = DocumentConverter(
+    format_options={
+        'pdf': PdfFormatOption(
+            pipeline_options=pipeline_opts
+        )
+    }
+)
+result = converter.convert('/home/user/project/assets/source.pdf')
+
+# Test tesseract on page 3 (scanned)
+page3 = result.pages[2]  # 0-indexed
+img = page3.image
+print(f'Page 3 image size: {img.size}')
+
+# Use tesserocr
+api = tesserocr.PyTessBaseAPI(lang='eng')
+api.SetImage(img)
+text = api.GetUTF8Text()
+api.End()
+print(f'OCR text from page 3: {repr(text)}')
+" 2>&1 ✔ 
+Tesseract OCR works perfectly on page images. Now let me check what the actual text content of page 3 looks like in the programmatic layer (Pass 1). It returned nothing, which means `N=0`, so `garble_score=1.0`. Let me also check if there's a page that might have "mojibake" text (broken encoding). Let me look more carefully at the PDF.   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+
+# Let's try extracting raw text with different approaches
+pipeline_opts = PdfPipelineOptions()
+pipeline_opts.do_ocr = False
+pipeline_opts.force_backend_text = True
+pipeline_opts.generate_page_images = True
+
+converter = DocumentConverter(
+    format_options={
+        'pdf': PdfFormatOption(
+            pipeline_options=pipeline_opts
+        )
+    }
+)
+result = converter.convert('/home/user/project/assets/source.pdf')
+doc = result.document
+
+# Group text by page
+page_texts = {}
+for text_item in doc.texts:
+    pn = text_item.prov[0].page_no
+    if pn not in page_texts:
+        page_texts[pn] = []
+    page_texts[pn].append(text_item.text)
+
+for pn in sorted(page_texts.keys()):
+    combined = '\n'.join(page_texts[pn])
+    print(f'Page {pn}: {repr(combined[:200])}')
+    print(f'  Non-ws chars: {sum(1 for c in combined if not c.isspace())}')
+    print()
+" 2>&1 ✔ 
+So page 3 has no programmatic text at all. Now I have everything I need to build the pipeline. Let me write the main.py script.   
+✏️  Writing /home/user/project/main.py ✔ 
+💫 Executing cd /home/user/project && python3 main.py 2>&1 ✔ 
+📖 Reading /home/user/project/output/gating_report.json ✔ 
+📖 Reading /home/user/project/output/repaired.md ✔ 
+The outputs look correct. Let me verify the invariants and run it again to confirm idempotency.   
+💫 Executing python3 -c "
+import json
+
+with open('/home/user/project/output/gating_report.json') as f:
+    report = json.load(f)
+
+# Verify invariants
+assert report['page_count'] == len(report['pages']), 'page_count != len(pages)'
+assert report['garble_threshold'] == 0.30
+
+for i, page in enumerate(report['pages']):
+    assert page['page_no'] == i + 1, f'page_no ordering broken at index {i}'
+    needs_ocr = page['garble_score'] >= report['garble_threshold']
+    assert page['needs_ocr'] == needs_ocr, f'needs_ocr mismatch on page {page[\"page_no\"]}'
+    assert (page['text_source'] == 'ocr') == needs_ocr, f'text_source mismatch on page {page[\"page_no\"]}'
+    
+    if page['text_source'] == 'programmatic':
+        assert page['ocr_char_count'] is None, f'ocr_char_count should be null for programmatic page {page[\"page_no\"]}'
+    else:
+        assert isinstance(page['ocr_char_count'], int) and page['ocr_char_count'] >= 0, f'ocr_char_count invalid for ocr page {page[\"page_no\"]}'
+    
+    # Verify garble_score is rounded to 4 decimals
+    score_str = str(page['garble_score'])
+    if '.' in score_str:
+        decimals = len(score_str.split('.')[1])
+        assert decimals <= 4, f'garble_score not rounded to 4 decimals: {page[\"garble_score\"]}'
+
+print('All invariants passed!')
+print(f'Pages: {len(report[\"pages\"])}')
+for p in report['pages']:
+    print(f'  Page {p[\"page_no\"]}: garble={p[\"garble_score\"]}, source={p[\"text_source\"]}, needs_ocr={p[\"needs_ocr\"]}')
+" ✔ 
+💫 Executing cd /home/user/project && python3 main.py 2>&1 ✔ 
+📖 Reading /home/user/project/output/gating_report.json ✔ 
+📖 Reading /home/user/project/output/repaired.md ✔ 
+Idempotent — identical output on second run. Let me also verify the `garble_score` of exactly `1.0` (not `1.0000`) is acceptable per the spec. The spec says "rounded to 4 decimal places". `1.0` is the same as `1.0000`. Let me check if JSON serialization preserves this properly.   
+💫 Executing python3 -c "
+import json
+# The spec says 'rounded to 4 decimal places'
+# round(1.0, 4) = 1.0 which in JSON is just 1.0
+# This should be fine as 1.0 == 1.0000 mathematically
+# But let's ensure it's a float type in JSON
+with open('/home/user/project/output/gating_report.json') as f:
+    report = json.load(f)
+print(type(report['pages'][2]['garble_score']))
+print(report['pages'][2]['garble_score'])
+print(repr(report['pages'][2]['garble_score']))
+" ✔ 
+The output is correct. All invariants are satisfied: 1. `page_count` (4) equals `len(pages)` (4) ✓ 2. Pages are ordered by ascending `page_no` (1, 2, 3, 4) ✓ 3. For every page `needs_ocr == (garble_score >= garble_threshold) == (text_source == "ocr")` ✓ 4. `ocr_char_count` is `null` for programmatic pages and a non-negative integer for OCR pages ✓ 5. `garble_score` is a float rounded to 4 decimal places ✓ 6. Idempotent across multiple runs ✓ The pipeline correctly: - Extracted programmatic text from pages 1, 2, 4 (clean ASCII text, garble_score=0.0) - Detected page 3 as having no programmatic text (N=0 → garble_score=1.0 → needs OCR) - Ran Tesseract OCR (English) only on page 3 - Produced the repaired Markdown with OCR text for page 3 and programmatic text for all others   
+🎉 Task Completed
+The two-pass OCR gating pipeline has been implemented at `/home/user/project/main.py`. 
+
+**How it works:**
+
+1. **Pass 1**: Converts the PDF with `do_ocr=False` and `force_backend_text=True`, extracting only the embedded programmatic text layer per page, plus rendering page images for potential OCR use.
+
+2. **Gating**: Computes `garble_score = S/N` for each page (where N = non-whitespace chars, S = chars outside ASCII printable range U+0020–U+007E; N=0 → score=1.0). Pages with `garble_score >= 0.30` are flagged for OCR repair.
+
+3. **Pass 2**: Runs Tesseract OCR (English) via `tesserocr` only on the rendered page images of flagged pages.
+
+4. **Outputs**: Writes `output/gating_report.json` (per-page scores, char counts, text source, gating decisions) and `output/repaired.md` (concatenated text with blank-line page separators, using OCR text for flagged pages and programmatic text for clean pages).
+
+**Results for the provided PDF:**
+- Pages 1, 2, 4: Clean ASCII text, `garble_score=0.0`, `text_source="programmatic"`
+- Page 3: Image-only scan with no programmatic text, `garble_score=1.0`, `text_source="ocr"`
+- All invariants verified and the pipeline is idempotent across multiple runs.   
+  

@@ -1,0 +1,133 @@
+Selected strategy: _DaytonaDirect
+Building environment from /home/kw/code/zealt/docling-benchmark/scratchpad/pending-tasks/docling_ocr_mojibake_gating/environment/Dockerfile
+Running command: set -euo pipefail; mkdir -p /logs/agent/pochi && pochi --version
+Command outputs captured
+Running command: mkdir -p ~/.pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" -e "s/MINIMAX_API_KEY/${MINIMAX_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    },
+    "minimax": {
+      "kind": "minimax",
+      "apiKey": "MINIMAX_API_KEY",
+      "models": {
+        "MiniMax-M3": {
+          "maxTokens": 10000,
+          "contextWindow": 1000000
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: cat > /tmp/pochi_cmd.sh << 'CMD_EOF'
+set -o pipefail
+pochi --model google/gemini-3.5-flash --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl --experimental-stream-trajectory-strip-duplicates > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Two-Pass OCR Gating Pipeline for Docling
+
+## Background
+Docling (`docling` v2.107.0, already installed in this offline container) extracts a PDF's embedded programmatic text layer by default and only falls back to optical character recognition (OCR) for pages it recognizes as bitmap scans. This produces two failure modes for real-world documents: (a) pages that are image-only scans yield little or no usable text from the programmatic layer, and (b) pages with broken/non-standard font encodings emit corrupted "mojibake" text. A robust ingestion pipeline must therefore *detect* per-page text corruption and selectively repair only the affected pages with OCR, while leaving clean pages untouched.
+
+You must build a command-line pipeline that performs exactly this two-pass "OCR gating" over a fixed input PDF and emits a repaired Markdown document plus a machine-readable gating report.
+
+The environment is fully offline: all model weights and the Tesseract engine are pre-baked into the image. No network access is available at any point.
+
+## Requirements
+- Read the input PDF and, using only its embedded programmatic text layer (no OCR), extract the text of every page (Pass 1).
+- For every page, compute a numeric `garble_score` from its Pass-1 text using the exact definition given below, and decide whether the page's programmatic text is unusable and must be repaired via OCR.
+- For every page decided to need repair, obtain that page's text a second time such that the text is produced by optical character recognition of the rendered page image rather than the embedded text layer (Pass 2). Pass 2 must use the Tesseract OCR engine with English.
+- Produce a final "repaired" Markdown document that uses the programmatic-layer text for clean pages and the OCR text for pages flagged for repair.
+- Produce a per-page gating report as JSON.
+
+## Implementation Hints
+- Project path: `/home/user/project`
+- Input PDF (already present, do not regenerate it): `/home/user/project/assets/source.pdf`
+- Command (runnable, no arguments, executed from the project path): `python3 main.py`
+- The command must write exactly these two output files:
+  - `/home/user/project/output/gating_report.json`
+  - `/home/user/project/output/repaired.md`
+- Running the command multiple times must be idempotent (each run fully regenerates both output files).
+
+### Exact garble-score definition (must be followed precisely)
+For a given page, let `T` be the text obtained from ONLY that page's programmatic text layer (Pass 1, OCR disabled). Let `N` be the number of characters in `T` that are not Unicode whitespace. Let `S` be the number of those `N` characters whose Unicode code point is outside the inclusive printable-ASCII range `U+0020`–`U+007E`. Then:
+- `garble_score = S / N`, except that when `N == 0` the `garble_score` is defined to be exactly `1.0`.
+- Report each `garble_score` rounded to 4 decimal places.
+
+### Exact gating decision (must be followed precisely)
+- `GARBLE_THRESHOLD = 0.30`.
+- A page needs OCR repair if and only if `garble_score >= GARBLE_THRESHOLD`.
+- Pages needing repair get `text_source = "ocr"`; all other pages get `text_source = "programmatic"`.
+- Pass 2 (OCR) must be run only for pages that need repair.
+
+### `output/gating_report.json` schema (exact keys)
+A single JSON object:
+```json
+{
+  "source_pdf": "assets/source.pdf",
+  "garble_threshold": 0.30,
+  "page_count": <int>,
+  "pages": [
+    {
+      "page_no": <int, 1-based, ascending>,
+      "garble_score": <float rounded to 4 decimals>,
+      "programmatic_char_count": <int, count of non-whitespace chars in the Pass-1 text of this page>,
+      "ocr_char_count": <int count of non-whitespace chars in this page's OCR text, or null when OCR was not performed for this page>,
+      "text_source": <"programmatic" | "ocr">,
+      "needs_ocr": <bool>
+    }
+  ]
+}
+```
+Invariants that must hold in the report: `page_count` equals `len(pages)`; `pages` are ordered by ascending `page_no` starting at 1; for every page `needs_ocr == (garble_score >= garble_threshold) == (text_source == "ocr")`; `ocr_char_count` is `null` for every `programmatic` page and a non-negative integer for every `ocr` page.
+
+### `output/repaired.md` content
+- Concatenate, in ascending page order, each page's chosen text: the programmatic-layer text for `programmatic` pages and the OCR text for `ocr` pages.
+- Separate consecutive pages with a single blank line.
+
+## Notes
+- The pipeline must run entirely offline using only components already present in the image.
+- OCR on CPU is slow; the pipeline may take several minutes to run.
+
+EOF
+CMD_EOF
+setsid --wait bash /tmp/pochi_cmd.sh &
+SETSID_PID=$!
+echo $SETSID_PID > /tmp/setsid_bash_pochi_cmd.pid
+wait $SETSID_PID 2>/dev/null
+Command outputs captured
+Running command: if [ -f /tmp/setsid_bash_pochi_cmd.pid ]; then
+SETSID_PID=$(cat /tmp/setsid_bash_pochi_cmd.pid)
+kill -TERM -- -$SETSID_PID 2>/dev/null || true
+sleep 2
+kill -9 -- -$SETSID_PID 2>/dev/null || true
+fi
+rm -f ~/.pochi/config.jsonc /tmp/pochi_cmd.sh /tmp/setsid_bash_pochi_cmd.pid
+Command outputs captured
+Collecting main service artifacts

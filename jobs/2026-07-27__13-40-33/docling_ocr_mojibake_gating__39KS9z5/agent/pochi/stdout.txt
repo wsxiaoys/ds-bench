@@ -1,0 +1,256 @@
+- Initializing MCP connections...
+You
+# Two-Pass OCR Gating Pipeline for Docling ## Background Docling (`docling` v2.107.0, already installed in this offline container) extracts a PDF's embedded programmatic text layer by default and only falls back to optical character recognition (OCR) for pages it recognizes as bitmap scans. This produces two failure modes for real-world documents: (a) pages that are image-only scans yield little or no usable text from the programmatic layer, and (b) pages with broken/non-standard font encodings emit corrupted "mojibake" text. A robust ingestion pipeline must therefore *detect* per-page text corruption and selectively repair only the affected pages with OCR, while leaving clean pages untouched. You must build a command-line pipeline that performs exactly this two-pass "OCR gating" over a fixed input PDF and emits a repaired Markdown document plus a machine-readable gating report. The environment is fully offline: all model weights and the Tesseract engine are pre-baked into the image. No network access is available at any point. ## Requirements * Read the input PDF and, using only its embedded programmatic text layer (no OCR), extract the text of every page (Pass 1). * For every page, compute a numeric `garble_score` from its Pass-1 text using the exact definition given below, and decide whether the page's programmatic text is unusable and must be repaired via OCR. * For every page decided to need repair, obtain that page's text a second time such that the text is produced by optical character recognition of the rendered page image rather than the embedded text layer (Pass 2). Pass 2 must use the Tesseract OCR engine with English. * Produce a final "repaired" Markdown document that uses the programmatic-layer text for clean pages and the OCR text for pages flagged for repair. * Produce a per-page gating report as JSON. ## Implementation Hints * Project path: `/home/user/project` * Input PDF (already present, do not regenerate it): `/home/user/project/assets/source.pdf` * Command (runnable, no arguments, executed from the project path): `python3 main.py` * The command must write exactly these two output files: * `/home/user/project/output/gating_report.json` * `/home/user/project/output/repaired.md` * Running the command multiple times must be idempotent (each run fully regenerates both output files). ### Exact garble-score definition (must be followed precisely) For a given page, let `T` be the text obtained from ONLY that page's programmatic text layer (Pass 1, OCR disabled). Let `N` be the number of characters in `T` that are not Unicode whitespace. Let `S` be the number of those `N` characters whose Unicode code point is outside the inclusive printable-ASCII range `U+0020`–`U+007E`. Then: * `garble_score = S / N`, except that when `N == 0` the `garble_score` is defined to be exactly `1.0`. * Report each `garble_score` rounded to 4 decimal places. ### Exact gating decision (must be followed precisely) * `GARBLE_THRESHOLD = 0.30`. * A page needs OCR repair if and only if `garble_score >= GARBLE_THRESHOLD`. * Pages needing repair get `text_source = "ocr"`; all other pages get `text_source = "programmatic"`. * Pass 2 (OCR) must be run only for pages that need repair. ### `output/gating_report.json` schema (exact keys) A single JSON object: ```json { "source_pdf": "assets/source.pdf", "garble_threshold": 0.30, "page_count": <int>, "pages": [ { "page_no": <int, 1-based, ascending>, "garble_score": <float rounded to 4 decimals>, "programmatic_char_count": <int, count of non-whitespace chars in the Pass-1 text of this page>, "ocr_char_count": <int count of non-whitespace chars in this page's OCR text, or null when OCR was not performed for this page>, "text_source": <"programmatic" | "ocr">, "needs_ocr": <bool> } ] } ``` Invariants that must hold in the report: `page_count` equals `len(pages)`; `pages` are ordered by ascending `page_no` starting at 1; for every page `needs_ocr == (garble_score >= garble_threshold) == (text_source == "ocr")`; `ocr_char_count` is `null` for every `programmatic` page and a non-negative integer for every `ocr` page. ### `output/repaired.md` content * Concatenate, in ascending page order, each page's chosen text: the programmatic-layer text for `programmatic` pages and the OCR text for `ocr` pages. * Separate consecutive pages with a single blank line. ## Notes * The pipeline must run entirely offline using only components already present in the image. * OCR on CPU is slow; the pipeline may take several minutes to run.   
+
+Pochi
+💭 Thinking for 83 characters   
+I'll start by exploring the project structure and understanding what's available.   
+📂 Listing files in /home/user/project recursively ✔ 
+💫 Executing python3 -c "import docling; print(docling.__version__)" 2>&1 | head -20 ✔ 
+💭 Thinking for 57 characters   
+💫 Executing pip show docling 2>&1 | head -20; echo "---"; python3 -c "import docling; print(docling.__file__)" ✔ 
+💫 Executing which tesseract && tesseract --version 2>&1 | head -5; echo "---"; python3 -c "import pytesseract; print('pytesseract ok')" 2>&1 ✖ "Command exited with code 1"
+💭 Thinking for 263 characters   
+💫 Executing python3 -c "import docling; import os; print(os.path.dirname(docling.__file__))"; echo "---"; ls /opt/app-root/lib64/python3.12/site-packages/docling/ ✔ 
+💫 Executing python3 -c "import docling.document_converter; print('dc ok')" 2>&1; python3 -c "from docling.document_converter import DocumentConverter; print('DC ok')" 2>&1 ✔ 
+💫 Executing ls /opt/app-root/lib64/python3.12/site-packages/docling/pipeline/; echo "---BACKEND---"; ls /opt/app-root/lib64/python3.12/site-packages/docling/backend/; echo "---MODELS---"; ls /opt/app-root/lib64/python3.12/site-packages/docling/models/ ✔ 
+💫 Executing python3 -c "import docling_core; print('docling_core ok')" 2>&1; python3 -c "from docling_core.types.doc import DocItemLabel; print('core types ok')" 2>&1; pip list 2>/dev/null | grep -i -E "docling|pypdf|pdf|pillow|pytesseract|tesser" ✔ 
+💭 Thinking for 641 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/document_converter.py ✔ 
+💭 Thinking for 6429 characters   
+Let me explore the Docling data model and how to get per-page text.   
+💫 Executing ls /opt/app-root/lib64/python3.12/site-packages/docling/datamodel/; echo "---"; python3 -c "from docling.datamodel.document import ConversionResult, InputDocument; print('ok')" ✔ 
+💫 Executing python3 -c "import tesserocr; print('tesserocr ok'); from tesserocr import PyTessBaseAPI, RIL; print('PyTessBaseAPI ok')"; echo "---"; tesseract --list-langs 2>&1 | head ✔ 
+💭 Thinking for 289 characters   
+💫 Executing grep -n "do_ocr\|ocr_options\|OcrOptions\|class PdfPipelineOptions\|generate_page_images\|images_to_pdf\|class EasyOcrOptions\|class TesseractCli\|class TesseractOptions" /opt/app-root/lib64/python3.12/site-packages/docling/datamodel/pipeline_options.py | head -50 ✔ 
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/datamodel/pipeline_options.py ✔ 
+💭 Thinking for 1528 characters   
+💫 Executing grep -n "def export_to_markdown\|def export_to_text\|def _export_to_\|def export_to_dict\|def iter_items\|def iter_in_items\|self.pages\|def add_text\|provenance\|class Page\|class BoundingBox" /opt/app-root/lib64/python3.12/site-packages/docling_core/types/doc/document.py 2>/dev/null | head -40 ✔ 
+💫 Executing python3 -c "from docling_core.types.doc import DoclingDocument; print([m for m in dir(DoclingDocument) if not m.startswith('_')])" 2>&1 | tr ',' '\n' | head -60 ✔ 
+💭 Thinking for 132 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling_core/types/doc/document.py ✔ 
+💭 Thinking for 6603 characters   
+Let me examine the PDF and test extraction approaches before committing toa design.   
+💫 Executing cd /home/user/project && python3 -c "
+import pypdfium2 as pdfium
+pdf = pdfium.PdfDocument('assets/source.pdf')
+print('pages:', len(pdf))
+for i, page in enumerate(pdf):
+    tp = page.get_textpage()
+    txt = tp.get_text_range()
+    nws = sum(1 for c in txt if not c.isspace())
+    nonascii = sum(1 for c in txt if not c.isspace() and not (0x20 <= ord(c) <= 0x7e))
+    print(f'--- page {i+1}: len={len(txt)} nws={nws} nonascii={nonascii} score={nonascii/nws if nws else 1.0:.4f}')
+    print(repr(txt[:200]))
+" 2>&1 | head -60 ✔ 
+💭 Thinking for 1860 characters   
+💫 Executing cd /home/user/project && ls -la assets/ && file assets/_scan.png 2>/dev/null; python3 -c "
+from PIL import Image
+im = Image.open('assets/_scan.png')
+print('scan.png size:', im.size, im.mode)
+" ✔ 
+💫 Executing cd /home/user/project && timeout 280 python3 -c "
+import logging
+logging.disable(logging.WARNING)
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.document_converter import PdfFormatOption
+conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(do_ocr=False, do_table_structure=False, generate_page_images=False))})
+res = conv.convert('assets/source.pdf')
+doc = res.document
+print('num pages:', doc.num_pages())
+for pno in sorted(doc.pages.keys()):
+    md = doc.export_to_markdown(page_no=pno)
+    nws = sum(1 for c in md if not c.isspace())
+    nonascii = sum(1 for c in md if not c.isspace() and not (0x20 <= ord(c) <= 0x7e))
+    print(f'--- page {pno}: md_len={len(md)} nws={nws} nonascii={nonascii} score={nonascii/nws if nws else 1.0:.4f}')
+    print(repr(md[:300]))
+" 2>&1 | tail -40 ✔ 
+💭 Thinking for 6108 characters   
+Let me verify the scan image content and check for any mojibake by examining the PDF internals.   
+💫 Executing cd /home/user/project && python3 -c "
+from PIL import Image
+import tesserocr
+im = Image.open('assets/_scan.png')
+with tesserocr.PyTessBaseAPI(lang='eng') as api:
+    api.SetImage(im)
+    txt = api.GetUTF8Text()
+print('OCR of scan.png:')
+print(repr(txt))
+print('---')
+print(txt)
+" 2>&1 | head -30 ✔ 
+💫 Executing cd /home/user/project && python3 -c "
+import pypdfium2 as pdfium
+pdf = pdfium.PdfDocument('assets/source.pdf')
+for i, page in enumerate(pdf):
+    objs = page.get_textpage().count_chars() if hasattr(page.get_textpage(),'count_chars') else 'n/a'
+    # render page to see if image
+    print(f'page {i+1}: width={page.get_width():.0f} height={page.get_height():.0f}')
+" 2>&1 | head ✔ 
+💭 Thinking for 15859 characters   
+I have a clear picture now. Let me check how Docling renders page images to align the OCR renderingresolution.   
+💫 Executing grep -rn "render_page\|get_page_image\|scale\|render_to\|PilImage\|frombytes\|images_scale\|def _render\|page.render\|RenderScale\|scale=" /opt/app-root/lib64/python3.12/site-packages/docling/pipeline/standard_pdf_pipeline.py 2>/dev/null | head -40 ✔ 
+💫 Executing grep -rn "render\|scale\|dpi\|get_pixmap\|render_to\|PilImage\|frombytes" /opt/app-root/lib64/python3.12/site-packages/docling/backend/docling_parse_backend.py 2>/dev/null | head -30; echo "===V2==="; grep -rn "render\|scale\|dpi\|get_pixmap\|PilImage\|frombytes\|get_page_image" /opt/app-root/lib64/python3.12/site-packages/docling/backend/docling_parse_v4_backend.py 2>/dev/null | head -30 ✔ 
+💭 Thinking for 2591 characters   
+Let me test OCR stability across rendering DPIs to informthe design.   
+💫 Executing cd /home/user/project && python3 -c "
+import pypdfium2 as pdfium
+from PIL import Image
+import tesserocr
+pdf = pdfium.PdfDocument('assets/source.pdf')
+page = pdf[2]  # page 3
+for dpi in [150, 200, 300]:
+    scale = dpi/72.0
+    pil = page.render(scale=scale).to_pil()
+    with tesserocr.PyTessBaseAPI(lang='eng') as api:
+        api.SetImage(pil)
+        t = api.GetUTF8Text()
+    nws = sum(1 for c in t if not c.isspace())
+    print(f'dpi={dpi} size={pil.size} nws={nws}')
+    print(repr(t))
+" 2>&1 | head -30 ✔ 
+💭 Thinking for 23469 characters   
+Let me test the `force_backend_text` option and confirm the per-page output is stable, and locate tessdata.   
+💫 Executing cd /home/user/project && find / -name "eng.traineddata" 2>/dev/null | head; echo "---TESSDATA_PREFIX---"; echo $TESSDATA_PREFIX; tesseract --print-parameters 2>/dev/null | grep -i "datapath" | head ✔ 
+💫 Executing cd /home/user/project && timeout 280 python3 -c "
+import logging
+logging.disable(logging.WARNING)
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.document_converter import PdfFormatOption
+po = PdfPipelineOptions(do_ocr=False, do_table_structure=False, force_backend_text=True)
+conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=po)})
+doc = conv.convert('assets/source.pdf').document
+for pno in sorted(doc.pages.keys()):
+    md = doc.export_to_markdown(page_no=pno)
+    print(f'--- page {pno} (force_backend_text):')
+    print(repr(md))
+" 2>&1 | tail -20 ✔ 
+💭 Thinking for 16758 characters   
+I have all the information I need. Both extraction approaches yield identical per-page results, and OCR output is stable across DPIs. Let me verify the OCR character count and then write the implementation.   
+💫 Executing cd /home/user/project && python3 -c "
+import pypdfium2 as pdfium
+import tesserocr
+pdf = pdfium.PdfDocument('assets/source.pdf')
+page = pdf[2]
+pil = page.render(scale=300/72.0).to_pil().convert('RGB')
+with tesserocr.PyTessBaseAPI(lang='eng') as api:
+    api.SetImage(pil)
+    t = api.GetUTF8Text()
+print('raw:', repr(t))
+print('stripped:', repr(t.strip()))
+print('nws:', sum(1 for c in t if not c.isspace()))
+" 2>&1 | tail -5 ✔ 
+💭 Thinking for 281 characters   
+Confirmed. Now let me write the implementation.   
+✏️  Writing /home/user/project/main.py ✔ 
+💭 Thinking for 203 characters   
+Let me clean up a stray line I left in the config section.   
+🔧 Applying diff to /home/user/project/main.py ✔ 
+Now let me run the pipeline and verify the outputs.   
+💫 Executing cd /home/user/project && rm -rf output && time python3 main.py 2>&1 | tail -20; echo "=== EXIT: $? ===" ✔ 
+💭 Thinking for 996 characters   
+The tqdm monkey-patch broke model loading. Let me remove it and check outputs.   
+💫 Executing cd /home/user/project && ls -la output/ 2>&1; echo "---"; cat output/gating_report.json 2>&1 | head -40 ✔ 
+💭 Thinking for 259 characters   
+The output wasn't created because the tqdm patch broke model loading. Let me remove thepatch entirely.   
+🔧 Applying diff to /home/user/project/main.py ✔ 
+💫 Executing cd /home/user/project && rm -rf output && time python3 main.py 2>/dev/null; echo "=== EXIT: $? ==="; echo "---FILES---"; ls -la output/ 2>&1 ✔ 
+Both files were created. Let me inspecttheir contents.   
+💫 Executing cd /home/user/project && echo "=== gating_report.json ===" && cat output/gating_report.json && echo "" && echo "=== repaired.md ===" && cat output/repaired.md && echo "" && echo "=== repaired.md (repr, show newlines) ===" && python3 -c "print(repr(open('output/repaired.md').read()))" ✔ 
+💭 Thinking for 726 characters   
+Outputs look correct. Let me verify idempotency and validate all report invariants programmatically.   
+💫 Executing cd /home/user/project && cp output/gating_report.json /tmp/gr1.json && cp output/repaired.md /tmp/rm1.md && python3 main.py 2>/dev/null && diff /tmp/gr1.json output/gating_report.json && diff /tmp/rm1.md output/repaired.md && echo "IDEMPOTENT: outputs identical across runs" ✖ "Command exited with code 127"
+💫 Executing cd /home/user/project && python3 -c "
+import json
+r = json.load(open('output/gating_report.json'))
+assert r['source_pdf']=='assets/source.pdf', r['source_pdf']
+assert r['garble_threshold']==0.30, r['garble_threshold']
+assert r['page_count']==len(r['pages']), (r['page_count'], len(r['pages']))
+prev=0
+for p in r['pages']:
+    assert p['page_no']==prev+1, ('order', p['page_no'])
+    prev=p['page_no']
+    needs = p['garble_score'] >= r['garble_threshold']
+    assert p['needs_ocr']==needs, ('needs_ocr', p)
+    assert (p['text_source']=='ocr')==needs, ('text_source', p)
+    if p['text_source']=='programmatic':
+        assert p['ocr_char_count'] is None, ('ocr_null', p)
+    else:
+        assert isinstance(p['ocr_char_count'], int) and p['ocr_char_count']>=0, ('ocr_int', p)
+    # garble score rounded to 4 decimals
+    assert round(p['garble_score'],4)==p['garble_score'], p
+    # programmatic_char_count non-negative int
+    assert isinstance(p['programmatic_char_count'], int) and p['programmatic_char_count']>=0, p
+print('ALL INVARIANTS PASS')
+print('pages needing OCR:', [p['page_no'] for p in r['pages'] if p['needs_ocr']])
+" ✖ "Tool call was cancelled because a previous tool call failed."
+💭 Thinking for 99 characters   
+`diff` isn't available. Let me use Python for both idempotency and invariantvalidation.   
+💫 Executing cd /home/user/project && python3 -c "
+a=open('output/gating_report.json').read(); b=open('output/repaired.md').read()
+import subprocess, sys
+" ; cp output/gating_report.json /tmp/gr1.json && cp output/repaired.md /tmp/rm1.md && python3 main.py 2>/dev/null && python3 -c "
+gr1=open('/tmp/gr1.json').read(); gr2=open('output/gating_report.json').read()
+rm1=open('/tmp/rm1.md').read(); rm2=open('output/repaired.md').read()
+assert gr1==gr2, 'gating_report not idempotent'
+assert rm1==rm2, 'repaired.md not idempotent'
+print('IDEMPOTENT: outputs identical across runs')
+" ✔ 
+💫 Executing cd /home/user/project && python3 -c "
+import json
+r = json.load(open('output/gating_report.json'))
+assert r['source_pdf']=='assets/source.pdf', r['source_pdf']
+assert r['garble_threshold']==0.30, r['garble_threshold']
+assert r['page_count']==len(r['pages']), (r['page_count'], len(r['pages']))
+prev=0
+for p in r['pages']:
+    assert p['page_no']==prev+1, ('order', p['page_no'])
+    prev=p['page_no']
+    needs = p['garble_score'] >= r['garble_threshold']
+    assert p['needs_ocr']==needs, ('needs_ocr', p)
+    assert (p['text_source']=='ocr')==needs, ('text_source', p)
+    if p['text_source']=='programmatic':
+        assert p['ocr_char_count'] is None, ('ocr_null', p)
+    else:
+        assert isinstance(p['ocr_char_count'], int) and p['ocr_char_count']>=0, ('ocr_int', p)
+    assert round(p['garble_score'],4)==p['garble_score'], p
+    assert isinstance(p['programmatic_char_count'], int) and p['programmatic_char_count']>=0, p
+print('ALL INVARIANTS PASS')
+print('pages needing OCR:', [p['page_no'] for p in r['pages'] if p['needs_ocr']])
+" ✔ 
+💭 Thinking for 1861 characters   
+All invariants pass and the pipeline is idempotent. Let me remove an unused import for cleanliness and do a final confirmation run.   
+🔧 Applying diff to /home/user/project/main.py ✔ 
+💫 Executing cd /home/user/project && rm -rf output && python3 main.py 2>/dev/null && python3 -c "
+import json
+r=json.load(open('output/gating_report.json'))
+print('page_count:', r['page_count'])
+for p in r['pages']:
+    print(p)
+" && echo "--- repaired.md ---" && cat output/repaired.md && echo "" && echo "=== FINAL EXIT OK ===" ✔ 
+💭 Thinking for 102 characters   
+Let me do a final review of the complete script.   
+📖 Reading /home/user/project/main.py ✔ 
+💭 Thinking for 2104 characters   
+The implementation is complete and clean. Let me do a final check that no stray artifacts were created in the project directory.   
+💫 Executing cd /home/user/project && ls -la && echo "--- output/ ---" && ls -la output/ ✔ 
+The project is clean with exactly the expected outputs. The implementation iscomplete.   
+🎉 Task Completed
+Built the two-pass OCR gating pipeline at `/home/user/project/main.py`, runnable via `python3 main.py` (no args) from the project path. It writes exactly `output/gating_report.json` and `output/repaired.md`, and is idempotent (verified identical output across runs, fully regenerating both files).
+
+How it works:
+- **Pass 1 (programmatic text, OCR disabled):** Uses Docling's `DocumentConverter` with `PdfPipelineOptions(do_ocr=False, force_backend_text=True)` to extract only the embedded programmatic text layer. Per-page text is obtained via `DoclingDocument.export_to_markdown(page_no=N)`.
+- **Garble scoring:** For each page's Pass-1 text `T`, `N` = non-whitespace chars, `S` = those outside printable-ASCII U+0020–U+007E; `garble_score = S/N` (exactly `1.0` when `N==0`), reported rounded to 4 decimals.
+- **Gating:** `GARBLE_THRESHOLD = 0.30`; a page needs OCR iff `garble_score >= 0.30`. `text_source="ocr"` for those, else `"programmatic"`.
+- **Pass 2 (OCR, only for pages needing repair):** Renders the page image with `pypdfium2` at 300 DPI and runs the Tesseract engine (English) via `tesserocr` (`lang="eng"`). OCR is run only on flagged pages.
+- **repaired.md:** Concatenates each page's chosen text in ascending order, separated by a single blank line (programmatic markdown for clean pages, Tesseract text for repaired pages).
+- **gating_report.json:** Single object with the exact required keys; `ocr_char_count` is `null` for programmatic pages and a non-negative int for OCR pages.
+
+Result on the bundled 4-page PDF: pages 1, 2, 4 are clean programmatic text (garble_score 0.0); page 3 is an image-only scan with empty programmatic text (garble_score 1.0 → repaired via Tesseract, ocr_char_count 42, text "The scanned report total is four hundred dollars."). All report invariants (page_count == len(pages), ascending page_no, needs_ocr == (garble_score >= threshold) == (text_source == "ocr"), ocr_char_count null-vs-int) validated programmatically.
+
+Entirely offline: uses only pre-installed Docling, pypdfium2, tesserocr/Tesseract weights, and PIL.   
+  

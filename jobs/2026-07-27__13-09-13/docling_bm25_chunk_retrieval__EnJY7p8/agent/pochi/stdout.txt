@@ -1,0 +1,269 @@
+- Initializing MCP connections...
+You
+# Offline BM25 Retrieval Index over a Docling-Parsed Document ## Background Build a fully offline lexical retrieval pipeline over a structured document. A multi-section PDF report (containing a table) is provided in the environment. Using the Docling library (`docling` v2.107.0, pre-installed), convert the PDF into its structured document model, segment it into structurally-aligned chunks, enrich every chunk with its hierarchical heading path, build a classical BM25 index over the contextualized chunks, and expose a query interface that returns the best-matching chunks for a set of provided test queries. ## Requirements * Convert the provided PDF into Docling's structured document model and segment it into chunks that follow the document's own structure (one chunk per detected structural element; do NOT invent arbitrary fixed-size text windows). * Enrich every chunk with its hierarchical heading path (the ordered list of section headings in scope for that chunk), and make the retrieval index incorporate this heading context so that a query which matches only a section's heading still retrieves that section's chunk. * Preserve the table: the table's cell content must appear verbatim inside a chunk's `text`. * Build a classical BM25 lexical index over the contextualized chunks and persist it to disk as a reusable artifact. * Provide a query interface that returns the top-k chunks (with their BM25 relevance scores) for a query, ranked from most to least relevant. * Evaluate the provided seeded test queries and emit their ranked results. ## Implementation Hints * Project path: /home/user/project * Input PDF: /home/user/project/assets/report.pdf * Seeded queries: /home/user/project/assets/queries.json — a JSON array of objects, each with the keys `query_id` (string) and `query` (string). * The environment is FULLY OFFLINE: there is NO network access at build, solve, or verify time. Your solution MUST NOT download any model, tokenizer, or dataset; MUST NOT contact any external service, API, or vector database; and MUST NOT use neural or embedding-based similarity — retrieval must be purely lexical. Rely only on components that operate offline inside this image. * top-k value: 5 (use 5 wherever a top-k is required, unless a smaller k is explicitly requested on the command line). * Build command: `python3 main.py --build` * Converts the PDF, produces the chunk stream in document order, and writes two artifacts: * `/home/user/project/output/chunks.json`: a JSON array of chunk objects in document order. Each object MUST include at least these keys: * `chunk_id` (integer): 0-based position of the chunk in document order (first chunk is `0`, incrementing by 1 with no gaps). * `heading_path` (array of strings): the ordered hierarchical section headings in scope for the chunk (may be empty only for content that precedes every heading). * `page_nos` (array of integers): the 1-based source page number(s) the chunk originates from, sorted ascending, without duplicates; never empty. * `text` (string): the chunk's textual content. * `term_count` (integer greater than 0): the number of lexical terms/tokens in the chunk after your own tokenization. * `/home/user/project/output/bm25_index.idx`: a persisted, non-empty index artifact that your query interface can reload from disk. Any file format is acceptable. * Query command: `python3 main.py --query "<text>" [--top-k <k>]` * Loads the persisted index from disk (this MUST work in a process that did not itself build the index) and prints to stdout a single JSON array of at most k objects (default k = 5), each with exactly the keys: * `chunk_id` (integer): referencing a `chunk_id` present in chunks.json. * `score` (number): the BM25 score of that chunk for the query. * The array MUST be ordered by descending `score` (a non-increasing sequence); the first element is the single best match. Print nothing else to stdout except this JSON array. * Seeded-run command: `python3 main.py --run-queries` * Loads the persisted index, evaluates every query in `assets/queries.json` with top-k = 5, and writes `/home/user/project/output/query_results.json`: a JSON object mapping each `query_id` (string) to an array (ranked by descending `score`, length at most 5) of objects with exactly the keys `chunk_id` (integer) and `score` (number). * The document content is written so that each seeded query has one unambiguous best answer; for every seeded query, the top-1 result (the `chunk_id` with the highest score) MUST be the chunk that actually contains the answer to that query.   
+
+Pochi
+Let me start by understanding the project structure and the input files.   
+📂 Listing files in /home/user/project recursively ✔ 
+📖 Reading /home/user/project/assets/queries.json ✔ 
+💫 Executing cd /home/user/project && python3 -c "from docling.document_converter import DocumentConverter; print('docling available')" ✔ 
+💫 Executing cd /home/user/project && python3 -c "import json; print(json.dumps(json.load(open('assets/queries.json')), indent=2))" ✔ 
+Good. Now let me explore the Docling API to understand how to parse the PDF and extract structured elements.   
+💫 Executing cd /home/user/project && python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+result = converter.convert('assets/report.pdf')
+doc = result.document
+print('Type:', type(doc))
+print('Dir:', [x for x in dir(doc) if not x.startswith('_')])
+" ✔ 
+💫 Executing cd /home/user/project && python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+result = converter.convert('assets/report.pdf')
+doc = result.document
+
+# Explore the document structure
+print('=== Body items ===')
+for i, item in enumerate(doc.iterate_items()):
+    print(f'{i}: type={type(item).__name__}, label={getattr(item, \"label\", \"N/A\")}, level={getattr(item, \"level\", \"N/A\")}')
+    if hasattr(item, 'text'):
+        print(f'   text={item.text[:100]}')
+    if hasattr(item, 'prov') and item.prov:
+        print(f'   page={item.prov[0].page_no}')
+" 2>&1 | head -80 ✔ 
+💫 Executing cd /home/user/project && python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+result = converter.convert('assets/report.pdf')
+doc = result.document
+
+# Try to understand the iteration
+for i, item in enumerate(doc.iterate_items()):
+    print(f'{i}: {item}')
+" 2>&1 | head -60 ✔ 
+Now I have a clear picture of the document structure. Let me also check what's available for BM25 and understand the tokenization approach.   
+💫 Executing python3 -c "import rank_bm25; print('rank_bm25 available')" 2>&1; python3 -c "import nltk; print('nltk available')" 2>&1; python3 -c "import pickle; print('pickle available')" 2>&1 ✔ 
+💫 Executing pip list 2>/dev/null | grep -iE "bm25|nltk|token|scikit|numpy|pickle" ; python3 -c "import numpy; print('numpy', numpy.__version__)" 2>&1 ✔ 
+💫 Executing python3 -c "
+from rank_bm25 import BM25Okapi
+import inspect
+print(inspect.getsource(BM25Okapi.__init__))
+" 2>&1 | head -40 ✔ 
+💫 Executing python3 -c "
+from rank_bm25 import BM25Okapi
+import inspect
+print(inspect.getsource(BM25Okapi._initialize))
+" 2>&1 | head -40 ✔ 
+💫 Executing python3 -c "
+from rank_bm25 import BM25Okapi
+import inspect
+print(inspect.getsource(BM25Okapi._score))
+" 2>&1 | head -50 ✔ 
+💫 Executing python3 -c "
+from rank_bm25 import BM25Okapi
+import inspect
+print(inspect.getsource(BM25Okapi.get_scores))
+" 2>&1 | head -40 ✔ 
+💫 Executing python3 -c "
+from rank_bm25 import BM25Okapi
+import inspect
+print(inspect.getsource(BM25Okapi._calc_idf))
+" 2>&1 | head -30 ✔ 
+Now I have a thorough understanding of the document structure, the BM25 API, and all the requirements. Let me build the solution. Key observations: 1. The document has 12 structural elements (items 0-11): SectionHeaderItem, TextItem, and TableItem 2. Each element has a `label` (section_header, text, table), `text`/`orig`, `prov` (with page_no), and heading hierarchy via `level` 3. For the table, I need to extract cell content verbatim 4. I need to use a simple whitespace+punctuation tokenizer (no NLTK available) 5. The BM25 index needs to be persisted with pickle and reloadable 6. Heading paths must be incorporated into chunk text so heading-only queries match   
+✏️  Writing /home/user/project/main.py ✔ 
+Now let me test the build command:   
+💫 Executing cd /home/user/project && python3 main.py --build 2>&1 ✔ 
+Let me verify the chunks output:   
+📖 Reading /home/user/project/output/chunks.json ✔ 
+I notice an issue: the heading path for chunk 0 ("Aurora Field Operations Manual") should be empty (it's the title), but chunk 1 ("Device Onboarding") should have heading_path ["Aurora Field Operations Manual"] since it's under the title. Similarly for the other headings. Let me also check — the heading path for a section_header chunk should be the path before it (the parent headings), not including itself. And for content chunks, the path should include the current heading. Looking at the current output: - Chunk 0: heading "Aurora Field Operations Manual", path [] — correct, it's the title - Chunk 1: heading "Device Onboarding", path [] — should be ["Aurora Field Operations Manual"] - Chunk 2: text under Device Onboarding, path ["Device Onboarding"] — correct - Chunk 3: heading "Billing Policy", path [] — should be ["Aurora Field Operations Manual"] The issue is in the heading stack logic. The `level` from `iterate_items` is 1 for all headings. The title and section headers are all at level 1, but the title should be the root. Let me review more carefully — the title is also level 1, and the section headers are also level 1. That means the title and section headers are siblings. So heading_path for section headers should be empty (they're top-level), and heading_path for content under a section header should include that section header. But wait, the requirements say: "the ordered hierarchical section headings in scope for the chunk." For a section header chunk itself, the heading_path should be the headings that are its ancestors (not itself). For content chunks, it should include the current heading. Let me re-examine: the title "Aurora Field Operations Manual" is a section_header at level 1. Then "Device Onboarding" is also a section_header at level 1. Are they really siblings? They both have `level=1`. So the title is just the first section_header. The heading stack logic: when we hit a new level-1 heading, we pop everything at level >= 1, then push the new heading. So: - Item 0 (title, level 1): pop nothing (stack empty), push "Aurora...", heading_path for this chunk = [] (stack before push) - Item 1 (Device Onboarding, level 1): pop level >= 1 → pop "Aurora...", push "Device Onboarding", heading_path = [] That seems right — they are siblings, so heading_path is empty for both. But the requirement says the heading path should be "the ordered hierarchical section headings in scope for the chunk." If the title is a section header at the same level, it's not really a "parent" heading. Actually, let me reconsider. The title is likely meant to be the document title, not a section heading. But Docling labels it as `section_header` with level 1. Let me check if there's a `title` label type. Looking at the earlier output: item 0 has `label=<DocItemLabel.SECTION_HEADER: 'section_header'>`. There might be a `TITLE` label. Let me check if Docling has a title label.   
+💫 Executing cd /home/user/project && python3 -c "
+from docling_core.types.doc import DocItemLabel
+for label in DocItemLabel:
+    print(label)
+" ✔ 
+There's a `title` label type. The first item is labeled `section_header` not `title`. Let me check the actual label value in the document.   
+💫 Executing cd /home/user/project && python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+result = converter.convert('assets/report.pdf')
+doc = result.document
+for item, level in doc.iterate_items():
+    print(f'label={item.label}, level={level}, text={item.text[:60]}')
+" 2>&1 | grep -v INFO | grep -v Loading | grep -v '^$' ✔ 
+All headings are `section_header` at level 1. The title "Aurora Field Operations Manual" is just the first section_header. Since all section_headers are at level 1, they're all siblings, so heading_path for each section header is empty. Content under a section header gets that section header's name in its heading_path. This is correct behavior. The heading_path for "Device Onboarding" is empty (it's a top-level section), and content under it gets `["Device Onboarding"]`. Now let me test the queries:   
+💫 Executing cd /home/user/project && python3 main.py --query "What is the device activation passphrase?" 2>&1 | grep -v INFO | grep -v Loading | grep -v '^$' ✔ 
+Chunk 2 is the correct answer (contains "ZEPHYR-4417"). Let me test all queries:   
+💫 Executing cd /home/user/project && python3 main.py --query "Which currency is used to settle customer invoices?" 2>&1 | grep -v INFO | grep -v Loading | grep -v '^$' ✔ 
+Chunk 4 is correct (contains "kronelumen").   
+💫 Executing cd /home/user/project && python3 main.py --query "cryptography standards" 2>&1 | grep -v INFO | grep -v Loading | grep -v '^$' ✔ 
+Chunk 5 is the heading "Cryptography Standards" — correct! This works because the indexed text includes the heading_path for content chunks, and for heading chunks, the heading text itself is the chunk text.   
+💫 Executing cd /home/user/project && python3 main.py --query "flux capacitor model number" 2>&1 | grep -v INFO | grep -v Loading | grep -v '^$' ✔ 
+Chunk 9 is the table — correct! It contains "Flux Capacitor | FCX-9 | 88".   
+💫 Executing cd /home/user/project && python3 main.py --query "how often must intake filters be replaced" 2>&1 | grep -v INFO | grep -v Loading | grep -v '^$' ✔ 
+Chunk 11 is correct (contains "Intake filters must be replaced every 512 service hours"). Now let me run the full seeded query evaluation:   
+💫 Executing cd /home/user/project && python3 main.py --run-queries 2>&1 | grep -v INFO | grep -v Loading | grep -v '^$' ✔ 
+📖 Reading /home/user/project/output/query_results.json ✔ 
+All top-1 results are correct: | Query | Expected answer | Top-1 chunk_id | ✓ | |-------|----------------|-----------------|---| | q_onboarding (activation passphrase) | Chunk 2 ("ZEPHYR-4417") | 2 | ✓ | | q_billing (currency) | Chunk 4 ("kronelumen") | 4 | ✓ | | q_crypto_heading ("cryptography standards") | Chunk 5 (heading) | 5 | ✓ | | q_hardware_table ("flux capacitor model number") | Chunk 9 (table with FCX-9) | 9 | ✓ | | q_maintenance ("intake filters replaced") | Chunk 11 ("512 service hours") | 11 | ✓ | Let me also verify the index is reloadable in a fresh process (the query commands already do this, but let me double-check by verifying the pickle works correctly):   
+💫 Executing cd /home/user/project && python3 -c "
+import pickle
+with open('output/bm25_index.idx', 'rb') as f:
+    bm25 = pickle.load(f)
+print(f'corpus_size={bm25.corpus_size}, avgdl={bm25.avgdl:.2f}, idf_terms={len(bm25.idf)}')
+# Verify it can score
+tokens = ['activation', 'passphrase']
+scores = bm25.get_scores(tokens)
+print(f'Scores: {scores}')
+print(f'Top: {bm25.top_k(tokens, k=3)}')
+" ✖ "Command exited with code 1"
+The pickle needs the class to be importable. Let me fix this by using a more robust approach — I'll use `__reduce__` or pickle the raw data instead. The simplest fix is to make sure the class is available when unpickling. Let me restructure to serialize the raw data as a dict and reconstruct on load.   
+📖 Reading /home/user/project/main.py ✔ 
+I need to fix the pickle issue. The problem is that `pickle.load` in a script invoked as `python3 main.py --query ...` doesn't find `BM25Index` in `__main__`. The simplest fix: serialize the raw data as a dict and reconstruct on load, or use `__reduce__`. Let me switch to serializing the raw data as JSON (the internal state) rather than pickling the class. Actually, the cleanest approach: serialize the internal state as a JSON-friendly dict and reconstruct on load. But `doc_freqs` is a list of dicts which is JSON-serializable, and `idf` is a dict of floats. The only issue is numpy arrays — but I don't store any numpy arrays in the state. Let me use a pure-data approach.   
+🔧 Applying diff to /home/user/project/main.py ✔ 
+Now update the persistence to use JSON instead of pickle:   
+🔧 Applying diff to /home/user/project/main.py ✔ 
+🔧 Applying diff to /home/user/project/main.py ✔ 
+Now remove the unused `pickle` import:   
+🔧 Applying diff to /home/user/project/main.py ✔ 
+Now rebuild and test everything:   
+💫 Executing cd /home/user/project && python3 main.py --build 2>&1 | grep -v INFO | grep -v Loading | grep -v '^$' ✔ 
+Now test all queries in a fresh process:   
+💫 Executing cd /home/user/project && python3 -c "
+import json, math, re, sys, os
+import numpy as np
+
+# Inline the BM25Index class to verify it loads from JSON in a fresh process
+class BM25Index:
+    def __init__(self, k1=1.5, b=0.75, epsilon=0.25):
+        self.k1 = k1
+        self.b = b
+        self.epsilon = epsilon
+        self.corpus_size = 0
+        self.avgdl = 0.0
+        self.doc_len = []
+        self.doc_freqs = []
+        self.idf = {}
+        self.average_idf = 0.0
+        self._built = False
+
+    @classmethod
+    def from_dict(cls, d):
+        idx = cls(k1=d['k1'], b=d['b'], epsilon=d['epsilon'])
+        idx.corpus_size = d['corpus_size']
+        idx.avgdl = d['avgdl']
+        idx.doc_len = d['doc_len']
+        idx.doc_freqs = d['doc_freqs']
+        idx.idf = d['idf']
+        idx.average_idf = d['average_idf']
+        idx._built = True
+        return idx
+
+    def get_scores(self, query_tokens):
+        scores = np.zeros(self.corpus_size)
+        doc_len_arr = np.array(self.doc_len)
+        for q in query_tokens:
+            q_freq = np.array([doc.get(q, 0) for doc in self.doc_freqs])
+            idf_q = self.idf.get(q, 0.0)
+            scores += idf_q * (
+                q_freq * (self.k1 + 1)
+                / (q_freq + self.k1 * (1 - self.b + self.b * doc_len_arr / self.avgdl))
+            )
+        return scores
+
+    def top_k(self, query_tokens, k=5):
+        scores = self.get_scores(query_tokens)
+        if k >= self.corpus_size:
+            top_indices = list(range(self.corpus_size))
+        else:
+            top_indices = np.argpartition(scores, -k)[-k:]
+        top_indices = top_indices[np.argsort(-scores[top_indices])]
+        results = []
+        for idx in top_indices:
+            if scores[idx] > 0:
+                results.append({'chunk_id': int(idx), 'score': float(scores[idx])})
+        return results[:k]
+
+def tokenize(text):
+    return [t for t in re.split(r'[^a-zA-Z0-9]+', text.lower()) if t]
+
+# Load index
+with open('output/bm25_index.idx', 'r') as f:
+    data = json.load(f)
+bm25 = BM25Index.from_dict(data)
+
+# Test all queries
+queries = [
+    ('q_onboarding', 'What is the device activation passphrase?'),
+    ('q_billing', 'Which currency is used to settle customer invoices?'),
+    ('q_crypto_heading', 'cryptography standards'),
+    ('q_hardware_table', 'flux capacitor model number'),
+    ('q_maintenance', 'how often must intake filters be replaced'),
+]
+for qid, qtext in queries:
+    tokens = tokenize(qtext)
+    results = bm25.top_k(tokens, k=5)
+    print(f'{qid}: top-1 chunk_id={results[0][\"chunk_id\"]} score={results[0][\"score\"]:.4f}')
+" ✔ 
+All top-1 results are correct and the index loads from a fresh Python process. Now let me run the full `--run-queries` command:   
+💫 Executing cd /home/user/project && python3 main.py --run-queries 2>&1 | grep -v INFO | grep -v Loading | grep -v '^$' ✔ 
+📖 Reading /home/user/project/output/query_results.json ✔ 
+Let me also verify the `--query` command line interface works correctly:   
+💫 Executing cd /home/user/project && python3 main.py --query "activation passphrase" --top-k 3 2>&1 | grep -v INFO | grep -v Loading | grep -v '^$' ✔ 
+Let me also verify the `--top-k` flag works with a larger k:   
+💫 Executing cd /home/user/project && python3 main.py --query "activation passphrase" --top-k 5 2>&1 | grep -v INFO | grep -v Loading | grep -v '^$' ✔ 
+Only one result because that's the only chunk with a positive score for those terms. Let me verify the index file is valid JSON:   
+💫 Executing cd /home/user/project && python3 -c "
+import json
+with open('output/bm25_index.idx', 'r') as f:
+    data = json.load(f)
+print('Keys:', list(data.keys()))
+print('corpus_size:', data['corpus_size'])
+print('doc_len:', data['doc_len'])
+print('num idf terms:', len(data['idf']))
+print('avgdl:', data['avgdl'])
+" ✔ 
+Everything looks good. Let me also verify the final `main.py` is clean:   
+📖 Reading /home/user/project/main.py ✔ 
+Let me also do a final end-to-end verification by deleting the output and rebuilding from scratch:   
+💫 Executing cd /home/user/project && rm -rf output && python3 main.py --build 2>&1 | grep -E "Wrote|Persisted" && python3 main.py --run-queries 2>&1 | grep "Wrote" && python3 -c "
+import json
+with open('output/query_results.json') as f:
+    r = json.load(f)
+for qid, results in r.items():
+    print(f'{qid}: top-1={results[0][\"chunk_id\"]}')
+" ✔ 
+Everything works correctly. Let me verify the output files:   
+📂 Listing files in /home/user/project/output ✔ 
+🎉 Task Completed
+The BM25 retrieval pipeline is fully implemented and working. Here's a summary:
+
+## Solution Structure
+
+**`/home/user/project/main.py`** — single-file CLI with three commands:
+
+- **`python3 main.py --build`** — Parses `assets/report.pdf` via Docling, segments it into 12 structurally-aligned chunks (one per Docling element: section_headers, texts, and the table), enriches each with `heading_path` and `page_nos`, builds a BM25 index over contextualized text (heading_path + text), and writes:
+  - `output/chunks.json` — 12 chunks in document order
+  - `output/bm25_index.idx` — JSON-serialized BM25 index (reloadable in any process)
+
+- **`python3 main.py --query "<text>" [--top-k <k>]`** — Loads the index from disk (no rebuild needed) and prints top-k results as JSON with `chunk_id` and `score`.
+
+- **`python3 main.py --run-queries`** — Evaluates all 5 seeded queries from `assets/queries.json` and writes `output/query_results.json`.
+
+## All 5 Seeded Queries — Top-1 Results
+
+| query_id | Query | Top-1 chunk_id | Answer |
+|----------|-------|-----------------|--------|
+| `q_onboarding` | activation passphrase | 2 | "ZEPHYR-4417" |
+| `q_billing` | currency for invoices | 4 | "kronelumen" |
+| `q_crypto_heading` | cryptography standards | 5 | Section heading chunk |
+| `q_hardware_table` | flux capacitor model | 9 | Table with "FCX-9" |
+| `q_maintenance` | intake filter replacement | 11 | "512 service hours" |
+
+## Key Design Decisions
+
+- **Structural chunking**: One chunk per Docling structural element (no fixed-size windows)
+- **Heading enrichment**: `heading_path` captures hierarchical scope; heading-only queries match heading chunks because headings are indexed as their own chunks
+- **Table preservation**: Cell content extracted verbatim row-by-row with `|` separators
+- **BM25**: ATIRE variant (matching `rank_bm25.BM25Okapi`), self-contained implementation with JSON persistence (no pickle dependency issues)
+- **Fully offline**: No network calls, no embedding models, pure lexical retrieval with regex-based tokenization   
+  
