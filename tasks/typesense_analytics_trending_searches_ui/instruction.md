@@ -1,0 +1,49 @@
+# Trending Searches Analytics UI (Typesense v26.0)
+
+## Background
+You are building a product-search web app backed by a local **Typesense v26.0** search engine. Beyond returning results, the app must surface *search analytics*: a live "Trending searches" widget that ranks the queries users have run, and a "did you mean" suggestions panel shown when a query returns no results.
+
+## Environment
+- A Typesense **v26.0** server is available locally at `http://127.0.0.1:8108`. The Typesense admin API key is `xyz` (also available via the file `/etc/typesense-api-key` when it is set). The server is started with its native **search-analytics** feature enabled.
+- A product catalog seed file is provided at `/home/user/trendsearch/catalog-seed.json`: a JSON array of products, each with the keys `id` (string), `name` (string), `category` (string), and `price` (number).
+
+## Requirements
+- On startup, index every product from the seed file into a Typesense collection named `catalog`, with the product `name` full-text searchable.
+- Serve a single-page search UI plus a JSON API (both on the same port).
+- Every query executed through the search API must be run against the `catalog` collection and must be captured by Typesense's native search-analytics, so the server aggregates the popularity of queries that returned at least one result. Configure Typesense so that queries producing **zero** results are also tracked natively.
+- The "Trending searches" data must rank queries that returned results by how often they have been searched, most-searched first; when two queries have been searched the same number of times, order them by the query string in ascending (A→Z) order.
+- When a search returns zero results, both the UI and the search API must surface suggested alternative queries drawn from the currently most-searched queries.
+
+## Implementation Hints
+- Project path: `/home/user/trendsearch`
+- Start command: `npm start` (run in the project path)
+- Port: `3000` (the server must be reachable at `http://127.0.0.1:3000`)
+- Use the Typesense admin API key `xyz` (read `the file `/etc/typesense-api-key`` from the environment if it is set, otherwise default to `xyz`); connect to Typesense at `127.0.0.1:8108`.
+- HTTP API:
+  - `GET /api/search?q=<term>` → `200` with JSON:
+
+    ```json
+    {
+      "query": "<the q value>",
+      "found": 0,
+      "hits": [ { "id": "<id>", "name": "<name>" } ],
+      "suggestions": [ "<query string>" ]
+    }
+    ```
+
+    `found` is the integer number of matching products. `hits` contains one object per matching product; each object must at least include the keys `id` and `name` (additional keys are allowed). `suggestions` MUST be a non-empty array of query strings when `found` is `0`, and MAY be empty otherwise.
+  - `GET /api/trending` → `200` with JSON:
+
+    ```json
+    { "trending": [ { "q": "<query string>", "count": 1 } ] }
+    ```
+
+    The array holds only queries that returned at least one result, ordered by `count` descending and then by `q` ascending, where `count` is a positive integer. This endpoint must always return the current aggregated state as JSON (it must never error), so that a client can poll it.
+- Web UI at `GET /` (served on the same port):
+  - A search text input with `id="search-input"`. Submitting the input (pressing Enter) executes the query, updates the results, and refreshes the trending widget.
+  - A results container with `id="results"`; each rendered product is an element with class `result-item` whose text includes the product `name`.
+  - A "Trending searches" widget with `id="trending"` that lists the trending queries as elements with class `trending-item` in ranked order (the topmost element is the most-searched query), each element's text containing the query string. The widget must reflect the data returned by `GET /api/trending` and must load it when the page loads.
+  - A zero-results panel with `id="no-results"` that is hidden while there are results and is shown when a search returns no products. It contains a suggestions list with `id="suggestions"` whose items have class `suggestion-item`, each containing a suggested query string.
+
+Note: Typesense aggregates search-analytics periodically, so newly recorded searches may take some time before they are reflected; clients are expected to poll `GET /api/trending` until it updates.
+

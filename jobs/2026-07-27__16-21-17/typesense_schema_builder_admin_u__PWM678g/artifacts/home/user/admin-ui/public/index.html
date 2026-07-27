@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Typesense Collection Builder</title>
+<style>
+  body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  section { border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+  h2 { margin-top: 0; }
+  label { display: inline-block; margin-right: 0.5rem; }
+  input[type="text"] { padding: 0.35rem; margin-right: 0.5rem; }
+  select { padding: 0.35rem; margin-right: 0.5rem; }
+  button { padding: 0.4rem 0.9rem; cursor: pointer; }
+  #field-list { margin: 0.75rem 0; }
+  #field-list .field-row { padding: 0.25rem 0; border-bottom: 1px solid #eee; }
+  .status-ok { color: #0a7a0a; font-weight: bold; }
+  .status-err { color: #b00020; font-weight: bold; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 140px; font-family: monospace; }
+  .hit { border: 1px solid #ccc; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; }
+  .hit .title { font-weight: bold; }
+  .counts span { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Typesense Collection Builder</h1>
+
+<section id="schema-section">
+  <h2>1. Schema Builder</h2>
+  <div>
+    <label for="collection-name">Collection name</label>
+    <input type="text" id="collection-name" placeholder="e.g. products" />
+  </div>
+  <hr />
+  <div>
+    <label for="field-name">Field name</label>
+    <input type="text" id="field-name" placeholder="e.g. title" />
+
+    <label for="field-type">Type</label>
+    <select id="field-type">
+      <option value="string">string</option>
+      <option value="int">int</option>
+      <option value="float">float</option>
+      <option value="bool">bool</option>
+      <option value="string[]">string[]</option>
+    </select>
+
+    <label><input type="checkbox" id="field-facet" /> facet</label>
+    <label><input type="checkbox" id="field-optional" /> optional</label>
+
+    <button id="add-field" type="button">Add field</button>
+  </div>
+
+  <div id="field-list"></div>
+
+  <button id="create-collection" type="button">Create collection</button>
+  <p id="schema-status"></p>
+</section>
+
+<section id="import-section">
+  <h2>2. Bulk Import</h2>
+  <textarea id="import-data" placeholder="Paste newline-delimited JSON documents here"></textarea>
+  <br /><br />
+  <button id="import-docs" type="button">Import documents</button>
+  <p class="counts">
+    Imported: <span id="imported-count">0</span> &nbsp;
+    Rejected: <span id="rejected-count">0</span>
+  </p>
+  <p id="import-status"></p>
+</section>
+
+<section id="search-section">
+  <h2>3. Search</h2>
+  <input type="text" id="search-query" placeholder="Search query" />
+  <button id="search-btn" type="button">Search</button>
+  <div id="search-results"></div>
+</section>
+
+<script>
+(function () {
+  var pendingFields = [];
+
+  var collectionNameInput = document.getElementById('collection-name');
+  var fieldNameInput = document.getElementById('field-name');
+  var fieldTypeSelect = document.getElementById('field-type');
+  var fieldFacetCheckbox = document.getElementById('field-facet');
+  var fieldOptionalCheckbox = document.getElementById('field-optional');
+  var addFieldBtn = document.getElementById('add-field');
+  var fieldListEl = document.getElementById('field-list');
+  var createCollectionBtn = document.getElementById('create-collection');
+  var schemaStatusEl = document.getElementById('schema-status');
+
+  var importDataEl = document.getElementById('import-data');
+  var importDocsBtn = document.getElementById('import-docs');
+  var importedCountEl = document.getElementById('imported-count');
+  var rejectedCountEl = document.getElementById('rejected-count');
+  var importStatusEl = document.getElementById('import-status');
+
+  var searchQueryInput = document.getElementById('search-query');
+  var searchBtn = document.getElementById('search-btn');
+  var searchResultsEl = document.getElementById('search-results');
+
+  function renderFieldList() {
+    fieldListEl.innerHTML = '';
+    pendingFields.forEach(function (f, idx) {
+      var row = document.createElement('div');
+      row.className = 'field-row';
+      var flags = [];
+      if (f.facet) flags.push('facet');
+      if (f.optional) flags.push('optional');
+      row.textContent = f.name + ' : ' + f.type + (flags.length ? ' [' + flags.join(', ') + ']' : '');
+
+      var removeBtn = document.createElement('button');
+      removeBtn.textContent = 'x';
+      removeBtn.style.marginLeft = '0.75rem';
+      removeBtn.addEventListener('click', function () {
+        pendingFields.splice(idx, 1);
+        renderFieldList();
+      });
+      row.appendChild(removeBtn);
+      fieldListEl.appendChild(row);
+    });
+  }
+
+  addFieldBtn.addEventListener('click', function () {
+    var name = fieldNameInput.value.trim();
+    var type = fieldTypeSelect.value;
+    if (!name) {
+      return;
+    }
+    pendingFields.push({
+      name: name,
+      type: type,
+      facet: fieldFacetCheckbox.checked,
+      optional: fieldOptionalCheckbox.checked,
+    });
+    fieldNameInput.value = '';
+    fieldFacetCheckbox.checked = false;
+    fieldOptionalCheckbox.checked = false;
+    renderFieldList();
+  });
+
+  createCollectionBtn.addEventListener('click', function () {
+    schemaStatusEl.textContent = 'Creating collection...';
+    schemaStatusEl.className = '';
+    fetch('/api/schema', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        baseName: collectionNameInput.value.trim(),
+        fields: pendingFields,
+      }),
+    })
+      .then(function (r) {
+        return r.json().then(function (body) {
+          return { status: r.status, body: body };
+        });
+      })
+      .then(function (res) {
+        if (res.status === 200 && res.body.ok) {
+          schemaStatusEl.textContent = 'Collection "' + res.body.collection + '" created successfully.';
+          schemaStatusEl.className = 'status-ok';
+        } else {
+          schemaStatusEl.textContent = 'Error: ' + (res.body.error || 'Unknown error');
+          schemaStatusEl.className = 'status-err';
+        }
+      })
+      .catch(function (err) {
+        schemaStatusEl.textContent = 'Error: ' + err.message;
+        schemaStatusEl.className = 'status-err';
+      });
+  });
+
+  importDocsBtn.addEventListener('click', function () {
+    importStatusEl.textContent = 'Importing...';
+    importStatusEl.className = '';
+    fetch('/api/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        baseName: collectionNameInput.value.trim(),
+        data: importDataEl.value,
+      }),
+    })
+      .then(function (r) {
+        return r.json().then(function (body) {
+          return { status: r.status, body: body };
+        });
+      })
+      .then(function (res) {
+        if (res.status === 200) {
+          importedCountEl.textContent = res.body.imported;
+          rejectedCountEl.textContent = res.body.rejected;
+          importStatusEl.textContent = 'Import complete.';
+          importStatusEl.className = 'status-ok';
+        } else {
+          importStatusEl.textContent = 'Error: ' + (res.body.error || 'Unknown error');
+          importStatusEl.className = 'status-err';
+        }
+      })
+      .catch(function (err) {
+        importStatusEl.textContent = 'Error: ' + err.message;
+        importStatusEl.className = 'status-err';
+      });
+  });
+
+  function runSearch() {
+    var q = searchQueryInput.value.trim();
+    var baseName = collectionNameInput.value.trim();
+    var url = '/api/search?baseName=' + encodeURIComponent(baseName) + '&q=' + encodeURIComponent(q || '*');
+    fetch(url)
+      .then(function (r) {
+        return r.json().then(function (body) {
+          return { status: r.status, body: body };
+        });
+      })
+      .then(function (res) {
+        searchResultsEl.innerHTML = '';
+        if (res.status !== 200) {
+          var err = document.createElement('div');
+          err.className = 'status-err';
+          err.textContent = 'Error: ' + (res.body.error || 'Unknown error');
+          searchResultsEl.appendChild(err);
+          return;
+        }
+        (res.body.hits || []).forEach(function (doc) {
+          var hit = document.createElement('div');
+          hit.className = 'hit';
+
+          var title = document.createElement('div');
+          title.className = 'title';
+          title.textContent = doc.title !== undefined ? String(doc.title) : '';
+          hit.appendChild(title);
+
+          var rest = document.createElement('div');
+          rest.className = 'meta';
+          rest.textContent = JSON.stringify(doc);
+          hit.appendChild(rest);
+
+          searchResultsEl.appendChild(hit);
+        });
+      })
+      .catch(function (err) {
+        searchResultsEl.innerHTML = '';
+        var errEl = document.createElement('div');
+        errEl.className = 'status-err';
+        errEl.textContent = 'Error: ' + err.message;
+        searchResultsEl.appendChild(errEl);
+      });
+  }
+
+  searchBtn.addEventListener('click', runSearch);
+  searchQueryInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') runSearch();
+  });
+})();
+</script>
+
+</body>
+</html>

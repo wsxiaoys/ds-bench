@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Realtime Leaderboard</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  body {
+    max-width: 640px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+  }
+  h1 {
+    font-size: 1.5rem;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #ccc;
+  }
+  th {
+    background: #f2f2f2;
+  }
+  tr:first-child td {
+    font-weight: 600;
+  }
+  form {
+    margin-top: 2rem;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  form input {
+    padding: 0.4rem 0.6rem;
+    font-size: 1rem;
+  }
+  form input[data-testid="player-id-input"] {
+    width: 8rem;
+  }
+  form input[data-testid="delta-input"] {
+    width: 6rem;
+  }
+  button {
+    padding: 0.45rem 0.9rem;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  #status {
+    min-height: 1.2rem;
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    color: #666;
+  }
+  #status.error {
+    color: #c0392b;
+  }
+</style>
+</head>
+<body>
+  <h1>Realtime Leaderboard</h1>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Rank</th>
+        <th>Name</th>
+        <th>Score</th>
+      </tr>
+    </thead>
+    <tbody data-testid="leaderboard"></tbody>
+  </table>
+
+  <form id="score-form">
+    <input
+      type="text"
+      data-testid="player-id-input"
+      name="player_id"
+      placeholder="Player ID (e.g. p1)"
+      autocomplete="off"
+      required
+    />
+    <input
+      type="number"
+      data-testid="delta-input"
+      name="delta"
+      placeholder="Delta (e.g. +10 / -5)"
+      step="1"
+      required
+    />
+    <button type="submit" data-testid="submit-score">Apply Score Change</button>
+  </form>
+  <div id="status"></div>
+
+  <script>
+    const tbody = document.querySelector('[data-testid="leaderboard"]');
+    const form = document.getElementById("score-form");
+    const playerIdInput = form.querySelector('[data-testid="player-id-input"]');
+    const deltaInput = form.querySelector('[data-testid="delta-input"]');
+    const statusEl = document.getElementById("status");
+
+    function renderLeaderboard(rows) {
+      tbody.innerHTML = "";
+      for (const row of rows) {
+        const tr = document.createElement("tr");
+        tr.setAttribute("data-player-id", row.player_id);
+
+        const rankTd = document.createElement("td");
+        rankTd.setAttribute("data-testid", "rank");
+        rankTd.textContent = String(row.rank);
+
+        const nameTd = document.createElement("td");
+        nameTd.setAttribute("data-testid", "name");
+        nameTd.textContent = row.name;
+
+        const scoreTd = document.createElement("td");
+        scoreTd.setAttribute("data-testid", "score");
+        scoreTd.textContent = String(row.score);
+
+        tr.appendChild(rankTd);
+        tr.appendChild(nameTd);
+        tr.appendChild(scoreTd);
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function refreshLeaderboard() {
+      try {
+        const res = await fetch("/api/leaderboard", { cache: "no-store" });
+        if (!res.ok) throw new Error("Failed to load leaderboard");
+        const rows = await res.json();
+        renderLeaderboard(rows);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    form.addEventListener("submit", async (evt) => {
+      evt.preventDefault();
+      const playerId = playerIdInput.value.trim();
+      const deltaRaw = deltaInput.value.trim();
+      const delta = parseInt(deltaRaw, 10);
+
+      statusEl.className = "";
+      statusEl.textContent = "";
+
+      if (!playerId || Number.isNaN(delta)) {
+        statusEl.className = "error";
+        statusEl.textContent = "Please provide a player ID and an integer delta.";
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/score", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ player_id: playerId, delta }),
+        });
+
+        if (res.status === 404) {
+          statusEl.className = "error";
+          statusEl.textContent = `Player "${playerId}" not found.`;
+          return;
+        }
+        if (!res.ok) {
+          statusEl.className = "error";
+          statusEl.textContent = "Failed to apply score change.";
+          return;
+        }
+
+        const updated = await res.json();
+        statusEl.textContent = `Updated ${updated.name}: score is now ${updated.score}.`;
+        deltaInput.value = "";
+        await refreshLeaderboard();
+      } catch (err) {
+        console.error(err);
+        statusEl.className = "error";
+        statusEl.textContent = "Network error while applying score change.";
+      }
+    });
+
+    refreshLeaderboard();
+    setInterval(refreshLeaderboard, 2000);
+  </script>
+</body>
+</html>
