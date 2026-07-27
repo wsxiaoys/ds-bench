@@ -1,0 +1,653 @@
+- Initializing MCP connections...
+You
+# Event-Driven Deployment Chaining with a Reactive Trigger (Prefect 3.7.8) ## Background You are building an event-driven orchestration on a **locally self-hosted Prefect 3.7.8** instance. A Prefect server is already running locally and reachable at the UI `http://127.0.0.1:4200` and the API `http://127.0.0.1:4200/api`. No Prefect Cloud, and no external network service, may be used. You must wire together two separate workflows so that finishing the first one automatically launches the second one — without any schedule, without polling code of your own, and without a human (or a script) manually starting the second workflow. The link between them must be driven entirely by Prefect's own event system, configured **on the downstream deployment itself**. ## Requirements * Create two distinct flows and expose each as its own local deployment on the running Prefect server: * an **upstream (producer)** deployment, and * a **downstream (consumer)** deployment. * The downstream deployment must carry a **reactive trigger** so that it is launched automatically the moment a flow run of the **upstream** deployment reaches the **`Completed`** terminal state. The downstream deployment must NOT be started manually, on a schedule, or by any custom polling code — its run must be produced solely by the reactive trigger reacting to the upstream completion event. * Both deployments must remain servable/executable locally so that, once triggered, their runs actually execute to completion on the local process (no external work pool or remote infrastructure). * Running the upstream deployment exactly once must result in **exactly one** downstream flow run being created automatically and finishing in the **`Completed`** state, with the causal link between the two runs observable in the Prefect UI. ## Implementation Hints * Project path: `/home/user/reactive_pipeline` * The local Prefect server is already running; the environment is preconfigured so the API is `http://127.0.0.1:4200/api` (UI at `http://127.0.0.1:4200`). Do not point Prefect at any remote/cloud API. * Read the `run-id` from `/logs/artifacts/run-id` and append it as a suffix to every collision-prone name below (a `run-id` looks like `zr` followed by lowercase letters/digits). * Use these exact names (with the `run-id` suffix applied): * Upstream flow name: `upstream-flow-${run-id}` * Upstream deployment name: `upstream-deploy-${run-id}` * Downstream flow name: `downstream-flow-${run-id}` * Downstream deployment name: `downstream-deploy-${run-id}` * Neither flow needs parameters; each flow only has to run and finish successfully (reach `Completed`). * Start command (run from the project directory; it must register both deployments on the local server and keep serving them so their runs execute): `python3 main.py` * The reactive trigger must fire specifically on the upstream deployment's flow run reaching `Completed` — not on a schedule and not on any other state. * Success is defined entirely by what is visible in the local Prefect UI at `http://127.0.0.1:4200`: both deployments present, the downstream deployment's reactive trigger configured, and — after the upstream deployment is run once and completes — an automatically-created downstream flow run that reached `Completed`.   
+
+Pochi
+I'll start by understanding the environment and gathering the necessary information.   
+📖 Reading /logs/artifacts/run-id ✔ 
+📂 Listing files in /home/user/reactive_pipeline ✔ 
+💫 Executing which python3 && python3 --version && pip show prefect 2>/dev/null | head -20 ✔ 
+Good. Now let me explore Prefect 3.7.8's reactive trigger / automation API to understand the correct approach.   
+💫 Executing python3 -c "import prefect; print(prefect.__version__)" ✔ 
+💫 Executing python3 -c "from prefect import flow; help(flow)" 2>&1 | head -60 ✔ 
+💫 Executing python3 -c "from prefect.client.schemas.actions import DeploymentCreate; from prefect.client.schemas.schedules import DeploymentSchedule; import inspect; print(inspect.signature(DeploymentSchedule)); print('---'); print([f for f in dir(DeploymentSchedule) if not f.startswith('_')])" ✖ "Command exited with code 1"
+💫 Executing python3 -c "from prefect.client.schemas import schedules; print(dir(schedules))" ✔ 
+💫 Executing python3 -c "from prefect.client.schemas.actions import DeploymentCreate; import inspect; print(inspect.signature(DeploymentCreate))" ✔ 
+💫 Executing python3 -c "
+from prefect import automations
+print(dir(automations))
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+from prefect.automations import Automation, EventTrigger, RunDeployment, Trigger, Posture
+import inspect
+print('=== Automation ===')
+print(inspect.signature(Automation.__init__))
+print()
+print('=== EventTrigger ===')
+print(inspect.signature(EventTrigger.__init__))
+print()
+print('=== RunDeployment ===')
+print(inspect.signature(RunDeployment.__init__))
+print()
+print('=== Posture ===')
+print(dir(Posture))
+" ✔ 
+💫 Executing python3 -c "
+from prefect.client.schemas.actions import DeploymentCreate
+import inspect
+# Get the model fields
+print(DeploymentCreate.model_fields.keys())
+" ✔ 
+💫 Executing python3 -c "
+from prefect.automations import EventTrigger
+print(EventTrigger.model_fields.keys())
+print()
+# Show the expected fields
+for k, v in EventTrigger.model_fields.items():
+    print(f'{k}: {v.annotation}')
+" ✔ 
+💫 Executing python3 -c "
+from prefect.automations import RunDeployment
+print(RunDeployment.model_fields.keys())
+for k, v in RunDeployment.model_fields.items():
+    print(f'{k}: {v.annotation}')
+" ✔ 
+💫 Executing python3 -c "
+from prefect.automations import Automation
+print(Automation.model_fields.keys())
+for k, v in Automation.model_fields.items():
+    print(f'{k}: {v.annotation}')
+" ✔ 
+Now let me check how to properly create and serve deployments in Prefect 3.7.8, and look at the event resource specification format.   
+💫 Executing python3 -c "
+from prefect.events.schemas.events import ResourceSpecification
+import inspect
+print(inspect.signature(ResourceSpecification.__init__))
+print()
+print(ResourceSpecification.model_fields.keys())
+" ✔ 
+💫 Executing python3 -c "
+from prefect import serve
+import inspect
+print(inspect.signature(serve))
+" ✔ 
+💫 Executing python3 -c "
+from prefect.deployments import run_deployment
+from prefect.client.orchestration import get_client
+import inspect
+print(inspect.signature(run_deployment))
+" ✔ 
+💫 Executing python3 -c "
+from prefect.events.schemas.events import ResourceSpecification
+# Check how to construct it
+import json
+# Try creating one
+rs = ResourceSpecification(root={'prefect.resource.id': 'prefect.flow-run.*'})
+print(rs)
+print(type(rs))
+print(rs.model_dump())
+" ✔ 
+💫 Executing python3 -c "
+from prefect.deployments import Deployment
+import inspect
+print(inspect.signature(Deployment.__init__))
+" 2>&1 | head -30 ✔ 
+💫 Executing python3 -c "
+from prefect.runner import RunnerDeployment
+import inspect
+print(inspect.signature(RunnerDeployment.__init__))
+print()
+print(RunnerDeployment.model_fields.keys())
+" ✖ "Command exited with code 1"
+💫 Executing python3 -c "
+from prefect import flow
+
+@flow
+def my_flow():
+    print('hello')
+
+# Check what flow.serve returns
+import inspect
+print(inspect.signature(my_flow.serve))
+" ✖ "Tool call was cancelled because a previous tool call failed."
+💫 Executing python3 -c "
+from prefect.runner import Runner
+print(dir(Runner))
+" ✔ 
+💫 Executing python3 -c "
+from prefect import flow
+
+@flow
+def my_flow():
+    print('hello')
+
+import inspect
+print(inspect.signature(my_flow.serve))
+" ✔ 
+Now I can see the `triggers` parameter on `flow.serve()`. Let me check the trigger types available.   
+💫 Executing python3 -c "
+from prefect import flow
+import inspect
+
+# Check what DeploymentTriggerTypes is
+from prefect.runner import Runner
+# Look at the serve source
+src = inspect.getsource(Runner.add_deployment)
+print(src[:3000])
+" ✔ 
+💫 Executing python3 -c "
+# Find trigger types
+from prefect import flow
+
+@flow
+def my_flow():
+    print('hello')
+
+import inspect
+sig = inspect.signature(my_flow.serve)
+for k, v in sig.parameters.items():
+    if k == 'triggers':
+        print(f'{k}: {v.annotation}')
+" ✔ 
+💫 Executing python3 -c "
+from prefect import flow
+
+@flow
+def my_flow():
+    print('hello')
+
+import inspect
+sig = inspect.signature(my_flow.serve)
+# Get the globalns to resolve the types
+triggers_param = sig.parameters['triggers']
+print(triggers_param.annotation)
+" ✔ 
+💫 Executing python3 -c "
+from prefect.runner import Runner
+import inspect
+src = inspect.getsource(Runner.aadd_deployment)
+print(src[:4000])
+" ✔ 
+💫 Executing python3 -c "
+# Find DeploymentTriggerTypes
+import prefect
+import importlib
+
+# Search for DeploymentTriggerTypes
+import ast, os
+prefect_dir = os.path.dirname(prefect.__file__)
+for root, dirs, files in os.walk(prefect_dir):
+    for f in files:
+        if f.endswith('.py'):
+            path = os.path.join(root, f)
+            try:
+                with open(path) as fh:
+                    content = fh.read()
+                    if 'DeploymentTriggerTypes' in content:
+                        print(f'{path}: found DeploymentTriggerTypes')
+            except:
+                pass
+" ✔ 
+💫 Executing python3 -c "
+# Look at how flow.serve handles triggers
+import prefect.flows
+import inspect
+src = inspect.getsource(prefect.flows.Flow.serve)
+# Print relevant section about triggers
+lines = src.split('\n')
+for i, line in enumerate(lines):
+    if 'trigger' in line.lower():
+        start = max(0, i-2)
+        end = min(len(lines), i+5)
+        for j in range(start, end):
+            print(f'{j}: {lines[j]}')
+        print('---')
+" 2>&1 | head -80 ✔ 
+📖 Reading /opt/venv/lib/python3.12/site-packages/prefect/events/schemas/deployment_triggers.py ✔ 
+📖 Reading /opt/venv/lib/python3.12/site-packages/prefect/cli/deploy/_triggers.py ✔ 
+Now I have a clear picture. Let me check the `as_automation` and `set_deployment_id` methods:   
+💫 Executing python3 -c "
+from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger, BaseDeploymentTrigger
+import inspect
+print('=== BaseDeploymentTrigger methods ===')
+for name, method in inspect.getmembers(BaseDeploymentTrigger, predicate=inspect.isfunction):
+    if not name.startswith('_') or name in ('as_automation', 'set_deployment_id'):
+        print(f'{name}: {inspect.signature(method)}')
+
+print()
+print('=== DeploymentEventTrigger ===')
+for name, method in inspect.getmembers(DeploymentEventTrigger, predicate=inspect.isfunction):
+    if not name.startswith('_') or name in ('as_automation', 'set_deployment_id'):
+        print(f'{name}: {inspect.signature(method)}')
+" ✔ 
+Now let me understand the key insight: `DeploymentEventTrigger` inherits from both `BaseDeploymentTrigger` and `EventTrigger`. It has `as_automation()` and `set_deployment_id()`. The `match` field on `EventTrigger` expects a `ResourceSpecification` to filter events. Let me check what events Prefect emits for flow runs reaching `Completed`:   
+💫 Executing python3 -c "
+from prefect.events.schemas.events import ResourceSpecification
+# Check how match works - it's a dict of resource labels
+# For matching flow run completed events:
+# prefect.resource.id = prefect.flow-run.<uuid>
+# prefect.resource.name = <flow-run-name>
+# prefect.state-type = COMPLETED
+
+# Let's look at what labels exist on flow run events
+import json
+
+# Try to construct a match
+match_spec = {
+    'prefect.resource.id': 'prefect.flow-run.*',
+}
+rs = ResourceSpecification(root=match_spec)
+print(rs)
+print(rs.model_dump())
+" ✔ 
+💫 Executing python3 -c "
+# Check how DeploymentEventTrigger is constructed
+from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
+import inspect
+
+# Look at the model fields from EventTrigger
+from prefect.events.schemas.automations import EventTrigger
+print('EventTrigger fields:')
+for k, v in EventTrigger.model_fields.items():
+    print(f'  {k}: {v.annotation} (default={v.default})')
+
+print()
+print('DeploymentEventTrigger fields:')
+for k, v in DeploymentEventTrigger.model_fields.items():
+    print(f'  {k}: {v.annotation} (default={v.default})')
+" ✔ 
+Now let me check how to properly match the upstream deployment's flow runs. I need to understand what the `prefect.resource.id` looks like for flow runs from a specific deployment. Let me also look at how the `expect` field works with `"prefect.flow-run.Completed"`:   
+💫 Executing python3 -c "
+# Check how the EventTrigger match works with deployment-specific IDs
+# The key question: how to match flow runs from a SPECIFIC deployment?
+
+# In Prefect events, when a flow run completes, it emits an event like:
+# prefect.flow-run.Completed
+# With resource labels:
+#   prefect.resource.id: prefect.flow-run.<uuid>
+#   prefect.resource.name: <flow-run-name>
+#   prefect.deployment.id: <deployment-uuid>
+#   prefect.flow.id: <flow-uuid>
+# etc.
+
+# So to match only flow runs from a specific deployment, we can use:
+#   prefect.resource.id: prefect.deployment.<deployment-uuid>.*
+
+# Wait, let me check the actual event schema
+from prefect.events.schemas.events import Event
+print('Event fields:')
+for k, v in Event.model_fields.items():
+    print(f'  {k}: {v.annotation}')
+" ✔ 
+💫 Executing python3 -c "
+# Let's check what the expect field should look like
+# The event name for a completed flow run is: prefect.flow-run.Completed
+# The 'expect' field is a set of event names to watch for
+
+# And 'match' filters by resource labels
+
+# For matching flow runs of a specific deployment:
+# match: {'prefect.deployment.id': '<deployment-uuid>'}
+
+# But we need the deployment ID of the upstream deployment at trigger definition time.
+# Since we're defining the trigger on the DOWNSTREAM deployment, we need to know
+# the upstream deployment ID.
+
+# Let's see if we can use 'prefect.resource.name' with a pattern or something similar
+# Actually, let's look at what labels a flow run event has
+
+print('Looking at event resource labels...')
+" ✔ 
+💫 Executing python3 -c "
+from prefect.events.schemas.events import Resource
+print('Resource fields:')
+for k, v in Resource.model_fields.items():
+    print(f'  {k}: {v.annotation}')
+" ✔ 
+💫 Executing python3 -c "
+# Let's check the prefect deployment trigger system - how does it know
+# which deployment to match? Let's look at the flow.serve source more
+
+import prefect.flows
+import inspect
+src = inspect.getsource(prefect.flows.Flow.serve)
+# Find where triggers are processed
+lines = src.split('\n')
+for i, line in enumerate(lines):
+    if 'trigger' in line.lower() and ('create' in line.lower() or 'automation' in line.lower() or 'deploy' in line.lower() or 'apply' in line.lower()):
+        start = max(0, i-5)
+        end = min(len(lines), i+10)
+        for j in range(start, end):
+            print(f'{j}: {lines[j]}')
+        print('---')
+" 2>&1 | head -80 ✔ 
+💫 Executing python3 -c "
+import prefect.flows
+import inspect
+src = inspect.getsource(prefect.flows.Flow._serve)
+# This is the internal method
+lines = src.split('\n')
+# Find where triggers are processed
+for i, line in enumerate(lines):
+    if 'trigger' in line.lower():
+        start = max(0, i-3)
+        end = min(len(lines), i+8)
+        for j in range(start, end):
+            print(f'{j}: {lines[j]}')
+        print('---')
+" 2>&1 | head -100 ✔ 
+💫 Executing python3 -c "
+import prefect.flows
+import inspect
+src = inspect.getsource(prefect.flows.Flow.serve)
+lines = src.split('\n')
+# Print the full serve method
+for i, line in enumerate(lines):
+    print(f'{i}: {line}')
+" 2>&1 | head -200 ✔ 
+Now let me look at how `Runner.add_flow` handles triggers:   
+💫 Executing python3 -c "
+from prefect.runner.runner import Runner
+import inspect
+src = inspect.getsource(Runner.add_flow)
+print(src)
+" ✔ 
+💫 Executing python3 -c "
+from prefect.runner.runner import Runner
+import inspect
+src = inspect.getsource(Runner.aadd_flow)
+print(src)
+" ✔ 
+Now let me check `flow.ato_deployment` to see how triggers are handled:   
+💫 Executing python3 -c "
+import prefect.flows
+import inspect
+src = inspect.getsource(prefect.flows.Flow.ato_deployment)
+print(src)
+" ✔ 
+Now let me check `RunnerDeployment.from_flow` and `RunnerDeployment.aapply` to understand how triggers get applied:   
+💫 Executing python3 -c "
+from prefect.deployments.runner import RunnerDeployment
+import inspect
+src = inspect.getsource(RunnerDeployment.aapply)
+print(src)
+" ✔ 
+💫 Executing python3 -c "
+from prefect.deployments.runner import RunnerDeployment
+import inspect
+src = inspect.getsource(RunnerDeployment._create)
+print(src)
+" ✔ 
+💫 Executing python3 -c "
+from prefect.deployments.runner import RunnerDeployment
+import inspect
+src = inspect.getsource(RunnerDeployment._create_triggers)
+print(src)
+" ✔ 
+Now I understand the full flow. Let me check one more thing - the `prefect.deployment.id` label on flow run events:   
+💫 Executing python3 -c "
+# Let's find what labels are on the flow run events
+# Check the flow run state change event emitter
+import os, ast
+prefect_dir = '/opt/venv/lib/python3.12/site-packages/prefect'
+
+# Search for where flow run completed events are emitted
+import subprocess
+result = subprocess.run(['grep', '-r', 'prefect.flow-run.Completed', prefect_dir, '--include=*.py', '-l'], capture_output=True, text=True)
+print(result.stdout)
+" ✔ 
+💫 Executing grep -r "Completed" /opt/venv/lib/python3.12/site-packages/prefect/ --include="*.py" -l | head -20 ✔ 
+💫 Executing grep -rn "flow.run.*[Cc]ompleted\|emit.*event\|emit_event\|events_client" /opt/venv/lib/python3.12/site-packages/prefect/ --include="*.py" -l | head -20 ✔ 
+💫 Executing grep -n "emit\|event" /opt/venv/lib/python3.12/site-packages/prefect/flow_engine.py | head -30 ✔ 
+💫 Executing grep -n "emit_event\|flow-run\." /opt/venv/lib/python3.12/site-packages/prefect/flow_engine.py | head -40 ✔ 
+📖 Reading /opt/venv/lib/python3.12/site-packages/prefect/flow_engine.py ✔ 
+Now let me check where the state change events are emitted (Completed, etc.):   
+💫 Executing grep -rn "emit_event\|prefect.flow-run\." /opt/venv/lib/python3.12/site-packages/prefect/events/ --include="*.py" | head -30 ✔ 
+💫 Executing grep -rn "state.*change\|set_state\|flow-run\." /opt/venv/lib/python3.12/site-packages/prefect/ --include="*.py" -l | xargs grep -l "emit_event" 2>/dev/null | head -20 ✔ 
+💫 Executing grep -n "emit_event\|state.*change\|flow-run\." /opt/venv/lib/python3.12/site-packages/prefect/utilities/engine/__init__.py | head -30 ✔ 
+💫 Executing grep -n "emit_flow_run_state_change_event\|flow_run_state_change\|propose_state" /opt/venv/lib/python3.12/site-packages/prefect/flow_engine.py | head -20 ✔ 
+💫 Executing grep -n "emit_flow_run\|flow-run\." /opt/venv/lib/python3.12/site-packages/prefect/utilities/engine/__init__.py | head -20 ✔ 
+💫 Executing grep -n "def propose_state" /opt/venv/lib/python3.12/site-packages/prefect/utilities/engine/__init__.py ✔ 
+📖 Reading /opt/venv/lib/python3.12/site-packages/prefect/utilities/engine/__init__.py ✔ 
+I see that `propose_state` calls `client.set_flow_run_state`, and the state change events are emitted by the server (not the client). This is important — the server emits `prefect.flow-run.Completed` events when a flow run reaches the Completed state. Let me verify:   
+💫 Executing grep -rn "prefect.flow-run.Completed\|flow-run.Completed\|flow_run.*Completed" /opt/venv/lib/python3.12/site-packages/prefect/server/ --include="*.py" | head -20 ✔ 
+💫 Executing grep -rn "event\|emit" /opt/venv/lib/python3.12/site-packages/prefect/server/ --include="*.py" -l | head -20 ✔ 
+💫 Executing grep -n "flow.run\|flow_run" /opt/venv/lib/python3.12/site-packages/prefect/server/api/flow_runs.py | grep -i "event\|emit" | head -20 ✔ 
+💫 Executing grep -n "emit\|event" /opt/venv/lib/python3.12/site-packages/prefect/server/api/flow_runs.py | head -20 ✔ 
+💫 Executing grep -rn "emit_event\|prefect.flow-run\." /opt/venv/lib/python3.12/site-packages/prefect/server/ --include="*.py" | head -20 ✔ 
+📖 Reading /opt/venv/lib/python3.12/site-packages/prefect/server/models/events.py ✔ 
+Now I see the full picture. When a flow run state changes, the server emits an event with: - `event`: `"prefect.flow-run.{state_name}"` (e.g., `"prefect.flow-run.Completed"`) - `resource`: includes `"prefect.resource.id": f"prefect.flow-run.{flow_run.id}"`, `"prefect.state-type": "COMPLETED"`, etc. - `related`: includes deployment info like `"prefect.resource.id": f"prefect.deployment.{deployment_id}"` So to match only flow runs from a specific upstream deployment, the trigger's `match` should filter by the deployment-related resource, and `expect` should contain `"prefect.flow-run.Completed"`. Now let me check how the `match_related` field works for filtering by related resources (like the deployment):   
+💫 Executing python3 -c "
+# Let's look at how match_related works in the automations schema
+from prefect.events.schemas.automations import EventTrigger
+import inspect
+# Get the docstring
+print(EventTrigger.__doc__[:2000] if EventTrigger.__doc__ else 'No docstring')
+" ✔ 
+💫 Executing python3 -c "
+from prefect.events.schemas.automations import EventTrigger
+for k, v in EventTrigger.model_fields.items():
+    print(f'{k}:')
+    print(f'  annotation: {v.annotation}')
+    print(f'  default: {v.default}')
+    if v.description:
+        print(f'  description: {v.description}')
+    print()
+" ✔ 
+Now I have a complete understanding. Let me also check how `related` resources are structured in the event:   
+💫 Executing grep -n "flow_run_related" /opt/venv/lib/python3.12/site-packages/prefect/server/models/events.py | head -10 ✔ 
+📖 Reading /opt/venv/lib/python3.12/site-packages/prefect/server/models/events.py ✔ 
+📖 Reading /opt/venv/lib/python3.12/site-packages/prefect/server/models/events.py ✔ 
+Now I have the complete picture. The related resources include `deployment` with `prefect.resource.id` = `prefect.deployment.{deployment_id}`. The key design decision: the downstream deployment's trigger needs to match on the upstream deployment's ID. But the upstream deployment ID isn't known until it's created. So I need to: 1. Create both deployments 2. Then create the automation/trigger on the downstream deployment that references the upstream deployment's ID The approach will be: 1. Create both flows and deployments using `flow.serve()` — but for the downstream, I'll handle the trigger separately after deployment creation. 2. Actually, looking at the code more carefully, I see that `_create_triggers` in `RunnerDeployment` calls `trigger.set_deployment_id(deployment_id)` and `trigger.as_automation()`. But the trigger's `match` needs to reference the *upstream* deployment. Let me think about this differently. The `DeploymentEventTrigger` can use `match_related` to filter by related resources. The related resource for a deployment is `prefect.deployment.{deployment_id}` with role `deployment`. So I could match: ```python match_related={ "prefect.resource.id": f"prefect.deployment.{upstream_deployment_id}" } ``` But the upstream deployment ID isn't known until runtime. The best approach is: 1. Create both deployments first (without triggers) 2. Then programmatically create the automation linking them OR, I could use a two-phase approach: 1. Use `flow.serve()` for both flows, but for the downstream, pass the trigger object directly 2. The trigger's `match_related` can reference `prefect.deployment.{upstream_deployment_id}` But since we don't know the upstream deployment ID at code-writing time, I'll use the Prefect client API to: 1. Create both deployments 2. Create the automation programmatically Let me now write the main.py:   
+💫 Executing python3 -c "
+# Quick test: can we create a DeploymentEventTrigger with match_related?
+from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
+from prefect.automations import Posture
+
+trigger = DeploymentEventTrigger(
+    name='test-trigger',
+    description='Test',
+    enabled=True,
+    expect={'prefect.flow-run.Completed'},
+    match={'prefect.resource.id': 'prefect.flow-run.*'},
+    match_related={'prefect.resource.id': 'prefect.deployment.some-uuid'},
+    posture=Posture.Reactive,
+    threshold=1,
+)
+print('Trigger created successfully')
+print(trigger.model_dump())
+" ✔ 
+Now let me check whether the trigger can be passed via `flow.serve()` with `match_related` and how the deployment ID resolution works. The key issue is: the `match_related` needs the upstream deployment ID, which we only get after creating the upstream deployment. Let me design the solution: I'll create both deployments first, get the upstream deployment ID, then create the automation programmatically.   
+💫 Executing python3 -c "
+# Check how to use the Prefect client to create an automation
+from prefect.client.orchestration import get_client
+from prefect.automations import Automation, EventTrigger, RunDeployment, Posture
+import inspect
+
+print('Automation fields:')
+for k, v in Automation.model_fields.items():
+    print(f'  {k}: {v.annotation} (default={v.default})')
+
+print()
+print('RunDeployment fields:')
+for k, v in RunDeployment.model_fields.items():
+    print(f'  {k}: {v.annotation} (default={v.default})')
+" ✔ 
+Now let me also check: when `RunDeployment` has `source='inferred'`, it infers the deployment from the automation's `owner_resource`. And when I use `set_deployment_id` on the trigger, it sets the `owner_resource` to `prefect.deployment.{deployment_id}`. Let me verify:   
+💫 Executing python3 -c "
+from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
+from prefect.automations import Posture
+from uuid import uuid4
+
+trigger = DeploymentEventTrigger(
+    name='test-trigger',
+    expect={'prefect.flow-run.Completed'},
+    match={'prefect.resource.id': 'prefect.flow-run.*'},
+    match_related={'prefect.resource.id': 'prefect.deployment.some-upstream-uuid'},
+    posture=Posture.Reactive,
+    threshold=1,
+)
+
+test_id = uuid4()
+trigger.set_deployment_id(test_id)
+print('After set_deployment_id:')
+print(trigger.model_dump())
+
+print()
+automation = trigger.as_automation()
+print('Automation:')
+print(automation.model_dump())
+" ✔ 
+I see that `as_automation()` creates a `RunDeployment` action with `source='selected'` and the deployment ID. The `owner_resource` is set to `prefect.deployment.{downstream_deployment_id}`. Now I have everything I need. Let me also verify the Prefect server is running and check the API:   
+💫 Executing curl -s http://127.0.0.1:4200/api/health 2>&1 | head -5 ✔ 
+💫 Executing echo $PREFECT_API_URL 2>/dev/null; prefect config view 2>&1 | head -20 ✔ 
+💫 Executing curl -s http://127.0.0.1:4200/api/admin/version 2>&1 ✖ "Command exited with code 7"
+💫 Executing curl -v http://127.0.0.1:4200/api/health 2>&1 | head -30 ✔ 
+The server isn't running yet. Let me start it:   
+💫 Executing prefect server start --port 4200 --host 127.0.0.1 --background 2>&1 ✔ 
+💫 Executing sleep 3 && curl -s http://127.0.0.1:4200/api/health 2>&1 ✖ "Command exited with code 7"
+💫 Executing sleep 5 && curl -s http://127.0.0.1:4200/api/health 2>&1 ✔ 
+Good, the server is up. Now let me write the solution. The approach: 1. Create both flows 2. Create both deployments using the Prefect client API (not `flow.serve()`, since I need the upstream deployment ID to set up the trigger) 3. Create the automation linking the upstream completion to the downstream run 4. Use `flow.serve()` to serve both deployments Actually, looking more carefully at the requirements: "Start command: `python3 main.py`". The simplest approach is to use `flow.serve()` which creates deployments and runs them. But the trigger needs the upstream deployment ID... Wait — let me reconsider. The `DeploymentEventTrigger` with `match_related` can filter by the deployment's resource ID. But the deployment ID isn't known at code-writing time. However, I can use a two-step approach: 1. First create the upstream deployment and get its ID 2. Then create the downstream deployment with the trigger referencing the upstream ID 3. Then serve both But `flow.serve()` creates the deployment AND serves it. If I create deployments separately, I can't easily use `flow.serve()` for both. Let me think about an alternative: I can use the `prefect.deployments.run_deployment` to run the upstream, and create the downstream with a proper trigger. But the requirement says "both deployments must remain servable/executable locally". Actually, the cleanest approach is: 1. Use the Prefect client to create both deployments programmatically 2. Create the automation linking them 3. Use `serve()` from `prefect` to serve both deployments Let me check if `serve()` can accept pre-created deployments:   
+💫 Executing python3 -c "
+from prefect import serve
+import inspect
+print(inspect.signature(serve))
+" ✔ 
+💫 Executing python3 -c "
+from prefect import serve
+import inspect
+src = inspect.getsource(serve)
+print(src)
+" ✔ 
+I can create `RunnerDeployment` objects and pass them to `serve()`. But the issue is that `RunnerDeployment` needs to be created via `flow.to_deployment()` (synchronous) or `flow.ato_deployment()` (async), and the trigger needs the upstream deployment ID. Let me take the approach of: 1. Creating the upstream deployment first via the client API 2. Then building the downstream deployment with the trigger referencing the upstream ID 3. Then using `serve()` to serve both But I need to be careful - `serve()` will try to create the deployments again (via `aapply`). Let me look at `aapply` again - it checks if the deployment exists first and updates if so. Actually, the cleanest approach: I'll create both deployments and the automation entirely via the Prefect client API, then serve both flows using `serve()`. Let me write the complete solution:   
+✏️  Writing /home/user/reactive_pipeline/main.py ✔ 
+Now let me test this. First, let me stop any existing Prefect server and restart clean:   
+💫 Executing prefect server stop 2>&1; sleep 2; prefect server start --port 4200 --host 127.0.0.1 --background 2>&1 ✔ 
+💫 Executing sleep 5 && curl -s http://127.0.0.1:4200/api/health ✔ 
+Now let me test the setup part first (just creating deployments and automation):   
+💫 Executing cd /home/user/reactive_pipeline && python3 -c "
+import asyncio
+import os
+from datetime import timedelta
+
+from prefect import flow
+from prefect.automations import Posture
+from prefect.client.orchestration import get_client
+from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
+
+os.environ['PREFECT_API_URL'] = 'http://127.0.0.1:4200/api'
+
+run_id_path = '/logs/artifacts/run-id'
+with open(run_id_path) as f:
+    run_id = f.read().strip()
+
+UPSTREAM_FLOW_NAME = f'upstream-flow-{run_id}'
+UPSTREAM_DEPLOY_NAME = f'upstream-deploy-{run_id}'
+DOWNSTREAM_FLOW_NAME = f'downstream-flow-{run_id}'
+DOWNSTREAM_DEPLOY_NAME = f'downstream-deploy-{run_id}'
+
+@flow(name=UPSTREAM_FLOW_NAME)
+def upstream_flow():
+    print(f'[upstream] Flow {UPSTREAM_FLOW_NAME} running.')
+
+@flow(name=DOWNSTREAM_FLOW_NAME)
+def downstream_flow():
+    print(f'[downstream] Flow {DOWNSTREAM_FLOW_NAME} running.')
+
+async def setup():
+    async with get_client() as client:
+        upstream_flow_id = await client.create_flow_from_name(UPSTREAM_FLOW_NAME)
+        upstream_deployment_id = await client.create_deployment(
+            flow_id=upstream_flow_id,
+            name=UPSTREAM_DEPLOY_NAME,
+        )
+        print(f'Upstream deployment: {upstream_deployment_id}')
+
+        downstream_flow_id = await client.create_flow_from_name(DOWNSTREAM_FLOW_NAME)
+        downstream_deployment_id = await client.create_deployment(
+            flow_id=downstream_flow_id,
+            name=DOWNSTREAM_DEPLOY_NAME,
+        )
+        print(f'Downstream deployment: {downstream_deployment_id}')
+
+        trigger = DeploymentEventTrigger(
+            name=f'{DOWNSTREAM_DEPLOY_NAME}__reactive_trigger',
+            description=f'Auto-run {DOWNSTREAM_DEPLOY_NAME} when {UPSTREAM_DEPLOY_NAME} completes.',
+            enabled=True,
+            expect={'prefect.flow-run.Completed'},
+            match={'prefect.resource.id': 'prefect.flow-run.*'},
+            match_related={'prefect.resource.id': f'prefect.deployment.{upstream_deployment_id}'},
+            posture=Posture.Reactive,
+            threshold=1,
+            within=timedelta(seconds=0),
+        )
+        trigger.set_deployment_id(downstream_deployment_id)
+        automation = trigger.as_automation()
+        automation_id = await client.create_automation(automation)
+        print(f'Automation: {automation_id}')
+
+        return upstream_deployment_id, downstream_deployment_id
+
+asyncio.run(setup())
+" 2>&1 ✔ 
+Deployments and automation created successfully. Let me verify in the UI:   
+💫 Executing prefect deployment ls 2>&1 ✔ 
+💫 Executing prefect automation ls 2>&1 ✔ 
+Both deployments and the automation are visible. Now let me verify the automation details:   
+💫 Executing prefect automation inspect fb61c519-2888-49d3-a5aa-fff1336b3163 2>&1 ✖ "Command exited with code 1"
+💫 Executing prefect automation ls --all 2>&1 ✖ "Command exited with code 1"
+💫 Executing prefect automation --help 2>&1 ✔ 
+💫 Executing prefect automation inspect 'downstream-deploy-zrll0gh8ip__reactive_trigger' 2>&1 ✔ 
+The automation is correctly configured: - `match`: `prefect.resource.id: prefect.flow-run.*` — matches any flow run - `match_related`: `prefect.resource.id: prefect.deployment.3e8e51c8...` — only when related to the upstream deployment - `expect`: `prefect.flow-run.Completed` — only the Completed event - `actions`: `RunDeployment` pointing to the downstream deployment Now let me clean up and run the full `main.py`. But first, I need to handle a subtle issue: when `serve()` creates deployments via `to_deployment()`, it will try to create them again. The `aapply` method checks if the deployment exists and updates it. But the `_create_triggers` method in `RunnerDeployment` will try to delete and recreate automations. Since our downstream deployment doesn't have any triggers in its `to_deployment()` call, it might delete our manually-created automation. Let me check:   
+💫 Executing python3 -c "
+from prefect.deployments.runner import RunnerDeployment
+import inspect
+src = inspect.getsource(RunnerDeployment._update)
+print(src[:2000])
+" ✔ 
+I see — `_update` also calls `_create_triggers`, which calls `client.delete_resource_owned_automations`. This would delete our manually-created automation because it's owned by the downstream deployment. I need to modify the approach. Options: 1. Pass the trigger in `to_deployment()` for the downstream flow — but the upstream deployment ID isn't known yet 2. Don't use `serve()` — instead, create deployments and then serve them with a custom runner 3. After `serve()` creates/updates the deployments, re-create the automation Actually, looking at the `_create_triggers` code again: ```python async def _create_triggers(self, deployment_id: UUID, client: PrefectClient): try: await client.delete_resource_owned_automations( f"prefect.deployment.{deployment_id}" ) except PrefectHTTPStatusError as e: if e.response.status_code == 404: return deployment_id raise e for trigger in self.triggers: trigger.set_deployment_id(deployment_id) await client.create_automation(trigger.as_automation()) ``` When `to_deployment()` is called without triggers, `self.triggers` is empty, so it deletes all automations owned by the deployment and doesn't recreate any. The solution: I need to create the automation AFTER `serve()` starts, or I need to include the trigger in the `to_deployment()` call. But I can't include the trigger in `to_deployment()` because I need the upstream deployment ID. Better approach: Don't use `serve()` at all. Instead, directly use the `Runner` class to serve the flows, and handle the deployment creation manually:   
+💫 Executing python3 -c "
+from prefect.runner import Runner
+import inspect
+print(inspect.signature(Runner.__init__))
+" ✔ 
+💫 Executing python3 -c "
+from prefect.runner import Runner
+import inspect
+# Check Runner.start method
+print(inspect.signature(Runner.start))
+print()
+# Check add_deployment
+print(inspect.signature(Runner.add_deployment))
+" ✔ 
+OK so the approach will be: 1. Create deployments and automation via client API 2. Create `RunnerDeployment` objects from the flows 3. Add them to a `Runner` and start it But the `Runner.add_deployment` calls `aapply` which will try to update/delete triggers. Let me check if there's a way to avoid this. Actually, let me reconsider. The cleanest approach: 1. Create both deployments via the client API (without triggers) 2. Create the automation via the client API 3. Use `serve()` to serve both — but the `_create_triggers` will delete the automation The fix: I need to ensure the downstream deployment's `to_deployment()` includes the trigger. But the trigger needs the upstream deployment ID, which is only known after creation. Let me use a different strategy: create the upstream deployment first, get its ID, then create the downstream deployment with the trigger embedded:   
+💫 Executing python3 -c "
+# Check if to_deployment returns a RunnerDeployment that I can modify
+from prefect import flow
+
+@flow
+def test_flow():
+    pass
+
+deploy = test_flow.to_deployment(name='test-deploy')
+print(type(deploy))
+print(dir(deploy))
+" 2>&1 | head -30 ✔ 
+Right — `to_deployment()` needs a file-based flow. That's fine since our `main.py` is a file. Let me take yet another approach. The best approach: Since `to_deployment()` requires a file, and `serve()` with `to_deployment()` will mess with triggers, let me: 1. Use `RunnerDeployment.from_flow()` directly (which is what `to_deployment()` calls internally) 2. Manually set the trigger on the downstream RunnerDeployment before adding it But `RunnerDeployment.from_flow()` also validates that flows are file-based... Actually wait, our flows ARE in a file (`main.py`). The issue is only when testing interactively. Let me revise the approach: 1. Create upstream deployment via client API 2. Get upstream deployment ID 3. Build downstream `RunnerDeployment` with the trigger already embedded 4. Build upstream `RunnerDeployment` (no trigger) 5. Use `serve()` with both — the downstream's trigger will be properly created Let me check `RunnerDeployment.from_flow`:   
+💫 Executing python3 -c "
+from prefect.deployments.runner import RunnerDeployment
+import inspect
+src = inspect.getsource(RunnerDeployment.from_flow)
+print(src[:3000])
+" ✔ 
+💫 Executing python3 -c "
+from prefect.deployments.runner import RunnerDeployment
+import inspect
+src = inspect.getsource(RunnerDeployment.from_flow)
+# Get the second half
+lines = src.split('\n')
+for i, line in enumerate(lines):
+    if i > 60:
+        print(f'{i}: {line}')
+" 2>&1 | head -60 ✔ 
+Good. `RunnerDeployment.from_flow` accepts `triggers` parameter. So the plan is: 1. Create the upstream deployment via client API (get its ID) 2. Build the downstream `RunnerDeployment` with the trigger already configured (referencing the upstream ID) 3. Build the upstream `RunnerDeployment` (no trigger) 4. Use `serve()` with both This way, when `serve()` calls `_create_triggers` on the downstream deployment, it will properly create the automation with the correct upstream deployment ID. But wait — when `serve()` is called, it calls `runner.add_deployment()` which calls `deployment.aapply()` which calls `_create()` (since the deployment doesn't exist yet) or `_update()` (if it does). In `_create()`, it creates the deployment first, then calls `_create_triggers`. But the trigger's `match_related` references the upstream deployment ID, which is fine since we set it before. The only issue: `_create()` creates the deployment via `client.create_deployment()`. But we already created the upstream deployment via the client. For the downstream, we can let `serve()` create it. Actually, let me simplify even further: I'll create BOTH deployments through the normal `serve()` flow, but I'll handle the upstream deployment first, get its ID, then set up the downstream with the trigger. Here's the refined plan: 1. Create upstream `RunnerDeployment` (no trigger) 2. Add it to a temporary runner, `aapply` it to get the upstream deployment ID 3. Create downstream `RunnerDeployment` with the trigger referencing the upstream ID 4. Serve both together But `Runner.add_deployment()` calls `aapply()` which creates the deployment. And `serve()` also calls `add_deployment()`. So the upstream would be created twice. Let me just do it all manually with the client API, then use `serve()` for both: The key insight: `serve()` with `RunnerDeployment` objects will call `aapply()` which checks if the deployment exists. If it does, it calls `_update()`. The `_update()` method calls `_create_triggers()` which deletes and recreates automations. For the downstream, this would delete our manually-created automation. Solution: After `serve()` is running, re-create the automation. Or better: include the trigger in the downstream's `RunnerDeployment` so that `_create_triggers` creates it correctly. Let me go with the approach of: 1. Create upstream deployment via client API (get its ID) 2. Create downstream `RunnerDeployment` with trigger 3. Create upstream `RunnerDeployment` (no trigger) 4. `serve()` both — the downstream's `_create_triggers` will create the correct automation This is clean and correct. Let me rewrite `main.py`:   

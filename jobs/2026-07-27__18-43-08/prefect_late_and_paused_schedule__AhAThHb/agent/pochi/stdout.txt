@@ -1,0 +1,205 @@
+- Initializing MCP connections...
+You
+# Late and Paused Scheduled Runs on a Self-Hosted Prefect Server ## Background You are working with **Prefect 3.8.0** orchestrating against a **self-hosted Prefect server** that is already running locally. The server UI is served at `http://127.0.0.1:4200` and its API at `http://127.0.0.1:4200/api`. Everything must stay local; no Prefect Cloud or any other external service may be used. A data team wants a reproducible "scheduling lab" that demonstrates two distinct points in a deployment's scheduling lifecycle at the same time: one deployment whose scheduled work is piling up because nothing is executing it, and a second deployment whose schedule has been deliberately switched off. Both situations must be plainly visible in the Prefect UI. ## Requirements - Define a single Prefect flow and register **two deployments** of it against the local server. - One deployment must be actively scheduled so that its scheduled work becomes overdue and surfaces in the UI accordingly. - The other deployment must carry a schedule that has been turned off, so the UI shows it as inactive with nothing queued ahead. - The whole setup must be reproducible from a single command that leaves the server in the required state. ## Implementation Hints - Prefect version: **3.8.0** (already installed). Target only the local server at `http://127.0.0.1:4200` (API `http://127.0.0.1:4200/api`). - Project path: `/home/user/scheduling_lab`. - Read the `run-id` from `/logs/artifacts/run-id` and append it to every deployment name so names are unique per run. - Provide an idempotent setup command **`bash setup.sh`** (run from `/home/user/scheduling_lab`) that (re)creates both deployments and leaves them in the exact required states described below. Re-running it must converge to the same final state. - Both deployments belong to one flow. Their names must be exactly: - `pulse-active-<run-id>` — carries an **active** schedule that fires on a fixed **30-second interval**. Within the observation window, at least one flow run of this deployment must be visible in the Prefect UI in the **Late** state. - `pulse-paused-<run-id>` — carries a schedule that must end in a **paused (inactive)** state, so the UI shows its schedule switched off with **no upcoming runs**. - Neither deployment may have any of its scheduled runs actually executed; the scheduled work for `pulse-active-<run-id>` must remain waiting so that it surfaces as Late rather than progressing to running or completed. - Do not create or leave running anything that would consume and execute these scheduled runs.   
+
+Pochi
+💭 Thinking for 154 characters   
+💫 Executing cat /logs/artifacts/run-id 2>/dev/null; echo "---"; ls -la /home/user/ 2>/dev/null; echo "---"; ls -la /home/user/scheduling_lab 2>/dev/null; echo "---"; curl -s http://127.0.0.1:4200/api/health; echo "---"; python3 -c "import prefect; print(prefect.__version__)"; echo "---"; which prefect; prefect version 2>&1 | head -30 ✔ 
+💭 Thinking for 152 characters   
+💫 Executing echo "PREFECT_API_URL=$PREFECT_API_URL"; prefect config view 2>&1; echo "---"; curl -s http://127.0.0.1:4200/api/deployments/filter -X POST -H "Content-Type: application/json" -d '{}' | head -c 2000 ✔ 
+Good — the profile is already configured to point at the local server. Now let me set up the project.   
+📂 Listing files in /home/user/scheduling_lab ✔ 
+💭 Thinking for 1152 characters   
+💫 Executing python3 -c "
+import inspect
+from prefect import Flow
+print(inspect.signature(Flow.to_deployment))
+"
+ ✔ 
+💭 Thinking for 462 characters   
+💫 Executing python3 -c "
+import inspect
+from prefect.client.schemas.actions import DeploymentCreate, DeploymentScheduleCreate
+print(inspect.signature(DeploymentCreate.__init__))
+print('---')
+print(DeploymentCreate.model_fields.keys())
+print('---')
+print(DeploymentScheduleCreate.model_fields.keys())
+"
+ ✔ 
+💭 Thinking for 700 characters   
+💫 Executing python3 -c "
+import inspect
+from prefect.schedules import Schedule, Interval
+print(inspect.signature(Schedule.__init__))
+print('---')
+print(inspect.getsource(Schedule))
+" 2>&1 | head -80
+ ✔ 
+💭 Thinking for 667 characters   
+💫 Executing python3 -c "
+import inspect
+from prefect import Flow
+print(inspect.getsource(Flow.to_deployment))
+" 2>&1 | head -150
+ ✔ 
+💭 Thinking for 178 characters   
+💫 Executing python3 -c "
+import inspect
+from prefect.deployments.runner import RunnerDeployment
+src = inspect.getsource(RunnerDeployment.from_flow)
+print(src)
+" 2>&1 | sed -n '1,160p'
+ ✔ 
+💭 Thinking for 1165 characters   
+💫 Executing python3 -c "
+import inspect
+from prefect.deployments.runner import RunnerDeployment
+print(inspect.signature(RunnerDeployment.apply))
+"
+ ✔ 
+💭 Thinking for 973 characters   
+💫 Executing prefect config view --show-defaults 2>&1 | grep -i -E "late|scheduler"  ✔ 
+💭 Thinking for 2575 characters   
+🔍 Searching for deployment\.paused|\.paused and|is_schedule_active in /opt/venv/lib/python3.12/site-packages/prefect ✔ 
+💭 Thinking for 420 characters   
+💫 Executing find /opt/venv/lib/python3.12/site-packages/prefect/server/services -iname "*schedul*" ✔ 
+🔍 Searching for paused|active in /opt/venv/lib/python3.12/site-packages/prefect/server/services/scheduler.py ✔ 
+💭 Thinking for 3215 characters   
+Now let me create the project files.   
+✏️  Writing /home/user/scheduling_lab/flow.py ✔ 
+✏️  Writing /home/user/scheduling_lab/deploy.py ✔ 
+💭 Thinking for 830 characters   
+✏️  Writing /home/user/scheduling_lab/setup.sh ✔ 
+Now let's run it and verify the resulting state.   
+💫 Executing cd /home/user/scheduling_lab && chmod +x setup.sh && bash setup.sh ✔ 
+Setup ran successfully. Let's verify the deployment states and check whether runs are being created and eventually marked Late.   
+💫 Executing cd /home/user/scheduling_lab && python3 -c "
+import asyncio
+from prefect.client.orchestration import get_client
+
+async def main():
+    async with get_client() as client:
+        deployments = await client.read_deployments()
+        for d in deployments:
+            print('---')
+            print('name:', d.name)
+            print('paused:', d.paused)
+            print('work_pool_name:', d.work_pool_name)
+            for s in d.schedules:
+                print('  schedule:', s.schedule, 'active:', s.active)
+
+asyncio.run(main())
+"
+ ✔ 
+Both deployments are configured correctly. Now let's wait for the scheduler and late-runs services to catch up, then check flow run states.   
+💫 Executing sleep 90 && cd /home/user/scheduling_lab && python3 -c "
+import asyncio
+from prefect.client.orchestration import get_client
+from prefect.client.schemas.filters import FlowRunFilter, DeploymentFilter, DeploymentFilterName
+
+async def main():
+    async with get_client() as client:
+        deployments = await client.read_deployments()
+        for d in deployments:
+            frs = await client.read_flow_runs(
+                flow_run_filter=FlowRunFilter(deployment_id={'any_': [d.id]}),
+                limit=200,
+            )
+            states = {}
+            for fr in frs:
+                states[fr.state_name] = states.get(fr.state_name, 0) + 1
+            print(d.name, '->', states, ' total:', len(frs))
+
+asyncio.run(main())
+"
+ ✖ "Command execution timed out after 60 seconds."
+💭 Thinking for 164 characters   
+💫 Executing sleep 60; cd /home/user/scheduling_lab && python3 -c "
+import asyncio
+from prefect.client.orchestration import get_client
+from prefect.client.schemas.filters import FlowRunFilter
+
+async def main():
+    async with get_client() as client:
+        deployments = await client.read_deployments()
+        for d in deployments:
+            frs = await client.read_flow_runs(
+                flow_run_filter=FlowRunFilter(deployment_id={'any_': [d.id]}),
+                limit=200,
+            )
+            states = {}
+            for fr in frs:
+                states[fr.state_name] = states.get(fr.state_name, 0) + 1
+            print(d.name, '->', states, ' total:', len(frs))
+
+asyncio.run(main())
+"
+ ✔ 
+`pulse-active` already shows 3 runs marked **Late** (99 remain properly queued as Scheduled), while `pulse-paused` has zero flow runs, confirming its schedule is fully switched off. Let's confirm idempotency by re-running setup.sh.   
+💫 Executing cd /home/user/scheduling_lab && bash setup.sh ✔ 
+💭 Thinking for 208 characters   
+Re-running preserves the same deployment IDs (upsert, no duplicates). Let's do a final confirmation of overall deployment count and states.   
+💫 Executing cd /home/user/scheduling_lab && python3 -c "
+import asyncio
+from prefect.client.orchestration import get_client
+from prefect.client.schemas.filters import FlowRunFilter
+
+async def main():
+    async with get_client() as client:
+        deployments = await client.read_deployments()
+        print('total deployments:', len(deployments))
+        for d in deployments:
+            frs = await client.read_flow_runs(
+                flow_run_filter=FlowRunFilter(deployment_id={'any_': [d.id]}),
+                limit=250,
+            )
+            states = {}
+            for fr in frs:
+                states[fr.state_name] = states.get(fr.state_name, 0) + 1
+            print(d.name, '| paused=', d.paused, '| schedule active=', d.schedules[0].active if d.schedules else None, '| run states=', states)
+
+asyncio.run(main())
+"
+ ✖ "Command exited with code 1"
+💫 Executing cd /home/user/scheduling_lab && python3 -c "
+import asyncio
+from prefect.client.orchestration import get_client
+from prefect.client.schemas.filters import FlowRunFilter
+
+async def main():
+    async with get_client() as client:
+        deployments = await client.read_deployments()
+        print('total deployments:', len(deployments))
+        for d in deployments:
+            frs = await client.read_flow_runs(
+                flow_run_filter=FlowRunFilter(deployment_id={'any_': [d.id]}),
+                limit=200,
+            )
+            states = {}
+            for fr in frs:
+                states[fr.state_name] = states.get(fr.state_name, 0) + 1
+            print(d.name, '| paused=', d.paused, '| schedule active=', d.schedules[0].active if d.schedules else None, '| run states=', states)
+
+asyncio.run(main())
+"
+ ✔ 
+Final verification confirms the exact required state: - Exactly **2 deployments** total (idempotent — re-running `setup.sh` did not create duplicates). - `pulse-active-zryvj3ggyg`: `paused=False`, schedule `active=True`, and already has **4 flow runs in Late state** (plus 100 queued Scheduled), since nothing is executing them. - `pulse-paused-zryvj3ggyg`: `paused=True`, schedule `active=False`, and has **0 flow runs** — nothing queued ahead. - No work pool, worker, agent, or `flow.serve()` was ever started, so nothing can execute these scheduled runs.   
+🎉 Task Completed
+Created the reproducible scheduling lab at `/home/user/scheduling_lab`:
+
+- **`flow.py`** — defines a single minimal flow `pulse` (never executed as part of this lab).
+- **`deploy.py`** — reads the run-id from `/logs/artifacts/run-id`, then uses `flow.to_deployment(...).apply()` (a metadata-only upsert against the API) to register two deployments of `pulse`:
+  - `pulse-active-<run-id>`: schedule `Schedule(interval=30s, active=True)`, deployment `paused=False`.
+  - `pulse-paused-<run-id>`: schedule `Schedule(interval=30s, active=False)`, deployment `paused=True` (both flags set for an unambiguous "switched off" state regardless of which one the UI/checks inspect).
+  - Neither deployment is assigned a work pool, so no worker/agent can ever pick up and execute their runs.
+- **`setup.sh`** — idempotent entry point: sets `PREFECT_API_URL=http://127.0.0.1:4200/api`, reads the run-id, health-checks the API, then runs `deploy.py`. It never starts a worker, agent, or `flow.serve()`, so nothing consumes the scheduled runs.
+
+Verified end-to-end:
+- `bash setup.sh` run twice produced the exact same 2 deployments (same deployment IDs both times) — confirming idempotency.
+- After the run, `pulse-active-<run-id>` had runs in the DB with state counts `{'Scheduled': 100, 'Late': 4}` — i.e., real overdue runs already surfaced as **Late** in the Prefect UI/API, with more queued Scheduled runs piling up behind them since nothing executes them.
+- `pulse-paused-<run-id>` had `paused=True`, schedule `active=False`, and **0** flow runs — confirming its schedule is switched off with nothing queued ahead.
+- Confirmed via server source (`prefect/server/services/scheduler.py`) that the scheduler only creates new runs when `Deployment.paused is not True` AND `DeploymentSchedule.active is True`, so the paused deployment's configuration is guaranteed to never produce runs.
+
+The setup is fully local (targets only `http://127.0.0.1:4200`/`/api`), reproducible via the single `bash setup.sh` command from `/home/user/scheduling_lab`, and never runs anything that would execute the scheduled work.   
+  
