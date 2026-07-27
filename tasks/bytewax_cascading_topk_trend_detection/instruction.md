@@ -1,0 +1,61 @@
+# Cascading Top-K & Trend Detection over Event-Time Windows (Bytewax)
+
+## Background
+You are building a real-time analytics pipeline with **Bytewax** (`bytewax==0.21.1`), a
+Python-native stateful stream-processing framework. The pipeline ingests a stream of item
+"impression" events and must produce two analytics feeds by chaining an event-time
+windowed aggregation into a downstream stateful stage: a global **top-K** ranking and a
+**trending-items** feed.
+
+Everything runs locally. No Kafka, no databases, no network access.
+
+## Requirements
+Implement a single Bytewax dataflow that, when executed, reads the input event stream,
+performs a two-stage cascading computation, and writes two JSONL output files.
+
+**Stage 1 — per-item counts per event-time window.**
+Group events into **tumbling windows of exactly 60 seconds** using **event time** taken
+from each event's `ts` field, aligned to the instant `2024-01-01T00:00:00+00:00`. The
+integer **window index** of a window is the number of whole 60-second intervals between
+the alignment instant and the window's start (the window covering
+`[00:00:00, 00:01:00)` is index `0`, the next is `1`, and so on). For every item and every
+window in which that item has at least one event, compute the count of that item's events
+in that window.
+
+**Stage 2 — rolling history, top-K, and trend detection (stateful, fed by Stage 1).**
+Consume the Stage-1 per-window counts and maintain, per item, a rolling history of that
+item's most recent **N = 3** window results (a window result is a `(window index, count)`
+pair; only windows in which the item actually appears are recorded). From this produce:
+
+- **Global Top-K feed** (`K = 3`): rank items by their **rolling total** — the sum of the
+  counts in the item's most recent (up to) `N` recorded window results. Ranking is by
+  rolling total descending; ties are broken by item name ascending. Emit the top `K`
+  items (fewer only if fewer than `K` distinct items exist).
+
+- **Trending feed**: for each item, consider its window results in ascending window-index
+  order. The **growth** of a window result is its count minus the count of that item's
+  immediately preceding recorded window result (the previous element in the item's ordered
+  sequence of non-empty windows, regardless of any gap in window indices). An item's first
+  recorded window result has no growth. A window result is *trending* when its growth is
+  **strictly greater than 5**.
+
+## Implementation Hints
+- Project path: `/home/user/project`
+- Input events: `/home/user/project/data/events.jsonl`. One JSON object per line, each with
+  a string field `item` and a string field `ts` (an ISO-8601 timestamp with a UTC offset,
+  e.g. `2024-01-01T00:01:05+00:00`). Events are provided in non-decreasing timestamp order.
+- The pipeline must be defined in `/home/user/project/pipeline.py` and expose a
+  module-level Bytewax `Dataflow` object named `flow`.
+- Run command (from the project path): `python -m bytewax.run pipeline:flow`
+- The pipeline must be runnable repeatedly and must (re)produce both output files.
+- Output file `out/topk.jsonl` (relative to the project path): one JSON object per line,
+  each with exactly the keys `rank` (integer, starting at 1), `item` (string), and
+  `rolling_total` (integer).
+- Output file `out/trending.jsonl` (relative to the project path): one JSON object per line,
+  each with exactly the keys `item` (string), `window` (integer window index), `count`
+  (integer count in that window), `prev_count` (integer count of the item's previous
+  recorded window result), and `growth` (integer, `count - prev_count`). The order of lines
+  is not significant.
+- Use `bytewax==0.21.1`. All counts, totals, growth values, ranks, and window indices are
+  integers.
+
