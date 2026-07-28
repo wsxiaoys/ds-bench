@@ -260,8 +260,11 @@ async function main() {
 			"unknown";
 		const provider = data.agent_info?.model_info?.provider || "unknown";
 
-		const agentName =
+		const rawAgentName =
 			data.config?.agent?.name || data.agent_info?.name || "unknown";
+		const agentName = rawAgentName.includes(":")
+			? rawAgentName.split(":").pop() || rawAgentName
+			: rawAgentName;
 
 		// Extract job directory name (e.g., 2026-03-08__16-54-33)
 		const jobName = file.split("/")[0] || file.split("\\")[0];
