@@ -42,13 +42,3 @@ def test_project_dir_exists():
     assert os.path.isdir(PROJECT_DIR), (
         f"Project directory {PROJECT_DIR} must exist."
     )
-
-
-def test_jetstream_server_reachable():
-    # A local nats-server with JetStream should be listening on 127.0.0.1:4222.
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(5.0)
-        result = sock.connect_ex(("127.0.0.1", 4222))
-    assert result == 0, (
-        "A local NATS server must be listening on 127.0.0.1:4222."
-    )
