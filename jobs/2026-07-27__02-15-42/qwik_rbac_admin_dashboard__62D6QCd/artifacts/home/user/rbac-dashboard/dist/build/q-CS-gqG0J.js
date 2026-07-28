@@ -1,0 +1,1 @@
+import{d as a}from"./q-Dm-n0CeS.js";import{c as t}from"./q-Dm-n0CeS.js";const u=({track:e})=>{const[s,r]=a();e(()=>s.value.users),s.value.users&&(r.value=s.value.users)};export{t as _hW,u as s_tqiHi8vns7k};

@@ -1,0 +1,3 @@
+rootProject.name = "quadtree-broadphase"
+
+include(":headless")

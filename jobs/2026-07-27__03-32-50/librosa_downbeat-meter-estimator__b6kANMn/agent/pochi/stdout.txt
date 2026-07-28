@@ -1,0 +1,191 @@
+- Initializing MCP connections...
+You
+# Downbeat & Time-Signature (Meter) Estimator ## Background You are building a rhythm-analysis command-line tool with **librosa** (Python audio library). Given a recording of a steady percussive rhythm, the tool must track the beats, then infer the musical **meter** (how many beats make up one bar, e.g. 3 for 3/4 or 4 for 4/4) and locate the **downbeats** (the first beat of every bar). This requires going beyond plain beat tracking: you must analyze how the accent pattern repeats across beats to recover both the bar length and its phase. ## Requirements Implement a rerunnable CLI program that reads one audio file and writes one JSON result file: * Track the beats of the input signal and report the beat times (in seconds). * Report the estimated global tempo in beats per minute. * Compute a per-beat accent signal from **beat-synchronous features**: derive it from BOTH a beat-synchronous onset-strength envelope AND a beat-synchronous chroma-based novelty (harmonic change) signal, so that beats which begin a bar stand out from the others. * Estimate the **meter** = the number of beats per bar, chosen from the candidate bar lengths {2, 3, 4, 6}, by measuring which candidate best explains the periodicity of the per-beat accent signal. * Determine the **downbeat phase**: the beat offset (0-based, in the range `[0, meter)`) at which bars start, chosen so that the accumulated accent on the selected downbeats is maximized. * Report the downbeats both as indices into the beat array and as times in seconds. ## Implementation Hints * Project path: /home/user/project * Command: `python3 estimate_downbeats.py --input <input_wav_path> --output <output_json_path>` * The input is a single-channel (mono) PCM WAV file. Load it at its native sample rate. * The program must be deterministic: running it twice on the same input must produce identical output. * Write the result as a single JSON **object** to the `--output` path with EXACTLY these keys: * `tempo`: number — estimated global tempo in BPM. * `beat_times`: array of numbers — beat times in seconds, strictly ascending. * `meter`: integer — one of `2`, `3`, `4`, `6`. * `downbeat_indices`: array of integers — indices into `beat_times` marking the downbeats, strictly ascending. * `downbeat_times`: array of numbers — must equal `beat_times` gathered at `downbeat_indices`, in the same order. * Downbeats occur once per bar: the values in `downbeat_indices` must form an arithmetic sequence whose common difference equals `meter`, with the first index in the range `[0, meter)`. * Every index in `downbeat_indices` must be a valid index into `beat_times`. * The estimated `meter` must exactly match the true number of beats per bar of the input. * The estimated `tempo` must be within 5% of the true tempo of the input. * Each reported downbeat time must fall on a true accented (bar-starting) beat of the input, within a tolerance of half of one beat period (i.e. `0.5 * 60 / true_tempo` seconds).   
+
+Pochi
+💭 Thinking for 57 characters   
+📂 Listing files in /home/user/project recursively ✔ 
+💭 Thinking for 83 characters   
+💫 Executing python3 -c "import librosa, numpy, scipy; print(librosa.__version__, numpy.__version__, scipy.__version__)" ✔ 
+💭 Thinking for 1606 characters   
+💫 Executing python3 -c "
+import librosa, inspect
+print(inspect.signature(librosa.beat.beat_track))
+print(inspect.signature(librosa.util.sync))
+print(inspect.signature(librosa.feature.chroma_cqt))
+"
+ ✔ 
+💭 Thinking for 256 characters   
+✏️  Writing /home/user/project/estimate_downbeats.py ✔ 
+Now let me create a synthetic test WAV with a known meter/tempo to validate the script.   
+💫 Executing cd /home/user/project && python3 -c "
+import numpy as np
+import soundfile as sf
+
+sr = 22050
+tempo = 120.0  # BPM
+beat_period = 60.0 / tempo
+meter = 3
+n_bars = 20
+duration = n_bars * meter * beat_period + 1.0
+
+y = np.zeros(int(duration * sr))
+
+def click(y, t, sr, amp, freq=1000.0, dur=0.05):
+    n = int(dur * sr)
+    start = int(t * sr)
+    if start + n > len(y):
+        n = len(y) - start
+    env = np.exp(-np.arange(n) / (0.01 * sr))
+    tt = np.arange(n) / sr
+    y[start:start+n] += amp * env * np.sin(2*np.pi*freq*tt)
+
+# also add a tonal component that changes at downbeats to mimic harmonic change
+for bar in range(n_bars):
+    base_freq = 220.0 if bar % 2 == 0 else 277.18  # alternate harmony each bar
+    for beat in range(meter):
+        idx = bar*meter + beat
+        t = idx * beat_period
+        amp = 1.0 if beat == 0 else 0.5
+        freq = 1200.0 if beat == 0 else 800.0
+        click(y, t, sr, amp, freq=freq, dur=0.08)
+        # sustained tone for harmonic content
+        n = int(beat_period * sr)
+        start = int(t*sr)
+        end = min(start+n, len(y))
+        tt = np.arange(end-start)/sr
+        y[start:end] += 0.15*np.sin(2*np.pi*base_freq*tt)
+
+y = y / (np.max(np.abs(y))+1e-9) * 0.9
+sf.write('test_3_4.wav', y, sr)
+print('written', len(y)/sr, 'sec')
+"
+ ✔ 
+💫 Executing cd /home/user/project && python3 estimate_downbeats.py --input test_3_4.wav --output out_3_4.json && cat out_3_4.json ✔ 
+💭 Thinking for 530 characters   
+💫 Executing cd /home/user/project && python3 -c "
+import numpy as np
+import soundfile as sf
+
+def make(meter, tempo, n_bars, fname, seed=0):
+    sr = 22050
+    beat_period = 60.0 / tempo
+    duration = n_bars * meter * beat_period + 1.0
+    y = np.zeros(int(duration * sr))
+
+    def click(y, t, amp, freq=1000.0, dur=0.05):
+        n = int(dur * sr)
+        start = int(t * sr)
+        if start + n > len(y):
+            n = len(y) - start
+        env = np.exp(-np.arange(n) / (0.01 * sr))
+        tt = np.arange(n) / sr
+        y[start:start+n] += amp * env * np.sin(2*np.pi*freq*tt)
+
+    rng = np.random.RandomState(seed)
+    for bar in range(n_bars):
+        base_freq = 220.0 if bar % 2 == 0 else 277.18
+        for beat in range(meter):
+            idx = bar*meter + beat
+            t = idx * beat_period
+            amp = 1.0 if beat == 0 else 0.5
+            freq = 1200.0 if beat == 0 else 800.0
+            click(y, t, amp, freq=freq, dur=0.08)
+            n = int(beat_period * sr)
+            start = int(t*sr)
+            end = min(start+n, len(y))
+            tt = np.arange(end-start)/sr
+            y[start:end] += 0.15*np.sin(2*np.pi*base_freq*tt)
+    y = y / (np.max(np.abs(y))+1e-9) * 0.9
+    sf.write(fname, y, sr)
+    print(fname, 'written', len(y)/sr, 'sec')
+
+make(4, 100.0, 16, 'test_4_4.wav')
+make(6, 140.0, 12, 'test_6_8.wav')
+make(2, 90.0, 24, 'test_2_4.wav')
+"
+ ✔ 
+💫 Executing cd /home/user/project && for f in test_4_4 test_6_8 test_2_4; do
+  python3 estimate_downbeats.py --input ${f}.wav --output out_${f}.json
+  python3 -c "
+import json
+d = json.load(open('out_${f}.json'))
+print('${f}', 'tempo=', d['tempo'], 'meter=', d['meter'], 'first downbeats=', d['downbeat_indices'][:6])
+"
+done ✔ 
+💭 Thinking for 577 characters   
+💫 Executing cd /home/user/project && python3 -c "
+import json
+d = json.load(open('out_test_4_4.json'))
+print(d['beat_times'][:10])
+print('downbeat_times', d['downbeat_times'][:6])
+"
+ ✔ 
+💭 Thinking for 1279 characters   
+💫 Executing cd /home/user/project && python3 -c "
+import numpy as np
+import librosa
+import sys
+sys.path.insert(0,'.')
+from estimate_downbeats import beat_synchronous_onset_accent, beat_synchronous_chroma_novelty, zscore, score_meter, best_phase
+
+y, sr = librosa.load('test_4_4.wav', sr=None, mono=True)
+hop_length=512
+onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
+tempo, beat_frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr, hop_length=hop_length, trim=False, units='frames')
+beat_frames = np.asarray(beat_frames, dtype=int)
+onset_accent = beat_synchronous_onset_accent(y, sr, beat_frames, hop_length)
+chroma_novelty = beat_synchronous_chroma_novelty(y, sr, beat_frames, hop_length)
+accent = 0.5*zscore(onset_accent) + 0.5*zscore(chroma_novelty)
+print('onset_accent', np.round(onset_accent[:12],3))
+print('chroma_novelty', np.round(chroma_novelty[:12],3))
+print('accent', np.round(accent[:12],3))
+for m in [2,3,4,6]:
+    print(m, score_meter(accent,m), best_phase(accent,m))
+"
+ ✔ 
+💭 Thinking for 3328 characters   
+🔧 Applying diff to /home/user/project/estimate_downbeats.py ✔ 
+💫 Executing cd /home/user/project && for f in test_3_4 test_4_4 test_6_8 test_2_4; do
+  python3 estimate_downbeats.py --input ${f}.wav --output out_${f}.json
+  python3 -c "
+import json
+d = json.load(open('out_${f}.json'))
+print('${f}', 'tempo=', round(d['tempo'],2), 'meter=', d['meter'], 'downbeats=', d['downbeat_indices'][:6])
+print('  downbeat_times', [round(t,3) for t in d['downbeat_times'][:6]])
+"
+done ✔ 
+All four test cases now correctly identify meter (3, 4, 6, 2) with phase 0, matching the true downbeat positions within tolerance. Let me also verify determinism (running twice yields identical output) and test an edge case with very few beats.   
+💫 Executing cd /home/user/project && python3 estimate_downbeats.py --input test_4_4.wav --output out_a.json && python3 estimate_downbeats.py --input test_4_4.wav --output out_b.json && diff out_a.json out_b.json && echo "IDENTICAL"
+# edge case: very short audio
+python3 -c "
+import numpy as np, soundfile as sf
+sr=22050
+y = 0.5*np.sin(2*np.pi*440*np.arange(int(0.3*sr))/sr)
+sf.write('test_short.wav', y, sr)
+"
+python3 estimate_downbeats.py --input test_short.wav --output out_short.json && cat out_short.json ✔ 
+Deterministic output confirmed, and the degenerate short-audio edge case is handled gracefully without crashing. Let's clean up the test artifacts generated during validation (keeping only the solution script).   
+💫 Executing cd /home/user/project && rm -f test_*.wav out_*.json && ls -la ✔ 
+💫 Executing cd /home/user/project && rm -rf __pycache__ && ls -la ✔ 
+🎉 Task Completed
+Implemented `/home/user/project/estimate_downbeats.py`, a deterministic CLI tool that:
+
+1. Loads the mono WAV at its native sample rate and runs `librosa.beat.beat_track` (on a precomputed onset-strength envelope, `trim=False`) to get beat frames/times and a global tempo estimate.
+2. Builds a per-beat accent signal from two beat-synchronous sources, each sampled in a small window centered exactly on each beat frame (avoiding the off-by-one alignment issues of `librosa.util.sync` when the first beat isn't at frame 0):
+   - Onset-strength envelope (max within the window) — captures percussive attack strength per beat.
+   - Chroma-CQT based harmonic novelty (1 − cosine similarity between consecutive beats' normalized chroma vectors) — captures harmonic change, which tends to spike at bar boundaries.
+   - Both are z-score normalized and averaged 50/50 into a single `accent` array, one value per beat.
+3. Estimates the **meter** by testing candidates {2, 3, 4, 6}: for each candidate, beats are grouped by `index mod meter` and a one-way ANOVA F-statistic (between-group variance / within-group variance) scores how well that grouping explains the accent's periodicity. The meter with the highest F-statistic wins — this metric is comparable across differing numbers of groups, unlike a raw peak-to-average ratio.
+4. Determines the **downbeat phase** in `[0, meter)` as the phase whose beats have the largest total accent, then emits `downbeat_indices` as an arithmetic sequence (`phase, phase+meter, phase+2*meter, ...`).
+5. Writes a single JSON object with exactly the required keys: `tempo`, `beat_times`, `meter`, `downbeat_indices`, `downbeat_times`.
+
+Validation performed with synthetic click tracks (percussive accents + alternating harmonic content on downbeats) covering all four candidate meters (2/4, 3/4, 4/4, 6/8) at various tempi:
+- Meter was correctly identified in all cases.
+- Downbeat phase was correctly identified (offset 0) in all cases, with downbeat times within a few hundredths of a second of the true bar starts (well inside the 0.5-beat-period tolerance).
+- Tempo estimates were within ~2% of ground truth in all tests.
+- Verified the program is deterministic (identical JSON output across repeated runs on the same input).
+- Verified graceful handling of a degenerate very-short/near-silent input (single beat detected, falls back to meter=2 with a single downbeat at index 0, without crashing).
+
+All test artifacts and `__pycache__` were removed after validation; only `estimate_downbeats.py` remains in the project directory.   
+  

@@ -1,0 +1,1 @@
+import{a as e}from"./index-Sz2uDrdR.js";var t=e(),n=()=>(0,t.jsxs)(`div`,{className:`card`,children:[(0,t.jsx)(`h2`,{children:`Poll Not Found`}),(0,t.jsx)(`p`,{children:`The poll you are looking for does not exist or has been deleted.`}),(0,t.jsx)(`a`,{href:`/`,className:`btn`,children:`Go Back Home`})]});export{n as errorComponent};
