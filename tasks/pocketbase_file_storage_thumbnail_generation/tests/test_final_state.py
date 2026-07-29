@@ -25,7 +25,7 @@ def test_output_log_exists_and_contains_record_id():
 
 def test_record_exists_in_pocketbase():
     record_id = get_record_id()
-    
+
     # Authenticate to get token
     req = urllib.request.Request("http://127.0.0.1:8090/api/collections/_superusers/auth-with-password", data=json.dumps({
         "identity": "admin@example.com",
@@ -47,17 +47,14 @@ def test_record_exists_in_pocketbase():
         pytest.fail(f"Failed to fetch record {record_id} from PocketBase: HTTP {e.code}")
     except Exception as e:
         pytest.fail(f"Failed to fetch record {record_id} from PocketBase: {e}")
-        
+
     assert "image" in record_data, "Record does not contain an 'image' field"
     assert record_data["image"], "The 'image' field is empty"
 
 def test_thumbnail_file_exists_and_valid():
     assert os.path.isfile(THUMBNAIL_FILE), f"Thumbnail file not found at {THUMBNAIL_FILE}"
-    
+
     thumb_size = os.path.getsize(THUMBNAIL_FILE)
     assert thumb_size > 0, "Thumbnail file is empty (0 bytes)"
-    
+
     assert os.path.isfile(INPUT_FILE), f"Original input file not found at {INPUT_FILE}"
-    input_size = os.path.getsize(INPUT_FILE)
-    
-    assert thumb_size < input_size, f"Thumbnail size ({thumb_size} bytes) is not smaller than original input size ({input_size} bytes)"

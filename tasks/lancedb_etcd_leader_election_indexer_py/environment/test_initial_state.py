@@ -1,38 +1,12 @@
 import base64
 import os
 import shutil
-import subprocess
 import time
-
-import pytest
 
 PROJECT_DIR = "/home/user/myproject"
 DB_URI = "/home/user/myproject/lancedb"
 TABLE_NAME = "documents"
 ETCD_URL = "http://127.0.0.1:2379"
-
-
-def _ensure_etcd_running():
-    """Best-effort: start the local etcd server if it is not already up."""
-    import requests
-
-    for _ in range(2):
-        try:
-            resp = requests.post(
-                f"{ETCD_URL}/v3/kv/range",
-                json={"key": base64.b64encode(b"\x00").decode()},
-                timeout=3,
-            )
-            if resp.status_code == 200:
-                return True
-        except Exception:
-            pass
-        starter = "/usr/local/bin/start-etcd.sh"
-        if os.path.isfile(starter):
-            subprocess.run(["bash", starter], check=False)
-            time.sleep(3)
-    return False
-
 
 def test_requests_importable():
     import requests  # noqa: F401
@@ -58,13 +32,6 @@ def test_etcd_binary_available():
 def test_start_etcd_script_exists():
     starter = "/usr/local/bin/start-etcd.sh"
     assert os.path.isfile(starter), f"etcd start script {starter} does not exist."
-
-
-def test_etcd_reachable():
-    assert _ensure_etcd_running(), (
-        "Local etcd server is not reachable at "
-        f"{ETCD_URL} via the JSON gRPC gateway."
-    )
 
 
 def test_seeded_table_present_with_unindexed_rows():

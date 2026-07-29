@@ -12,6 +12,7 @@ etcd v3 is already installed and running locally in this environment. It exposes
 - Support graceful failover (leader steps down and a follower takes over immediately) and ungraceful failover (leader crashes; the lease expires after its TTL and a follower then takes over). A new term's fencing token must always be strictly greater than every previous term's.
 
 ## Implementation Hints
+- You could start etcd by running `/usr/local/bin/start-etcd.sh`.
 - Use the etcd lease + a single election key with a create-revision (`CREATE`) transaction to guarantee single ownership; the election key's create-revision is a natural, globally-monotonic fencing token.
 - Keep the lease alive from a background thread; on graceful resign revoke the lease and remove the key, on crash simply stop refreshing the lease and let it expire.
 - Fence maintenance by re-checking, against etcd, that you still own the election key with your own term's token before touching the table.
