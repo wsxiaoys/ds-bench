@@ -1,0 +1,1681 @@
+- Initializing MCP connections...
+You
+# Roundtrip Fixpoint Auditor ## Background A document toolchain is only trustworthy when its serializers are *stable*: exporting a parsed document and importing the result back must eventually stop changing the artifact. This environment ships the Docling library preinstalled (v2.107.0 or newer, with all default model weights pre-baked) and is fully offline — no network access, no cloud APIs, no external services of any kind. A small corpus of hand-written source documents is already present in the project. Build a format-stability auditor: it cycles every corpus document through two independent serialization channels, measures what changes on every cycle, finds the fixpoint, classifies the instabilities it finds and enforces a stability gate. ## Requirements * A rerunnable command-line tool that audits every eligible document of a corpus directory through iterated export/import cycles in the `markdown` and `json` channels, plus one read-only HTML observation per document. * Per-iteration measurements against the previous iteration: byte equality, normalized-text equality, structural equivalence of the parsed document model, and a similarity score. * Fixpoint detection, per-run classification with stable codes, and a stability gate wired to process exit codes. * Persistence of every intermediate serialization, a machine-readable report, per-document detail artifacts and a human-readable summary. * Byte-level deterministic outputs. ## Implementation Hints ### Invocation * Project path: `/home/user/fixpoint` * Command: `python3 audit.py` * Options (all optional, exact spelling): * `--corpus <dir>` (default `corpus`) * `--out <dir>` (default `out`) * `--max-iterations <int>` (default `3`, valid range 2..10 inclusive) * `--min-similarity <float>` (default `0.95`, valid range 0.0..1.0 inclusive) * `--doc <document_id>` — repeatable; when present, restricts the audit to exactly the listed document ids * Relative path arguments resolve against the current working directory. ### Corpus and document ids * Eligible source files are the regular files located directly inside the corpus directory (no recursion) whose lowercased extension is `.md` or `.html`. Every other entry is ignored. * A document id is the source file name without its extension. * The invocation is invalid (exit `2`, see "Gate and exit codes") when: the corpus path does not exist or is not a directory; no eligible file is found; two eligible files share the same document id; or a `--doc` value is not among the eligible document ids. ### Channels and the iterated cycle * The channels are exactly `json` and `markdown`. The `json` channel uses Docling's lossless JSON serialization of the document model, the `markdown` channel uses Markdown. Their artifact extensions are `.json` and `.md`. * `D0` is the document model parsed from the source file. For iteration `i` (1-based): `T_i` is the channel serialization of `D_(i-1)` as text, and `D_i` is the document model parsed back from `T_i`. Every run performs exactly `--max-iterations` (`K`) iterations, producing `T_1 .. T_K`, regardless of early convergence. * Every `T_i` is written UTF-8 encoded to `<out>/documents/<document_id>/<channel>/iter_<NN>.<ext>`, where `NN` is the iteration number zero-padded to two digits. * Independently of the cycles, `D0` is exported to HTML exactly once per document and written UTF-8 encoded to `<out>/documents/<document_id>/observation.html`. This is an observation only: it never takes part in a cycle, a classification or the gate. ### Normalized text `normalize(s)` is defined as, in this exact order: (1) apply Unicode NFC; (2) replace every `CR LF` and then every remaining `CR` with `LF`; (3) replace every TAB (U+0009) and every NO-BREAK SPACE (U+00A0) with one SPACE (U+0020); (4) split into lines on `LF`; (5) in every line collapse each run of two or more SPACE characters into one SPACE, then strip leading and trailing SPACE characters; (6) drop the lines that are empty at this point; (7) join the surviving lines with a single `LF`. ### Similarity `similarity(a, b)` operates on `normalize(a)` and `normalize(b)`: split both on whitespace into the token lists `A` and `B`; when both are empty the value is `1.0`; otherwise the value is `2 * S / (len(A) + len(B))` where `S` is the sum, over the distinct tokens `t`, of `min(count of t in A, count of t in B)`. Every similarity value that is stored or printed is rounded to 6 decimal places, half away from zero. ### Structure signature The structure signature of a document model is an object with exactly these keys: * `item_counts`: object mapping a label to the number of content items carrying it, counting every content item reachable from the document body. A key is the label the document model reports for the item, lowercased, with every character outside `[a-z0-9]` replaced by `_`. Labels with no occurrence are omitted. * `max_depth`: integer; the greatest depth reached in the body tree, where the direct children of the body root have depth 1, and `0` when the body has no children. * `table_dims`: array of `[rows, cols]` integer pairs, one per table of the document, in document order. ### Per-iteration record For every iteration `i` record an object with exactly these keys: `iteration` (int, 1-based), `bytes` (int, the byte length of the UTF-8 encoded `T_i`), `sha256` (lowercase hex digest of the UTF-8 encoded `T_i`), `normalized_sha256` (lowercase hex digest of the UTF-8 encoded `normalize(T_i)`), `byte_equal_to_previous` (bool, `T_i` equals `T_(i-1)` byte for byte), `normalized_equal_to_previous` (bool, `normalize(T_i)` equals `normalize(T_(i-1))`), `similarity_to_previous` (number, `similarity(T_i, T_(i-1))`), `structure` (the structure signature of `D_i`) and `structure_equal_to_previous` (bool, the structure signature of `D_i` equals the one of `D_(i-1)`). Iteration 1 has no previous iteration: its three booleans are `false` and its `similarity_to_previous` is `0.0`. ### Fixpoint and classification * `fixpoint_iteration` is the smallest `i` in `1..K-1` for which `T_i` equals `T_(i+1)` byte for byte, and `null` when there is none. `converged` is `true` exactly when `fixpoint_iteration` is not `null`. * Every run gets exactly one code; the first matching rule wins, and "final record" means the record whose `iteration` equals `K`: 1. `fixpoint_iteration` is `1` → `STABLE_IMMEDIATE` 2. `fixpoint_iteration` is not `null` → `STABLE_DELAYED` 3. the final record's `normalized_equal_to_previous` is `true` → `WHITESPACE_DRIFT` 4. the final record's `structure_equal_to_previous` is `true` → `TEXT_DRIFT` 5. otherwise → `STRUCTURE_DRIFT` * The `final_similarity` of a run is the final record's `similarity_to_previous`. ### Gate and exit codes Walk the runs in report order (document id ascending, then channel ascending) and append to `violations`: first `<document_id>/<channel>:<code>` when the code is neither `STABLE_IMMEDIATE` nor `STABLE_DELAYED`, then `<document_id>/<channel>:LOW_SIMILARITY` when `final_similarity` is lower than `--min-similarity`. The gate passes exactly when `violations` is empty. * exit `0`: the audit completed and the gate passed. * exit `3`: the audit completed and the gate failed; every artifact is still written in full. * exit `2`: the invocation is invalid — the corpus/`--doc` cases listed above, or `--max-iterations` / `--min-similarity` outside their valid range or not parseable as the required type. Then nothing at all is printed on stdout, stderr carries at least one line that starts with `error: ` (this also applies to argument-parsing failures, so the default parser diagnostics are not sufficient on their own), and the output directory and its contents are neither created, deleted nor modified. ### Output artifacts On a valid invocation the tool first removes all existing contents of the output directory (creating that directory when it is missing), then writes: * `<out>/report.json` * `<out>/summary.txt` * `<out>/documents/<document_id>/detail.json` * `<out>/documents/<document_id>/observation.html` * `<out>/documents/<document_id>/<channel>/iter_<NN>.<ext>` `report.json` and every `detail.json` are UTF-8 encoded, indented with 2 spaces, have their object keys sorted ascending at every nesting level, leave non-ASCII characters unescaped (a document id carrying non-ASCII characters therefore appears verbatim), and end with exactly one newline character. The iteration artifacts of the `json` channel are not constrained beyond being the channel's own serialization. `report.json` is an object with exactly these keys: * `schema_version`: the string `1.0` * `corpus`: the absolute, resolved path of the corpus directory * `max_iterations`: int * `min_similarity`: number * `channels`: the array `["json", "markdown"]` * `documents`: array ordered by `document_id` ascending; every entry has exactly `document_id` (string), `source_file` (the source file name including its extension), `html_sha256` (lowercase hex digest of the observation HTML bytes) and `runs` * every entry of `runs` has exactly `channel`, `iterations` (int, equal to `max_iterations`), `fixpoint_iteration` (int or `null`), `converged` (bool), `code` (string) and `final_similarity` (number), ordered by `channel` ascending * `totals`: exactly `documents` (int), `runs` (int), `converged_runs` (int), `codes` (object carrying all five codes as keys and their run counts as values) and `min_final_similarity` (number, the smallest `final_similarity` over all runs) * `gate`: exactly `passed` (bool), `exit_code` (int, the process exit code) and `violations` (array of strings) `<out>/documents/<document_id>/detail.json` is an object with exactly the keys `document_id`, `source_file`, `source_sha256` (lowercase hex digest of the source file bytes), `html_sha256`, `html_bytes` (int, byte length of the observation HTML) and `channels`. `channels` is an object keyed by channel name whose values have exactly the keys `code`, `converged`, `fixpoint_iteration`, `final_similarity`, `artifacts` (array of the iteration artifact paths relative to the document directory, in iteration order) and `iterations` (array of the per-iteration records, in iteration order). ### summary.txt and stdout `summary.txt` is UTF-8 encoded with LF line endings and has exactly `9 + R` lines, `R` being the number of runs: * line 1: `FIXPOINT AUDIT` * line 2: `corpus: <absolute corpus path>` * line 3: `documents: <number of audited documents>` * line 4: `runs: <number of runs>` * line 5: `max_iterations: <int>` * line 6: `min_similarity: <value with exactly 6 decimals>` * line 7: empty * lines 8 .. 7+R: one line per run in report order, formatted as `<document_id> <channel> <code> fixpoint=<n> similarity=<value>` with single spaces between the five fields, `<n>` being the fixpoint iteration or `-` when there is none, and `<value>` the final similarity with exactly 6 decimals * line 8+R: empty * line 9+R: `GATE: PASS` when the gate passed, otherwise `GATE: FAIL (<v> violations)` with `<v>` the number of violations The file ends with exactly one newline character. On exit `0` and exit `3` stdout must be byte-identical to the contents of `summary.txt`; any diagnostics belong on stderr. ### Determinism Re-running the tool with the same corpus and the same options must produce byte-identical `report.json`, `summary.txt`, `detail.json` and iteration artifacts. Do not embed timestamps, durations, random values, or host-specific paths other than the ones specified above.   
+
+Pochi
+I'll start by exploring the project structure and understanding what's available.   
+📂 Listing files in /home/user/fixpoint recursively ✔ 
+📖 Reading /home/user/fixpoint/corpus/README.txt ✔ 
+📖 Reading /home/user/fixpoint/corpus/nested_lists.md ✔ 
+📖 Reading /home/user/fixpoint/corpus/alignment_table.md ✔ 
+📖 Reading /home/user/fixpoint/corpus/fenced_code.md ✔ 
+📖 Reading /home/user/fixpoint/corpus/quotes_media.md ✔ 
+📖 Reading /home/user/fixpoint/corpus/unicode_emoji.md ✔ 
+📖 Reading /home/user/fixpoint/corpus/ragged_whitespace.md ✔ 
+📖 Reading /home/user/fixpoint/corpus/fragment_page.html ✔ 
+Now let me explore the Docling API to understand how to use it:   
+💫 Executing cd /home/user/fixpoint && python3 -c "import docling; print(docling.__version__)" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "from docling.document_converter import DocumentConverter; help(DocumentConverter)" 2>&1 | head -100 ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+# Test with a markdown file
+result = dc.convert('corpus/nested_lists.md')
+doc = result.document
+print('Type:', type(doc))
+print('Export markdown:')
+print(doc.export_to_markdown()[:500])
+print('---')
+print('Export json:')
+print(doc.export_to_json()[:500])
+print('---')
+print('Export html:')
+print(doc.export_to_html()[:500])
+" ✖ "Command exited with code 1"
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+result = dc.convert('corpus/nested_lists.md')
+doc = result.document
+# Check available export methods
+print([m for m in dir(doc) if 'export' in m.lower() or 'serial' in m.lower() or 'json' in m.lower()])
+print('---')
+# Check dict export
+d = doc.export_to_dict()
+print(type(d))
+print(list(d.keys()))
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+import json
+dc = DocumentConverter()
+result = dc.convert('corpus/nested_lists.md')
+doc = result.document
+
+# Check save_as_json 
+print('Checking save_as_json signature...')
+import inspect
+print(inspect.signature(doc.save_as_json))
+
+# Check json property
+print('json property type:', type(doc.json))
+print('json property:', doc.json[:500])
+
+# Check load_from_json
+print('load_from_json sig:', inspect.signature(doc.load_from_json))
+" ✖ "Command exited with code 1"
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+import json
+dc = DocumentConverter()
+result = dc.convert('corpus/nested_lists.md')
+doc = result.document
+
+# json is a method, not a property
+print('json():', doc.json()[:500])
+
+# Also check convert_string for markdown/html as string
+print('---')
+print('Checking convert_string...')
+import inspect
+print(inspect.signature(dc.convert_string))
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+import json
+
+dc = DocumentConverter()
+
+# Test convert_string for markdown
+md_content = '# Hello\\n\\nWorld.'
+result = dc.convert_string(md_content, InputFormat.MD)
+doc = result.document
+print('MD parse ok')
+print('Markdown export:', doc.export_to_markdown())
+
+# Test convert_string for HTML
+html_content = '<h1>Hello</h1><p>World.</p>'
+result2 = dc.convert_string(html_content, InputFormat.HTML)
+doc2 = result2.document
+print('HTML parse ok')
+print('Markdown export:', doc2.export_to_markdown())
+
+# Test roundtrip: export to markdown, then parse back
+md = doc.export_to_markdown()
+result3 = dc.convert_string(md, InputFormat.MD)
+doc3 = result3.document
+print('Roundtrip MD ok')
+
+# Test roundtrip: export to json, then parse back
+json_str = doc.model_dump_json(indent=2)
+print('JSON roundtrip...')
+from docling_core.types.doc import DoclingDocument
+doc4 = DoclingDocument.model_validate_json(json_str)
+print('JSON roundtrip ok')
+" ✔ 
+Good, I now have a solid understanding of the Docling API. Let me now explore the document model structure to understand structure signatures:   
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+
+# Test with alignment_table.md for tables
+result = dc.convert('corpus/alignment_table.md')
+doc = result.document
+
+print('Body children:')
+for child_ref in doc.body.children:
+    print(f'  {child_ref.cref}')
+
+print()
+print('Tables:')
+for t in doc.tables:
+    print(f'  Table: {t.self_ref}, data: {t.data}')
+    if hasattr(t, 'data'):
+        print(f'    data type: {type(t.data)}')
+        if t.data:
+            print(f'    num_rows: {t.data.num_rows}, num_cols: {t.data.num_cols}')
+
+print()
+print('Texts:')
+for t in doc.texts:
+    print(f'  Text: {t.self_ref}, label: {t.label}')
+
+print()
+print('Groups:')
+for g in doc.groups:
+    print(f'  Group: {g.self_ref}, label: {g.label}')
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+
+# Test max_depth by traversing the body tree
+result = dc.convert('corpus/nested_lists.md')
+doc = result.document
+
+def compute_max_depth(body, doc, current_depth=0):
+    max_d = current_depth
+    for child_ref in body.children:
+        # Resolve the reference
+        ref_path = child_ref.cref
+        # Find the item
+        item = resolve_ref(ref_path, doc)
+        if item is not None:
+            # Recurse into the item's children if it's a group
+            if hasattr(item, 'children') and item.children:
+                d = compute_max_depth(item, doc, current_depth + 1)
+                max_d = max(max_d, d)
+    return max_d
+
+def resolve_ref(ref_path, doc):
+    parts = ref_path.split('/')
+    # ref_path is like '#/texts/0'
+    if len(parts) >= 3:
+        collection_name = parts[1]
+        index = int(parts[2])
+        collection = getattr(doc, collection_name, None)
+        if collection and index < len(collection):
+            return collection[index]
+    return None
+
+print('Max depth:', compute_max_depth(doc.body, doc))
+
+# Now let's also check how groups nest
+print()
+print('Body children refs:')
+for child_ref in doc.body.children:
+    print(f'  {child_ref.cref}')
+    item = resolve_ref(child_ref.cref, doc)
+    if item and hasattr(item, 'children') and item.children:
+        print(f'    children: {[c.cref for c in item.children]}')
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+
+# Check deeper nesting structure of nested_lists
+result = dc.convert('corpus/nested_lists.md')
+doc = result.document
+
+def resolve_ref(ref_path, doc):
+    parts = ref_path.split('/')
+    if len(parts) >= 3:
+        collection_name = parts[1]
+        index = int(parts[2])
+        collection = getattr(doc, collection_name, None)
+        if collection and index < len(collection):
+            return collection[index]
+    return None
+
+def dump_tree(node, doc, depth=0):
+    prefix = '  ' * depth
+    if hasattr(node, 'children'):
+        for child_ref in node.children:
+            item = resolve_ref(child_ref.cref, doc)
+            label = item.label if item and hasattr(item, 'label') else '?'
+            print(f'{prefix}{child_ref.cref} label={label}')
+            if item and hasattr(item, 'children') and item.children:
+                dump_tree(item, doc, depth + 1)
+
+print('Full body tree:')
+dump_tree(doc.body, doc)
+
+# Check groups
+print()
+print('All groups:')
+for i, g in enumerate(doc.groups):
+    print(f'  #{i}: {g.self_ref} label={g.label} children={[c.cref for c in g.children]}')
+" ✔ 
+Now I understand the document model. Let me check how `export_to_dict` works and how to do the JSON roundtrip properly:   
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import json
+
+dc = DocumentConverter()
+result = dc.convert('corpus/nested_lists.md')
+doc = result.document
+
+# Export to dict
+d = doc.export_to_dict()
+print('Dict keys:', sorted(d.keys()))
+
+# model_dump_json for serialization
+json_str = doc.model_dump_json(indent=2)
+print('JSON length:', len(json_str))
+
+# Roundtrip via model_validate_json
+doc2 = DoclingDocument.model_validate_json(json_str)
+print('Roundtrip OK, type:', type(doc2))
+
+# Check byte equality of roundtrip
+json_str2 = doc2.model_dump_json(indent=2)
+print('JSON byte equal:', json_str == json_str2)
+
+# Also check model_dump_json with sort_keys for determinism
+json_str_sorted = doc.model_dump_json(indent=2, by_alias=True)
+print('With by_alias length:', len(json_str_sorted))
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import json
+
+dc = DocumentConverter()
+
+# Test with HTML source - determine InputFormat for .html files
+from docling.datamodel.base_models import InputFormat
+print('InputFormat values:', list(InputFormat))
+
+# Test convert_string with HTML
+html = '<h1>Test</h1><p>Hello</p>'
+result = dc.convert_string(html, InputFormat.HTML)
+doc = result.document
+print('HTML parse ok, type:', type(doc))
+print('MD export:', doc.export_to_markdown())
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+from docling.datamodel.base_models import InputFormat
+import json
+
+dc = DocumentConverter()
+
+# Test JSON_DOCLING format for roundtrip
+result = dc.convert('corpus/nested_lists.md')
+doc = result.document
+json_str = doc.model_dump_json(indent=2)
+
+# Parse JSON back via convert_string with JSON_DOCLING format
+result2 = dc.convert_string(json_str, InputFormat.JSON_DOCLING)
+doc2 = result2.document
+print('JSON_DOCLING roundtrip ok')
+
+# Compare
+md1 = doc.export_to_markdown()
+md2 = doc2.export_to_markdown()
+print('MD equal:', md1 == md2)
+" ✖ "Command exited with code 1"
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+from docling.datamodel.base_models import InputFormat
+import json
+import io
+from docling.datamodel.base_models import DocumentStream
+
+dc = DocumentConverter()
+
+result = dc.convert('corpus/nested_lists.md')
+doc = result.document
+json_str = doc.model_dump_json(indent=2)
+
+# Try via DocumentStream
+buf = io.BytesIO(json_str.encode('utf-8'))
+stream = DocumentStream(name='test.json', stream=buf)
+result2 = dc.convert(stream)
+doc2 = result2.document
+print('JSON roundtrip via stream ok')
+
+md1 = doc.export_to_markdown()
+md2 = doc2.export_to_markdown()
+print('MD equal:', md1 == md2)
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import io
+from docling.datamodel.base_models import DocumentStream
+
+dc = DocumentConverter()
+
+# Test the full cycle: source -> D0 -> T1(md) -> D1 -> T2(md) -> D2
+result = dc.convert('corpus/nested_lists.md')
+d0 = result.document
+
+# Iter 1: serialize D0 to markdown
+t1 = d0.export_to_markdown()
+# Parse back
+buf1 = io.BytesIO(t1.encode('utf-8'))
+stream1 = DocumentStream(name='iter_01.md', stream=buf1)
+d1 = dc.convert(stream1).document
+
+# Iter 2: serialize D1 to markdown
+t2 = d1.export_to_markdown()
+buf2 = io.BytesIO(t2.encode('utf-8'))
+stream2 = DocumentStream(name='iter_02.md', stream=buf2)
+d2 = dc.convert(stream2).document
+
+print('T1 == T2:', t1 == t2)
+print('T1 len:', len(t1))
+print('T2 len:', len(t2))
+if t1 != t2:
+    for i, (a, b) in enumerate(zip(t1, t2)):
+        if a != b:
+            print(f'First diff at {i}: {repr(a)} vs {repr(b)}')
+            print(f'Context: ...{repr(t1[max(0,i-20):i+20])}...')
+            print(f'Context: ...{repr(t2[max(0,i-20):i+20])}...')
+            break
+    if len(t1) != len(t2):
+        print(f'Length diff: {len(t1)} vs {len(t2)}')
+" ✔ 
+Good. Now let me check the JSON roundtrip cycle and also understand the HTML export:   
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import io
+from docling.datamodel.base_models import DocumentStream
+
+dc = DocumentConverter()
+
+# Test JSON cycle
+result = dc.convert('corpus/nested_lists.md')
+d0 = result.document
+
+# Iter 1: serialize D0 to JSON
+t1 = d0.model_dump_json(indent=2)
+buf1 = io.BytesIO(t1.encode('utf-8'))
+stream1 = DocumentStream(name='iter_01.json', stream=buf1)
+d1 = dc.convert(stream1).document
+
+# Iter 2: serialize D1 to JSON
+t2 = d1.model_dump_json(indent=2)
+buf2 = io.BytesIO(t2.encode('utf-8'))
+stream2 = DocumentStream(name='iter_02.json', stream=buf2)
+d2 = dc.convert(stream2).document
+
+print('JSON T1 == T2:', t1 == t2)
+print('JSON T1 len:', len(t1))
+print('JSON T2 len:', len(t2))
+
+# Test HTML export
+html = d0.export_to_html()
+print('HTML len:', len(html))
+print('HTML preview:', html[:300])
+" ✔ 
+Now I have a thorough understanding of the API. Let me also check how the `expor   
+ystem` field works and look at the `origin` field for determinism:   
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import io
+from docling.datamodel.base_models import DocumentStream
+
+dc = DocumentConverter()
+
+# Check origin in roundtrips
+result = dc.convert('corpus/nested_lists.md')
+d0 = result.document
+print('D0 origin:', d0.origin)
+
+# After markdown roundtrip
+t1 = d0.export_to_markdown()
+buf1 = io.BytesIO(t1.encode('utf-8'))
+stream1 = DocumentStream(name='iter_01.md', stream=buf1)
+d1 = dc.convert(stream1).document
+print('D1 origin:', d1.origin)
+
+# After JSON roundtrip
+t1j = d0.model_dump_json(indent=2)
+buf1j = io.BytesIO(t1j.encode('utf-8'))
+stream1j = DocumentStream(name='iter_01.json', stream=buf1j)
+d1j = dc.convert(stream1j).document
+print('D1j origin:', d1j.origin)
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import io
+from docling.datamodel.base_models import DocumentStream
+
+dc = DocumentConverter()
+
+# Check if binary_hash affects export determinism
+# Run two independent conversions of the same file
+result1 = dc.convert('corpus/nested_lists.md')
+result2 = dc.convert('corpus/nested_lists.md')
+d1 = result1.document
+d2 = result2.document
+
+md1 = d1.export_to_markdown()
+md2 = d2.export_to_markdown()
+print('MD equal:', md1 == md2)
+
+json1 = d1.model_dump_json(indent=2)
+json2 = d2.model_dump_json(indent=2)
+print('JSON equal:', json1 == json2)
+
+# Check if origin changes between exports
+print('D1 origin hash:', d1.origin.binary_hash)
+print('D2 origin hash:', d2.origin.binary_hash)
+
+# Check if the export includes origin hash
+if 'binary_hash' in json1:
+    print('JSON contains binary_hash')
+else:
+    print('JSON does not contain binary_hash')
+    
+# Search for hash in json
+import json as j
+obj = j.loads(json1)
+print('origin in json:', obj.get('origin'))
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import io
+from docling.datamodel.base_models import DocumentStream
+import json
+
+dc = DocumentConverter()
+
+# Check if the JSON roundtrip preserves origin hash (which would make T1 != T2 for JSON)
+result = dc.convert('corpus/nested_lists.md')
+d0 = result.document
+
+# JSON roundtrip cycle
+t1 = d0.model_dump_json(indent=2)
+buf1 = io.BytesIO(t1.encode('utf-8'))
+stream1 = DocumentStream(name='iter_01.json', stream=buf1)
+d1 = dc.convert(stream1).document
+
+t2 = d1.model_dump_json(indent=2)
+
+# Compare origin hashes
+obj1 = json.loads(t1)
+obj2 = json.loads(t2)
+print('Origin in T1:', obj1.get('origin'))
+print('Origin in T2:', obj2.get('origin'))
+print('T1 == T2:', t1 == t2)
+
+# Check if binary_hash differs
+print('binary_hash same:', obj1['origin']['binary_hash'] == obj2['origin']['binary_hash'])
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import io
+from docling.datamodel.base_models import DocumentStream
+import json
+
+dc = DocumentConverter()
+
+# But what about when we convert from JSON (not markdown)? Let's check.
+# The JSON file was written from a markdown-origin doc. When we read it back,
+# does the origin change?
+result = dc.convert('corpus/nested_lists.md')
+d0 = result.document
+
+t1 = d0.model_dump_json(indent=2)
+
+# Write to temp file and read back
+import tempfile, os
+with tempfile.NamedTemporaryFile(suffix='.json', mode='w', delete=False) as f:
+    f.write(t1)
+    tmpname = f.name
+
+result2 = dc.convert(tmpname)
+d1 = result2.document
+print('D1 origin after file convert:', d1.origin)
+
+t2 = d1.model_dump_json(indent=2)
+print('T1 == T2:', t1 == t2)
+
+os.unlink(tmpname)
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import io
+from docling.datamodel.base_models import DocumentStream
+import json
+
+dc = DocumentConverter()
+
+# Let's check if the JSON roundtrip through stream preserves origin
+# Actually let's check: when we go through a stream, the origin might use the stream name
+result = dc.convert('corpus/nested_lists.md')
+d0 = result.document
+
+t1 = d0.model_dump_json(indent=2)
+buf1 = io.BytesIO(t1.encode('utf-8'))
+stream1 = DocumentStream(name='iter_01.json', stream=buf1)
+d1 = dc.convert(stream1).document
+
+# Check what origin looks like after stream-based JSON parse
+print('D1 origin:', d1.origin)
+
+# Now serialize D1 back to JSON
+t2 = d1.model_dump_json(indent=2)
+print('T1 == T2:', t1 == t2)
+
+# Also check: does the stream name affect the origin?
+# Try with different stream name
+buf1b = io.BytesIO(t1.encode('utf-8'))
+stream1b = DocumentStream(name='different.json', stream=buf1b)
+d1b = dc.convert(stream1b).document
+print('D1b origin:', d1b.origin)
+t2b = d1b.model_dump_json(indent=2)
+print('T2 == T2b:', t2 == t2b)
+" ✔ 
+The JSON roundtrip is deterministic. Now let me check the markdown roundtrip with more complex documents:   
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import io
+from docling.datamodel.base_models import DocumentStream
+import hashlib
+
+dc = DocumentConverter()
+
+# Test all corpus files for markdown roundtrip stability
+import os
+corpus_dir = 'corpus'
+for fname in sorted(os.listdir(corpus_dir)):
+    fpath = os.path.join(corpus_dir, fname)
+    if not os.path.isfile(fpath):
+        continue
+    ext = os.path.splitext(fname)[1].lower()
+    if ext not in ('.md', '.html'):
+        continue
+    
+    result = dc.convert(fpath)
+    d0 = result.document
+    
+    # Markdown roundtrip
+    t1 = d0.export_to_markdown()
+    buf1 = io.BytesIO(t1.encode('utf-8'))
+    stream1 = DocumentStream(name='iter_01.md', stream=buf1)
+    d1 = dc.convert(stream1).document
+    t2 = d1.export_to_markdown()
+    
+    stable = t1 == t2
+    print(f'{fname}: MD stable={stable}, len T1={len(t1)}, len T2={len(t2)}')
+    
+    if not stable:
+        # Find first diff
+        for i, (a, b) in enumerate(zip(t1, t2)):
+            if a != b:
+                ctx = 30
+                print(f'  First diff at byte {i}:')
+                print(f'    T1: {repr(t1[max(0,i-ctx):i+ctx])}')
+                print(f'    T2: {repr(t2[max(0,i-ctx):i+ctx])}')
+                break
+        if len(t1) != len(t2):
+            shorter = min(len(t1), len(t2))
+            for i in range(shorter, max(len(t1), len(t2))):
+                pass
+            print(f'  Length diff: {len(t1)} vs {len(t2)}')
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import io
+from docling.datamodel.base_models import DocumentStream
+
+dc = DocumentConverter()
+
+# Check JSON roundtrip stability for all files
+import os
+corpus_dir = 'corpus'
+for fname in sorted(os.listdir(corpus_dir)):
+    fpath = os.path.join(corpus_dir, fname)
+    if not os.path.isfile(fpath):
+        continue
+    ext = os.path.splitext(fname)[1].lower()
+    if ext not in ('.md', '.html'):
+        continue
+    
+    result = dc.convert(fpath)
+    d0 = result.document
+    
+    # JSON roundtrip
+    t1 = d0.model_dump_json(indent=2)
+    buf1 = io.BytesIO(t1.encode('utf-8'))
+    stream1 = DocumentStream(name='iter_01.json', stream=buf1)
+    d1 = dc.convert(stream1).document
+    t2 = d1.model_dump_json(indent=2)
+    
+    stable = t1 == t2
+    print(f'{fname}: JSON stable={stable}, len T1={len(t1)}, len T2={len(t2)}')
+" ✔ 
+Good. The JSON channel is always stable. The markdown channel has some instability (alignment_table, fragment_page, quotes_media). Now let me also check the HTML export determinism:   
+💫 Executing cd /home/user/fixpoint && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+
+# Check HTML export determinism
+result1 = dc.convert('corpus/nested_lists.md')
+result2 = dc.convert('corpus/nested_lists.md')
+html1 = result1.document.export_to_html()
+html2 = result2.document.export_to_html()
+print('HTML deterministic:', html1 == html2)
+print('HTML len:', len(html1))
+" ✔ 
+Now I have all the information I need. Let me build the full audit tool. This is a substantial script, so I'll write it carefully.   
+✏️  Writing /home/user/fixpoint/audit.py ✖ "The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()"
+The response was cut off. Let me continue writing the file:   
+📖 Reading /home/user/fixpoint/audit.py ✖ "ENOENT: no such file or directory, open '/home/user/fixpoint/audit.py'"
+The file wasn't created. Let me write it again in smaller chunks. Let me first create the full script content and then write it:   
+💫 Executing cat > /home/user/fixpoint/audit.py << 'PYEOF'
+#!/usr/bin/env python3
+"""Roundtrip Fixpoint Auditor for Docling document toolchain."""
+
+import argparse
+import hashlib
+import io
+import json
+import os
+import re
+import shutil
+import sys
+import unicodedata
+from collections import Counter
+
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import DocumentStream, InputFormat
+from docling_core.types.doc import DoclingDocument
+
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
+def sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def normalize(s: str) -> str:
+    """Apply the normalization pipeline defined in the specification."""
+    # (1) Unicode NFC
+    s = unicodedata.normalize("NFC", s)
+    # (2) CRLF -> LF, then CR -> LF
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+    # (3) TAB and NBSP -> SPACE
+    s = s.replace("\t", " ").replace("\u00a0", " ")
+    # (4) split into lines on LF
+    lines = s.split("\n")
+    # (5) collapse runs of spaces, strip
+    processed = []
+    for line in lines:
+        collapsed = re.sub(r" {2,}", " ", line).strip(" ")
+        processed.append(collapsed)
+    # (6) drop empty lines
+    surviving = [l for l in processed if l != ""]
+    # (7) join with single LF
+    return "\n".join(surviving)
+
+
+def similarity_score(a: str, b: str) -> float:
+    """Compute token-based similarity on normalized text."""
+    na = normalize(a)
+    nb = normalize(b)
+    tokens_a = na.split()
+    tokens_b = nb.split()
+
+    if not tokens_a and not tokens_b:
+        return 1.0
+
+    ca = Counter(tokens_a)
+    cb = Counter(tokens_b)
+
+    all_tokens = set(ca.keys()) | set(cb.keys())
+    s = sum(min(ca[t], cb[t]) for t in all_tokens)
+
+    denom = len(tokens_a) + len(tokens_b)
+    if denom == 0:
+        return 1.0
+    value = 2.0 * s / denom
+    # Round to 6 decimal places, half away from zero
+    return round(value + 1e-9, 6)
+
+
+# ---------------------------------------------------------------------------
+# Structure signature
+# ---------------------------------------------------------------------------
+
+def _label_key(label: str) -> str:
+    """Normalize a label for the structure signature."""
+    lowered = label.lower()
+    return re.sub(r"[^a-z0-9]", "_", lowered)
+
+
+def _resolve_ref(ref_path: str, doc: DoclingDocument):
+    """Resolve a cref like '#/texts/0' to the actual item."""
+    parts = ref_path.split("/")
+    if len(parts) >= 3:
+        collection_name = parts[1]
+        try:
+            index = int(parts[2])
+        except ValueError:
+            return None
+        collection = getattr(doc, collection_name, None)
+        if collection and 0 <= index < len(collection):
+            return collection[index]
+    return None
+
+
+def _compute_max_depth(node, doc: DoclingDocument, current_depth: int = 0) -> int:
+    """Compute max depth of the body tree. Direct children of body root have depth 1."""
+    if not hasattr(node, "children") or not node.children:
+        return current_depth
+
+    max_d = current_depth
+    for child_ref in node.children:
+        item = _resolve_ref(child_ref.cref, doc)
+        if item is not None:
+            d = _compute_max_depth(item, doc, current_depth + 1)
+            max_d = max(max_d, d)
+    return max_d
+
+
+def _collect_item_counts(node, doc: DoclingDocument, counts: dict) -> None:
+    """Walk the body tree and count item labels."""
+    if not hasattr(node, "children"):
+        return
+    for child_ref in node.children:
+        item = _resolve_ref(child_ref.cref, doc)
+        if item is not None:
+            label = getattr(item, "label", "unspecified")
+            key = _label_key(str(label))
+            counts[key] = counts.get(key, 0) + 1
+            _collect_item_counts(item, doc, counts)
+
+
+def structure_signature(doc: DoclingDocument) -> dict:
+    """Compute the structure signature of a document model."""
+    counts: dict = {}
+    _collect_item_counts(doc.body, doc, counts)
+
+    if doc.body.children:
+        max_depth = _compute_max_depth(doc.body, doc, 0)
+    else:
+        max_depth = 0
+
+    table_dims = []
+    for table in doc.tables:
+        if table.data is not None:
+            table_dims.append([table.data.num_rows, table.data.num_cols])
+        else:
+            table_dims.append([0, 0])
+
+    return {
+        "item_counts": counts,
+        "max_depth": max_depth,
+        "table_dims": table_dims,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Channel serializers
+# ---------------------------------------------------------------------------
+
+def serialize_markdown(doc: DoclingDocument) -> str:
+    return doc.export_to_markdown()
+
+
+def serialize_json_str(doc: DoclingDocument) -> str:
+    return doc.model_dump_json(indent=2)
+
+
+def parse_document(text: str, name: str) -> DoclingDocument:
+    """Parse text into a DoclingDocument via DocumentStream."""
+    dc = DocumentConverter()
+    buf = io.BytesIO(text.encode("utf-8"))
+    stream = DocumentStream(name=name, stream=buf)
+    result = dc.convert(stream)
+    return result.document
+
+
+# ---------------------------------------------------------------------------
+# Argument parsing (manual, for proper error format)
+# ---------------------------------------------------------------------------
+
+def parse_args(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+
+    corpus = "corpus"
+    out = "out"
+    max_iterations = "3"
+    min_similarity = "0.95"
+    docs = []
+
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--corpus":
+            i += 1
+            if i >= len(argv):
+                print("error: --corpus requires a value", file=sys.stderr)
+                sys.exit(2)
+            corpus = argv[i]
+        elif arg == "--out":
+            i += 1
+            if i >= len(argv):
+                print("error: --out requires a value", file=sys.stderr)
+                sys.exit(2)
+            out = argv[i]
+        elif arg == "--max-iterations":
+            i += 1
+            if i >= len(argv):
+                print("error: --max-iterations requires a value", file=sys.stderr)
+                sys.exit(2)
+            max_iterations = argv[i]
+        elif arg == "--min-similarity":
+            i += 1
+            if i >= len(argv):
+                print("error: --min-similarity requires a value", file=sys.stderr)
+                sys.exit(2)
+            min_similarity = argv[i]
+        elif arg == "--doc":
+            i += 1
+            if i >= len(argv):
+                print("error: --doc requires a value", file=sys.stderr)
+                sys.exit(2)
+            docs.append(argv[i])
+        elif arg in ("-h", "--help"):
+            print("usage: python3 audit.py [--corpus <dir>] [--out <dir>] "
+                  "[--max-iterations <int>] [--min-similarity <float>] "
+                  "[--doc <document_id>]...")
+            sys.exit(0)
+        else:
+            print(f"error: unrecognized argument: {arg}", file=sys.stderr)
+            sys.exit(2)
+        i += 1
+
+    return corpus, out, max_iterations, min_similarity, docs
+
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+def validate_args(corpus_rel, out_rel, max_iterations_str, min_similarity_str, doc_filter):
+    # Validate max_iterations
+    try:
+        max_iterations = int(max_iterations_str)
+    except ValueError:
+        print("error: --max-iterations must be an integer", file=sys.stderr)
+        sys.exit(2)
+    if max_iterations < 2 or max_iterations > 10:
+        print("error: --max-iterations must be between 2 and 10 inclusive", file=sys.stderr)
+        sys.exit(2)
+
+    # Validate min_similarity
+    try:
+        min_similarity = float(min_similarity_str)
+    except ValueError:
+        print("error: --min-similarity must be a number", file=sys.stderr)
+        sys.exit(2)
+    if min_similarity < 0.0 or min_similarity > 1. ✖ "The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()"
+The heredoc approach seems to be causing issues. Let me write the file using Python directly:   
+💫 Executing python3 -c "
+content = '''#!/usr/bin/env python3
+\"\"\"Roundtrip Fixpoint Auditor for Docling document toolchain.\"\"\"
+
+import hashlib
+import io
+import json
+import os
+import re
+import shutil
+import sys
+import unicodedata
+from collections import Counter
+
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import DocumentStream, InputFormat
+from docling_core.types.doc import DoclingDocument
+
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
+def sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def normalize(s: str) -> str:
+    s = unicodedata.normalize(\"NFC\", s)
+    s = s.replace(\"\\r\\n\", \"\\n\").replace(\"\\r\", \"\\n\")
+    s = s.replace(\"\\t\", \" \").replace(\"\\u00a0\", \" \")
+    lines = s.split(\"\\n\")
+    processed = []
+    for line in lines:
+        collapsed = re.sub(r\" {2,}\", \" \", line).strip(\" \")
+        processed.append(collapsed)
+    surviving = [l for l in processed if l != \"\"]
+    return \"\\n\".join(surviving)
+
+
+def similarity_score(a: str, b: str) -> float:
+    na = normalize(a)
+    nb = normalize(b)
+    tokens_a = na.split()
+    tokens_b = nb.split()
+    if not tokens_a and not tokens_b:
+        return 1.0
+    ca = Counter(tokens_a)
+    cb = Counter(tokens_b)
+    all_tokens = set(ca.keys()) | set(cb.keys())
+    s = sum(min(ca[t], cb[t]) for t in all_tokens)
+    denom = len(tokens_a) + len(tokens_b)
+    if denom == 0:
+        return 1.0
+    value = 2.0 * s / denom
+    return round(value + 1e-9, 6)
+'''
+with open('/home/user/fixpoint/audit.py', 'w') as f:
+    f.write(content)
+print('Part 1 written')
+" ✔ 
+Good, that approach works. Let me write the full script in parts. Let me write the complete file using Python to avoid the heredoc issue:   
+💫 Executing python3 << 'PYEOF'
+# Write the full audit.py script
+script = r'''#!/usr/bin/env python3
+"""Roundtrip Fixpoint Auditor for Docling document toolchain."""
+
+import hashlib
+import io
+import json
+import os
+import re
+import shutil
+import sys
+import unicodedata
+from collections import Counter
+
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import DocumentStream, InputFormat
+from docling_core.types.doc import DoclingDocument
+
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
+def sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def normalize(s: str) -> str:
+    """Apply the normalization pipeline."""
+    s = unicodedata.normalize("NFC", s)
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+    s = s.replace("\t", " ").replace("\u00a0", " ")
+    lines = s.split("\n")
+    processed = []
+    for line in lines:
+        collapsed = re.sub(r" {2,}", " ", line).strip(" ")
+        processed.append(collapsed)
+    surviving = [ln for ln in processed if ln != ""]
+    return "\n".join(surviving)
+
+
+def similarity_score(a: str, b: str) -> float:
+    """Compute token-based similarity on normalized text."""
+    na = normalize(a)
+    nb = normalize(b)
+    tokens_a = na.split()
+    tokens_b = nb.split()
+    if not tokens_a and not tokens_b:
+        return 1.0
+    ca = Counter(tokens_a)
+    cb = Counter(tokens_b)
+    all_tokens = set(ca.keys()) | set(cb.keys())
+    s = sum(min(ca[t], cb[t]) for t in all_tokens)
+    denom = len(tokens_a) + len(tokens_b)
+    if denom == 0:
+        return 1.0
+    value = 2.0 * s / denom
+    return round(value + 1e-9, 6)
+
+
+# ---------------------------------------------------------------------------
+# Structure signature
+# ---------------------------------------------------------------------------
+
+def _label_key(label: str) -> str:
+    lowered = label.lower()
+    return re.sub(r"[^a-z0-9]", "_", lowered)
+
+
+def _resolve_ref(ref_path: str, doc: DoclingDocument):
+    parts = ref_path.split("/")
+    if len(parts) >= 3:
+        collection_name = parts[1]
+        try:
+            index = int(parts[2])
+        except ValueError:
+            return None
+        collection = getattr(doc, collection_name, None)
+        if collection is not None and 0 <= index < len(collection):
+            return collection[index]
+    return None
+
+
+def _compute_max_depth(node, doc: DoclingDocument, current_depth: int = 0) -> int:
+    if not hasattr(node, "children") or not node.children:
+        return current_depth
+    max_d = current_depth
+    for child_ref in node.children:
+        item = _resolve_ref(child_ref.cref, doc)
+        if item is not None:
+            d = _compute_max_depth(item, doc, current_depth + 1)
+            max_d = max(max_d, d)
+    return max_d
+
+
+def _collect_item_counts(node, doc: DoclingDocument, counts: dict) -> None:
+    if not hasattr(node, "children"):
+        return
+    for child_ref in node.children:
+        item = _resolve_ref(child_ref.cref, doc)
+        if item is not None:
+            label = getattr(item, "label", "unspecified")
+            key = _label_key(str(label))
+            counts[key] = counts.get(key, 0) + 1
+            _collect_item_counts(item, doc, counts)
+
+
+def structure_signature(doc: DoclingDocument) -> dict:
+    counts: dict = {}
+    _collect_item_counts(doc.body, doc, counts)
+    if doc.body.children:
+        max_depth = _compute_max_depth(doc.body, doc, 0)
+    else:
+        max_depth = 0
+    table_dims = []
+    for table in doc.tables:
+        if table.data is not None:
+            table_dims.append([table.data.num_rows, table.data.num_cols])
+        else:
+            table_dims.append([0, 0])
+    return {
+        "item_counts": counts,
+        "max_depth": max_depth,
+        "table_dims": table_dims,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Channel serializers
+# ---------------------------------------------------------------------------
+
+def serialize_markdown(doc: DoclingDocument) -> str:
+    return doc.export_to_markdown()
+
+
+def serialize_json_str(doc: DoclingDocument) -> str:
+    return doc.model_dump_json(indent=2)
+
+
+def parse_document(text: str, name: str) -> DoclingDocument:
+    dc = DocumentConverter()
+    buf = io.BytesIO(text.encode("utf-8"))
+    stream = DocumentStream(name=name, stream=buf)
+    result = dc.convert(stream)
+    return result.document
+
+
+# ---------------------------------------------------------------------------
+# Argument parsing (manual, for proper error messages)
+# ---------------------------------------------------------------------------
+
+def parse_args(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+
+    corpus = "corpus"
+    out = "out"
+    max_iterations = "3"
+    min_similarity = "0.95"
+    docs = []
+
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--corpus":
+            i += 1
+            if i >= len(argv):
+                print("error: --corpus requires a value", file=sys.stderr)
+                sys.exit(2)
+            corpus = argv[i]
+        elif arg == "--out":
+            i += 1
+            if i >= len(argv):
+                print("error: --out requires a value", file=sys.stderr)
+                sys.exit(2)
+            out = argv[i]
+        elif arg == "--max-iterations":
+            i += 1
+            if i >= len(argv):
+                print("error: --max-iterations requires a value", file=sys.stderr)
+                sys.exit(2)
+            max_iterations = argv[i]
+        elif arg == "--min-similarity":
+            i += 1
+            if i >= len(argv):
+                print("error: --min-similarity requires a value", file=sys.stderr)
+                sys.exit(2)
+            min_similarity = argv[i]
+        elif arg == "--doc":
+            i += 1
+            if i >= len(argv):
+                print("error: --doc requires a value", file=sys.stderr)
+                sys.exit(2)
+            docs.append(argv[i])
+        elif arg in ("-h", "--help"):
+            print("usage: python3 audit.py [--corpus <dir>] [--out <dir>] "
+                  "[--max-iterations <int>] [--min-similarity <float>] "
+                  "[--doc <document_id>]...")
+            sys.exit(0)
+        else:
+            print(f"error: unrecognized argument: {arg}", file=sys.stderr)
+            sys.exit(2)
+        i += 1
+
+    return corpus, out, max_iterations, min_similarity, docs
+
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+def validate_args(corpus_rel, out_rel, max_iterations_str, min_similarity_str, doc_filter):
+    # Validate max_iterations
+    try:
+        max_iterations = int(max_iterations_str)
+    except ValueError:
+        print("error: --max-iterations must be an integer", file=sys.stderr)
+        sys.exit(2)
+    if max_iterations < 2 or max_iterations > 10:
+        print("error: --max-iterations must be between 2 and 10 inclusive", file=sys.stderr)
+        sys.exit(2)
+
+    # Validate min_similarity
+    try:
+        min_similarity = float(min_similarity_str)
+    except ValueError:
+        print("error: --min-similarity must be a number", file=sys.stderr)
+        sys.exit(2)
+    if min_similarity < 0.0 or min_similarity > 1.0:
+        print("error: --min-similarity must be between 0.0 and 1.0 inclusive", file=sys.stderr)
+        sys.exit(2)
+
+    # Resolve and validate corpus
+    corpus_path = os.path.abspath(corpus_rel)
+    if not os.path.isdir(corpus_path):
+        print("error: corpus path does not exist or is not a directory", file=sys.stderr)
+        sys.exit(2)
+
+    # Discover eligible files
+    eligible = []
+    doc_ids_seen = set()
+    try:
+        entries = sorted(os.listdir(corpus_path))
+    except OSError:
+        print("error: cannot read corpus directory", file=sys.stderr)
+        sys.exit(2)
+
+    for entry in entries:
+        fpath = os.path.join(corpus_path, entry)
+        if not os.path.isfile(fpath):
+            continue
+        ext = os.path.splitext(entry)[1].lower()
+        if ext not in (".md", ".html"):
+            continue
+        doc_id = os.path.splitext(entry)[0]
+        if doc_id in doc_ids_seen:
+            print("error: duplicate document id", file=sys.stderr)
+            sys.exit(2)
+        doc_ids_seen.add(doc_id)
+        eligible.append((doc_id, entry, fpath))
+
+    if not eligible:
+        print("error: no eligible files found in corpus", file=sys.stderr)
+        sys.exit(2)
+
+    # Filter by --doc if provided
+    if doc_filter:
+        doc_set = set(doc_filter)
+        eligible = [(did, entry, fpath) for did, entry, fpath in eligible if did in doc_set]
+        if not eligible:
+            print("error: no eligible files match --doc filter", file=sys.stderr)
+            sys.exit(2)
+        # Check that all --doc values are valid
+        valid_ids = {did for did, _, _ in eligible}
+        for d in doc_filter:
+            if d not in valid_ids:
+                print("error: --doc value not among eligible document ids", file=sys.stderr)
+                sys.exit(2)
+
+    out_path = os.path.abspath(out_rel)
+
+    return corpus_path, out_path, max_iterations, min_similarity, eligible
+
+
+# ---------------------------------------------------------------------------
+# Sort keys helper
+# ---------------------------------------------------------------------------
+
+def sort_dict(d):
+    """Recursively sort dictionary keys."""
+    if isinstance(d, dict):
+        return {k: sort_dict(v) for k, v in sorted(d.items())}
+    if isinstance(d, list):
+        return [sort_dict(v) for v in d]
+    return d
+
+
+# ---------------------------------------------------------------------------
+# Per-iteration record
+# ---------------------------------------------------------------------------
+
+def make_iteration_record(
+    iteration: int,
+    text: str,
+    prev_text: str | None,
+    prev_normalized: str | None,
+    doc: DoclingDocument,
+    prev_structure: dict | None,
+) -> dict:
+    text_bytes = text.encode("utf-8")
+    text_len = len(text_bytes)
+    text_hash = sha256_hex(text_bytes)
+    norm = normalize(text)
+    norm_hash = sha256_hex(norm.encode("utf-8"))
+    struct = structure_signature(doc)
+
+    if prev_text is not None:
+        byte_eq = text == prev_text
+        norm_eq = norm == prev_normalized
+        sim = similarity_score(text, prev_text)
+        struct_eq = struct == prev_structure
+    else:
+        byte_eq = False
+        norm_eq = False
+        sim = 0.0
+        struct_eq = False
+
+    return {
+        "iteration": iteration,
+        "bytes": text_len,
+        "sha256": text_hash,
+        "normalized_sha256": norm_hash,
+        "byte_equal_to_previous": byte_eq,
+        "normalized_equal_to_previous": norm_eq,
+        "similarity_to_previous": sim,
+        "structure": struct,
+        "structure_equal_to_previous": struct_eq,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Classification
+# ---------------------------------------------------------------------------
+
+def classify(records: list, max_iterations: int, prev_texts: list) -> tuple:
+    """Classify a run based on its records.
+
+    Returns (code, fixpoint_iteration, converged, final_similarity).
+    """
+    K = max_iterations
+    # Find fixpoint: smallest i in 1..K-1 where T_i == T_{i+1} byte for byte
+    fixpoint_iteration = None
+    for i in range(K - 1):
+        if prev_texts[i] is not None and prev_texts[i + 1] is not None:
+            if prev_texts[i] == prev_texts[i + 1]:
+                fixpoint_iteration = i + 1  # 1-based
+                break
+
+    converged = fixpoint_iteration is not None
+
+    final_record = records[-1]
+    final_similarity = final_record["similarity_to_previous"]
+
+    if fixpoint_iteration == 1:
+        code = "STABLE_IMMEDIATE"
+    elif fixpoint_iteration is not None:
+        code = "STABLE_DELAYED"
+    elif final_record["normalized_equal_to_previous"]:
+        code = "WHITESPACE_DRIFT"
+    elif final_record["structure_equal_to_previous"]:
+        code = "TEXT_DRIFT"
+    else:
+        code = "STRUCTURE_DRIFT"
+
+    return code, fixpoint_iteration, converged, final_similarity
+
+
+# ---------------------------------------------------------------------------
+# Channel execution
+# ---------------------------------------------------------------------------
+
+CHANNELS = [
+    ("json", ".json", serialize_json_str),
+    ("markdown", ".md", serialize_markdown),
+]
+
+
+def run_channel(
+    doc_id: str,
+    channel_name: str,
+    channel_ext: str,
+    serializer,
+    d0: DoclingDocument,
+    max_iterations: int,
+    artifacts_dir: str,
+) -> dict:
+    """Run the iterated cycle for one channel.
+
+    Returns the channel result dict for detail.json.
+    """
+    os.makedirs(artifacts_dir, exist_ok=True)
+
+    records = []
+    prev_texts = []  # T_0 through T_K, where prev_texts[i] = T_i (T_0 = None conceptually)
+    prev_normalized = None
+    prev_structure = None
+    current_doc = d0
+
+    for i in range(1, max_iterations + 1):
+        # Serialize D_{i-1} to T_i
+        t_i = serializer(current_doc)
+
+        # Write artifact
+        artifact_name = f"iter_{i:02d}{channel_ext}"
+        artifact_path = os.path.join(artifacts_dir, artifact_name)
+        with open(artifact_path, "w", encoding="utf-8") as f:
+            f.write(t_i)
+
+        # Parse T_i back to D_i
+        d_i = parse_document(t_i, artifact_name)
+
+        # Record
+        prev_text = prev_texts[-1] if prev_texts else None
+        record = make_iteration_record(
+            iteration=i,
+            text=t_i,
+            prev_text=prev_text,
+            prev_normalized=prev_normalized,
+            doc=d_i,
+            prev_structure=prev_structure,
+        )
+        records.append(record)
+
+        # Update for next iteration
+        prev_texts.append(t_i)
+        prev_normalized = normalize(t_i)
+        prev_structure = record["structure"]
+        current_doc = d_i
+
+    code, fixpoint_iteration, converged, final_similarity = classify(
+        records, max_iterations, prev_texts
+    )
+
+    # Build artifacts list (relative to document dir)
+    artifacts_rel = []
+    for i in range(1, max_iterations + 1):
+        artifacts_rel.append(f"{channel_name}/iter_{i:02d}{channel_ext}")
+
+    return {
+        "code": code,
+        "converged": converged,
+        "fixpoint_iteration": fixpoint_iteration,
+        "final_similarity": final_similarity,
+        "artifacts": artifacts_rel,
+        "iterations": records,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    corpus_rel, out_rel, max_iterations_str, min_similarity_str, doc_filter = parse_args()
+    corpus_path, out_path, max_iterations, min_similarity, eligible = validate_args(
+        corpus_rel, out_rel, max_iterations_str, min_similarity_str, doc_filter
+    )
+
+    # Remove existing output directory, create fresh
+    if os.path.exists(out_path):
+        shutil.rmtree(out_path)
+    os.makedirs(out_path, exist_ok=True)
+
+    documents_dir = os.path.join(out_path, "documents")
+    os.makedirs(documents_dir, exist_ok=True)
+
+    # Sort eligible by document_id ascending
+    eligible.sort(key=lambda x: x[0])
+
+    # Converter for initial parse
+    dc = DocumentConverter()
+
+    report_documents = []
+    all_runs = []
+
+    for doc_id, source_file, source_path in eligible:
+        doc_dir = os.path.join(documents_dir, doc_id)
+        os.makedirs(doc_dir, exist_ok=True)
+
+        # Read source file bytes
+        with open(source_path, "rb") as f:
+            source_bytes = f.read()
+        source_hash = sha256_hex(source_bytes)
+
+        # Parse source to D0
+        result = dc.convert(source_path)
+        d0 = result.document
+
+        # HTML observation (export once, never in cycle)
+        html_str = d0.export_to_html()
+        html_bytes = html_str.encode("utf-8")
+        html_hash = sha256_hex(html_bytes)
+        html_len = len(html_bytes)
+        obs_path = os.path.join(doc_dir, "observation.html")
+        with open(obs_path, "w", encoding="utf-8") as f:
+            f.write(html_str)
+
+        # Run both channels
+        channel_results = {}
+        runs_for_report = []
+
+        for channel_name, channel_ext, serializer in CHANNELS:
+            chan_dir = os.path.join(doc_dir, channel_name)
+            chan_result = run_channel(
+                doc_id=doc_id,
+                channel_name=channel_name,
+                channel_ext=channel_ext,
+                serializer=serializer,
+                d0=d0,
+                max_iterations=max_iterations,
+                artifacts_dir=chan_dir,
+            )
+            channel_results[channel_name] = chan_result
+
+            run_entry = {
+                "channel": channel_name,
+                "iterations": max_iterations,
+                "fixpoint_iteration": chan_result["fixpoint_iteration"],
+                "converged": chan_result["converged"],
+                "code": chan_result["code"],
+                "final_similarity": chan_result["final_similarity"],
+            }
+            runs_for_report.append(run_entry)
+            all_runs.append((doc_id, channel_name, run_entry))
+
+        # Write detail.json
+        detail = {
+            "document_id": doc_id,
+            "source_file": source_file,
+            "source_sha256": source_hash,
+            "html_sha256": html_hash,
+            "html_bytes": html_len,
+            "channels": channel_results,
+        }
+        detail = sort_dict(detail)
+        detail_path = os.path.join(doc_dir, "detail.json")
+        with open(detail_path, "w", encoding="utf-8") as f:
+            json.dump(detail, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+
+        report_doc = {
+            "document_id": doc_id,
+            "source_file": source_file,
+            "html_sha256": html_hash,
+            "runs": runs_for_report,
+        }
+        report_documents.append(report_doc)
+
+    # Sort report documents by document_id ascending
+    report_documents.sort(key=lambda x: x["document_id"])
+
+    # Sort runs within each document by channel ascending
+    for d in report_documents:
+        d["runs"].sort(key=lambda r: r["channel"])
+
+    # Compute totals
+    total_documents = len(report_documents)
+    total_runs = len(all_runs)
+    converged_runs = sum(1 for _, _, r in all_runs if r["converged"])
+
+    codes = {
+        "STABLE_IMMEDIATE": 0,
+        "STABLE_DELAYED": 0,
+        "WHITESPACE_DRIFT": 0,
+        "TEXT_DRIFT": 0,
+        "STRUCTURE_DRIFT": 0,
+    }
+    for _, _, r in all_runs:
+        codes[r["code"]] += 1
+
+    min_final_similarity = min(r["final_similarity"] for _, _, r in all_runs) if all_runs else 1.0
+
+    # Gate
+    violations = []
+    # Walk in report order: doc_id ascending, channel ascending
+    sorted_runs = sorted(all_runs, key=lambda x: (x[0], x[1]))
+    for doc_id, channel_name, run_entry in sorted_runs:
+        code = run_entry["code"]
+        if code not in ("STABLE_IMMEDIATE", "STABLE_DELAYED"):
+            violations.append(f"{doc_id}/{channel_name}:{code}")
+        if run_entry["final_similarity"] < min_similarity:
+            violations.append(f"{doc_id}/{channel_name}:LOW_SIMILARITY")
+
+    gate_passed = len(violations) == 0
+    exit_code = 0 if gate_passed else 3
+
+    # Build report.json
+    report = {
+        "schema_version": "1.0",
+        "corpus": corpus_path,
+        "max_iterations": max_iterations,
+        "min_similarity": min_similarity,
+        "channels": ["json", "markdown"],
+        "documents": report_documents,
+        "totals": {
+            "documents": total_documents,
+            "runs": total_runs,
+            "converged_runs": converged_runs,
+            "codes": codes,
+            "min_final_similarity": min_final_similarity,
+        },
+        "gate": {
+            "passed": gate_passed,
+            "exit_code": exit_code,
+            "violations": violations,
+        },
+    }
+    report = sort_dict(report)
+    report_path = os.path.join(out_path, "report.json")
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+    # Build summary.txt
+    summary_lines = []
+    summary_lines.append("FIXPOINT AUDIT")
+    summary_lines.append(f"corpus: {corpus_path}")
+    summary_lines.append(f"documents: {total_documents}")
+    summary_lines.append(f"runs: {total_runs}")
+    summary_lines.append(f"max_iterations: {max_iterations}")
+    summary_lines.append(f"min_similarity: {min_similarity:.6f}")
+    summary_lines.append("")
+
+    for doc_id, channel_name, run_entry in sorted_runs:
+        fp = run_entry["fixpoint_iteration"]
+        fp_str = str(fp) if fp is not None else "-"
+        sim_str = f"{run_entry['final_similarity']:.6f}"
+        summary_lines.append(
+            f"{doc_id} {channel_name} {run_entry['code']} fixpoint={fp_str} similarity={sim_str}"
+        )
+
+    summary_lines.append("")
+    if gate_passed:
+        summary_lines.append("GATE: PASS")
+    else:
+        summary_lines.append(f"GATE: FAIL ({len(violations)} violations)")
+
+    summary_text = "\n".join(summary_lines) + "\n"
+    summary_path = os.path.join(out_path, "summary.txt")
+    with open(summary_path, "w", encoding="utf-8", newline="") as f:
+        f.write(summary_text)
+
+    # Write summary to stdout
+    sys.stdout.write(summary_text)
+
+    sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+with open('/home/user/fixpoint/audit.py', 'w') as f:
+    f.write(script)
+print('Written successfully')
+PYEOF ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "import py_compile; py_compile.compile('audit.py', doraise=True); print('Syntax OK')" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 audit.py 2>&1 ✔ 
+The tool runs successfully. Let me verify the output artifacts are correct:   
+💫 Executing cd /home/user/fixpoint && find out -type f | sort ✔ 
+All artifacts are present. Let me verify the report.json and detail.json structure:   
+💫 Executing  ✖ "The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()"
+💫 Executing cd /home/user/fixpoint && python3 -c "
+import json
+with open('out/report.json') as f:
+    r = json.load(f)
+print('Top keys:', sorted(r.keys()))
+print('Schema version:', r['schema_version'])
+print('Corpus:', r['corpus'])
+print('Documents count:', len(r['documents']))
+print('Totals:', json.dumps(r['totals'], indent=2))
+print('Gate:', json.dumps(r['gate'], indent=2))
+" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 -c "
+import json
+with open('out/documents/alignment_table/detail.json') as f:
+    d = json.load(f)
+print('Detail keys:', sorted(d.keys()))
+print('Channels:', sorted(d['channels'].keys()))
+print('JSON channel keys:', sorted(d['channels']['json'].keys()))
+print('JSON iterations count:', len(d['channels']['json']['iterations']))
+print('JSON iteration 1 keys:', sorted(d['channels']['json']['iterations'][0].keys()))
+print()
+print('MD channel keys:', sorted(d['channels']['markdown'].keys()))
+print('MD iterations count:', len(d['channels']['markdown']['iterations']))
+print('MD iteration 1:', json.dumps(d['channels']['markdown']['iterations'][0], indent=2))
+" ✔ 
+Let me now verify the summary.txt content:   
+📖 Reading /home/user/fixpoint/out/summary.txt ✔ 
+Good. Now let me test various edge cases and error conditions:   
+💫 Executing cd /home/user/fixpoint && python3 audit.py --max-iterations 1 2>&1; echo "EXIT: $?" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 audit.py --max-iterations 11 2>&1; echo "EXIT: $?" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 audit.py --max-iterations abc 2>&1; echo "EXIT: $?" ✔ 
+💫 Executing cd /home/user/fixpoint && python3 audit.py --min-similarity 1.5 2>&1; echo "EXIT: $?" ✔ 

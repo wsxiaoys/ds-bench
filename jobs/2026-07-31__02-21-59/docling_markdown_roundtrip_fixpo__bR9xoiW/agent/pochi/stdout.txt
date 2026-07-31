@@ -1,0 +1,689 @@
+- Initializing MCP connections...
+You
+# Roundtrip Fixpoint Auditor ## Background A document toolchain is only trustworthy when its serializers are *stable*: exporting a parsed document and importing the result back must eventually stop changing the artifact. This environment ships the Docling library preinstalled (v2.107.0 or newer, with all default model weights pre-baked) and is fully offline — no network access, no cloud APIs, no external services of any kind. A small corpus of hand-written source documents is already present in the project. Build a format-stability auditor: it cycles every corpus document through two independent serialization channels, measures what changes on every cycle, finds the fixpoint, classifies the instabilities it finds and enforces a stability gate. ## Requirements * A rerunnable command-line tool that audits every eligible document of a corpus directory through iterated export/import cycles in the `markdown` and `json` channels, plus one read-only HTML observation per document. * Per-iteration measurements against the previous iteration: byte equality, normalized-text equality, structural equivalence of the parsed document model, and a similarity score. * Fixpoint detection, per-run classification with stable codes, and a stability gate wired to process exit codes. * Persistence of every intermediate serialization, a machine-readable report, per-document detail artifacts and a human-readable summary. * Byte-level deterministic outputs. ## Implementation Hints ### Invocation * Project path: `/home/user/fixpoint` * Command: `python3 audit.py` * Options (all optional, exact spelling): * `--corpus <dir>` (default `corpus`) * `--out <dir>` (default `out`) * `--max-iterations <int>` (default `3`, valid range 2..10 inclusive) * `--min-similarity <float>` (default `0.95`, valid range 0.0..1.0 inclusive) * `--doc <document_id>` — repeatable; when present, restricts the audit to exactly the listed document ids * Relative path arguments resolve against the current working directory. ### Corpus and document ids * Eligible source files are the regular files located directly inside the corpus directory (no recursion) whose lowercased extension is `.md` or `.html`. Every other entry is ignored. * A document id is the source file name without its extension. * The invocation is invalid (exit `2`, see "Gate and exit codes") when: the corpus path does not exist or is not a directory; no eligible file is found; two eligible files share the same document id; or a `--doc` value is not among the eligible document ids. ### Channels and the iterated cycle * The channels are exactly `json` and `markdown`. The `json` channel uses Docling's lossless JSON serialization of the document model, the `markdown` channel uses Markdown. Their artifact extensions are `.json` and `.md`. * `D0` is the document model parsed from the source file. For iteration `i` (1-based): `T_i` is the channel serialization of `D_(i-1)` as text, and `D_i` is the document model parsed back from `T_i`. Every run performs exactly `--max-iterations` (`K`) iterations, producing `T_1 .. T_K`, regardless of early convergence. * Every `T_i` is written UTF-8 encoded to `<out>/documents/<document_id>/<channel>/iter_<NN>.<ext>`, where `NN` is the iteration number zero-padded to two digits. * Independently of the cycles, `D0` is exported to HTML exactly once per document and written UTF-8 encoded to `<out>/documents/<document_id>/observation.html`. This is an observation only: it never takes part in a cycle, a classification or the gate. ### Normalized text `normalize(s)` is defined as, in this exact order: (1) apply Unicode NFC; (2) replace every `CR LF` and then every remaining `CR` with `LF`; (3) replace every TAB (U+0009) and every NO-BREAK SPACE (U+00A0) with one SPACE (U+0020); (4) split into lines on `LF`; (5) in every line collapse each run of two or more SPACE characters into one SPACE, then strip leading and trailing SPACE characters; (6) drop the lines that are empty at this point; (7) join the surviving lines with a single `LF`. ### Similarity `similarity(a, b)` operates on `normalize(a)` and `normalize(b)`: split both on whitespace into the token lists `A` and `B`; when both are empty the value is `1.0`; otherwise the value is `2 * S / (len(A) + len(B))` where `S` is the sum, over the distinct tokens `t`, of `min(count of t in A, count of t in B)`. Every similarity value that is stored or printed is rounded to 6 decimal places, half away from zero. ### Structure signature The structure signature of a document model is an object with exactly these keys: * `item_counts`: object mapping a label to the number of content items carrying it, counting every content item reachable from the document body. A key is the label the document model reports for the item, lowercased, with every character outside `[a-z0-9]` replaced by `_`. Labels with no occurrence are omitted. * `max_depth`: integer; the greatest depth reached in the body tree, where the direct children of the body root have depth 1, and `0` when the body has no children. * `table_dims`: array of `[rows, cols]` integer pairs, one per table of the document, in document order. ### Per-iteration record For every iteration `i` record an object with exactly these keys: `iteration` (int, 1-based), `bytes` (int, the byte length of the UTF-8 encoded `T_i`), `sha256` (lowercase hex digest of the UTF-8 encoded `T_i`), `normalized_sha256` (lowercase hex digest of the UTF-8 encoded `normalize(T_i)`), `byte_equal_to_previous` (bool, `T_i` equals `T_(i-1)` byte for byte), `normalized_equal_to_previous` (bool, `normalize(T_i)` equals `normalize(T_(i-1))`), `similarity_to_previous` (number, `similarity(T_i, T_(i-1))`), `structure` (the structure signature of `D_i`) and `structure_equal_to_previous` (bool, the structure signature of `D_i` equals the one of `D_(i-1)`). Iteration 1 has no previous iteration: its three booleans are `false` and its `similarity_to_previous` is `0.0`. ### Fixpoint and classification * `fixpoint_iteration` is the smallest `i` in `1..K-1` for which `T_i` equals `T_(i+1)` byte for byte, and `null` when there is none. `converged` is `true` exactly when `fixpoint_iteration` is not `null`. * Every run gets exactly one code; the first matching rule wins, and "final record" means the record whose `iteration` equals `K`: 1. `fixpoint_iteration` is `1` → `STABLE_IMMEDIATE` 2. `fixpoint_iteration` is not `null` → `STABLE_DELAYED` 3. the final record's `normalized_equal_to_previous` is `true` → `WHITESPACE_DRIFT` 4. the final record's `structure_equal_to_previous` is `true` → `TEXT_DRIFT` 5. otherwise → `STRUCTURE_DRIFT` * The `final_similarity` of a run is the final record's `similarity_to_previous`. ### Gate and exit codes Walk the runs in report order (document id ascending, then channel ascending) and append to `violations`: first `<document_id>/<channel>:<code>` when the code is neither `STABLE_IMMEDIATE` nor `STABLE_DELAYED`, then `<document_id>/<channel>:LOW_SIMILARITY` when `final_similarity` is lower than `--min-similarity`. The gate passes exactly when `violations` is empty. * exit `0`: the audit completed and the gate passed. * exit `3`: the audit completed and the gate failed; every artifact is still written in full. * exit `2`: the invocation is invalid — the corpus/`--doc` cases listed above, or `--max-iterations` / `--min-similarity` outside their valid range or not parseable as the required type. Then nothing at all is printed on stdout, stderr carries at least one line that starts with `error: ` (this also applies to argument-parsing failures, so the default parser diagnostics are not sufficient on their own), and the output directory and its contents are neither created, deleted nor modified. ### Output artifacts On a valid invocation the tool first removes all existing contents of the output directory (creating that directory when it is missing), then writes: * `<out>/report.json` * `<out>/summary.txt` * `<out>/documents/<document_id>/detail.json` * `<out>/documents/<document_id>/observation.html` * `<out>/documents/<document_id>/<channel>/iter_<NN>.<ext>` `report.json` and every `detail.json` are UTF-8 encoded, indented with 2 spaces, have their object keys sorted ascending at every nesting level, leave non-ASCII characters unescaped (a document id carrying non-ASCII characters therefore appears verbatim), and end with exactly one newline character. The iteration artifacts of the `json` channel are not constrained beyond being the channel's own serialization. `report.json` is an object with exactly these keys: * `schema_version`: the string `1.0` * `corpus`: the absolute, resolved path of the corpus directory * `max_iterations`: int * `min_similarity`: number * `channels`: the array `["json", "markdown"]` * `documents`: array ordered by `document_id` ascending; every entry has exactly `document_id` (string), `source_file` (the source file name including its extension), `html_sha256` (lowercase hex digest of the observation HTML bytes) and `runs` * every entry of `runs` has exactly `channel`, `iterations` (int, equal to `max_iterations`), `fixpoint_iteration` (int or `null`), `converged` (bool), `code` (string) and `final_similarity` (number), ordered by `channel` ascending * `totals`: exactly `documents` (int), `runs` (int), `converged_runs` (int), `codes` (object carrying all five codes as keys and their run counts as values) and `min_final_similarity` (number, the smallest `final_similarity` over all runs) * `gate`: exactly `passed` (bool), `exit_code` (int, the process exit code) and `violations` (array of strings) `<out>/documents/<document_id>/detail.json` is an object with exactly the keys `document_id`, `source_file`, `source_sha256` (lowercase hex digest of the source file bytes), `html_sha256`, `html_bytes` (int, byte length of the observation HTML) and `channels`. `channels` is an object keyed by channel name whose values have exactly the keys `code`, `converged`, `fixpoint_iteration`, `final_similarity`, `artifacts` (array of the iteration artifact paths relative to the document directory, in iteration order) and `iterations` (array of the per-iteration records, in iteration order). ### summary.txt and stdout `summary.txt` is UTF-8 encoded with LF line endings and has exactly `9 + R` lines, `R` being the number of runs: * line 1: `FIXPOINT AUDIT` * line 2: `corpus: <absolute corpus path>` * line 3: `documents: <number of audited documents>` * line 4: `runs: <number of runs>` * line 5: `max_iterations: <int>` * line 6: `min_similarity: <value with exactly 6 decimals>` * line 7: empty * lines 8 .. 7+R: one line per run in report order, formatted as `<document_id> <channel> <code> fixpoint=<n> similarity=<value>` with single spaces between the five fields, `<n>` being the fixpoint iteration or `-` when there is none, and `<value>` the final similarity with exactly 6 decimals * line 8+R: empty * line 9+R: `GATE: PASS` when the gate passed, otherwise `GATE: FAIL (<v> violations)` with `<v>` the number of violations The file ends with exactly one newline character. On exit `0` and exit `3` stdout must be byte-identical to the contents of `summary.txt`; any diagnostics belong on stderr. ### Determinism Re-running the tool with the same corpus and the same options must produce byte-identical `report.json`, `summary.txt`, `detail.json` and iteration artifacts. Do not embed timestamps, durations, random values, or host-specific paths other than the ones specified above.   
+
+Pochi
+📂 Listing files in . ✔ 
+📂 Listing files in corpus ✔ 
+💭 Thinking for 307 characters   
+💫 Executing python3 -c "import docling; print(docling.__version__)" ✔ 
+💭 Thinking for 342 characters   
+💫 Executing python3 -c "from docling.document_converter import DocumentConverter; converter = DocumentConverter(); result = converter.convert('corpus/nested_lists.md'); print(type(result))" ✔ 
+💭 Thinking for 275 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+print('res methods:', [m for m in dir(res) if not m.startswith('_')])
+print('doc methods:', [m for m in dir(res.document) if not m.startswith('_')])
+" ✔ 
+💭 Thinking for 280 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import json
+
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+
+# Let's see how we export to json
+json_str = doc.model_dump_json()
+print('model_dump_json length:', len(json_str))
+
+# Let's see how we import from json
+# Is there a DoclingDocument.model_validate_json?
+doc2 = DoclingDocument.model_validate_json(json_str)
+print('loaded doc2:', type(doc2))
+" ✔ 
+💭 Thinking for 620 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+import json
+
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+print('Type of doc:', type(doc))
+print('Is doc instance of DoclingDocument:', isinstance(doc, DoclingDocument))
+" ✔ 
+💭 Thinking for 274 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import DocumentStream
+import io
+
+converter = DocumentConverter()
+md_content = '# Hello World\n\nThis is a test.'
+stream = io.BytesIO(md_content.encode('utf-8'))
+doc_stream = DocumentStream(name='test.md', stream=stream)
+result = converter.convert(doc_stream)
+print('converted stream:', type(result.document))
+" ✔ 
+💭 Thinking for 209 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res_md = converter.convert('corpus/nested_lists.md')
+res_html = converter.convert('corpus/fragment_page.html')
+print('md:', type(res_md.document))
+print('html:', type(res_html.document))
+" ✔ 
+💭 Thinking for 304 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+md_export = doc.export_to_markdown()
+print('md_export type:', type(md_export))
+print('md_export starts with:', repr(md_export[:100]))
+" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+html_export = doc.export_to_html()
+print('html_export type:', type(html_export))
+print('html_export starts with:', repr(html_export[:100]))
+" ✔ 
+💭 Thinking for 639 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc import DoclingDocument
+from docling.datamodel.base_models import DocumentStream
+import io
+
+converter = DocumentConverter()
+D0 = converter.convert('corpus/nested_lists.md').document
+
+# Test JSON channel
+T1_json = D0.model_dump_json()
+D1_json = DoclingDocument.model_validate_json(T1_json)
+T2_json = D1_json.model_dump_json()
+D2_json = DoclingDocument.model_validate_json(T2_json)
+print('JSON channel cycle success!')
+
+# Test Markdown channel
+T1_md = D0.export_to_markdown()
+stream1 = io.BytesIO(T1_md.encode('utf-8'))
+D1_md = converter.convert(DocumentStream(name='doc.md', stream=stream1)).document
+T2_md = D1_md.export_to_markdown()
+stream2 = io.BytesIO(T2_md.encode('utf-8'))
+D2_md = converter.convert(DocumentStream(name='doc.md', stream=stream2)).document
+print('Markdown channel cycle success!')
+" ✔ 
+💭 Thinking for 1767 characters   
+💫 Executing python3 -c "
+from decimal import Decimal, ROUND_HALF_UP
+for x in ['1.5', '-1.5', '0.1234565', '-0.1234565']:
+    d = Decimal(x)
+    print(x, '->', d.quantize(Decimal('1'), rounding=ROUND_HALF_UP) if '.' not in x or len(x.split('.')[1]) == 1 else d.quantize(Decimal('1.000000'), rounding=ROUND_HALF_UP))
+" ✔ 
+💭 Thinking for 631 characters   
+💫 Executing python3 -c "
+from collections import Counter
+from decimal import Decimal, ROUND_HALF_UP
+
+def round_half_up(n, decimals=6):
+    # Using format to avoid floating point representation issues when converting to string
+    # e.g. f'{n:.12f}'
+    d = Decimal(f'{n:.12f}')
+    return float(d.quantize(Decimal('1.' + '0' * decimals), rounding=ROUND_HALF_UP))
+
+def similarity(a: str, b: str) -> float:
+    # (using a simple mock normalize for the test)
+    A = a.split()
+    B = b.split()
+    if not A and not B:
+        return 1.0
+    count_A = Counter(A)
+    count_B = Counter(B)
+    distinct_tokens = set(count_A.keys()) | set(count_B.keys())
+    S = sum(min(count_A[t], count_B[t]) for t in distinct_tokens)
+    val = 2.0 * S / (len(A) + len(B))
+    return round_half_up(val, 6)
+
+print(similarity('hello world', 'hello there world'))
+" ✔ 
+💭 Thinking for 236 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+print('doc.body:', type(doc.body))
+print('doc.body fields:', doc.body.model_fields.keys() if hasattr(doc.body, 'model_fields') else dir(doc.body))
+" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+for i, child in enumerate(doc.body.children):
+    print(f'child {i}:', type(child), child.model_fields.keys() if hasattr(child, 'model_fields') else dir(child))
+" ✔ 
+💭 Thinking for 308 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+print(list(doc.iterate_items(doc.body))[:5])
+" ✔ 
+💭 Thinking for 285 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+doc.print_element_tree()
+" ✔ 
+💭 Thinking for 273 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+print('doc.groups:', type(doc.groups))
+print('doc.texts:', type(doc.texts))
+# Let's see if we can index doc.groups or if they are dict or list
+print('doc.groups keys/type:', type(doc.groups))
+print('doc.groups length:', len(doc.groups))
+" ✔ 
+💭 Thinking for 300 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+
+def resolve_ref(doc, cref):
+    if not cref.startswith('#/'):
+        raise ValueError(f'Invalid cref: {cref}')
+    parts = cref[2:].split('/')
+    obj = doc
+    for part in parts:
+        if part.isdigit():
+            obj = obj[int(part)]
+        else:
+            obj = getattr(obj, part)
+    return obj
+
+for child in doc.body.children:
+    resolved = resolve_ref(doc, child.cref)
+    print(child.cref, 'resolved to:', type(resolved), 'label:', getattr(resolved, 'label', None))
+" ✔ 
+💭 Thinking for 346 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+
+def resolve_ref(doc, cref):
+    parts = cref[2:].split('/')
+    obj = doc
+    for part in parts:
+        if part.isdigit():
+            obj = obj[int(part)]
+        else:
+            obj = getattr(obj, part)
+    return obj
+
+group0 = doc.groups[0]
+print('group0 children:', [c.cref for c in group0.children])
+for c in group0.children:
+    resolved = resolve_ref(doc, c.cref)
+    print(c.cref, 'resolved to:', type(resolved), 'label:', getattr(resolved, 'label', None))
+" ✔ 
+💭 Thinking for 615 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+for child in doc.body.children:
+    parts = child.cref[2:].split('/')
+    obj = doc
+    for p in parts:
+        obj = obj[int(p)] if p.isdigit() else getattr(obj, p)
+    label = getattr(obj, 'label', None)
+    if label is not None:
+        print('label type:', type(label), 'str(label):', str(label), 'label.value:', getattr(label, 'value', None))
+" ✔ 
+💭 Thinking for 565 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+for child in doc.body.children:
+    parts = child.cref[2:].split('/')
+    obj = doc
+    for p in parts:
+        obj = obj[int(p)] if p.isdigit() else getattr(obj, p)
+    print(child.cref, 'has self_ref:', hasattr(obj, 'self_ref'), getattr(obj, 'self_ref', None))
+" ✔ 
+💭 Thinking for 619 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+print('doc.body label:', getattr(doc.body, 'label', None))
+" ✔ 
+💭 Thinking for 278 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+items = list(doc.iterate_items(doc.body))
+print('total items with iterate_items:', len(items))
+print('self_refs:', [item[0].self_ref for item in items[:5]])
+" ✔ 
+💭 Thinking for 308 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+
+def resolve_ref(doc, cref):
+    parts = cref[2:].split('/')
+    obj = doc
+    for part in parts:
+        if part.isdigit():
+            obj = obj[int(part)]
+        else:
+            obj = getattr(obj, part)
+    return obj
+
+visited_rec = set()
+labels_rec = []
+def traverse(cref):
+    if cref in visited_rec:
+        return
+    visited_rec.add(cref)
+    obj = resolve_ref(doc, cref)
+    label = getattr(obj, 'label', None)
+    if label is not None:
+        labels_rec.append(str(label.value if hasattr(label, 'value') else label))
+    if hasattr(obj, 'children') and obj.children:
+        for child in obj.children:
+            traverse(child.cref)
+
+for child in doc.body.children:
+    traverse(child.cref)
+
+print('Recursive traversal items:', len(visited_rec))
+print('Recursive labels:', sorted(labels_rec))
+
+# Compare with iterate_items
+items_iter = list(doc.iterate_items(doc.body))
+print('iterate_items length:', len(items_iter))
+labels_iter = []
+for item, depth in items_iter:
+    label = getattr(item, 'label', None)
+    if label is not None:
+        labels_iter.append(str(label.value if hasattr(label, 'value') else label))
+print('iterate_items labels:', sorted(labels_iter))
+" ✔ 
+💭 Thinking for 614 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+group = doc.groups[0]
+text = doc.texts[0]
+print('group mro:', type(group).__mro__)
+print('text mro:', type(text).__mro__)
+" ✔ 
+💭 Thinking for 272 characters   
+💫 Executing python3 -c "
+import glob, os
+from docling.document_converter import DocumentConverter
+
+converter = DocumentConverter()
+files = sorted(glob.glob('corpus/*.md') + glob.glob('corpus/*.html'))
+
+def resolve_ref(doc, cref):
+    parts = cref[2:].split('/')
+    obj = doc
+    for part in parts:
+        if part.isdigit():
+            obj = obj[int(part)]
+        else:
+            obj = getattr(obj, part)
+    return obj
+
+for f in files:
+    print('=== File:', f)
+    res = converter.convert(f)
+    doc = res.document
+    
+    # Recursive labels
+    rec_labels = []
+    visited = set()
+    def traverse(cref):
+        if cref in visited:
+            return
+        visited.add(cref)
+        obj = resolve_ref(doc, cref)
+        label = getattr(obj, 'label', None)
+        if label is not None:
+            rec_labels.append(str(label.value if hasattr(label, 'value') else label))
+        if hasattr(obj, 'children') and obj.children:
+            for child in obj.children:
+                traverse(child.cref)
+                
+    for child in doc.body.children:
+        traverse(child.cref)
+        
+    # iterate_items labels
+    iter_labels = []
+    for item, depth in doc.iterate_items(doc.body):
+        label = getattr(item, 'label', None)
+        if label is not None:
+            iter_labels.append(str(label.value if hasattr(label, 'value') else label))
+            
+    print('Recursive labels:', sorted(list(set(rec_labels))))
+    print('Iterate labels:', sorted(list(set(iter_labels))))
+" ✔ 
+💭 Thinking for 740 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+print('texts:', len(doc.texts))
+print('tables:', len(doc.tables))
+print('pictures:', len(doc.pictures))
+print('groups:', len(doc.groups))
+" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+texts_refs = set(t.self_ref for t in doc.texts)
+iter_refs = set(item[0].self_ref for item in doc.iterate_items(doc.body))
+print('Difference:', texts_refs ^ iter_refs)
+" ✔ 
+💭 Thinking for 309 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/fragment_page.html')
+doc = res.document
+all_content_refs = set(t.self_ref for t in doc.texts) | set(t.self_ref for t in doc.tables) | set(t.self_ref for t in doc.pictures)
+iter_refs = set(item[0].self_ref for item in doc.iterate_items(doc.body))
+print('Difference:', all_content_refs ^ iter_refs)
+" ✔ 
+💭 Thinking for 281 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/fragment_page.html')
+doc = res.document
+print('#/texts/0 in all_content_refs:', '#/texts/0' in (set(t.self_ref for t in doc.texts) | set(t.self_ref for t in doc.tables) | set(t.self_ref for t in doc.pictures)))
+print('#/texts/0 in iter_refs:', '#/texts/0' in set(item[0].self_ref for item in doc.iterate_items(doc.body)))
+print('#/texts/0 item:', doc.texts[0])
+" ✔ 
+💭 Thinking for 640 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/fragment_page.html')
+doc = res.document
+print('tables:', [type(t).__mro__ for t in doc.tables])
+print('pictures:', [type(p).__mro__ for p in doc.pictures])
+" ✔ 
+💭 Thinking for 673 characters   
+💫 Executing python3 -c "
+from docling_core.types.doc import DoclingDocument
+print(DoclingDocument.iterate_items.__doc__)
+" ✔ 
+💫 Executing python3 -c "
+import inspect
+from docling_core.types.doc import DoclingDocument
+print(inspect.getsource(DoclingDocument.iterate_items))
+" ✔ 
+💭 Thinking for 283 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+items_with_groups = list(doc.iterate_items(doc.body, with_groups=True))
+print('With groups length:', len(items_with_groups))
+labels_with_groups = []
+for item, depth in items_with_groups:
+    label = getattr(item, 'label', None)
+    if label is not None:
+        labels_with_groups.append(str(label.value if hasattr(label, 'value') else label))
+print('With groups labels:', sorted(labels_with_groups))
+" ✔ 
+💭 Thinking for 293 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+items_with_groups = list(doc.iterate_items(doc.body, with_groups=True))
+print('First item:', items_with_groups[0])
+" ✔ 
+💭 Thinking for 315 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/nested_lists.md')
+doc = res.document
+items_with_groups = list(doc.iterate_items(doc.body, with_groups=True))
+for item, depth in items_with_groups[:10]:
+    print(f'item self_ref: {item.self_ref}, label: {getattr(item, \"label\", None)}, depth: {depth}')
+" ✔ 
+💭 Thinking for 827 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/quotes_media.md')
+doc = res.document
+for p in doc.pictures:
+    print('picture children:', getattr(p, 'children', None))
+" ✔ 
+💭 Thinking for 335 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/fragment_page.html')
+doc = res.document
+
+# Method 1: iterate_items with groups
+print('Method 1: iterate_items(with_groups=True)')
+for item, depth in list(doc.iterate_items(doc.body, with_groups=True))[:15]:
+    print(f'  {item.self_ref} depth={depth} label={getattr(item, \"label\", None)}')
+
+# Method 2: recursive traversal starting from children of doc.body
+print('Method 2: recursive traversal from children')
+def resolve_ref(doc, cref):
+    parts = cref[2:].split('/')
+    obj = doc
+    for part in parts:
+        if part.isdigit():
+            obj = obj[int(part)]
+        else:
+            obj = getattr(obj, part)
+    return obj
+
+visited = set()
+def traverse(cref, depth):
+    if cref in visited:
+        return
+    visited.add(cref)
+    obj = resolve_ref(doc, cref)
+    print(f'  {cref} depth={depth} label={getattr(obj, \"label\", None)}')
+    if hasattr(obj, 'children') and obj.children:
+        for child in obj.children:
+            traverse(child.cref, depth + 1)
+
+for child in doc.body.children:
+    traverse(child.cref, 1)
+" ✔ 
+💭 Thinking for 574 characters   
+💫 Executing python3 -c "
+import inspect
+from docling_core.types.doc import DoclingDocument
+print(inspect.getsource(DoclingDocument._iterate_items_with_stack))
+" ✔ 
+💭 Thinking for 1135 characters   
+💫 Executing python3 -c "
+import glob, os, re
+from docling.document_converter import DocumentConverter
+
+converter = DocumentConverter()
+files = sorted(glob.glob('corpus/*.md') + glob.glob('corpus/*.html'))
+
+def resolve_ref(doc, cref):
+    parts = cref[2:].split('/')
+    obj = doc
+    for part in parts:
+        if part.isdigit():
+            obj = obj[int(part)]
+        else:
+            obj = getattr(obj, part)
+    return obj
+
+for f in files:
+    print('=== File:', f)
+    res = converter.convert(f)
+    doc = res.document
+    
+    # Method A: Recursive traversal of children (no filtering of content layer)
+    counts_a = {}
+    max_depth_a = 0
+    visited_a = set()
+    def traverse_a(cref, depth):
+        if cref in visited_a:
+            return
+        visited_a.add(cref)
+        obj = resolve_ref(doc, cref)
+        label = getattr(obj, 'label', None)
+        if label is not None:
+            lbl_str = str(label.value if hasattr(label, 'value') else label)
+            lbl_norm = re.sub(r'[^a-z0-9]', '_', lbl_str.lower())
+            counts_a[lbl_norm] = counts_a.get(lbl_norm, 0) + 1
+        global max_depth_a
+        if depth > max_depth_a:
+            max_depth_a = depth
+        if hasattr(obj, 'children') and obj.children:
+            for child in obj.children:
+                traverse_a(child.cref, depth + 1)
+                
+    for child in doc.body.children:
+        traverse_a(child.cref, 1)
+        
+    print('Method A - Max Depth:', max_depth_a, 'Counts:', counts_a)
+    
+    # Method B: doc.iterate_items(doc.body, with_groups=True)
+    counts_b = {}
+    max_depth_b = 0
+    for item, depth in doc.iterate_items(doc.body, with_groups=True):
+        if item.self_ref == '#/body':
+            continue  # skip body root itself
+        label = getattr(item, 'label', None)
+        if label is not None:
+            lbl_str = str(label.value if hasattr(label, 'value') else label)
+            lbl_norm = re.sub(r'[^a-z0-9]', '_', lbl_str.lower())
+            counts_b[lbl_norm] = counts_b.get(lbl_norm, 0) + 1
+        if depth > max_depth_b:
+            max_depth_b = depth
+            
+    print('Method B - Max Depth:', max_depth_b, 'Counts:', counts_b)
+" ✔ 
+💭 Thinking for 334 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/fragment_page.html')
+doc = res.document
+print('doc.body.children:')
+for c in doc.body.children:
+    print(c.cref)
+" ✔ 
+💭 Thinking for 309 characters   
+💫 Executing python3 -c "
+from docling_core.types.doc.document import DEFAULT_CONTENT_LAYERS
+print(DEFAULT_CONTENT_LAYERS)
+" ✔ 
+💭 Thinking for 311 characters   
+💫 Executing python3 -c "
+import glob, os
+from docling.document_converter import DocumentConverter
+
+converter = DocumentConverter()
+files = sorted(glob.glob('corpus/*.md') + glob.glob('corpus/*.html'))
+
+def resolve_ref(doc, cref):
+    parts = cref[2:].split('/')
+    obj = doc
+    for part in parts:
+        if part.isdigit():
+            obj = obj[int(part)]
+        else:
+            obj = getattr(obj, part)
+    return obj
+
+for f in files:
+    res = converter.convert(f)
+    doc = res.document
+    visited = set()
+    layers = set()
+    def traverse(cref):
+        if cref in visited:
+            return
+        visited.add(cref)
+        obj = resolve_ref(doc, cref)
+        if hasattr(obj, 'content_layer'):
+            layers.add(obj.content_layer)
+        if hasattr(obj, 'children') and obj.children:
+            for child in obj.children:
+                traverse(child.cref)
+    for child in doc.body.children:
+        traverse(child.cref)
+    print(f, 'layers:', layers)
+" ✔ 
+📖 Reading corpus/fragment_page.html ✔ 
+💭 Thinking for 1266 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/fragment_page.html')
+doc = res.document
+for item, depth in doc.iterate_items(doc.body, with_groups=True):
+    if getattr(item, 'label', None) is not None and str(item.label.value if hasattr(item.label, 'value') else item.label) == 'caption':
+        print('caption content_layer:', item.content_layer)
+" ✔ 
+💭 Thinking for 914 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/fragment_page.html')
+doc = res.document
+group0 = doc.groups[0]
+print('group0:', group0)
+print('group0 parent:', group0.parent)
+" ✔ 
+💭 Thinking for 1618 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/fragment_page.html')
+doc = res.document
+print('doc.tables:', [t.self_ref for t in doc.tables])
+print('iterate_items tables:', [item.self_ref for item, _ in doc.iterate_items(doc.body) if getattr(item, 'label', None) is not None and str(item.label.value if hasattr(item.label, 'value') else item.label) == 'table'])
+" ✔ 

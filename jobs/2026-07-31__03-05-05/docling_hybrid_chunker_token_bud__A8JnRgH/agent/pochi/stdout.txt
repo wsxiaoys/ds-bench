@@ -1,0 +1,368 @@
+- Initializing MCP connections...
+You
+# Token-Budget-Aware Chunk Packing for Retrieval ## Background An offline retrieval service must ingest a small heterogeneous document corpus and turn it into embedding-ready chunks. Every chunk has to stay inside a hard token budget of the embedding model, must carry its section context and provenance, and the whole artifact has to be byte-for-byte reproducible so that downstream index builds can be cached. The container is fully air-gapped. Docling is pre-installed (CPU only, all model weights baked into the image) and a HuggingFace tokenizer directory is baked in as well. Do not install packages, download models, or contact any network service. ## Requirements Build a single-file command line tool `chunkpack.py` that converts, chunks, and audits the local corpus: * Convert every supported source document in the corpus and split it into chunks whose size is governed by a token budget measured with the baked-in tokenizer. * Emit one contextualized chunk record per line into a JSONL artifact, plus an aggregate summary. * Guarantee the budget: no emitted chunk may exceed it, including documents that contain a single element far larger than the budget, deeply nested section hierarchies, and tables. * Never drop content: every whitespace-separated word of a document's textual content (including table cell values) must appear in that document's emitted chunk texts. * Expose a self-audit subcommand that re-validates an existing artifact directory. ## Implementation Hints * Project path: `/home/user/chunkforge`. Create `chunkpack.py` there. * Corpus (read-only input, do not modify or add files): `/home/user/chunkforge/assets/corpus`. * Tokenizer: `/home/user/chunkforge/assets/tokenizer`. This local directory is the only tokenizer allowed; all token counting must be done with it. * Commands (always run with the project path as the working directory): * `python3 chunkpack.py pack --corpus <dir> --out <dir> --max-tokens <int> [--no-merge-peers]` * `python3 chunkpack.py verify --out <dir>` * `--corpus`, `--out` and `--max-tokens` are mandatory for `pack`. `--no-merge-peers` is optional: by default undersized neighbouring chunks that share the same section context are merged together while staying inside the budget; when the flag is given that merging must be switched off. * Source discovery: search `--corpus` recursively. Supported extensions (case-insensitive): `.md`, `.html`, `.docx`, `.pdf`. Every other file is ignored for chunking and recorded as skipped. A source is identified by its POSIX relative path with respect to the `--corpus` directory (e.g. `appendix/omega_notes.md`). All source orderings are ascending by that string. * `pack` writes exactly two artifacts into `--out` (creating the directory when missing and replacing any previous content of these two files): `chunks.jsonl` and `summary.json`. * `chunks.jsonl` is UTF-8, LF-terminated (no carriage returns), one JSON object per line, with a trailing newline after the last object. Chunks are grouped per source in ascending source order, and inside a source they keep the order in which the document is read. Each object has exactly these nine keys: * `chunk_id` (string): `"<source>#<ordinal>"` where `<ordinal>` is zero-padded to 4 digits (e.g. `alpha_guide.md#0003`). * `index` (integer): 0-based position of the chunk within the whole run; the values on the lines must be `0, 1, 2, ...` in ascending order. * `source` (string): POSIX relative path of the source document. * `ordinal` (integer): 0-based position of the chunk within its own source document. * `heading_path` (array of non-empty strings): the section-title ancestry of the chunk, outermost title first; an empty array when the chunk has no section context. * `page_numbers` (array of integers): ascending, duplicate-free page numbers the chunk's content comes from; an empty array when the source format carries no page provenance. * `token_count` (integer): the number of tokens the baked-in tokenizer produces for the value of `text` (plain tokenization, no special/added tokens counted). * `is_partial_element` (boolean): `true` when the chunk carries only a portion of one single source element whose content had to be divided across several chunks to respect the budget, `false` otherwise. * `text` (string): the contextualized chunk text. When `heading_path` is non-empty the text must begin with those headings, one per line and in order, followed by a newline and then the chunk body; the body must not be empty or whitespace-only. When `heading_path` is empty the text is the body alone. * Budget rule: for every emitted chunk `0 < token_count <= --max-tokens`, without exception. You may assume that for the provided corpus and any budget of at least 32 tokens the heading prefix plus one body word always fits. * `summary.json` is UTF-8 JSON with exactly these top-level keys: * `tokenizer_path` (string): absolute path of the tokenizer directory used. * `max_tokens` (integer): the budget of this run. * `merge_peers` (boolean): whether peer merging was active in this run. * `documents` (array): one object per successfully chunked source, ascending by `source`, each with exactly the keys `source` (string), `chunk_count` (integer), `token_total` (integer, sum of the document's `token_count` values), `max_chunk_tokens` (integer, 0 when the document produced no chunk), `mean_chunk_tokens` (number, `token_total / chunk_count` rounded to 2 decimals, 0.0 when the document produced no chunk), `partial_chunk_count` (integer, number of chunks of that document with `is_partial_element` true), `max_heading_depth` (integer, longest `heading_path` of that document, 0 when none), `page_numbers` (array of integers, ascending duplicate-free union of the document's chunk page numbers). * `totals` (object) with exactly the keys `document_count`, `chunk_count`, `token_total`, `partial_chunk_count` and `budget_violations`, all integers; `budget_violations` counts emitted chunks whose `token_count` exceeds `max_tokens` and must therefore be 0. * `skipped_files` (array of strings): ascending POSIX relative paths of corpus files ignored because of an unsupported extension. * On success `pack` exits 0 and the last non-empty line it writes to stdout is exactly `PACKED documents= chunks=<C> max_tokens=<M> merge_peers=<true|false>` with `<D>`, `<C>` and `<M>` matching the summary and the boolean spelled in lowercase. * `verify --out <dir>` re-reads `<dir>/chunks.jsonl` together with `<dir>/summary.json` (taking the budget and the tokenizer location from the summary) and re-checks: valid JSON lines carrying exactly the nine required keys; `token_count` equal to a freshly computed token count of `text`; `token_count` within the budget; `index` values forming `0..N-1` in ascending order; per-source ordinals forming `0..k-1` in ascending order; and `chunk_id` matching the `source`/`ordinal` spelling. When everything holds it exits 0 and writes a line starting with `VERIFIED` to stdout. When at least one check fails it exits 3, writes nothing containing `VERIFIED` to stdout, and writes at least one line starting with `VIOLATION` to stderr. * Failure handling: exit code 2 with a message beginning with `ERROR` on stderr when the `--corpus` directory does not exist, when `--max-tokens` is not an integer of at least 32, or when `verify` is pointed at a directory that lacks `chunks.jsonl` or `summary.json`. Exit codes 0, 2 and 3 are the only ones the tool may return. * Determinism: two runs of the same command must produce byte-identical `chunks.jsonl` and `summary.json`; nothing time-, host- or randomness-dependent may appear in the artifacts. * Finally, run the tool once and leave its artifacts in the repository: `python3 chunkpack.py pack --corpus assets/corpus --out out --max-tokens 128` so that `/home/user/chunkforge/out/chunks.jsonl` and `/home/user/chunkforge/out/summary.json` exist and are up to date.   
+
+Pochi
+💭 Thinking for 82 characters   
+I'll start by exploring the project structure and understanding the environment.   
+📂 Listing files in /home/user/chunkforge recursively ✔ 
+💭 Thinking for 63 characters   
+📖 Reading /home/user/chunkforge/assets/tokenizer/tokenizer_config.json ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/alpha_guide.md ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/beta_report.html ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/appendix/omega_notes.md ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/notes.txt ✔ 
+💭 Thinking for 112 characters   
+Let me examine the environment for available libraries and thebinary corpus files.   
+💫 Executing python3 -c "import docling; print(docling.__version__)" 2>&1; echo "---"; python3 -c "from transformers import AutoTokenizer; print('transformers ok')" 2>&1; echo "---"; python3 -c "from tokenizers import Tokenizer; print('tokenizers ok')" 2>&1; echo "---"; python3 --version ✔ 
+💫 Executing ls -la /home/user/chunkforge/assets/corpus/ && file /home/user/chunkforge/assets/corpus/delta_brief.pdf /home/user/chunkforge/assets/corpus/gamma_minutes.docx ✔ 
+💭 Thinking for 99 characters   
+💫 Executing python3 -c "from docling.document_converter import DocumentConverter; print('ok')" 2>&1; echo "---"; python3 -c "import docling.document_converter as m; print([x for x in dir(m)])" 2>&1 ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.document_loader import DocumentLoader
+" 2>&1; echo "---formats---"; python3 -c "
+from docling.datamodel.base_models import InputFormat
+print(list(InputFormat))
+" 2>&1 ✔ 
+💭 Thinking for 168 characters   
+Let me understand Docling's document model and how to extract elements with headings and pages.   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+print(type(doc))
+print([x for x in dir(doc) if not x.startswith('_')])
+" 2>&1 | tail -20 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+print('=== iterate_items ===')
+for it, lvl in doc.iterate_items():
+    print(lvl, type(it).__name__, getattr(it,'label',None), repr(getattr(it,'text','')[:60]))
+" 2>&1 | head -40 ✔ 
+💭 Thinking for 304 characters   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+import inspect
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+print(inspect.signature(doc.iterate_items))
+" 2>&1
+echo "=== item attrs ==="
+cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+for it, lvl in doc.iterate_items():
+    print(type(it).__name__, [a for a in dir(it) if not a.startswith('_') and a in ('text','label','orig','prov','heading','level','children','parent','self_ref','page_no','page_id','content_layer')])
+    break
+" 2>&1 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+for it, lvl in doc.iterate_items(with_groups=True):
+    print(lvl, type(it).__name__, getattr(it,'label',None), repr(getattr(it,'text','')[:40]))
+" 2>&1 | head -30 ✔ 
+💭 Thinking for 1709 characters   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+for it, lvl in doc.iterate_items():
+    if type(it).__name__ in ('TitleItem','SectionHeaderItem'):
+        print(type(it).__name__, 'label=',it.label, 'lvl=',lvl, 'text=',repr(it.text))
+        print('  attrs:', {k:getattr(it,k,None) for k in ('level','orig','prov')})
+" 2>&1 | head -30 ✔ 
+💭 Thinking for 7206 characters   
+Let me examine the PDF and DOCX conversion to understand page provenance and element structure.   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+for f in ['assets/corpus/delta_brief.pdf','assets/corpus/gamma_minutes.docx','assets/corpus/beta_report.html']:
+    print('========',f)
+    res = conv.convert(f)
+    doc = res.document
+    print('num_pages', doc.num_pages)
+    for it, lvl in doc.iterate_items():
+        prov = getattr(it,'prov',None)
+        pages = [p.page_no for p in prov] if prov else []
+        print(lvl, type(it).__name__, getattr(it,'label',None), 'hdr_lvl=',getattr(it,'level',None), 'pages=',pages, repr(getattr(it,'text','')[:50]))
+" 2>&1 | head -80 ✔ 
+💭 Thinking for 62667 characters   
+Let me verify the tokenizer loading, ContentLayer import, and table serialization details.   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from transformers import AutoTokenizer
+tok = AutoTokenizer.from_pretrained('assets/tokenizer', local_files_only=True)
+print('loaded', type(tok).__name__)
+print('enc', tok.encode('Hello world test', add_special_tokens=False))
+print('cnt', len(tok.encode('Alpha Operations Guide\nOperations\nDeployment\nRollout Waves\nRollback Drill\nWave one covers the internal staging fleet only.', add_special_tokens=False)))
+" 2>&1 | tail -10 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling_core.types.doc.common import ContentLayer
+print('CL', ContentLayer.BODY, ContentLayer.FURNITURE)
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/beta_report.html')
+doc = res.document
+print('--- BODY only ---')
+for it, lvl in doc.iterate_items(included_content_layers={ContentLayer.BODY}):
+    print(lvl, type(it).__name__, getattr(it,'label',None), repr(getattr(it,'text','')[:40]))
+" 2>&1 | tail -15 ✔ 
+💭 Thinking for 133 characters   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/beta_report.html')
+doc = res.document
+it0 = None
+for it, lvl in doc.iterate_items():
+    it0 = it
+    break
+cl = it0.content_layer
+print(type(cl), cl, cl.value)
+print('module', type(cl).__module__, type(cl).__name__)
+" 2>&1 | tail -8 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling_core.types.doc.common.content_layer import ContentLayer
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/beta_report.html')
+doc = res.document
+print('--- BODY only ---')
+for it, lvl in doc.iterate_items(included_content_layers={ContentLayer.BODY}):
+    print(lvl, type(it).__name__, getattr(it,'label',None), repr(getattr(it,'text','')[:40]))
+print('--- table access ---')
+res2 = conv.convert('assets/corpus/gamma_minutes.docx')
+doc2 = res2.document
+for it, lvl in doc2.iterate_items(included_content_layers={ContentLayer.BODY}):
+    if type(it).__name__=='TableItem':
+        g = it.data.grid
+        print('rows', len(g), 'cols', len(g[0]))
+        for row in g:
+            print([c.text for c in row])
+        print('self_refs', [c.self_ref for row in g for c in row])
+        break
+" 2>&1 | tail -20 ✔ 
+💭 Thinking for 18662 characters   
+Let me verify the token-count additivity property for BERT (important for efficient packing) and check thedocx ordering.   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from transformers import AutoTokenizer
+tok = AutoTokenizer.from_pretrained('assets/tokenizer', local_files_only=True)
+def c(s): return len(tok.encode(s, add_special_tokens=False))
+prefix='Alpha Operations Guide\nOperations\nDeployment\nRollout Waves\nRollback Drill\n'
+words=['Wave','one','covers','the','internal','staging','fleet','only.','Punctuation,','hyphen-word']
+body=' '.join(words)
+print('whole', c(prefix+body))
+print('prefix', c(prefix), 'sumwords', sum(c(w) for w in words), 'total', c(prefix)+sum(c(w) for w in words))
+# test independence with punctuation
+print('c(hello.)', c('hello.'), 'c(hello)', c('hello'))
+print('c(a b) vs c(a)+c(b)', c('a b'), c('a')+c(b))
+print('multi-token word', c('ZQXSENTINELALPHA'))
+" 2>&1 | tail -10 ✔ 
+💭 Thinking for 50281 characters   
+I now have enough understanding. Let me verify the docx element order with the BODY filter and check the table position, then write the tool.   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling_core.types.doc.common.content_layer import ContentLayer
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/gamma_minutes.docx')
+doc = res.document
+for it, lvl in doc.iterate_items(included_content_layers={ContentLayer.BODY}):
+    print(type(it).__name__, 'lvl=',getattr(it,'level',None), 'prov=',[p.page_no for p in (it.prov or [])], repr(getattr(it,'text','')[:45]))
+" 2>&1 | grep -v INFO | grep -v RapidOCR | grep -v 'Loading weights' | tail -12 ✔ 
+💭 Thinking for 61 characters   
+The order is correct. Now I'll write the `chunkpack.py` tool.   
+
+Pochi
+💭 Thinking for 82 characters   
+I'll start by exploring the project structure and understanding the environment.   
+📂 Listing files in /home/user/chunkforge recursively ✔ 
+💭 Thinking for 63 characters   
+📖 Reading /home/user/chunkforge/assets/tokenizer/tokenizer_config.json ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/alpha_guide.md ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/beta_report.html ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/appendix/omega_notes.md ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/notes.txt ✔ 
+💭 Thinking for 112 characters   
+Let me examine the environment for available libraries and thebinary corpus files.   
+💫 Executing python3 -c "import docling; print(docling.__version__)" 2>&1; echo "---"; python3 -c "from transformers import AutoTokenizer; print('transformers ok')" 2>&1; echo "---"; python3 -c "from tokenizers import Tokenizer; print('tokenizers ok')" 2>&1; echo "---"; python3 --version ✔ 
+💫 Executing ls -la /home/user/chunkforge/assets/corpus/ && file /home/user/chunkforge/assets/corpus/delta_brief.pdf /home/user/chunkforge/assets/corpus/gamma_minutes.docx ✔ 
+💭 Thinking for 99 characters   
+💫 Executing python3 -c "from docling.document_converter import DocumentConverter; print('ok')" 2>&1; echo "---"; python3 -c "import docling.document_converter as m; print([x for x in dir(m)])" 2>&1 ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.document_loader import DocumentLoader
+" 2>&1; echo "---formats---"; python3 -c "
+from docling.datamodel.base_models import InputFormat
+print(list(InputFormat))
+" 2>&1 ✔ 
+💭 Thinking for 168 characters   
+Let me understand Docling's document model and how to extract elements with headings and pages.   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+print(type(doc))
+print([x for x in dir(doc) if not x.startswith('_')])
+" 2>&1 | tail -20 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+print('=== iterate_items ===')
+for it, lvl in doc.iterate_items():
+    print(lvl, type(it).__name__, getattr(it,'label',None), repr(getattr(it,'text','')[:60]))
+" 2>&1 | head -40 ✔ 
+💭 Thinking for 304 characters   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+import inspect
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+print(inspect.signature(doc.iterate_items))
+" 2>&1
+echo "=== item attrs ==="
+cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+for it, lvl in doc.iterate_items():
+    print(type(it).__name__, [a for a in dir(it) if not a.startswith('_') and a in ('text','label','orig','prov','heading','level','children','parent','self_ref','page_no','page_id','content_layer')])
+    break
+" 2>&1 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+for it, lvl in doc.iterate_items(with_groups=True):
+    print(lvl, type(it).__name__, getattr(it,'label',None), repr(getattr(it,'text','')[:40]))
+" 2>&1 | head -30 ✔ 
+💭 Thinking for 1709 characters   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/alpha_guide.md')
+doc = res.document
+for it, lvl in doc.iterate_items():
+    if type(it).__name__ in ('TitleItem','SectionHeaderItem'):
+        print(type(it).__name__, 'label=',it.label, 'lvl=',lvl, 'text=',repr(it.text))
+        print('  attrs:', {k:getattr(it,k,None) for k in ('level','orig','prov')})
+" 2>&1 | head -30 ✔ 
+💭 Thinking for 7206 characters   
+Let me examine the PDF and DOCX conversion to understand page provenance and element structure.   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+for f in ['assets/corpus/delta_brief.pdf','assets/corpus/gamma_minutes.docx','assets/corpus/beta_report.html']:
+    print('========',f)
+    res = conv.convert(f)
+    doc = res.document
+    print('num_pages', doc.num_pages)
+    for it, lvl in doc.iterate_items():
+        prov = getattr(it,'prov',None)
+        pages = [p.page_no for p in prov] if prov else []
+        print(lvl, type(it).__name__, getattr(it,'label',None), 'hdr_lvl=',getattr(it,'level',None), 'pages=',pages, repr(getattr(it,'text','')[:50]))
+" 2>&1 | head -80 ✔ 
+💭 Thinking for 62667 characters   
+Let me verify the tokenizer loading, ContentLayer import, and table serialization details.   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from transformers import AutoTokenizer
+tok = AutoTokenizer.from_pretrained('assets/tokenizer', local_files_only=True)
+print('loaded', type(tok).__name__)
+print('enc', tok.encode('Hello world test', add_special_tokens=False))
+print('cnt', len(tok.encode('Alpha Operations Guide\nOperations\nDeployment\nRollout Waves\nRollback Drill\nWave one covers the internal staging fleet only.', add_special_tokens=False)))
+" 2>&1 | tail -10 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling_core.types.doc.common import ContentLayer
+print('CL', ContentLayer.BODY, ContentLayer.FURNITURE)
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/beta_report.html')
+doc = res.document
+print('--- BODY only ---')
+for it, lvl in doc.iterate_items(included_content_layers={ContentLayer.BODY}):
+    print(lvl, type(it).__name__, getattr(it,'label',None), repr(getattr(it,'text','')[:40]))
+" 2>&1 | tail -15 ✔ 
+💭 Thinking for 133 characters   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/beta_report.html')
+doc = res.document
+it0 = None
+for it, lvl in doc.iterate_items():
+    it0 = it
+    break
+cl = it0.content_layer
+print(type(cl), cl, cl.value)
+print('module', type(cl).__module__, type(cl).__name__)
+" 2>&1 | tail -8 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling_core.types.doc.common.content_layer import ContentLayer
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/beta_report.html')
+doc = res.document
+print('--- BODY only ---')
+for it, lvl in doc.iterate_items(included_content_layers={ContentLayer.BODY}):
+    print(lvl, type(it).__name__, getattr(it,'label',None), repr(getattr(it,'text','')[:40]))
+print('--- table access ---')
+res2 = conv.convert('assets/corpus/gamma_minutes.docx')
+doc2 = res2.document
+for it, lvl in doc2.iterate_items(included_content_layers={ContentLayer.BODY}):
+    if type(it).__name__=='TableItem':
+        g = it.data.grid
+        print('rows', len(g), 'cols', len(g[0]))
+        for row in g:
+            print([c.text for c in row])
+        print('self_refs', [c.self_ref for row in g for c in row])
+        break
+" 2>&1 | tail -20 ✔ 
+💭 Thinking for 18662 characters   
+Let me verify the token-count additivity property for BERT (important for efficient packing) and check thedocx ordering.   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from transformers import AutoTokenizer
+tok = AutoTokenizer.from_pretrained('assets/tokenizer', local_files_only=True)
+def c(s): return len(tok.encode(s, add_special_tokens=False))
+prefix='Alpha Operations Guide\nOperations\nDeployment\nRollout Waves\nRollback Drill\n'
+words=['Wave','one','covers','the','internal','staging','fleet','only.','Punctuation,','hyphen-word']
+body=' '.join(words)
+print('whole', c(prefix+body))
+print('prefix', c(prefix), 'sumwords', sum(c(w) for w in words), 'total', c(prefix)+sum(c(w) for w in words))
+# test independence with punctuation
+print('c(hello.)', c('hello.'), 'c(hello)', c('hello'))
+print('c(a b) vs c(a)+c(b)', c('a b'), c('a')+c(b))
+print('multi-token word', c('ZQXSENTINELALPHA'))
+" 2>&1 | tail -10 ✔ 
+💭 Thinking for 50281 characters   
+I now have enough understanding. Let me verify the docx element order with the BODY filter and check the table position, then write the tool.   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling_core.types.doc.common.content_layer import ContentLayer
+from docling.document_converter import DocumentConverter
+conv = DocumentConverter()
+res = conv.convert('assets/corpus/gamma_minutes.docx')
+doc = res.document
+for it, lvl in doc.iterate_items(included_content_layers={ContentLayer.BODY}):
+    print(type(it).__name__, 'lvl=',getattr(it,'level',None), 'prov=',[p.page_no for p in (it.prov or [])], repr(getattr(it,'text','')[:45]))
+" 2>&1 | grep -v INFO | grep -v RapidOCR | grep -v 'Loading weights' | tail -12 ✔ 
+💭 Thinking for 61 characters   
+The order is correct. Now I'll write the `chunkpack.py` tool.   
+💭 Thinking for 91654 characters   
+💭 Thinking for 65 characters   
+I now have a complete understanding of the environment. Let me write the `chunkpack.py` tool.   

@@ -1,0 +1,578 @@
+- Initializing MCP connections...
+You
+# Token-Budget-Aware Chunk Packing for Retrieval ## Background An offline retrieval service must ingest a small heterogeneous document corpus and turn it into embedding-ready chunks. Every chunk has to stay inside a hard token budget of the embedding model, must carry its section context and provenance, and the whole artifact has to be byte-for-byte reproducible so that downstream index builds can be cached. The container is fully air-gapped. Docling is pre-installed (CPU only, all model weights baked into the image) and a HuggingFace tokenizer directory is baked in as well. Do not install packages, download models, or contact any network service. ## Requirements Build a single-file command line tool `chunkpack.py` that converts, chunks, and audits the local corpus: * Convert every supported source document in the corpus and split it into chunks whose size is governed by a token budget measured with the baked-in tokenizer. * Emit one contextualized chunk record per line into a JSONL artifact, plus an aggregate summary. * Guarantee the budget: no emitted chunk may exceed it, including documents that contain a single element far larger than the budget, deeply nested section hierarchies, and tables. * Never drop content: every whitespace-separated word of a document's textual content (including table cell values) must appear in that document's emitted chunk texts. * Expose a self-audit subcommand that re-validates an existing artifact directory. ## Implementation Hints * Project path: `/home/user/chunkforge`. Create `chunkpack.py` there. * Corpus (read-only input, do not modify or add files): `/home/user/chunkforge/assets/corpus`. * Tokenizer: `/home/user/chunkforge/assets/tokenizer`. This local directory is the only tokenizer allowed; all token counting must be done with it. * Commands (always run with the project path as the working directory): * `python3 chunkpack.py pack --corpus <dir> --out <dir> --max-tokens <int> [--no-merge-peers]` * `python3 chunkpack.py verify --out <dir>` * `--corpus`, `--out` and `--max-tokens` are mandatory for `pack`. `--no-merge-peers` is optional: by default undersized neighbouring chunks that share the same section context are merged together while staying inside the budget; when the flag is given that merging must be switched off. * Source discovery: search `--corpus` recursively. Supported extensions (case-insensitive): `.md`, `.html`, `.docx`, `.pdf`. Every other file is ignored for chunking and recorded as skipped. A source is identified by its POSIX relative path with respect to the `--corpus` directory (e.g. `appendix/omega_notes.md`). All source orderings are ascending by that string. * `pack` writes exactly two artifacts into `--out` (creating the directory when missing and replacing any previous content of these two files): `chunks.jsonl` and `summary.json`. * `chunks.jsonl` is UTF-8, LF-terminated (no carriage returns), one JSON object per line, with a trailing newline after the last object. Chunks are grouped per source in ascending source order, and inside a source they keep the order in which the document is read. Each object has exactly these nine keys: * `chunk_id` (string): `"<source>#<ordinal>"` where `<ordinal>` is zero-padded to 4 digits (e.g. `alpha_guide.md#0003`). * `index` (integer): 0-based position of the chunk within the whole run; the values on the lines must be `0, 1, 2, ...` in ascending order. * `source` (string): POSIX relative path of the source document. * `ordinal` (integer): 0-based position of the chunk within its own source document. * `heading_path` (array of non-empty strings): the section-title ancestry of the chunk, outermost title first; an empty array when the chunk has no section context. * `page_numbers` (array of integers): ascending, duplicate-free page numbers the chunk's content comes from; an empty array when the source format carries no page provenance. * `token_count` (integer): the number of tokens the baked-in tokenizer produces for the value of `text` (plain tokenization, no special/added tokens counted). * `is_partial_element` (boolean): `true` when the chunk carries only a portion of one single source element whose content had to be divided across several chunks to respect the budget, `false` otherwise. * `text` (string): the contextualized chunk text. When `heading_path` is non-empty the text must begin with those headings, one per line and in order, followed by a newline and then the chunk body; the body must not be empty or whitespace-only. When `heading_path` is empty the text is the body alone. * Budget rule: for every emitted chunk `0 < token_count <= --max-tokens`, without exception. You may assume that for the provided corpus and any budget of at least 32 tokens the heading prefix plus one body word always fits. * `summary.json` is UTF-8 JSON with exactly these top-level keys: * `tokenizer_path` (string): absolute path of the tokenizer directory used. * `max_tokens` (integer): the budget of this run. * `merge_peers` (boolean): whether peer merging was active in this run. * `documents` (array): one object per successfully chunked source, ascending by `source`, each with exactly the keys `source` (string), `chunk_count` (integer), `token_total` (integer, sum of the document's `token_count` values), `max_chunk_tokens` (integer, 0 when the document produced no chunk), `mean_chunk_tokens` (number, `token_total / chunk_count` rounded to 2 decimals, 0.0 when the document produced no chunk), `partial_chunk_count` (integer, number of chunks of that document with `is_partial_element` true), `max_heading_depth` (integer, longest `heading_path` of that document, 0 when none), `page_numbers` (array of integers, ascending duplicate-free union of the document's chunk page numbers). * `totals` (object) with exactly the keys `document_count`, `chunk_count`, `token_total`, `partial_chunk_count` and `budget_violations`, all integers; `budget_violations` counts emitted chunks whose `token_count` exceeds `max_tokens` and must therefore be 0. * `skipped_files` (array of strings): ascending POSIX relative paths of corpus files ignored because of an unsupported extension. * On success `pack` exits 0 and the last non-empty line it writes to stdout is exactly `PACKED documents= chunks=<C> max_tokens=<M> merge_peers=<true|false>` with `<D>`, `<C>` and `<M>` matching the summary and the boolean spelled in lowercase. * `verify --out <dir>` re-reads `<dir>/chunks.jsonl` together with `<dir>/summary.json` (taking the budget and the tokenizer location from the summary) and re-checks: valid JSON lines carrying exactly the nine required keys; `token_count` equal to a freshly computed token count of `text`; `token_count` within the budget; `index` values forming `0..N-1` in ascending order; per-source ordinals forming `0..k-1` in ascending order; and `chunk_id` matching the `source`/`ordinal` spelling. When everything holds it exits 0 and writes a line starting with `VERIFIED` to stdout. When at least one check fails it exits 3, writes nothing containing `VERIFIED` to stdout, and writes at least one line starting with `VIOLATION` to stderr. * Failure handling: exit code 2 with a message beginning with `ERROR` on stderr when the `--corpus` directory does not exist, when `--max-tokens` is not an integer of at least 32, or when `verify` is pointed at a directory that lacks `chunks.jsonl` or `summary.json`. Exit codes 0, 2 and 3 are the only ones the tool may return. * Determinism: two runs of the same command must produce byte-identical `chunks.jsonl` and `summary.json`; nothing time-, host- or randomness-dependent may appear in the artifacts. * Finally, run the tool once and leave its artifacts in the repository: `python3 chunkpack.py pack --corpus assets/corpus --out out --max-tokens 128` so that `/home/user/chunkforge/out/chunks.jsonl` and `/home/user/chunkforge/out/summary.json` exist and are up to date.   
+
+Pochi
+I'll start by exploring the project structure and understanding the corpus, tokenizer, and any existing code.   
+📂 Listing files in /home/user/chunkforge recursively ✔ 
+📂 Listing files in /home/user/chunkforge/assets/tokenizer recursively ✔ 
+📖 Reading /home/user/chunkforge/assets/tokenizer/tokenizer_config.json ✔ 
+📖 Reading /home/user/chunkforge/assets/tokenizer/tokenizer.json ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/alpha_guide.md ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/beta_report.html ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/appendix/omega_notes.md ✔ 
+📖 Reading /home/user/chunkforge/assets/corpus/notes.txt ✔ 
+Now let me check what Python packages are available and test the tokenizer:   
+💫 Executing python3 -c "from transformers import AutoTokenizer; t = AutoTokenizer.from_pretrained('/home/user/chunkforge/assets/tokenizer', local_files_only=True); print(type(t).__name__); print(t('hello world', add_special_tokens=False)['input_ids']); print(len(t('hello world', add_special_tokens=False)['input_ids']))" ✔ 
+💫 Executing python3 -c "import docling; print(docling.__version__)" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+result = dc.convert('/home/user/chunkforge/assets/corpus/beta_report.html')
+doc = result.document
+print('Type:', type(doc).__name__)
+print('Items:', len(doc.iterate_items()))
+for item in doc.iterate_items():
+    print(type(item).__name__, '|', item.label, '|', repr(item.text[:80]) if hasattr(item, 'text') else '')
+" ✖ "Command exited with code 1"
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+result = dc.convert('/home/user/chunkforge/assets/corpus/beta_report.html')
+doc = result.document
+print('Type:', type(doc).__name__)
+count = 0
+for item in doc.iterate_items():
+    count += 1
+    print(type(item).__name__, '|', item.label, '|', repr(item.text[:100]) if hasattr(item, 'text') and item.text else 'NO_TEXT')
+    if count > 30:
+        print('...truncated')
+        break
+print('Total items:', sum(1 for _ in doc.iterate_items()))
+" ✖ "Command exited with code 1"
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+result = dc.convert('/home/user/chunkforge/assets/corpus/beta_report.html')
+doc = result.document
+print('Type:', type(doc).__name__)
+count = 0
+for item, level in doc.iterate_items():
+    count += 1
+    print('level=', level, '|', type(item).__name__, '|', item.label, '|', repr(item.text[:100]) if hasattr(item, 'text') and item.text else 'NO_TEXT')
+    if count > 30:
+        print('...truncated')
+        break
+print('Total items:', sum(1 for _ in doc.iterate_items()))
+" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+result = dc.convert('/home/user/chunkforge/assets/corpus/beta_report.html')
+doc = result.document
+for item, level in doc.iterate_items():
+    if item.label == 'table':
+        print('Table item type:', type(item).__name__)
+        print('Has text:', hasattr(item, 'text'))
+        print('Has data:', hasattr(item, 'data'))
+        print('Has cells:', hasattr(item, 'cells'))
+        if hasattr(item, 'data'):
+            print('Data:', item.data)
+        if hasattr(item, 'cells'):
+            print('Cells:', item.cells)
+        # Try to export table
+        if hasattr(item, 'export_to_dataframe'):
+            df = item.export_to_dataframe()
+            print('DF:', df)
+        # Check what methods exist
+        print('Methods:', [m for m in dir(item) if not m.startswith('_')])
+" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+result = dc.convert('/home/user/chunkforge/assets/corpus/beta_report.html')
+doc = result.document
+for item, level in doc.iterate_items():
+    if item.label == 'table':
+        # Get text from table cells
+        cells_text = [cell.text for cell in item.data.table_cells]
+        print('All cell texts:', cells_text)
+        # Try export_to_markdown
+        md = item.export_to_markdown()
+        print('Markdown:', md)
+" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+
+# Test PDF
+result = dc.convert('/home/user/chunkforge/assets/corpus/delta_brief.pdf')
+doc = result.document
+print('PDF items:')
+for item, level in doc.iterate_items():
+    print('  level=', level, '|', type(item).__name__, '|', item.label, '|', repr(item.text[:100]) if hasattr(item, 'text') and item.text else 'NO_TEXT')
+
+# Test DOCX
+result2 = dc.convert('/home/user/chunkforge/assets/corpus/gamma_minutes.docx')
+doc2 = result2.document
+print('DOCX items:')
+for item, level in doc2.iterate_items():
+    print('  level=', level, '|', type(item).__name__, '|', item.label, '|', repr(item.text[:100]) if hasattr(item, 'text') and item.text else 'NO_TEXT')
+
+# Test MD
+result3 = dc.convert('/home/user/chunkforge/assets/corpus/alpha_guide.md')
+doc3 = result3.document
+print('MD items:')
+for item, level in doc3.iterate_items():
+    print('  level=', level, '|', type(item).__name__, '|', item.label, '|', repr(item.text[:80]) if hasattr(item, 'text') and item.text else 'NO_TEXT')
+" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+
+# Check table in DOCX
+result = dc.convert('/home/user/chunkforge/assets/corpus/gamma_minutes.docx')
+doc = result.document
+for item, level in doc.iterate_items():
+    if item.label == 'table':
+        cells_text = [cell.text for cell in item.data.table_cells]
+        print('DOCX table cells:', cells_text)
+        md = item.export_to_markdown()
+        print('DOCX table markdown:', md)
+        df = item.export_to_dataframe()
+        print('DOCX table df:', df)
+" ✔ 
+Now let me check Docling for page provenance:   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+
+result = dc.convert('/home/user/chunkforge/assets/corpus/delta_brief.pdf')
+doc = result.document
+for item, level in doc.iterate_items():
+    prov = item.prov
+    print('item:', type(item).__name__, 'label:', item.label)
+    print('  prov:', prov)
+    if prov:
+        for p in prov:
+            print('    page:', p.page_no, 'bbox:', p.bbox)
+    print()
+" ✔ 
+Now I have a good understanding of the Docling API and the corpus. Let me also check if there are any existing Python files:   
+🔍 Searching for **/*.py in /home/user/chunkforge ✔ 
+Now let me plan and build the tool. Let me first understand the full scope of what's needed: 1. **Docling parsing**: Convert .md, .html, .docx, .pdf 2. **Heading path tracking**: Walk through Docling items, track section hierarchy 3. **Table handling**: Extract cell text from tables, treat as content 4. **Token counting**: Use the baked-in BERT tokenizer 5. **Chunking**: Split content respecting token budget, with heading prefix 6. **Peer merging**: Merge undersized neighboring chunks with same heading_path 7. **Output**: chunks.jsonl + summary.json 8. **Verify**: Re-validate existing output Let me now create the tool:   
+✏️  Writing /home/user/chunkforge/chunkpack.py ✖ "The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()"
+The connection was interrupted. Let me continue writing the file:   
+✏️  Writing /home/user/chunkforge/chunkpack.py ✔ 
+Now let me test the pack command:   
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py pack --corpus assets/corpus --out out --max-tokens 128 2>&1 ✖ "Command exited with code 1"
+The issue is that `corpus_dir` might be a relative path. Let me fix the discovery function to resolve the corpus path properly:   
+🔧 Applying diff to /home/user/chunkforge/chunkpack.py ✔ 
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py pack --corpus assets/corpus --out out --max-tokens 128 2>&1 ✔ 
+It ran. Let me check the output:   
+💫 Executing cd /home/user/chunkforge && cat out/summary.json ✔ 
+💫 Executing cd /home/user/chunkforge && head -50 out/chunks.jsonl | python3 -c "import sys,json; [print(json.dumps(json.loads(l), indent=2)) for l in sys.stdin]" 2>&1 | head -100 ✔ 
+I see a problem: the heading paths have an empty string at the beginning. This is because Docling gives `level` starting at 1 for the title, but my heading stack logic is off. Let me look at the heading stack more carefully. The issue is that `_level` from `iterate_items()` for the title "Alpha Operations Guide" is 1, but my heading stack starts empty. When level is 1, the stack should have 1 element (the title), but I'm padding with empty strings first. Let me fix the heading stack logic:   
+🔧 Applying diff to /home/user/chunkforge/chunkpack.py ✔ 
+💫 Executing cd /home/user/chunkforge && rm -rf out && python3 chunkpack.py pack --corpus assets/corpus --out out --max-tokens 128 2>&1 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 -c "
+import json
+with open('out/chunks.jsonl') as f:
+    for line in f:
+        ch = json.loads(line)
+        print(f'{ch[\"chunk_id\"]} idx={ch[\"index\"]} ord={ch[\"ordinal\"]} hp={ch[\"heading_path\"]} tk={ch[\"token_count\"]} partial={ch[\"is_partial_element\"]}')
+        print(f'  text[:100]: {ch[\"text\"][:100]}')
+" ✔ 
+Now I see several issues: 1. The heading paths for alpha_guide.md are missing the intermediate headings like "Operations", "Deployment", "Rollout Waves". The MD parsing in Docling gives all items at level=1. This is a Docling behavior for markdown - it seems to flatten the hierarchy. Let me check this more carefully. 2. The beta_report.html heading path looks correct (2-level hierarchy). 3. The gamma_minutes.docx heading path looks correct. 4. **Content completeness**: The beta_report.html chunk #0000 includes the table text? Let me check - the table text is "Region Q1 Q2 Total Zurich 8200 10220 18420 Dublin 7400 9110 16510 Osaka 6100 7350 13450". Let me verify. 5. The gamma_minutes.docx chunk #0002 has the table cell text but it's merged with the "Action Items" heading. The "Minutes approved without objection." text after the table should also be included. Let me check these issues:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+
+# Check MD heading levels
+result = dc.convert('assets/corpus/alpha_guide.md')
+doc = result.document
+for item, level in doc.iterate_items():
+    label = item.label
+    text = (item.text or '')[:60]
+    print(f'level={level} | {label:20s} | {text}')
+" ✔ 
+So Docling flattens all MD headings to level=1. The heading hierarchy needs to be inferred from the markdown heading levels (H1, H2, H3, etc.), not from Docling's `_level`. Let me check if Docling provides heading level information via the item itself:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+
+result = dc.convert('assets/corpus/alpha_guide.md')
+doc = result.document
+for item, level in doc.iterate_items():
+    if item.label in ('title', 'section_header', 'section-header'):
+        # Check all attributes
+        print(f'item: {item.text[:40]}')
+        print(f'  level from iterate: {level}')
+        # Check if there's a heading level attr
+        for attr in dir(item):
+            if 'level' in attr.lower() or 'heading' in attr.lower():
+                try:
+                    val = getattr(item, attr)
+                    if not callable(val):
+                        print(f'  {attr}: {val}')
+                except:
+                    pass
+        print()
+" ✔ 
+There it is. Docling items have a `.level` attribute that gives the actual heading level (1=h1, 2=h2, etc.). The `_level` from `iterate_items()` is different. Let me also check what level the title gets: The title "Alpha Operations Guide" has no `.level` attribute printed (probably 0 or None). Let me check:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+result = dc.convert('assets/corpus/alpha_guide.md')
+doc = result.document
+for item, level in doc.iterate_items():
+    if item.label in ('title',):
+        print(f'item: {item.text[:40]}, has level attr: {hasattr(item, \"level\")}')
+        if hasattr(item, 'level'):
+            print(f'  level: {item.level}')
+" ✔ 
+OK so title items don't have a `.level`. Let me now fix the heading stack logic to use the item's `.level` for section headers, and treat titles as level 1:   
+🔧 Applying diff to /home/user/chunkforge/chunkpack.py ✔ 
+Now let me also check beta_report.html heading levels and fix the heading path for beta_report. The issue is that the beta_report has headings "Beta Quarterly Report" (h1), "Regional Revenue" (h2), "Outlook" (h2). But the current output shows `['Beta Quarterly Report', 'Regional Revenue']` as a 2-level path. Let me verify what Docling gives for HTML:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+result = dc.convert('assets/corpus/beta_report.html')
+doc = result.document
+for item, level in doc.iterate_items():
+    if item.label in ('title', 'section_header', 'section-header'):
+        lvl = getattr(item, 'level', None)
+        print(f'item: {item.text[:40]}, iterate_level={level}, item.level={lvl}')
+    else:
+        print(f'body: {item.label}, text={str(item.text)[:60]}')
+" ✖ "Command exited with code 1"
+OK, so for HTML, the section headers have `item.level=1` (h2 in HTML becomes level=1 in Docling). That means the heading stack logic with `item.level` will treat "Regional Revenue" as level 1, which is wrong - it should be nested under "Beta Quarterly Report". The problem is that Docling's `.level` for HTML section headers starts at 1 for h2 elements (not h1). The `_level` from `iterate_items()` seems to be the actual nesting depth. Let me reconsider: For HTML: - "Beta Quarterly Report" (title, iterate_level=1) - "Regional Revenue" (section_header, iterate_level=2, item.level=1) - "Outlook" (section_header, iterate_level=2, item.level=1) For MD: - "Alpha Operations Guide" (title, iterate_level=1) - "Operations" (section_header, iterate_level=1, item.level=1) - "Deployment" (section_header, iterate_level=1, item.level=2) - "Rollout Waves" (section_header, iterate_level=1, item.level=3) - "Rollback Drill" (section_header, iterate_level=1, item.level=4) - "Capacity Notes" (section_header, iterate_level=1, item.level=2) For DOCX: - "Gamma Steering Minutes" (section_header, iterate_level=2, item.level=1) - "Decisions" (section_header, iterate_level=3, item.level=2) - "Action Items" (section_header, iterate_level=3, item.level=2) So the pattern is: `_level` from `iterate_items()` is the actual nesting depth I should use for the heading stack. The `item.level` is the raw heading level from the source format and doesn't account for titles or other structural elements. Let me revert to using `_level` from iterate_items() but handle it correctly. The issue was that I was padding with empty strings before. The correct approach: the heading_stack should have `_level - 1` entries before the current heading (since titles have _level=1 and become the first entry):   
+🔧 Applying diff to /home/user/chunkforge/chunkpack.py ✔ 
+Wait, but then for MD where all items have _level=1, the heading_stack would always have length 1 (just the current heading), which means we'd lose the hierarchy. The problem is that Docling gives _level=1 for all MD items. Let me look at this differently. For MD, Docling gives _level=1 for everything, but `item.level` gives the actual H1/H2/H3 level. For HTML, Docling gives _level reflecting actual nesting, but `item.level` is wrong. I need to use both: prefer `item.level` when available and meaningful (for MD), and fall back to `_level` (for HTML/DOCX/PDF). Actually, let me think about this differently. The key insight: for MD, `item.level` gives the correct heading hierarchy (1=h1, 2=h2, etc.). For other formats, `_level` from iterate_items() gives the correct nesting. So the logic should be: - If the item has a `.level` attribute and it's an integer > 0, use it as the heading level. - Otherwise (title items, HTML, DOCX, PDF section headers without .level), use `_level`. But wait, for HTML section headers, `item.level` exists and is 1 for h2 elements. That's wrong for our purposes because "Regional Revenue" should be level 2 (nested under the h1 title). Let me check what happens with the title in HTML: The title "Beta Quarterly Report" has no `.level`. Section headers have `.level=1`. But `_level` is 2 for both section headers, correctly nesting them under the title. So the correct approach: use `_level` from iterate_items() as the primary nesting level, but for MD where all items have `_level=1`, use `item.level` instead. How to detect MD? The source file extension. Or I can detect: if `item.level` exists and `_level` is 1 for all items, use `item.level`. But that's fragile. Better approach: pass the source format info and use different strategies. Or: always use `_level` from iterate_items(), but for MD files, Docling doesn't give proper nesting. Let me check if there's a way to get better nesting from Docling for MD. Actually, looking again at the Docling output for MD: all items have `_level=1`. This means Docling treats the MD as flat. But `item.level` gives us the heading levels. So for MD, I should use `item.level` to reconstruct the hierarchy. Let me use a hybrid approach: use `item.level` when the item has it AND the source is MD. For other formats, use `_level`. Actually, a cleaner approach: use `item.level` when available, but for HTML `item.level` starts at 1 for h2. So I need to detect the format. Let me just check: for non-MD formats, does `item.level` exist? Let me check DOCX and PDF:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+
+# Check DOCX
+result = dc.convert('assets/corpus/gamma_minutes.docx')
+doc = result.document
+print('=== DOCX ===')
+for item, level in doc.iterate_items():
+    if item.label in ('title', 'section_header', 'section-header'):
+        lvl = getattr(item, 'level', 'N/A')
+        print(f'item: {item.text[:40]}, _level={level}, item.level={lvl}')
+
+# Check PDF
+result2 = dc.convert('assets/corpus/delta_brief.pdf')
+doc2 = result2.document
+print('=== PDF ===')
+for item, level in doc2.iterate_items():
+    if item.label in ('title', 'section_header', 'section-header'):
+        lvl = getattr(item, 'level', 'N/A')
+        print(f'item: {item.text[:40]}, _level={level}, item.level={lvl}')
+" 2>&1 | grep -v 'INFO\\|Loading' ✔ 
+Interesting findings: - **MD**: `_level` is always 1, `item.level` gives correct H1/H2/H3 hierarchy - **HTML**: `_level` gives correct nesting, `item.level` exists but is 1 for h2 - **DOCX**: `_level` gives correct nesting, `item.level` exists but is 1 for top-level - **PDF**: both `_level` and `item.level` are 1 (flat) So the pattern is: `_level` works for HTML and DOCX, but not for MD. `item.level` works for MD but not for others. The cleanest approach: use `_level` from iterate_items() as the primary nesting indicator, but for MD files, use `item.level` instead. I'll need to pass the file extension to the extraction function. Actually, wait. Let me reconsider. For MD, `item.level` gives us the raw heading level (1, 2, 3, 4). But `_level` is always 1. So I need to reconstruct the hierarchy from `item.level`. For non-MD, `_level` works correctly. Let me just check if `_level` is always 1 for all items in a document (indicating MD), and if so, use `item.level`. Let me update the code:   
+🔧 Applying diff to /home/user/chunkforge/chunkpack.py ✔ 
+Now update the call site to pass the extension:   
+🔧 Applying diff to /home/user/chunkforge/chunkpack.py ✔ 
+Now let me also check: does Docling give us the "Delta Incident Brief" title for the PDF? Looking at the output earlier, the PDF had items all at level=1 with section_header labels "Delta Incident Brief", "Summary", "Follow Up". But "Delta Incident Brief" should be the title. Let me check if it's a title or section_header: Looking back at the test output: ``` item: SectionHeaderItem label: section_header | 'Delta Incident Brief' ``` It's a section_header. So the heading path for PDF chunks should be `['Delta Incident Brief', 'Summary']` and `['Delta Incident Brief', 'Follow Up']`. Let me verify after the fix. But wait, for the PDF, `_level` is 1 for everything. So with `_level`, "Delta Incident Brief", "Summary", and "Follow Up" would all be at level 1, meaning they'd replace each other rather than nest. Let me check what `item.level` gives for PDF: From the test: `item.level=1` for all PDF headings. So both approaches give level 1 for PDF. That means the PDF headings won't nest properly. But looking at the actual content, "Delta Incident Brief" is the document title, and "Summary" and "Follow Up" are subsections. The heading path should be `['Delta Incident Brief', 'Summary']` and `['Delta Incident Brief', 'Follow Up']`. Since Docling doesn't give us proper nesting for PDF, I need another approach. Let me check if there's a way to detect the document title vs section headers. Actually, looking at the PDF items more carefully: "Delta Incident Brief" has no body content after it before "Summary" appears. Maybe I can detect that the first heading is the document title and subsequent ones at the same level are subsections. Actually, looking at the original requirement more carefully: the heading_path should reflect the "section-title ancestry". For PDF, Docling gives all at level 1. I think the correct interpretation is that "Delta Incident Brief" is the top-level title, and "Summary"/"Follow Up" are nested under it. Let me take a different approach: for formats where `_level` is always 1 (MD and PDF), I need a different strategy. For MD, `item.level` works. For PDF, I'll treat the first heading as the document title (level 1) and subsequent same-level headings as level 2. Actually, let me re-examine the PDF structure. Let me look at the raw items more carefully:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+from docling.document_converter import DocumentConverter
+dc = DocumentConverter()
+result = dc.convert('assets/corpus/delta_brief.pdf')
+doc = result.document
+for item, level in doc.iterate_items():
+    label = item.label
+    text = (item.text or '')[:80] if hasattr(item, 'text') and item.text else 'NO_TEXT'
+    lvl = getattr(item, 'level', 'N/A')
+    print(f'_level={level} item.level={lvl} | {label:20s} | {text}')
+" 2>&1 | grep -v 'INFO\\|Loading' ✔ 
+For PDF, all headings have `_level=1` and `item.level=1`. I need a different heuristic. The first heading should be treated as the document title (level 1), and subsequent headings as level 2 (nested under it). Let me update the extraction logic to handle this:   
+🔧 Applying diff to /home/user/chunkforge/chunkpack.py ✔ 
+Now let me also address another issue I noticed: the beta_report.html has a table that should be included in the chunk text. Let me check the current output for beta_report: The chunk `beta_report.html#0000` has text: "Beta Quarterly Report\nRegional Revenue\nThe table below lists the revenue recorded per region for the first two quarters." But the table content ("Region Q1 Q2 Total Zurich 8200 10220 18420 Dublin 7400 9110 16510 Osaka 6100 7350 13450") should also be in this chunk. Let me check if it's there:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+import json
+with open('out/chunks.jsonl') as f:
+    for line in f:
+        ch = json.loads(line)
+        if 'beta_report' in ch['source']:
+            print(ch['text'])
+            print('---')
+" ✔ 
+The table content is there. Now let me also check the gamma_minutes.docx:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+import json
+with open('out/chunks.jsonl') as f:
+    for line in f:
+        ch = json.loads(line)
+        if 'gamma' in ch['source']:
+            print(ch['text'])
+            print('---')
+" ✔ 
+The content looks complete. The table cell text "Owner Action Due Reliability Publish the freeze calendar Week 12 Reporting Draft the migration runbook Week 14" is there, and the "Minutes approved without objection." text after the table is also included. Now let me re-run the pack to get fresh output with the heading fixes:   
+💫 Executing cd /home/user/chunkforge && rm -rf out && python3 chunkpack.py pack --corpus assets/corpus --out out --max-tokens 128 2>&1 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 -c "
+import json
+with open('out/chunks.jsonl') as f:
+    for line in f:
+        ch = json.loads(line)
+        print(f'{ch[\"chunk_id\"]} idx={ch[\"index\"]} ord={ch[\"ordinal\"]} hp={ch[\"heading_path\"]} tk={ch[\"token_count\"]} partial={ch[\"is_partial_element\"]}')
+" ✔ 
+The heading paths look much better now. Let me verify the output: - `alpha_guide.md#0000`: `['Alpha Operations Guide']` - correct, title only - `alpha_guide.md#0001`: `['Operations', 'Deployment', 'Rollout Waves', 'Rollback Drill']` - correct, full heading hierarchy - `alpha_guide.md#0002-0008`: `['Operations', 'Capacity Notes']` - correct - `beta_report.html#0000`: `['Beta Quarterly Report', 'Regional Revenue']` - correct - `beta_report.html#0001`: `['Beta Quarterly Report', 'Outlook']` - correct - `delta_brief.pdf#0000`: `['Delta Incident Brief', 'Summary']` - correct - `delta_brief.pdf#0001`: `['Delta Incident Brief', 'Follow Up']` - correct - `gamma_minutes.docx#0000`: `['Gamma Steering Minutes']` - correct - `gamma_minutes.docx#0001`: `['Gamma Steering Minutes', 'Decisions']` - correct - `gamma_minutes.docx#0002`: `['Gamma Steering Minutes', 'Decisions', 'Action Items']` - correct Now let me run the verify command:   
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py verify --out out 2>&1 ✔ 
+Verification passes. Now let me test some edge cases: 1. Test with `--no-merge-peers`: 2. Test with a different token budget: 3. Test that the output is deterministic: 4. Test error handling:   
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py pack --corpus assets/corpus --out out_nomerge --max-tokens 128 --no-merge-peers 2>&1 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py verify --out out_nomerge 2>&1 ✔ 
+Now test determinism:   
+💫 Executing cd /home/user/chunkforge && rm -rf out2 && python3 chunkpack.py pack --corpus assets/corpus --out out2 --max-tokens 128 2>&1 && diff out/chunks.jsonl out2/chunks.jsonl && diff out/summary.json out2/summary.json && echo "IDENTICAL" ✖ "Command exited with code 127"
+💫 Executing cd /home/user/chunkforge && python3 -c "
+with open('out/chunks.jsonl', 'rb') as f1, open('out2/chunks.jsonl', 'rb') as f2:
+    if f1.read() == f2.read():
+        print('chunks.jsonl: IDENTICAL')
+    else:
+        print('chunks.jsonl: DIFFERENT')
+with open('out/summary.json', 'rb') as f1, open('out2/summary.json', 'rb') as f2:
+    if f1.read() == f2.read():
+        print('summary.json: IDENTICAL')
+    else:
+        print('summary.json: DIFFERENT')
+" ✔ 
+Deterministic output confirmed. Now let me test error handling:   
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py pack --corpus nonexistent --out out --max-tokens 128 2>&1; echo "EXIT: $?" ✔ 
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py pack --corpus assets/corpus --out out --max-tokens 10 2>&1; echo "EXIT: $?" ✔ 
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py verify --out nonexistent 2>&1; echo "EXIT: $?" ✔ 
+Error handling works correctly. Now let me test with a different budget to make sure the chunking works properly:   
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py pack --corpus assets/corpus --out out_256 --max-tokens 256 2>&1 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py verify --out out_256 2>&1 ✔ 
+Now let me also verify content completeness. I need to make sure every whitespace-separated word from the source documents appears in the chunk texts. Let me write a quick verification:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+import json
+from collections import Counter
+from pathlib import Path
+from docling.document_converter import DocumentConverter
+
+dc = DocumentConverter()
+corpus = Path('assets/corpus')
+
+# For each source, collect all words from Docling and from chunks
+with open('out/chunks.jsonl') as f:
+    all_chunks = [json.loads(line) for line in f]
+
+# Group chunks by source
+from collections import defaultdict
+chunks_by_source = defaultdict(list)
+for ch in all_chunks:
+    chunks_by_source[ch['source']].append(ch)
+
+for source in sorted(chunks_by_source.keys()):
+    file_path = corpus / source
+    doc = dc.convert(str(file_path)).document
+    
+    # Collect all words from Docling
+    doc_words = []
+    for item, level in doc.iterate_items():
+        if item.label == 'table':
+            if hasattr(item, 'data') and item.data and hasattr(item.data, 'table_cells'):
+                for cell in item.data.table_cells:
+                    if cell.text and cell.text.strip():
+                        doc_words.extend(cell.text.strip().split())
+        elif hasattr(item, 'text') and item.text:
+            doc_words.extend(item.text.strip().split())
+    
+    # Collect all words from chunks
+    chunk_words = []
+    for ch in chunks_by_source[source]:
+        # Remove heading prefix to get body
+        text = ch['text']
+        prefix = '\n'.join(ch['heading_path']) + '\n' if ch['heading_path'] else ''
+        if prefix and text.startswith(prefix):
+            body = text[len(prefix):]
+        else:
+            body = text
+        chunk_words.extend(body.split())
+    
+    # Compare
+    doc_counter = Counter(doc_words)
+    chunk_counter = Counter(chunk_words)
+    
+    missing = doc_counter - chunk_counter
+    extra = chunk_counter - doc_counter
+    
+    if missing:
+        print(f'{source}: MISSING words: {dict(missing)}')
+    if extra:
+        print(f'{source}: EXTRA words: {dict(extra)}')
+    if not missing and not extra:
+        print(f'{source}: OK ({len(doc_words)} doc words, {len(chunk_words)} chunk words)')
+" 2>&1 | grep -v 'INFO\|Loading' ✔ 
+The "missing" words are the heading texts that appear in the heading_path prefix but not in the body. The requirement says "every whitespace-separated word of a document's textual content (including table cell values) must appear in that document's emitted chunk texts." The heading text IS in the chunk text (it's in the heading prefix), but my comparison was only checking the body. So this is actually fine - the heading words are in the chunk text, just in the prefix part. But wait, let me re-read the requirement: "every whitespace-separated word of a document's textual content must appear in that document's emitted chunk texts." The heading words DO appear in the chunk texts (in the heading prefix). Let me verify by checking the full text:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+import json
+from collections import Counter
+
+with open('out/chunks.jsonl') as f:
+    all_chunks = [json.loads(line) for line in f]
+
+# Check alpha_guide.md heading words
+for ch in all_chunks:
+    if ch['source'] == 'alpha_guide.md':
+        words = ch['text'].split()
+        if 'Operations' in words:
+            print(f'Found Operations in chunk {ch[\"chunk_id\"]}')
+            break
+else:
+    print('Operations NOT found in any alpha_guide chunk text')
+    
+# Check all heading words
+heading_words = ['Alpha', 'Operations', 'Guide', 'Deployment', 'Rollout', 'Waves', 'Rollback', 'Drill', 'Capacity', 'Notes']
+for ch in all_chunks:
+    if ch['source'] == 'alpha_guide.md':
+        text_words = set(ch['text'].split())
+        for hw in heading_words:
+            if hw in text_words:
+                print(f'  {hw} found in {ch[\"chunk_id\"]}')
+" ✔ 
+All heading words appear in the chunk texts. The content completeness requirement is satisfied. Now let me check one more edge case: the "no content dropped" requirement. Let me verify that the body text of each chunk, when concatenated per source, contains all body words from the original document:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+import json
+from collections import Counter
+from pathlib import Path
+from docling.document_converter import DocumentConverter
+
+dc = DocumentConverter()
+corpus = Path('assets/corpus')
+
+with open('out/chunks.jsonl') as f:
+    all_chunks = [json.loads(line) for line in f]
+
+from collections import defaultdict
+chunks_by_source = defaultdict(list)
+for ch in all_chunks:
+    chunks_by_source[ch['source']].append(ch)
+
+all_ok = True
+for source in sorted(chunks_by_source.keys()):
+    file_path = corpus / source
+    doc = dc.convert(str(file_path)).document
+    
+    # Collect all body words from Docling (non-heading items)
+    doc_body_words = []
+    for item, level in doc.iterate_items():
+        label = item.label
+        is_heading = label in ('title', 'section_header', 'section-header')
+        if is_heading:
+            continue
+        if label == 'table':
+            if hasattr(item, 'data') and item.data and hasattr(item.data, 'table_cells'):
+                for cell in item.data.table_cells:
+                    if cell.text and cell.text.strip():
+                        doc_body_words.extend(cell.text.strip().split())
+        elif hasattr(item, 'text') and item.text:
+            doc_body_words.extend(item.text.strip().split())
+    
+    # Collect all body words from chunks (text minus heading prefix)
+    chunk_body_words = []
+    for ch in chunks_by_source[source]:
+        text = ch['text']
+        prefix = '\n'.join(ch['heading_path']) + '\n' if ch['heading_path'] else ''
+        if prefix and text.startswith(prefix):
+            body = text[len(prefix):]
+        else:
+            body = text
+        chunk_body_words.extend(body.split())
+    
+    doc_counter = Counter(doc_body_words)
+    chunk_counter = Counter(chunk_body_words)
+    
+    missing = doc_counter - chunk_counter
+    extra = chunk_counter - doc_counter
+    
+    if missing:
+        print(f'{source}: MISSING body words: {dict(missing)}')
+        all_ok = False
+    if extra:
+        print(f'{source}: EXTRA body words: {dict(extra)}')
+        all_ok = False
+    if not missing and not extra:
+        print(f'{source}: body words OK ({len(doc_body_words)} doc, {len(chunk_body_words)} chunk)')
+
+if all_ok:
+    print('ALL SOURCES: content complete')
+" 2>&1 | grep -v 'INFO\|Loading' ✔ 
+All body content is preserved. Now let me also clean up and make sure the final artifacts are in place as required:   
+💫 Executing cd /home/user/chunkforge && rm -rf out out2 out_nomerge out_256 && python3 chunkpack.py pack --corpus assets/corpus --out out --max-tokens 128 2>&1 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py verify --out out 2>&1 ✔ 
+Let me do a final review of the complete file to make sure everything is clean:   
+📖 Reading /home/user/chunkforge/chunkpack.py ✔ 
+I notice there's an unused `import traceback` at the top. Let me remove it. Also, let me double-check the `--max-tokens` type handling - the argparse already uses `type=int`, so the `int()` conversion in `cmd_pack` is redundant. But it's fine as a safety measure. Let me clean up the unused import:   
+🔧 Applying diff to /home/user/chunkforge/chunkpack.py ✔ 
+Now let me run the final pack and verify one more time to make sure everything is clean:   
+💫 Executing cd /home/user/chunkforge && rm -rf out && python3 chunkpack.py pack --corpus assets/corpus --out out --max-tokens 128 2>&1 ✔ 
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py verify --out out 2>&1 ✔ 
+Let me also verify the output files exist and look correct:   
+💫 Executing ls -la /home/user/chunkforge/out/ ✔ 
+💫 Executing cd /home/user/chunkforge && python3 -c "
+import json
+with open('out/summary.json') as f:
+    s = json.load(f)
+print(json.dumps(s, indent=2))
+" ✔ 
+Let me do a quick sanity check on the chunks.jsonl format - verify trailing newline and LF line endings:   
+💫 Executing cd /home/user/chunkforge && python3 -c "
+with open('out/chunks.jsonl', 'rb') as f:
+    data = f.read()
+# Check no carriage returns
+if b'\r' in data:
+    print('FAIL: contains carriage returns')
+else:
+    print('OK: no carriage returns')
+# Check trailing newline
+if data.endswith(b'\n'):
+    print('OK: ends with newline')
+else:
+    print('FAIL: does not end with newline')
+# Count lines
+lines = data.split(b'\n')
+# Last line should be empty (trailing newline)
+print(f'Total lines (including empty last): {len(lines)}')
+print(f'Last line empty: {lines[-1] == b\"\"}')
+" ✔ 
+18 chunks + 1 trailing newline = 19 lines. Let me also run a quick test to make sure the verify catches violations correctly:   
+💫 Executing cd /home/user/chunkforge && mkdir -p out_bad && python3 -c "
+import json
+# Create a bad chunks.jsonl with a budget violation
+with open('out/chunks.jsonl') as f:
+    lines = [json.loads(l) for l in f if l.strip()]
+
+# Tamper with one chunk
+lines[0]['token_count'] = 999
+
+with open('out_bad/chunks.jsonl', 'w') as f:
+    for l in lines:
+        f.write(json.dumps(l) + '\n')
+
+# Copy summary
+import shutil
+shutil.copy('out/summary.json', 'out_bad/summary.json')
+" && python3 chunkpack.py verify --out out_bad 2>&1; echo "EXIT: $?" ✔ 
+Verification correctly catches violations and exits with code 3. Let me clean up the test directories:   
+💫 Executing rm -rf /home/user/chunkforge/out_bad ✔ 
+Now let me do a final check - verify the `--max-tokens` arg parsing works when it's not an integer:   
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py pack --corpus assets/corpus --out out --max-tokens abc 2>&1; echo "EXIT: $?" ✔ 
+Argparse handles the non-integer case and exits with code 2. Let me also verify there are no other issues. Let me check the `--tokenizer` flag works:   
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py pack --corpus assets/corpus --out out_test --max-tokens 128 --tokenizer assets/tokenizer 2>&1 && python3 chunkpack.py verify --out out_test 2>&1 && rm -rf out_test ✔ 
+Everything works. Let me do one final review of the complete code to make sure it's clean and correct:   
+📖 Reading /home/user/chunkforge/chunkpack.py ✔ 
+The code looks clean and complete. Let me verify the final output one more time:   
+💫 Executing cd /home/user/chunkforge && python3 chunkpack.py verify --out out 2>&1 && echo "---" && ls -la out/ ✔ 
+🎉 Task Completed
+Created `/home/user/chunkforge/chunkpack.py` — a single-file CLI tool that converts, chunks, and audits a document corpus with token-budget-aware chunking.
+
+**Key features:**
+
+- **`pack` subcommand**: Converts `.md`, `.html`, `.docx`, `.pdf` files from a corpus directory into embedding-ready chunks respecting a hard token budget. Emits `chunks.jsonl` and `summary.json` into the output directory.
+- **`verify` subcommand**: Re-validates existing artifact directories, re-checking token counts, budget compliance, key completeness, index/ordinal sequences, and chunk_id formatting.
+- **Token counting**: Uses the baked-in BERT tokenizer at `assets/tokenizer` with `add_special_tokens=False`.
+- **Heading hierarchy**: Handles format-specific Docling quirks — uses `item.level` for Markdown, `_level` from `iterate_items()` for HTML/DOCX, and a first-heading-as-title heuristic for PDF.
+- **Table handling**: Extracts all cell text from Docling `TableItem` data, space-joined.
+- **Content completeness**: Every whitespace-separated word from source documents (including table cells) appears in the emitted chunk texts. Verified with a word-level diff showing 100% body-word preservation across all 5 documents.
+- **Budget guarantee**: No emitted chunk exceeds `--max-tokens`. The alpha_guide.md capacity notes (a single very long element) are correctly split into 8 partial chunks.
+- **Peer merging**: Undersized neighboring chunks with the same heading_path are merged when combined tokens fit within budget. Disabled with `--no-merge-peers`.
+- **Determinism**: Two runs produce byte-identical output.
+- **Error handling**: Exit code 2 for missing corpus, invalid max-tokens, or missing artifact files. Exit code 3 for verification failures. Exit code 0 on success.
+
+**Artifacts generated** at `/home/user/chunkforge/out/`:
+- `chunks.jsonl` — 18 chunks across 5 documents (max_tokens=128, merge_peers=true)
+- `summary.json` — aggregate statistics with 0 budget violations
+   
+  

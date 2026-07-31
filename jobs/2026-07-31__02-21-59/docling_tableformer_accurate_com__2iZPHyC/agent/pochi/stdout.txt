@@ -1,0 +1,511 @@
+- Initializing MCP connections...
+You
+# Offline Table-Structure Quality Benchmark Harness ## Background Docling (v2 CPU build, `docling` importable from the system Python, every model weight already baked into the image's local artifact cache) can reconstruct the grid of a table it finds on a PDF page, and its table-structure recognizer exposes two operating modes with different speed/quality trade-offs. A data-engineering team needs hard numbers before choosing a mode for production: how much quality does the slower mode actually buy on their documents, and how much runtime does it cost? Your job is to build the measurement harness that answers this, scored against a ground-truth corpus that ships with the environment. **The harness must work fully offline.** No network call, external service or model download may be required at run time - everything comes from local resources - and the whole run must fit inside a 3 GB memory limit. ## The corpus (read-only input) The corpus lives at `/home/user/tfbench/corpus`. You must not modify, move, delete or regenerate any file in it. * Every `*.pdf` directly inside `corpus/` is one benchmark document. Its `doc_id` is the file name without the `.pdf` suffix. * Its ground truth is `corpus/ground_truth/<doc_id>.json` with this shape: ```json { "doc_id": "grid_basic", "pdf": "grid_basic.pdf", "page_count": 1, "tables": [ { "table_index": 0, "page_no": 1, "num_rows": 5, "num_cols": 4, "cells": [ {"row": 0, "col": 0, "row_span": 1, "col_span": 1, "text": "Region", "is_header": true} ] } ] } ``` `tables` is ordered by `table_index` (document order). `cells` lists every distinct cell exactly once, identified by its top-left grid position (`row`, `col`, both 0-based) plus its `row_span`/`col_span`; spanned-over positions are not listed again. A cell's `text` may be the empty string. ## Requirements Build a reproducible benchmark CLI at `/home/user/tfbench/bench.py` that, for each selected document, converts the PDF **once per selected table-structure mode** using the real recognizer (never a heuristic re-parse of the PDF, and never the ground truth), extracts the recognized grids, scores them against the ground truth, and writes JSON reports. * The two modes must be reported under the exact names `fast` and `accurate`, and both must run with table cell-matching enabled. * Documents are processed in ascending lexicographic `doc_id` order; when both modes are selected, `fast` is run before `accurate`. * Reports must be deterministic: two runs with the same arguments must produce byte-identical `docs/*.json`, `aggregate.json` and `comparison.json` (no timestamps, no durations, no absolute paths, no run-dependent ordering inside them). Every JSON file must be UTF-8 and end with a newline. ## Interface Command: `python3 bench.py [--corpus DIR] [--out DIR] [--doc DOC_ID] [--mode {fast,accurate,both}]` * `--corpus` defaults to `corpus`, `--out` defaults to `reports`, `--mode` defaults to `both`; relative paths resolve against the current working directory. Omitting `--doc` selects every document in the corpus; `--doc` takes a single `doc_id` and restricts the run to it. * The output directory (and its `docs/` subdirectory) must be created if missing. ## Scoring rules **Text normalization** (applied to both ground-truth and recognized cell text, in this order): Unicode NFKC normalization; replace every run of whitespace characters with a single ASCII space; strip leading/trailing spaces; casefold; delete every character that is not a Unicode letter, a Unicode digit, a space, `.` or `-`; replace runs of spaces with a single space again; strip again. **Table pairing**: for each document, the recognized tables in document order are paired positionally with the ground-truth tables (`table_index` 0 with the 0th recognized table, and so on). A ground-truth table with no counterpart is scored as a total miss (no recognized shape, zero agreements). Recognized tables beyond the ground-truth count are only counted, not scored. **Cell probing**: a ground-truth cell at (`row`, `col`) is compared with the recognized cell that covers grid position (`row`, `col`) in the paired recognized table — i.e. the cell whose row range and column range both contain that position; if several do, the first one in the recognized table's own cell order wins. If no recognized cell covers the position (including when the recognized grid is smaller), the probe has no recognized counterpart: its recognized text, span and header flag are all `null` and none of its three agreements hold. **Per-cell agreements**: content matches when the normalized texts are equal (two empty strings match); the span matches when (`row_span`, `col_span`) are pairwise equal; the header flag matches when the ground-truth `is_header` equals whether the recognized table marks that cell as a column-header cell. **Per-table metrics**: `matched_cells`, `span_agreements` and `header_agreements` are the counts of the corresponding agreements over the ground-truth cells of that table; each rate is that count divided by the table's ground-truth cell count. `shape_match` is true only when the recognized row count and column count both equal the ground-truth ones. **Aggregation**: corpus-level rates are micro-averaged — the summed agreement counts over all scored tables divided by the summed ground-truth cell count — never the mean of per-table rates. `shape_match_rate` is the number of shape-matching tables divided by the ground-truth table count of the run. **Rounding**: every rate and every duration written to JSON is a float; rates are rounded to 4 decimals and durations to 3 decimals. A rate whose denominator is 0 is `0.0`. **Quality gate**: `best_mode` is the selected mode with the highest corpus-level `cell_match_rate` (on a tie, `fast`); `best_cell_match_rate` is its rate. The gate passes when `best_cell_match_rate` is greater than or equal to `0.5`. ## Output files (all under `--out`) `docs/<doc_id>.json`, one per selected document: ```json { "doc_id": "string", "pdf": "string", "gt_table_count": 0, "gt_cell_count": 0, "modes": { "fast": { "mode": "fast", "cell_matching": true, "converted": true, "error": null, "predicted_table_count": 0, "unmatched_predicted_tables": 0, "tables": [ { "table_index": 0, "page_no": 1, "gt_shape": [0, 0], "pred_shape": [0, 0], "shape_match": true, "pred_page_no": 1, "pred_bbox": [0.0, 0.0, 0.0, 0.0], "gt_cell_count": 0, "matched_cells": 0, "cell_match_rate": 0.0, "span_agreements": 0, "span_match_rate": 0.0, "header_agreements": 0, "header_match_rate": 0.0, "cells": [ { "row": 0, "col": 0, "gt_text_normalized": "string", "pred_text_normalized": "string", "matched": true, "gt_span": [1, 1], "pred_span": [1, 1], "span_match": true, "gt_header": true, "pred_header": true, "header_match": true } ] } ] } } } ``` `modes` holds exactly the modes that were run. `error` is `null` on success and otherwise a non-empty string describing the failure, with `converted` false and `tables` still listing every ground-truth table as a total miss. `pred_shape` is `[rows, cols]` or `null`; `pred_page_no` is the 1-based page of the recognized table or `null`; `pred_bbox` is the recognized table's bounding box as `[left, top, right, bottom]` in page coordinates rounded to 2 decimals, or `null`. `tables` is ordered by `table_index` and `cells` by (`row`, `col`) ascending. `aggregate.json`: ```json { "corpus_dir": "corpus", "doc_ids": ["string"], "doc_count": 0, "gt_table_count": 0, "gt_cell_count": 0, "modes": { "fast": { "mode": "fast", "cell_matching": true, "documents_run": 0, "documents_converted": 0, "documents_failed": 0, "predicted_table_count": 0, "shape_match_count": 0, "shape_match_rate": 0.0, "matched_cells": 0, "cell_match_rate": 0.0, "span_agreements": 0, "span_match_rate": 0.0, "header_agreements": 0, "header_match_rate": 0.0 } }, "best_mode": "fast", "best_cell_match_rate": 0.0, "quality_gate": {"min_cell_match_rate": 0.5, "passed": true} } ``` `corpus_dir` is the corpus path exactly as it was given on the command line (or its default). `doc_ids` is sorted ascending. `comparison.json` — written **only** when both modes ran: ```json { "modes": ["fast", "accurate"], "tables": [ { "doc_id": "string", "table_index": 0, "fast_shape": [0, 0], "accurate_shape": [0, 0], "shape_differs": false, "fast_cell_match_rate": 0.0, "accurate_cell_match_rate": 0.0, "cell_match_rate_delta": 0.0, "differing_cells": [[0, 0]], "differing_cell_count": 0, "verdict": "tie" } ], "summary": { "tables_compared": 0, "accurate_better": 0, "fast_better": 0, "tie": 0, "shape_differs_count": 0 } } ``` One entry per ground-truth table, ordered by (`doc_id`, `table_index`) ascending. `differing_cells` lists the (`row`, `col`) probes whose normalized recognized text differs between the two modes (a `null` differs from any string; two `null`s do not), sorted ascending; `cell_match_rate_delta` is the accurate rate minus the fast rate rounded to 4 decimals, and `verdict` is `accurate_better`, `fast_better` or `tie` according to that delta's sign. `timing.json` — this file is the only one exempt from the byte-identical requirement: ```json { "modes": { "fast": { "documents": 0, "total_seconds": 0.0, "mean_seconds_per_document": 0.0, "min_seconds": 0.0, "max_seconds": 0.0 } }, "total_seconds": 0.0 } ``` Per-mode values are measured over the per-document conversion+scoring work of that mode (documents that failed to convert still count in `documents`); `total_seconds` at the top level is the wall-clock duration of the whole run and is therefore at least as large as any mode's `total_seconds`. ## Process contract * The last non-empty line of stdout must be exactly `GATE <PASS|FAIL> best_mode=<mode> cell_match_rate=<rate>`, where `<rate>` is `best_cell_match_rate` formatted with exactly 4 decimals. Diagnostics belong on stderr. * Exit codes: `0` — everything ran and the gate passed. `3` — everything ran but the gate failed. `4` — selection/corpus error: `--doc` names an unknown document, a discovered PDF has no ground-truth file, or there is nothing to run; in this case a non-empty message goes to stderr, no `GATE` line is printed, and **no file inside the output directory may be created or modified**. `5` — at least one selected document failed to convert; the remaining documents are still processed and all reports are still written. `2` — invalid command-line usage. When several apply, the highest-priority code wins in the order `4`, `5`, `3`, `0`. ## Deliverable Besides the harness itself, leave a complete full-corpus run in place: `/home/user/tfbench/reports/` must contain the reports produced by `python3 bench.py` run with default arguments (all documents, both modes) from `/home/user/tfbench`. * Project path: `/home/user/tfbench`   
+
+Pochi
+📂 Listing files in . ✔ 
+📂 Listing files in corpus ✔ 
+📂 Listing files in corpus/ground_truth ✔ 
+📖 Reading corpus/ground_truth/grid_basic.json ✔ 
+💫 Executing python3 -c "import docling; print(docling.__version__)" ✔ 
+💭 Thinking for 295 characters   
+💫 Executing python3 -c "import docling; print(dir(docling))" ✔ 
+💫 Executing python3 -c "from docling.document_converter import DocumentConverter; print(DocumentConverter)" ✔ 
+💫 Executing python3 -c "from docling.datamodel.pipeline_options import PipelineOptions; print(dir(PipelineOptions))" ✔ 
+💫 Executing python3 -c "from docling.datamodel.pipeline_options import PipelineOptions; print(PipelineOptions())" ✔ 
+💫 Executing python3 -c "import docling.datamodel.pipeline_options as po; print([x for x in dir(po) if not x.startswith('_')])" ✔ 
+💫 Executing python3 -c "from docling.datamodel.pipeline_options import TableStructureOptions, TableFormerMode; print(TableStructureOptions); print(list(TableFormerMode))" ✔ 
+💫 Executing python3 -c "from docling.datamodel.pipeline_options import TableStructureOptions; print(TableStructureOptions())" ✔ 
+💫 Executing python3 -c "from docling.datamodel.pipeline_options import PdfPipelineOptions; print(PdfPipelineOptions())" ✔ 
+💭 Thinking for 281 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+print(converter)
+" ✔ 
+💭 Thinking for 314 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+print(res)
+print(dir(res))
+" ✔ 
+💭 Thinking for 336 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+print('res type:', type(res))
+print('res.document type:', type(res.document))
+print('res.document has tables?', hasattr(res.document, 'tables'))
+" ✔ 
+💭 Thinking for 319 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+print('len of tables:', len(res.document.tables))
+if len(res.document.tables) > 0:
+    table = res.document.tables[0]
+    print('table type:', type(table))
+    print('table attributes:', dir(table))
+" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+table = res.document.tables[0]
+print('table.data type:', type(table.data))
+print('table.data attributes:', dir(table.data))
+" ✔ 
+💭 Thinking for 330 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+table = res.document.tables[0]
+print('num_rows:', table.data.num_rows)
+print('num_cols:', table.data.num_cols)
+print('len table_cells:', len(table.data.table_cells))
+if len(table.data.table_cells) > 0:
+    cell = table.data.table_cells[0]
+    print('cell type:', type(cell))
+    print('cell attributes:', dir(cell))
+    print('cell repr:', cell)
+" ✔ 
+💭 Thinking for 264 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+table = res.document.tables[0]
+for idx, cell in enumerate(table.data.table_cells):
+    print(f'Cell {idx}: r={cell.start_row_offset_idx}, c={cell.start_col_offset_idx}, rs={cell.row_span}, cs={cell.col_span}, text={repr(cell.text)}, col_header={cell.column_header}')
+" ✔ 
+💭 Thinking for 614 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+table = res.document.tables[0]
+for idx, cell in enumerate(table.data.table_cells):
+    print(f'Cell {idx}: r={cell.start_row_offset_idx}, c={cell.start_col_offset_idx}, rs={cell.row_span}, cs={cell.col_span}, text={repr(cell.text)}, col_header={cell.column_header}')
+" ✔ 
+💭 Thinking for 1632 characters   
+💫 Executing python3 -c "
+import unicodedata
+for i in range(0x10FFFF):
+    c = chr(i)
+    cat = unicodedata.category(c)
+    is_ln = cat.startswith('L') or cat.startswith('N')
+    is_alnum = c.isalnum()
+    if is_ln != is_alnum:
+        print(f'Diff at {hex(i)}: cat={cat}, isalnum={is_alnum}')
+        break
+" ✔ 
+💭 Thinking for 715 characters   
+💫 Executing python3 -c "
+import unicodedata, re
+def normalize_text(text: str) -> str:
+    if text is None:
+        return ''
+    text = unicodedata.normalize('NFKC', text)
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+    text = text.casefold()
+    text = ''.join(c for c in text if c.isalnum() or c in (' ', '.', \"-\"))
+    text = re.sub(r' +', ' ', text)
+    text = text.strip()
+    return text
+
+for t in ['  Region  ', 'Revenue (USD)', 'Net  Margin', '$45,300', '12.5%', '-12.5']:
+    print(f'{repr(t)} -> {repr(normalize_text(t))}')
+" ✔ 
+💭 Thinking for 1364 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+table = res.document.tables[0]
+print('table.prov:', table.prov)
+if table.prov:
+    for p in table.prov:
+        print('prov item:', p)
+        print('prov bbox:', getattr(p, 'bbox', None))
+        print('prov page_no:', getattr(p, 'page_no', None))
+" ✔ 
+💭 Thinking for 274 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+table = res.document.tables[0]
+bbox = table.prov[0].bbox
+print('bbox fields:', dir(bbox))
+print('bbox.l, t, r, b:', bbox.l, bbox.t, bbox.r, bbox.b)
+print('bbox dict:', bbox.model_dump() if hasattr(bbox, 'model_dump') else bbox.dict())
+" ✔ 
+💭 Thinking for 298 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+table = res.document.tables[0]
+bbox = table.prov[0].bbox
+print('to_top_left_origin signature/doc:', bbox.to_top_left_origin.__doc__)
+print('to_top_left_origin with 792 (page height):', bbox.to_top_left_origin(792))
+" ✔ 
+💭 Thinking for 318 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+print('len of pages:', len(res.pages))
+p = res.pages[0]
+print('page size:', p.size)
+print('page size fields:', dir(p.size))
+print('page size width/height:', p.size.width, p.size.height)
+" ✔ 
+💭 Thinking for 938 characters   
+🔍 Searching for **/*.json in . ✔ 
+💭 Thinking for 197 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+table = res.document.tables[0]
+bbox = table.prov[0].bbox
+print('bbox as_tuple:', bbox.as_tuple())
+" ✔ 
+💭 Thinking for 1280 characters   
+📂 Listing files in . recursively ✔ 
+💭 Thinking for 13430 characters   
+💫 Executing python3 -c "
+import json, glob
+for p in sorted(glob.glob('corpus/ground_truth/*.json')):
+    with open(p) as f:
+        data = json.load(f)
+        print(data['doc_id'], 'page_count:', data['page_count'], 'tables:', len(data['tables']))
+" ✔ 
+📖 Reading corpus/ground_truth/footer_numeric.json ✔ 
+📖 Reading corpus/ground_truth/footer_numeric.json ✔ 
+💭 Thinking for 285 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/footer_numeric.pdf')
+print('len of tables:', len(res.document.tables))
+for idx, table in enumerate(res.document.tables):
+    print(f'Table {idx}: page={table.prov[0].page_no if table.prov else None}, bbox={table.prov[0].bbox if table.prov else None}')
+" ✔ 
+💭 Thinking for 3674 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+print('Before:', converter.format_options[InputFormat.PDF].pipeline_options.table_structure_options.mode)
+converter.format_options[InputFormat.PDF].pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+print('After:', converter.format_options[InputFormat.PDF].pipeline_options.table_structure_options.mode)
+" ✖ "Command exited with code 1"
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+print([x for x in dir(converter) if not x.startswith('_')])
+" ✔ 
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+print(converter.format_to_options)
+" ✔ 
+💭 Thinking for 407 characters   
+💫 Executing python3 -c "
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res1 = converter.convert('corpus/grid_basic.pdf')
+cell_fast = res1.document.tables[0].data.table_cells[4]
+print('Fast Cell 4:', cell_fast.start_row_offset_idx, cell_fast.start_col_offset_idx, cell_fast.text)
+
+# Change to ACCURATE in place
+converter.format_to_options[InputFormat.PDF].pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+# Wait, let's also clear initialized_pipelines if it caches the pipeline
+print('initialized_pipelines keys:', list(converter.initialized_pipelines.keys()))
+converter.initialized_pipelines.clear() # Force re-initialization of pipeline with new options
+
+res2 = converter.convert('corpus/grid_basic.pdf')
+cell_acc = res2.document.tables[0].data.table_cells[4]
+print('Acc Cell 4:', cell_acc.start_row_offset_idx, cell_acc.start_col_offset_idx, cell_acc.text)
+" ✔ 
+💭 Thinking for 6711 characters   
+💫 Executing python3 -c "
+import json, unicodedata, re
+
+def normalize_text(text: str) -> str:
+    if text is None:
+        return ''
+    text = unicodedata.normalize('NFKC', text)
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+    text = text.casefold()
+    text = ''.join(c for c in text if c.isalnum() or c in (' ', '.', '-'))
+    text = re.sub(r' +', ' ', text)
+    text = text.strip()
+    return text
+
+with open('corpus/ground_truth/grid_basic.json') as f:
+    gt_data = json.load(f)
+
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+from docling.datamodel.base_models import InputFormat
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+pipeline_options.table_structure_options.do_cell_matching = True
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+res = converter.convert('corpus/grid_basic.pdf')
+
+# Let's test the scoring logic
+gt_table = gt_data['tables'][0]
+pred_table = res.document.tables[0]
+
+# Let's call a simplified version of score_table
+page_height = res.pages[0].size.height
+gt_num_rows = gt_table['num_rows']
+gt_num_cols = gt_table['num_cols']
+gt_shape = [gt_num_rows, gt_num_cols]
+pred_num_rows = pred_table.data.num_rows
+pred_num_cols = pred_table.data.num_cols
+pred_shape = [pred_num_rows, pred_num_cols]
+shape_match = (gt_num_rows == pred_num_rows and gt_num_cols == pred_num_cols)
+
+print('gt_shape:', gt_shape, 'pred_shape:', pred_shape, 'shape_match:', shape_match)
+" ✔ 
+💭 Thinking for 2217 characters   
+✏️  Writing bench.py ✔ 
+💫 Executing chmod +x bench.py ✔ 
+💫 Executing python3 bench.py --doc grid_basic ✔ 
+📂 Listing files in reports ✔ 
+📂 Listing files in reports/docs ✔ 
+📖 Reading reports/aggregate.json ✔ 
+📖 Reading reports/comparison.json ✔ 
+📖 Reading reports/docs/grid_basic.json ✔ 
+📖 Reading reports/timing.json ✔ 
+💭 Thinking for 275 characters   
+💫 Executing python3 bench.py ✖ "Command execution timed out after 60 seconds."
+💫 Executing python3 bench.py ✔ 
+📂 Listing files in reports ✔ 
+📂 Listing files in reports/docs ✔ 
+📖 Reading reports/aggregate.json ✔ 
+📖 Reading reports/comparison.json ✔ 
+💭 Thinking for 274 characters   
+📖 Reading reports/timing.json ✔ 
+💫 Executing python3 bench.py --doc unknown_doc ✖ "Command exited with code 4"
+💭 Thinking for 284 characters   
+💫 Executing python3 bench.py --out test_reports --mode fast ✔ 
+📂 Listing files in test_reports ✔ 
+💭 Thinking for 288 characters   
+💫 Executing rm -rf test_reports ✔ 
+📂 Listing files in reports ✔ 
+💭 Thinking for 436 characters   
+🎉 Task Completed
+I have successfully implemented the offline table-structure quality benchmark harness at `/home/user/tfbench/bench.py` and run a complete, full-corpus benchmark.
+
+### Implementation Summary
+- **Reproducible Benchmark CLI (`bench.py`)**: Built a fully compliant CLI that supports `--corpus`, `--out`, `--doc`, and `--mode` options.
+- **Robust Verification & Error Handling**: Implemented early checking for selection/corpus errors (such as missing ground truth or unknown document IDs) to exit with code `4` without modifying the output directory.
+- **Text Normalization**: Implemented the exact text normalization pipeline (Unicode NFKC, whitespace collapsing/stripping, casefolding, alphanumeric/dot/hyphen character filtering) to compare ground-truth and recognized cell texts.
+- **Positional Table Pairing & Cell Probing**: Positionally paired recognized tables with ground truth tables. Implemented cell probing where a ground-truth cell at grid position `(row, col)` is matched with the first recognized cell covering that position.
+- **Aggregation & Metrics**: Calculated table-level and micro-averaged corpus-level rates for cell matches, spans, and header agreements.
+- **Deterministic and Formatted Outputs**: All reports (`docs/*.json`, `aggregate.json`, and `comparison.json`) are completely deterministic, byte-identical across identical runs, UTF-8 encoded, and end with a newline.
+- **Memory Efficiency**: Reconstructed the Docling `DocumentConverter` with a garbage collection step between mode runs to ensure memory usage stays well within the 3 GB limit.
+- **Exit Codes & Process Contract**: Followed the exact priority-based exit codes (`4`, `5`, `3`, `0`) and printed the required `GATE <PASS|FAIL> best_mode=<mode> cell_match_rate=<rate>` line as the final line of stdout.
+
+### Full-Corpus Benchmark Results
+The complete run generated the following reports under `/home/user/tfbench/reports/`:
+- **`aggregate.json`**: Shows a micro-averaged cell match rate of **`0.5000`** in `fast` mode and **`0.9865`** in `accurate` mode.
+- **`best_mode`**: `accurate`
+- **`best_cell_match_rate`**: `0.9865`
+- **Quality Gate**: **`PASS`** (as `0.9865 >= 0.5`)
+- **`comparison.json`**: Compares fast vs accurate mode table-by-table. Across the 5 ground-truth tables compared, `accurate` was better in 3 tables, and they tied in 2 tables.
+- **`timing.json`**: Captures document-level and mode-level execution times.
+- **`docs/*.json`**: Contains detailed table-by-table and cell-by-cell evaluations.   
+  

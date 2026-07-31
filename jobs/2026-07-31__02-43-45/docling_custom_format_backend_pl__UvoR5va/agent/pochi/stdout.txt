@@ -1,0 +1,531 @@
+- Initializing MCP connections...
+You
+# Teach Docling a New Input Format (RCP/1.0) ## Background Docling is preinstalled in this container (`import docling`, distribution `docling-slim` 2.115.0, `docling-core` 2.87.1, Python 3.12) together with all of its model weights. **The container has no network access**: nothing may be downloaded, and no external or cloud service may be contacted. Only preinstalled packages may be used. A lab publishes its protocols in a small in-house plain-text format called **RCP/1.0** (`.rcp`). Downstream teams want those protocols in the same document model, exports and chunk stream that Docling already produces for its natively supported formats, so RCP must become a first-class Docling input format rather than a side-channel parser. ## The RCP/1.0 format An RCP file is UTF-8 text with LF line endings and is read line by line. 1. The **first line** must be exactly `%RCP/1.0`. 2. Then comes the **header block**: every line has the form `<key>=<value>`, where `<key>` matches `[a-z][a-z0-9_]*` and `<value>` is the rest of the line with surrounding whitespace stripped. The header block ends at the first line that is exactly `%%`. Keys `id` and `title` are required and must have a non-empty value; other keys are allowed and carry no meaning. A repeated key is an error. 3. Everything after the `%%` line is the **body**. Blank lines (empty or whitespace-only) carry no content; they only terminate the block they follow. Every other body line must be exactly one of: * `S<n>> <text>` with `<n>` in `1`..`6` — a section heading of level `<n>`. * `P> <text>` — a paragraph. * `N> <text>` — an ordered step. A run of consecutive `N>` lines is one ordered list. * `B> <text>` — a bullet. A run of consecutive `B>` lines is one unordered list. * `A> <text>` — an annotation. * `F> <ref> :: <caption>` — a figure reference with a caption. * A line starting with `|` — one table row. A run of consecutive table-row lines is one table. The cells of a row are obtained by dropping the leading `|`, then dropping one trailing `|` if present, then splitting on `|` and stripping each cell. The first row of a table is its column-header row, and every row of the same table must yield the same number of cells. A file that violates any rule above (bad magic line, malformed or unterminated header, repeated header key, missing/empty `id` or `title`, unrecognized body line, ragged table) is **malformed**. ## Requirements Fixtures live under `/home/user/project/corpus` (`clean/`, `mixed/`, `malformed/`, `unsupported/`); they are inputs, not templates for your output. ### 1. RCP as a Docling input format Docling's own conversion entry point must handle `.rcp` inputs. Expose `build_converter()` in `/home/user/project/rcp_plugin.py`; it must return a `docling.document_converter.DocumentConverter` instance that: * converts `.rcp` documents given as a filesystem path **and** as an in-memory Docling document stream named `<something>.rcp`, reporting conversion success and returning a Docling document; * still converts natively supported Markdown (`.md`) documents successfully through the same converter instance; * reports a conversion **failure** status for a malformed `.rcp` file instead of letting an exception escape, when the caller asks for errors not to be raised; * does **not** report success for any other input format (e.g. `.csv`). A converted RCP document must carry the following structure: * Its document name is the header `id` value. * Its body starts with a single title element whose text is the header `title` value. * Each `S<n>>` line becomes a section-heading element whose heading level equals `<n>` and whose text is the line's text. A heading is nested inside the closest preceding heading of a smaller level (if any); every content element is nested inside the closest preceding heading. * Each `P>` line becomes a plain text element with that text. * Each `A>` line becomes a plain text element whose text is exactly `NOTE: ` followed by the annotation text. * Each run of `N>` lines becomes one enumerated (ordered) list, each run of `B>` lines one non-enumerated list, with one list item per line, in file order, carrying the line's text. * Each table block becomes one table element with `num_rows` equal to the number of rows in the block, `num_cols` equal to the number of cells per row, cell texts as parsed, and the cells of the first row flagged as column headers. * Each `F>` line becomes one picture element whose caption text is the caption from that line. * Nothing else is added to the document. ### 2. Unified batch CLI `/home/user/project/rcp_convert.py`, run from `/home/user/project` as ``` python rcp_convert.py --input-dir <INPUT_DIR> --output-dir <OUTPUT_DIR> ``` converts a mixed directory in one pass. Both options are required. * Inputs are the regular files **directly** inside `<INPUT_DIR>` whose name ends in `.rcp` or `.md`, processed in ascending file-name order. Subdirectories and every other file are ignored. * `<OUTPUT_DIR>` is created when missing and receives: * `markdown/<stem>.md` — the Markdown export of the converted document (leading/trailing whitespace is not significant); * `json/<stem>.json` — the document's JSON serialization, loadable back into an equivalent Docling document; * `chunks.jsonl` — one JSON object per line, produced by Docling's hierarchical chunking of each converted document, in chunker order, grouped per input file in the same ascending file-name order. Each object has exactly the keys `file` (input file name), `chunk_index` (integer, restarting at 0 for each input file), `headings` (list of strings, the chunk's heading path, empty when there is none), `text` (the chunk text) and `num_chars` (integer, the number of characters in `text`); * `summary.json` — a JSON object with exactly the keys `schema_version` (integer `1`), `counts` and `documents`. `counts` has exactly the keys `total`, `succeeded` and `failed` (integers). `documents` is a list, ordered by `file` ascending, with one object per input file having exactly the keys `file` (file name), `format` (`"rcp"` or `"md"`), `status` (`"success"` or `"failure"`), `num_headings` (number of section-heading elements in the converted document), `num_list_items` (number of list items), `num_tables`, `num_pictures`, `num_chunks` (number of chunk objects written for this file) and `sha256` (lowercase hex SHA-256 of the input file's bytes). * A file that fails to convert gets `"status": "failure"`, zeros in all five numeric fields, no `markdown/` or `json/` output and no line in `chunks.jsonl`; the run still processes every other file. * The last line printed on stdout is exactly `converted=<succeeded> failed=<failed> total=<total>`. * Exit code `0` when every input converted, `1` when at least one input failed to convert, `2` when `<INPUT_DIR>` does not exist or is not a directory (in that case nothing else is required). A Python traceback must never reach stderr. * Re-running the command with the same input and output directories must rewrite byte-identical output files. ## Implementation Hints * Project path: `/home/user/project`; both `rcp_plugin.py` and `rcp_convert.py` live directly in it, and `rcp_plugin` must be importable as a top-level module with `/home/user/project` on `sys.path`. * Command: `python rcp_convert.py --input-dir <INPUT_DIR> --output-dir <OUTPUT_DIR>`, run with `/home/user/project` as the working directory. * Conversion, exports and chunking must be produced by Docling itself from the converted document; hand-written Markdown/JSON/chunk emitters that bypass Docling's conversion entry point are not acceptable. * Everything must run offline on CPU.   
+
+Pochi
+I'll start by exploring the project structure and understanding Docling's internals to implement the RCP format support.   
+📂 Listing files in /home/user/project recursively ✔ 
+❯ Explore Docling internals (explore)
+| 💫 Executing find / -type d -name "docling" -path "*/site-packages/*" 2>/dev/null | head -5
+| 💫 Executing find / -type d -name "docling_core" -path "*/site-packages/*" 2>/dev/null | head -5
+| 📂 Listing files in .
+| 📂 Listing files in /opt/app-root/lib/python3.12/site-packages/docling recursively
+| 📂 Listing files in .
+| 📂 Listing files in /opt/app-root/lib/python3.12/site-packages/docling_core recursively
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/document_converter.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/backend/__init__.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/backend/abstract_backend.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/base_models.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/document.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/__init__.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/transforms/chunker/hierarchical_chunker.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/transforms/serializer/markdown.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/transforms/serializer/base.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/items/text.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py
+| 🔍 Searching for  in .
+| 🔍 Searching for  in /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc
+| 🔍 Searching for def add_text|def add_table|def add_picture|def add_heading|def add_title|def add_section_header|def add_list_item|def add_code in /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc
+| 🔍 Searching for def add_text|def add_table|def add_picture|def add_heading|def add_title|def add_section_header|def add_list_item|def add_code in document.py files in /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/items/node.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/document.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py
+| 🔍 Searching for  in .
+| 🔍 Searching for  in document.py files in .
+| 🔍 Searching for  in document.py files in /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc
+| 🔍 Searching for def export_to_markdown|def export_to_dict|def export_to_html|def export_to_text in document.py files in /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc
+| 📖 Reading unknown
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/document.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/document.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/pipeline/base_pipeline.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/pipeline/simple_pipeline.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/transforms/chunker/base.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/document.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/backend/md_backend.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/backend_options.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/transforms/chunker/doc_chunk.py
+| 📖 Reading unknown
+| 📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/document.py
+✔ Explore Docling internals (explore)
+📖 Reading /home/user/project/corpus/clean/alpha.rcp ✔ 
+📖 Reading /home/user/project/corpus/clean/bravo.rcp ✔ 
+📖 Reading /home/user/project/corpus/clean/readme.md ✔ 
+📖 Reading /home/user/project/corpus/mixed/alpha.rcp ✔ 
+📖 Reading /home/user/project/corpus/mixed/bravo.rcp ✔ 
+📖 Reading /home/user/project/corpus/mixed/broken.rcp ✔ 
+📖 Reading /home/user/project/corpus/mixed/readme.md ✔ 
+📖 Reading /home/user/project/corpus/mixed/notes.txt ✔ 
+📖 Reading /home/user/project/corpus/mixed/inventory.csv ✔ 
+📖 Reading /home/user/project/corpus/unsupported/inventory.csv ✔ 
+📖 Reading /home/user/project/corpus/malformed/bad_magic.rcp ✔ 
+📖 Reading /home/user/project/corpus/malformed/no_terminator.rcp ✔ 
+📖 Reading /home/user/project/corpus/malformed/missing_title.rcp ✔ 
+📖 Reading /home/user/project/corpus/malformed/unknown_marker.rcp ✔ 
+📖 Reading /home/user/project/corpus/malformed/ragged_table.rcp ✔ 
+📖 Reading /home/user/project/corpus/malformed/dup_key.rcp ✔ 
+📖 Reading /home/user/project/corpus/mixed/nested/deep.rcp ✔ 
+Now let me look at the key Docling source files more carefully to understand the exact import paths and API details.   
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/base_models.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/document_converter.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/document_converter.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/document_converter.py ✔ 
+Now let me look at the SimplePipeline and how backends work:   
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/pipeline/simple_pipeline.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/backend/abstract_backend.py ✔ 
+Now let me look at the InputDocument and how format detection works:   
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py ✔ 
+Now let me look at how format detection works in `_DocumentConversionInput`:   
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py ✔ 
+Now let me look at the `_DocumentConversionInput.docs()` method to understand the full flow:   
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py ✔ 
+Now let me look at the HierarchicalChunker more closely:   
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/transforms/chunker/hierarchical_chunker.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/transforms/chunker/hierarchical_chunker.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/transforms/chunker/hierarchical_chunker.py ✔ 
+Now let me look at the DoclingDocument model to understand add_* methods:   
+🔍 Searching for def add_title|def add_heading|def add_text|def add_list_item|def add_table|def add_picture|def add_list_group in *.py files in /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/document.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/document.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/document.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/document.py ✔ 
+Now let me look at TableData and TableCell types:   
+🔍 Searching for class TableData|class TableCell in *.py files in /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/items/table/table_data.py ✔ 
+Now I have a thorough understanding of the codebase. Let me also check how DoclingDocument's export_to_dict and JSON serialization work:   
+🔍 Searching for def export_to_dict|def export_to_markdown in *.py files in /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling_core/types/doc/document.py ✔ 
+Now let me look at the ConversionResult class more closely:   
+🔍 Searching for class ConversionResult in *.py files in /opt/app-root/lib/python3.12/site-packages/docling/datamodel ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/datamodel/document.py ✔ 
+Now I have all the information I need. Let me also look at what happens when `_guess_format` returns a format not in `format_options` - it uses `_DummyBackend`. Let me also check what happens in the convert pipeline when the backend is invalid:   
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/pipeline/base_pipeline.py ✔ 
+Now let me check what happens when the backend is a `_DummyBackend`:   
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/pipeline/base_pipeline.py ✔ 
+Now let me check how `ConvertPipeline.execute` handles invalid documents (via `_DummyBackend`): The key insight is that `_DummyBackend` returns `is_valid() = False`, and `InputDocument.__init__` sets `self.valid = False` when the backend is not valid. Then in the pipeline, `_build_document` for `SimplePipeline` calls `conv_res.input._backend.convert()`, but `_DummyBackend` doesn't have a `convert()` method (it extends `AbstractDocumentBackend`, not `DeclarativeDocumentBackend`). Let me trace the full flow more carefully. Let me look at how `convert_all` handles this:   
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/document_converter.py ✔ 
+Now let me look at the `_convert` method:   
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/document_converter.py ✔ 
+📖 Reading /opt/app-root/lib/python3.12/site-packages/docling/document_converter.py ✔ 
+Now I have a complete picture. Let me now build the implementation. Key strategy: 1. **Hijack `InputFormat.BOXNOTE`**: Register `.rcp` extension and a custom MIME type for it. 2. **Create `RcpDocumentBackend`**: A `DeclarativeDocumentBackend` that parses RCP and builds a `DoclingDocument`. 3. **Create `build_converter()`**: Returns a `DocumentConverter` with RCP + MD formats allowed. 4. **Create `rcp_convert.py`**: CLI that uses the converter, exports, and chunks. Let me implement this now:   
+✏️  Writing /home/user/project/rcp_plugin.py ✔ 
+Now let me test this quickly to make sure the basic parsing and conversion works:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter, _parse_rcp
+
+# Test parsing
+with open('corpus/clean/alpha.rcp') as f:
+    content = f.read()
+header, body = _parse_rcp(content)
+print('Header:', header)
+print('Body blocks:', len(body))
+for b in body:
+    print(' ', b['type'], '-', str(b)[:80])
+
+# Test conversion
+converter = build_converter()
+result = converter.convert('corpus/clean/alpha.rcp')
+print()
+print('Status:', result.status)
+print('Doc name:', result.document.name)
+print()
+print('Markdown:')
+print(result.document.export_to_markdown())
+"
+ ✖ "Command exited with code 1"
+The issue is that when reading with `splitlines(keepends=True)`, the `\n` is kept and lines[0] has `%RCP/1.0\n`. Let me fix the parsing:   
+📖 Reading /home/user/project/rcp_plugin.py ✔ 
+The issue is `splitlines(keepends=True)` on a file that has `\n` line endings. Let me check what `_parse_rcp` receives: The problem is that `splitlines(keepends=True)` keeps `\n` at the end, but `rstrip("\n")` should handle it. Let me debug:   
+💫 Executing cd /home/user/project && python -c "
+with open('corpus/clean/alpha.rcp', 'rb') as f:
+    raw = f.read()
+print(repr(raw[:50]))
+lines = raw.decode('utf-8').splitlines(keepends=True)
+print('Line 0:', repr(lines[0]))
+print('Line 1:', repr(lines[1]))
+print('Line 2:', repr(lines[2]))
+print('rstrip:', repr(lines[1].rstrip('\n')))
+"
+ ✔ 
+OK so `splitlines(keepends=True)` works fine. The issue is that in `_parse_rcp`, the lines are the full list including the magic line, but `_parse_rcp_header` starts iterating from index 2 (which is the 3rd line, line 3). Wait, no — `enumerate(lines, start=2)` means the first element gets index 2. So `lines[0]` = magic gets `i=2`, `lines[1]` = `id=alpha-run\n` gets `i=3`, etc. But wait, the error says `line 2: expected key=value, got: '%RCP/1.0'`. So `i=2` is the first line. But `enumerate(lines, start=2)` starts at 2 for `lines[0]` which is the magic line. The problem is `_parse_rcp_header` receives ALL lines (including magic), not just the header lines. Let me fix `_parse_rcp` to slice the lines properly:   
+🔧 Applying diff to /home/user/project/rcp_plugin.py ✔ 
+Now update `_parse_rcp_header` to not worry about the terminator and just check required keys at the end:   
+🔧 Applying diff to /home/user/project/rcp_plugin.py ✔ 
+Now let me test again:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter, _parse_rcp
+
+# Test parsing
+with open('corpus/clean/alpha.rcp') as f:
+    content = f.read()
+header, body = _parse_rcp(content)
+print('Header:', header)
+print('Body blocks:', len(body))
+for b in body:
+    print(' ', b['type'], '-', str(b)[:80])
+
+# Test conversion
+converter = build_converter()
+result = converter.convert('corpus/clean/alpha.rcp')
+print()
+print('Status:', result.status)
+print('Doc name:', result.document.name)
+print()
+print('Markdown:')
+print(result.document.export_to_markdown())
+"
+ ✖ "Command exited with code 1"
+The issue is the `S<n>>` format — it uses `>>` not `>`. Let me check the format spec again: > `S<n>> <text>` with `<n>` in `1`..`6` — a section heading of level `<n>`. So the format is `S1> Ingredients` (no space after `S1>` before the text?). Wait, looking at the file: ``` S1> Ingredients ``` There's a space between `S1>` and `Ingredients`. Let me re-read the spec: > `S<n>> <text>` with `<n>` in `1`..`6` Hmm, `S<n>>` means `S` + number + `>`. So `S1>` is the marker. And then a space, then text. My regex `r"^S([1-6])>>\s+(.*)"` has `>>` which is wrong — it should be `>`. Wait, the spec says `S<n>>` — that's `S` + `<n>` + `>`. So it's `S1>`, not `S1>>`. Let me fix the regex: Looking more carefully: `S<n>> <text>` — the `>` is part of the marker, so `S1>` is the prefix. My regex had `>>` which is two `>` characters. Let me fix all the markers: - `S<n>>` → regex `S([1-6])>` - `P>` → `P>` - `N>` → `N>` - `B>` → `B>` - `A>` → `A>` - `F>` → `F>` Let me fix the regex patterns:   
+📖 Reading /home/user/project/rcp_plugin.py ✔ 
+🔧 Applying diff to /home/user/project/rcp_plugin.py ✔ 
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter, _parse_rcp
+
+# Test parsing
+with open('corpus/clean/alpha.rcp') as f:
+    content = f.read()
+header, body = _parse_rcp(content)
+print('Header:', header)
+print('Body blocks:', len(body))
+for b in body:
+    print(' ', b['type'], '-', str(b)[:80])
+
+# Test conversion
+converter = build_converter()
+result = converter.convert('corpus/clean/alpha.rcp')
+print()
+print('Status:', result.status)
+print('Doc name:', result.document.name)
+print()
+print('Markdown:')
+print(result.document.export_to_markdown())
+"
+ ✖ "Command exited with code 1"
+Parsing works great! But the conversion fails because `is_valid()` returns False. The issue is that Docling's format detection doesn't know about `.rcp`. Let me check why the backend is not valid. The `_guess_format` method needs to recognize `.rcp`. We need to add `.rcp` to `FormatToExtensions` for `InputFormat.BOXNOTE`. Let me check if the monkey-patching works:   
+💫 Executing cd /home/user/project && python -c "
+from docling.datamodel.base_models import FormatToExtensions, InputFormat, FormatToMimeType, MimeTypeToFormat
+from rcp_plugin import build_converter  # this runs the monkey-patch
+
+print('BOXNOTE extensions:', FormatToExtensions.get(InputFormat.BOXNOTE))
+print('BOXNOTE mimes:', FormatToMimeType.get(InputFormat.BOXNOTE))
+
+# Now test format detection
+from docling.datamodel.document import _DocumentConversionInput
+from pathlib import Path
+dci = _DocumentConversionInput(path_or_stream_iterator=[Path('corpus/clean/alpha.rcp')])
+fmt = dci._guess_format(Path('corpus/clean/alpha.rcp'))
+print('Guessed format:', fmt)
+"
+ ✔ 
+Format detection works. The issue might be that `_mime_from_extension` doesn't know about `rcp` extension. Let me check:   
+💫 Executing cd /home/user/project && python -c "
+import filetype
+print(filetype.guess_mime('corpus/clean/alpha.rcp'))
+"
+ ✔ 
+So `filetype` returns `None` for `.rcp`. Then `_guess_format` looks at the extension via `_mime_from_extension`. Let me check if `_mime_from_extension` handles `BOXNOTE`: Looking at the code I read earlier: ```python elif ext in FormatToExtensions[InputFormat.BOXNOTE]: mime = FormatToMimeType[InputFormat.BOXNOTE][0] ``` This should work since we added `rcp` to `FormatToExtensions[InputFormat.BOXNOTE]`. Let me trace the full path: 1. `filetype.guess_mime` → None 2. `obj_ext = "rcp"` 3. `_mime_from_extension("rcp")` → should return `"application/x-rcp"` because `"rcp" in FormatToExtensions[InputFormat.BOXNOTE]` is True 4. Then `mime = "application/x-rcp"` 5. `formats = MimeTypeToFormat["application/x-rcp"]` → `[InputFormat.BOXNOTE]` 6. Returns `InputFormat.BOXNOTE` This should work. But the backend `is_valid()` returns False. Let me check what happens in `InputDocument.__init__`: The issue is that `InputDocument.__init__` calls `_init_doc(backend, path_or_stream)` which creates the backend and checks `is_valid()`. The `_init_doc` method handles exceptions from the backend constructor. Let me check if there's an exception during construction:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import RcpDocumentBackend, build_converter
+from docling.datamodel.document import InputDocument
+from docling.datamodel.base_models import InputFormat
+from pathlib import Path
+
+# Direct test
+in_doc = InputDocument(
+    path_or_stream=Path('corpus/clean/alpha.rcp'),
+    format=InputFormat.BOXNOTE,
+    backend=RcpDocumentBackend,
+)
+print('Valid:', in_doc.valid)
+print('Rejection:', in_doc._rejection)
+print('Backend is_valid:', in_doc._backend.is_valid())
+print('Parse error:', in_doc._backend._parse_error)
+"
+ ✔ 
+So the backend works fine when used directly. The issue must be in the conversion pipeline. Let me trace through the full conversion with `raises_on_error=False`:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter
+converter = build_converter()
+result = converter.convert('corpus/clean/alpha.rcp', raises_on_error=False)
+print('Status:', result.status)
+print('Errors:', result.errors)
+print('Doc:', result.document.name if result.document else 'None')
+"
+ ✔ 
+The error is "The document backend could not parse the input." which comes from `_init_doc` when `_backend.is_valid()` is False. But we just checked and it's True. Something happens during the full conversion pipeline that's different. Let me look more carefully at how `InputDocument` is created in the `docs()` method. The issue might be that the format detection returns `BOXNOTE` but the format option lookup fails because we didn't properly register it. Let me check the converter's format_to_options:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter
+converter = build_converter()
+print('format_to_options keys:', list(converter.format_to_options.keys()))
+print('BOXNOTE option:', converter.format_to_options.get(converter.format_to_options.__class__.__dict__))
+for k, v in converter.format_to_options.items():
+    print(f'  {k}: backend={v.backend.__name__}, pipeline={v.pipeline_cls.__name__}')
+"
+ ✖ "Command exited with code 1"
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter
+converter = build_converter()
+for k, v in converter.format_to_options.items():
+    print(f'  {k}: backend={v.backend.__name__}, pipeline={v.pipeline_cls.__name__}')
+"
+ ✔ 
+Good, the format options are correct. Now let me trace more carefully what happens. The issue might be in `_guess_format` when used within `_DocumentConversionInput.docs()`. Let me check: The `docs()` method calls `_guess_format(obj)` where `obj` is a `Path`. For `.rcp`: 1. Not `.dclg` or `.dclx` 2. `filetype.guess_mime` → None 3. `obj_ext = "rcp"` 4. `_mime_from_extension("rcp")` → This should return `"application/x-rcp"` since we added `rcp` to `FormatToExtensions[BOXNOTE]` But wait — `_mime_from_extension` is a static method defined in `_DocumentConversionInput`. It checks extensions in a specific order. Let me look at it again: ```python elif ext in FormatToExtensions[InputFormat.BOXNOTE]: mime = FormatToMimeType[InputFormat.BOXNOTE][0] ``` This should work. But then: 5. `mime = "application/x-rcp"` 6. `formats = MimeTypeToFormat.get("application/x-rcp", [])` → `[InputFormat.BOXNOTE]` 7. `len(formats) == 1 and mime not in ("text/plain")` → True → returns `InputFormat.BOXNOTE` This should all work. Let me add some debug prints to the actual conversion flow:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter
+from docling.datamodel.document import _DocumentConversionInput, InputDocument
+from docling.datamodel.base_models import InputFormat
+from pathlib import Path
+
+converter = build_converter()
+
+# Simulate what docs() does
+dci = _DocumentConversionInput(path_or_stream_iterator=[Path('corpus/clean/alpha.rcp')])
+for in_doc in dci.docs(converter.format_to_options):
+    print('Input doc:', in_doc.file)
+    print('Format:', in_doc.format)
+    print('Valid:', in_doc.valid)
+    print('Rejection:', in_doc._rejection)
+    if in_doc.valid:
+        print('Backend:', type(in_doc._backend).__name__)
+        print('Backend valid:', in_doc._backend.is_valid())
+"
+ ✔ 
+So the InputDocument is valid. The issue must be in the pipeline execution. Let me look at `_execute_pipeline`: ```python def _execute_pipeline(self, in_doc, raises_on_error): if in_doc.valid: pipeline = self._get_pipeline(in_doc.format) ... else: conv_res = ConversionResult(input=in_doc, status=ConversionStatus.FAILURE, ...) ``` And `_get_pipeline`: ```python def _get_pipeline(self, doc_format): fopt = self.format_to_options.get(doc_format) if fopt is None or fopt.pipeline_options is None: return None ... ``` The issue might be that `pipeline_options` is None for the BOXNOTE format option. Let me check:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter
+converter = build_converter()
+fopt = converter.format_to_options.get(converter.format_to_options.__class__.__dict__.get('__orig_class__'))
+print(type(converter.format_to_options))
+for k, v in converter.format_to_options.items():
+    if 'BOXNOTE' in str(k):
+        print('pipeline_options:', v.pipeline_options)
+        print('pipeline_cls:', v.pipeline_cls)
+        print('backend:', v.backend)
+"
+ ✔ 
+OK so `pipeline_options` is set (it's the default from `SimplePipeline.get_default_options()`). So `_get_pipeline` should return a pipeline. Let me trace through the actual pipeline execution more carefully: The `_execute_pipeline` method first checks `in_doc.valid`, then calls `pipeline.execute(in_doc, raises_on_error)`. The `execute` method in `BasePipeline` calls `_build_document`, which in `SimplePipeline` does: ```python conv_res.document = conv_res.input._backend.convert() ``` But `_build_document` first checks `isinstance(conv_res.input._backend, DeclarativeDocumentBackend)`. Our backend IS a `DeclarativeDocumentBackend`. So it should work. Wait, let me re-read the error more carefully. The error message says "Input document alpha.rcp is not valid." This is from `_execute_pipeline`: ```python else: try: _log.warning("Input document %s is not valid.", in_doc.file) ``` So `in_doc.valid` is False in the pipeline. But we just tested and it was True. Something must be happening between `docs()` and `_execute_pipeline`. Let me look at `_process_document`: ```python def _process_document(self, in_doc, raises_on_error): valid = ( self.allowed_formats is not None and in_doc.format in self.allowed_formats ) if valid: conv_res = self._execute_pipeline(in_doc, raises_on_error=raises_on_error) else: ... ``` Wait, this check: `self.allowed_formats is not None and in_doc.format in self.allowed_formats`. The `allowed_formats` is a list. Let me check:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter
+from docling.datamodel.base_models import InputFormat
+converter = build_converter()
+print('allowed_formats:', converter.allowed_formats)
+print('BOXNOTE in allowed:', InputFormat.BOXNOTE in converter.allowed_formats)
+"
+ ✔ 
+That's fine. Let me trace the actual execution more carefully with debug:   
+💫 Executing cd /home/user/project && python -c "
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+from rcp_plugin import build_converter
+converter = build_converter()
+result = converter.convert('corpus/clean/alpha.rcp', raises_on_error=False)
+print('Status:', result.status)
+print('Errors:', result.errors)
+" 2>&1 | tail -30
+ ✔ 
+So the format IS detected correctly as BOXNOTE, but then the InputDocument becomes not valid. This is strange because when I tested `docs()` directly, it was valid. Let me look at the `_process_document` flow more carefully. Actually wait — `_process_document` checks `in_doc.format in self.allowed_formats` — this is a list membership check. But `InputFormat` is a `str, Enum`. Let me check if the comparison works:   
+💫 Executing cd /home/user/project && python -c "
+from docling.datamodel.base_models import InputFormat
+fmt = InputFormat.BOXNOTE
+print('Value:', fmt.value)
+print('Is str:', isinstance(fmt, str))
+allowed = [InputFormat.BOXNOTE, InputFormat.MD]
+print('In list:', fmt in allowed)
+print('Same object:', fmt is InputFormat.BOXNOTE)
+"
+ ✔ 
+OK that's fine too. Let me add more tracing. The issue might be that the `_DocumentConversionInput.docs()` method is somehow creating an invalid InputDocument. Let me look at the `_build_invalid_input_document` path... no, that's not it since format was detected. Wait, let me re-read the `docs()` method more carefully. After `_guess_format`, it does: ```python if not format or format not in format_options: backend = _DummyBackend else: options = format_options[format] backend = options.backend ``` Then it creates `InputDocument(path_or_stream=..., format=format, backend=backend, ...)`. Since `format_options` is a `Mapping`, and `format` is `InputFormat.BOXNOTE`, this should find it. But wait — `format_options` is a `Mapping[InputFormat, "BaseFormatOption"]`. The method signature is: ```python def docs(self, format_options: Mapping[InputFormat, "BaseFormatOption"]) -> Iterable[InputDocument]: ``` And `self.format_to_options` is `dict[InputFormat, FormatOption]`. `FormatOption` extends `BaseFormatOption`. So this should work. Let me add actual debug prints inside the flow:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter
+from docling.datamodel.document import _DocumentConversionInput
+from pathlib import Path
+
+converter = build_converter()
+
+dci = _DocumentConversionInput(path_or_stream_iterator=[Path('corpus/clean/alpha.rcp')])
+
+# Monkey-patch to trace
+original_init = dci.__class__.__bases__[0].__init__
+
+for in_doc in dci.docs(converter.format_to_options):
+    print('in_doc.valid:', in_doc.valid)
+    print('in_doc._rejection:', in_doc._rejection)
+    print('in_doc.format:', in_doc.format)
+    if hasattr(in_doc, '_backend'):
+        print('backend type:', type(in_doc._backend).__name__)
+        print('backend is_valid:', in_doc._backend.is_valid())
+        if hasattr(in_doc._backend, '_parse_error'):
+            print('parse_error:', in_doc._backend._parse_error)
+"
+ ✔ 
+So `docs()` produces a valid InputDocument. But `_execute_pipeline` sees it as invalid. That's very strange. Let me check if there's something happening in `_process_document`: ```python def _process_document(self, in_doc, raises_on_error): valid = ( self.allowed_formats is not None and in_doc.format in self.allowed_formats ) if valid: conv_res = self._execute_pipeline(in_doc, raises_on_error=raises_on_error) ``` And `_execute_pipeline`: ```python def _execute_pipeline(self, in_doc, raises_on_error): if in_doc.valid: ... else: _log.warning("Input document %s is not valid.", in_doc.file) ``` So `in_doc.valid` is False here. But it was True when we tested `docs()`. Let me check if there's some serialization/deserialization happening: Actually wait — maybe the issue is with the `_convert` method. Let me look: ```python def _convert(self, conv_input, raises_on_error): for input_batch in chunkify( conv_input.docs(self.format_to_options), settings.perf.doc_batch_size, ): process_func = partial(self._process_document, raises_on_error=raises_on_error) ... for item in map(process_func, input_batch): yield item ``` `chunkify` batches the iterator. Let me check if `chunkify` is causing issues. Actually, `chunkify` just groups items into batches. With default batch_size, it should just pass through. Let me try a different approach — let me add debug to `_execute_pipeline`:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter
+from docling.document_converter import DocumentConverter
+from docling.datamodel.document import InputDocument, ConversionResult
+from docling.datamodel.base_models import ConversionStatus
+
+# Monkey-patch _execute_pipeline to debug
+original_exec = DocumentConverter._execute_pipeline
+def debug_exec(self, in_doc, raises_on_error):
+    print(f'DEBUG _execute_pipeline: in_doc.valid={in_doc.valid}, format={in_doc.format}')
+    return original_exec(self, in_doc, raises_on_error)
+DocumentConverter._execute_pipeline = debug_exec
+
+converter = build_converter()
+result = converter.convert('corpus/clean/alpha.rcp', raises_on_error=False)
+print('Status:', result.status)
+"
+ ✔ 
+So `in_doc.valid` is False in `_execute_pipeline`, but was True in `docs()`. Let me check if `chunkify` is somehow modifying the object. Actually, let me add the debug earlier in the chain:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter
+from docling.document_converter import DocumentConverter
+from docling.datamodel.document import InputDocument, ConversionResult, _DocumentConversionInput
+from docling.datamodel.base_models import ConversionStatus
+
+# Monkey-patch _process_document to debug
+original_proc = DocumentConverter._process_document
+def debug_proc(self, in_doc, raises_on_error):
+    print(f'DEBUG _process_document: in_doc.valid={in_doc.valid}, format={in_doc.format}')
+    return original_proc(self, in_doc, raises_on_error)
+DocumentConverter._process_document = debug_proc
+
+converter = build_converter()
+result = converter.convert('corpus/clean/alpha.rcp', raises_on_error=False)
+print('Status:', result.status)
+"
+ ✔ 
+So even `_process_document` sees `in_doc.valid=False`. Let me check in `_convert`:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter
+from docling.document_converter import DocumentConverter
+from docling.datamodel.document import InputDocument, ConversionResult, _DocumentConversionInput
+from docling.datamodel.base_models import ConversionStatus
+from docling.utils.utils import chunkify
+
+# Monkey-patch _convert to debug
+original_conv = DocumentConverter._convert
+def debug_conv(self, conv_input, raises_on_error):
+    for input_batch in chunkify(conv_input.docs(self.format_to_options), 1):
+        for in_doc in input_batch:
+            print(f'DEBUG _convert: in_doc.valid={in_doc.valid}, format={in_doc.format}')
+        # Now process normally
+        from functools import partial
+        process_func = partial(self._process_document, raises_on_error=raises_on_error)
+        for item in map(process_func, input_batch):
+            yield item
+DocumentConverter._convert = debug_conv
+
+converter = build_converter()
+for result in converter.convert_all(['corpus/clean/alpha.rcp'], raises_on_error=False):
+    print('Status:', result.status)
+"
+ ✔ 
+So the InputDocument is already invalid when it comes out of `conv_input.docs()`. But earlier when I tested `docs()` directly, it was valid. Let me check if there's something about the `_DocumentConversionInput` constructor: Wait — in my direct test, I used `_DocumentConversionInput(path_or_stream_iterator=[Path('corpus/clean/alpha.rcp')])`. But in the actual flow, `convert()` calls `convert_all()` which creates `_DocumentConversionInput(path_or_stream_iterator=source, limits=limits, headers=headers)`. The `source` is `[source]` where `source` is the string `'corpus/clean/alpha.rcp'`. So in the actual flow, `path_or_stream_iterator` contains a `str`, not a `Path`. Let me check how `docs()` handles a `str`: ```python for item in self.path_or_stream_iterator: if isinstance(item, (str, HttpSource)): if isinstance(item, HttpSource): ... else: source_uri = item req_headers = self.headers backend_input = source_uri try: obj = resolve_source_to_stream(source_uri, req_headers, ...) except ... else: obj = item backend_input = item format = self._guess_format(obj) ``` So when item is a `str`, it calls `resolve_source_to_stream` which downloads/fetches the URL. But `'corpus/clean/alpha.rcp'` is a local path, not a URL. Let me check what `resolve_source_to_stream` does with it:   
+💫 Executing cd /home/user/project && python -c "
+from docling_core.utils.file import resolve_source_to_stream
+obj = resolve_source_to_stream('corpus/clean/alpha.rcp')
+print(type(obj))
+print(obj)
+print(obj.name)
+"
+ ✔ 
+So `resolve_source_to_stream` converts a local path string to a `DocumentStream`. Then `obj` is a `DocumentStream`. Then `_guess_format(obj)` is called on a `DocumentStream`. Now in `_guess_format` for `DocumentStream`: ```python elif isinstance(obj, DocumentStream): content = obj.stream.read(8192) obj.stream.seek(0) mime = filetype.guess_mime(content) obj_ext = obj.name.rsplit(".", 1)[-1] if ("." in obj.name and not obj.name.startswith(".")) else "" if mime is None: mime = _DocumentConversionInput._mime_from_extension(obj_ext.lower()) ``` So `obj_ext = "rcp"`, `mime = None`, then `_mime_from_extension("rcp")` → should return `"application/x-rcp"`. But wait — `_mime_from_extension` was read from the source code BEFORE our monkey-patch. But our monkey-patch only modifies `FormatToExtensions` and `FormatToMimeType`. The `_mime_from_extension` method uses those dicts, so it should work. But then: ```python mime = mime or _DocumentConversionInput._detect_html_xhtml(content) mime = mime or _DocumentConversionInput._detect_csv(content) mime = mime or "text/plain" ``` If `_mime_from_extension` returns `"application/x-rcp"`, then `mime` is already set and these fallbacks don't apply. So `formats = MimeTypeToFormat.get("application/x-rcp", [])` → `[InputFormat.BOXNOTE]`. Then: ```python if len(formats) == 1 and mime not in ("text/plain"): return formats[0] ``` This should return `InputFormat.BOXNOTE`. So far so good. But then back in `docs()`: ```python path_or_stream = obj.stream # BytesIO ``` And then: ```python yield InputDocument( path_or_stream=path_or_stream, format=format, filename=obj.name, limits=self.limits, backend=backend, backend_options=backend_options, ) ``` Now in `InputDocument.__init__`, when `path_or_stream` is a `BytesIO`: ```python elif isinstance(path_or_stream, BytesIO): self.file = PurePath(fi   
+精神lename) self.filesize = path_or_stream.getbuffer().nbytes if self.filesize > self.limits.max_file_size: self._reject_filesize() else: self.document_hash = create_file_hash(path_or_stream) self._init_doc(backend, path_or_stream) ``` Wait — `create_file_hash` reads the stream. And then `_init_doc` creates the backend with the same stream. But the stream position might have been consumed by `create_file_hash`! Let me check:   
+💫 Executing cd /home/user/project && python -c "
+from docling.utils.utils import create_file_hash
+from io import BytesIO
+
+data = b'hello world'
+buf = BytesIO(data)
+h = create_file_hash(buf)
+print('Hash:', h)
+print('Position after:', buf.tell())
+print('Remaining:', buf.read())
+"
+ ✔ 
+There it is! `create_file_hash` reads the entire stream and doesn't seek back. Then when `_init_doc` creates the backend, the backend tries to read from the stream but it's already at the end. Let me verify:   
+💫 Executing cd /home/user/project && python -c "
+from io import BytesIO
+from docling.datamodel.document import InputDocument
+from docling.datamodel.base_models import InputFormat
+from rcp_plugin import RcpDocumentBackend
+
+# Simulate what happens: read content, then create InputDocument
+data = open('corpus/clean/alpha.rcp', 'rb').read()
+buf = BytesIO(data)
+
+# First, create_file_hash reads it
+from docling.utils.utils import create_file_hash
+h = create_file_hash(buf)
+print('After hash, position:', buf.tell())
+
+# Then InputDocument tries to read it
+in_doc = InputDocument(
+    path_or_stream=buf,
+    format=InputFormat.BOXNOTE,
+    backend=RcpDocumentBackend,
+    filename='alpha.rcp',
+)
+print('Valid:', in_doc.valid)
+print('Rejection:', in_doc._rejection)
+"
+ ✔ 
+Confirmed! The issue is that `create_file_hash` consumes the stream and doesn't reset it. This is a Docling bug, but we need to work around it. The fix is to seek back to 0 after `create_file_hash` in the `InputDocument.__init__`, but we can't modify that. Instead, we can work around it by reading the content before the hash consumes it, or by using a different approach. Looking at the `InputDocument.__init__` code: ```python elif isinstance(path_or_stream, BytesIO): self.file = PurePath(filename) self.filesize = path_or_stream.getbuffer().nbytes if self.filesize > self.limits.max_file_size: self._reject_filesize() else: self.document_hash = create_file_hash(path_or_stream) self._init_doc(backend, path_or_stream) ``` The `create_file_hash` reads and doesn't seek back. Our backend then reads from the exhausted stream. The solution is to seek back to 0 in our backend's `__init__`:   
+📖 Reading /home/user/project/rcp_plugin.py ✔ 
+The code already does `path_or_stream.seek(0)` after reading. But the issue is that `create_file_hash` reads the stream BEFORE the backend is constructed. So when the backend reads, the stream is already at the end. The fix is to seek to 0 at the beginning of our backend's `__init__`, before reading:   
+🔧 Applying diff to /home/user/project/rcp_plugin.py ✔ 
+Now let me test:   
+💫 Executing cd /home/user/project && python -c "
+from rcp_plugin import build_converter
+
+# Test file path conversion
+converter = build_converter()
+result = converter.convert('corpus/clean/alpha.rcp', raises_on_error=False)
+print('Status:', result.status)
+print('Doc name:', result.document.name)
+print()
+print('Markdown:')
+print(result.document.export_to_markdown())
+"
+ ✔ 
