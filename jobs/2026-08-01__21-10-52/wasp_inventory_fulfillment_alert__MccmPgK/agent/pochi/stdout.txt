@@ -1,0 +1,131 @@
+- Initializing MCP connections...
+You
+# Warehouse Inventory & Fulfillment Tracker with Automated Supplier Ordering ## Background Warehouse managers need a robust inventory management platform to track stock levels, safely fulfill customer orders, and automatically trigger supplier purchase orders and low-stock alerts. You will build this platform using the Wasp framework (v0.24.0), which leverages React, Node.js, and Prisma. ## Requirements * **Authentication**: Secure the platform so only logged-in users can manage inventory, fulfill orders, and view alerts. * **Database Schema**: Store suppliers, products, customer orders, order items, automatic purchase orders, and low-stock alerts. * **Transaction-Safe Order Fulfillment**: Implement a custom Wasp Action `fulfillOrder` that processes a pending order. It must decrement the inventory of each product in the order in a transaction-safe manner (using Prisma's `$transaction`). If any product does not have enough stock, the entire transaction must roll back, no stock levels should change, and a clear error must be returned. * **Automatic Supplier Reordering**: During order fulfillment, if a product's stock falls below its `lowStockThreshold`: 1. Create a low-stock `Alert` record for that product. 2. Automatically generate a `PurchaseOrder` to the product's supplier for the product's `reorderQuantity`, **unless** there is already an existing `PurchaseOrder` for that product with status `"SENT"` (to prevent duplicate reorders). * **Interactive Frontend UI**: Build a responsive React dashboard displaying products, customer orders, alerts, and supplier purchase orders with appropriate interaction controls. ## Implementation Hints * **Project Path**: `/home/user/app` * **Start Command**: `wasp start` * **Port**: `3000` * **Wasp Version**: Target Wasp `^0.24.0` using the TypeScript configuration spec (`main.wasp.ts`). * **Database Schema (`schema.prisma`)**: * Define a `User` model with an autoincrementing integer ID, `username` (String, unique), and `password` (String). * Define a `Supplier` model with fields: * `id` (Int, primary key, autoincrement) * `name` (String) * `email` (String) * `products` (Product relation) * `purchaseOrders` (PurchaseOrder relation) * Define a `Product` model with fields: * `id` (Int, primary key, autoincrement) * `sku` (String, unique) * `name` (String) * `stock` (Int) * `lowStockThreshold` (Int) * `reorderQuantity` (Int) * `supplier` (Supplier, relation to `Supplier` via `supplierId`) * `supplierId` (Int) * `orderItems` (OrderItem relation) * `purchaseOrders` (PurchaseOrder relation) * `alerts` (Alert relation) * Define an `Order` model with fields: * `id` (Int, primary key, autoincrement) * `customerName` (String) * `status` (String, must accept `"PENDING"` or `"FULFILLED"`) * `createdAt` (DateTime, default `now()`) * `orderItems` (OrderItem relation) * Define an `OrderItem` model with fields: * `id` (Int, primary key, autoincrement) * `order` (Order, relation to `Order` via `orderId`) * `orderId` (Int) * `product` (Product, relation to `Product` via `productId`) * `productId` (Int) * `quantity` (Int) * Define a `PurchaseOrder` model with fields: * `id` (Int, primary key, autoincrement) * `supplier` (Supplier, relation to `Supplier` via `supplierId`) * `supplierId` (Int) * `product` (Product, relation to `Product` via `productId`) * `productId` (Int) * `quantity` (Int) * `status` (String, must accept `"SENT"`) * `createdAt` (DateTime, default `now()`) * Define an `Alert` model with fields: * `id` (Int, primary key, autoincrement) * `product` (Product, relation to `Product` via `productId`) * `productId` (Int) * `message` (String) * `isRead` (Boolean, default `false`) * `createdAt` (DateTime, default `now()`) * **Wasp Configuration (`main.wasp.ts`)**: * Configure username and password authentication with `userEntity: "User"` and `onAuthFailedRedirectTo: "/login"`. * Export routes and pages for `/` (`MainPage`, requires auth), `/login` (`LoginPage`), and `/signup` (`SignupPage`). * Register Queries: `getProducts`, `getOrders`, `getAlerts`, `getPurchaseOrders` (all with appropriate entity associations). * Register Action: `fulfillOrder` (associated with all relevant entities to allow automatic PO/Alert creation and stock updates). * Register a seed function named `seedData` under `db.seeds`. * **Operations**: * **Query `getProducts`**: Returns all products including their supplier name. * **Query `getOrders`**: Returns all orders including their items (with product SKU/name). * **Query `getAlerts`**: Returns all alerts. * **Query `getPurchaseOrders`**: Returns all purchase orders including supplier name and product SKU. * **Action `fulfillOrder`**: * Input: `{ orderId: number }` * Behavior: The entire operation must execute inside a Prisma interactive transaction (e.g., `prisma.$transaction(async (tx) => { ... })` where `prisma` is imported from `wasp/server` or `@wasp/dbClient`). 1. Fetch the order with its items. If order is already fulfilled, throw an error. 2. For each item in the order, check if the product has sufficient stock. If any product stock is less than the requested quantity, throw an error to trigger a full transaction rollback. 3. Decrement each product's stock by the ordered quantity. 4. For each product, if the new stock level is strictly less than `lowStockThreshold`: * Create an `Alert` record: `"Low stock alert for <Product Name> (SKU: <SKU>). Current stock: <Stock>."` * Check if there is already an existing `PurchaseOrder` for this product with status `"SENT"`. If none exists, create a new `PurchaseOrder` with status `"SENT"` and quantity equal to the product's `reorderQuantity`. 5. Set the order status to `"FULFILLED"`. * **Database Seeding (`seedData`)**: * Implement a seed function `seedData` that creates a test user with username `warehouse_manager` and password `password123`. * Seed exactly the following 2 Suppliers: 1. ID: `1`, Name: `Global Tech Distributors`, Email: `supply@globaltech.com` 2. ID: `2`, Name: `Apex Logistics`, Email: `orders@apexlogistics.com` * Seed exactly the following 2 Products: 1. SKU: `PROD-001`, Name: `Wireless Mouse`, Stock: `15`, Low Stock Threshold: `10`, Reorder Quantity: `50`, Supplier ID: `1` 2. SKU: `PROD-002`, Name: `Mechanical Keyboard`, Stock: `8`, Low Stock Threshold: `5`, Reorder Quantity: `20`, Supplier ID: `2` * Seed exactly the following 2 Customer Orders: * **Order 1** (Status: `"PENDING"`, Customer: `"TechCorp Solutions"`): * Item 1: `PROD-001`, Quantity: `8` * Item 2: `PROD-002`, Quantity: `2` * **Order 2** (Status: `"PENDING"`, Customer: `"RetailHub"`): * Item 1: `PROD-001`, Quantity: `10` * Item 2: `PROD-002`, Quantity: `2` * **Frontend UI & Test IDs**: * **`LoginPage` and `SignupPage`**: Use Wasp's built-in `LoginForm` and `SignupForm` components from `wasp/client/auth`. * **`MainPage`**: * Include a logout button. * **Products List**: Table or list container with `data-testid="products-table"`. Each product row must display the SKU, name, current stock, and supplier name. The current stock value for each product must be inside an element with `data-testid="product-stock-<sku>"` (e.g., `data-testid="product-stock-PROD-001"` and `data-testid="product-stock-PROD-002"`). * **Orders List**: Container with `data-testid="orders-list"`. Each order must be in a card/element with `data-testid="order-card-<id>"` (e.g., `data-testid="order-card-1"` and `data-testid="order-card-2"`). Inside each card: * Display the customer name. * Display the order status in an element with `data-testid="order-status-<id>"` (e.g., `data-testid="order-status-1"`). * If the order is `"PENDING"`, render a button `<button data-testid="fulfill-btn-">Fulfill Order</button>` (e.g., `data-testid="fulfill-btn-1"`). Clicking this button calls `fulfillOrder` for that order. * **Fulfillment Error**: Display any action error messages inside an element with `data-testid="fulfillment-error"`. * **Alerts List**: Container with `data-testid="alerts-list"`. Each low-stock alert must be displayed in an element with `data-testid="alert-item"` containing the alert message. * **Purchase Orders List**: Container with `data-testid="purchase-orders-list"`. Each purchase order must be displayed in an element with `data-testid="purchase-order-item"` containing the supplier name, product SKU, and quantity ordered.   
+
+Pochi
+💭 Thinking for 181 characters   
+📂 Listing files in /home/user/app recursively ✔ 
+💭 Thinking for 319 characters   
+📖 Reading /home/user/app/schema.prisma ✔ 
+📖 Reading /home/user/app/main.wasp.ts ✔ 
+📖 Reading /home/user/app/src/MainPage.tsx ✔ 
+📖 Reading /home/user/app/package.json ✔ 
+💭 Thinking for 1098 characters   
+✏️  Writing /home/user/app/schema.prisma ✔ 
+💭 Thinking for 615 characters   
+📂 Listing files in /home/user/app/node_modules/@wasp.sh/spec recursively ✔ 
+📖 Reading /home/user/app/node_modules/@wasp.sh/spec/dist/src/index.d.ts ✔ 
+📖 Reading /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi/index.d.ts ✔ 
+📖 Reading /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+🔍 Searching for interface AuthMethods in waspSpec.d.ts files in /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi ✔ 
+🔍 Searching for AuthMethods in waspSpec.d.ts files in /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi ✔ 
+📖 Reading /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+🔍 Searching for UsernameAndPasswordConfig in waspSpec.d.ts files in /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi ✔ 
+📖 Reading /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+🔍 Searching for interface Db in waspSpec.d.ts files in /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi ✔ 
+📖 Reading /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+🔍 Searching for export interface Query in waspSpec.d.ts files in /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi ✔ 
+📖 Reading /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+📖 Reading /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi/constructors.d.ts ✔ 
+🔍 Searching for authRequired in waspSpec.d.ts files in /home/user/app/node_modules/@wasp.sh/spec/dist/src/spec/publicApi ✔ 
+💭 Thinking for 1548 characters   
+🔍 Searching for with \{ type: in *.ts files in /home/user/app ✔ 
+💭 Thinking for 1124 characters   
+✏️  Writing /home/user/app/main.wasp.ts ✔ 
+💭 Thinking for 301 characters   
+🔍 Searching for hashPassword in *.ts files in /home/user/app ✔ 
+💭 Thinking for 293 characters   
+🔍 Searching for **/*auth*.ts in /home/user/app/.wasp ✔ 
+📂 Listing files in /home/user/app/.wasp recursively ✔ 
+💭 Thinking for 335 characters   
+🔍 Searching for bcrypt in package.json files in /home/user/app/node_modules ✔ 
+💭 Thinking for 326 characters   
+🔍 Searching for hashPassword|verifyPassword in *.js files in /home/user/app/node_modules ✔ 
+💭 Thinking for 299 characters   
+🔍 Searching for hashPassword in /home/user/app/node_modules ✔ 
+💭 Thinking for 1815 characters   
+✏️  Writing /home/user/app/src/seeds.ts ✔ 
+✏️  Writing /home/user/app/src/LoginPage.tsx ✔ 
+✏️  Writing /home/user/app/src/SignupPage.tsx ✔ 
+💭 Thinking for 285 characters   
+✏️  Writing /home/user/app/src/queries/getProducts.ts ✔ 
+💭 Thinking for 325 characters   
+✏️  Writing /home/user/app/src/queries/getOrders.ts ✔ 
+✏️  Writing /home/user/app/src/queries/getAlerts.ts ✔ 
+💭 Thinking for 349 characters   
+✏️  Writing /home/user/app/src/queries/getPurchaseOrders.ts ✔ 
+💭 Thinking for 2210 characters   
+✏️  Writing /home/user/app/src/actions/fulfillOrder.ts ✔ 
+💭 Thinking for 1662 characters   
+📖 Reading /home/user/app/src/Main.css ✔ 
+💭 Thinking for 1137 characters   
+✏️  Writing /home/user/app/src/MainPage.tsx ✔ 
+💭 Thinking for 269 characters   
+💫 Executing wasp db migrate-dev --name init ✖ "Command exited with code 1"
+💭 Thinking for 334 characters   
+🔍 Searching for hashPassword in /home/user/app/.wasp/out/sdk/wasp ✔ 
+💭 Thinking for 309 characters   
+🔍 Searching for hashPassword in /home/user/app/node_modules/@wasp.sh/lib-auth ✔ 
+💭 Thinking for 261 characters   
+🔍 Searching for hashPassword in /home/user/app/.wasp/out/sdk/wasp/src ✔ 
+💭 Thinking for 317 characters   
+🔍 Searching for **/*auth* in /home/user/app/.wasp/out/sdk/wasp/src ✔ 
+💭 Thinking for 228 characters   
+📂 Listing files in /home/user/app/.wasp/out/sdk/wasp/src recursively ✔ 
+📂 Listing files in /home/user/app/.wasp/out/sdk/wasp ✔ 
+📂 Listing files in /home/user/app/.wasp/out/sdk/wasp/server recursively ✔ 
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/server/auth/index.ts ✔ 
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/server/auth/username.ts ✔ 
+📂 Listing files in /home/user/app/.wasp/out/sdk/wasp/auth recursively ✔ 
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/auth/password.ts ✔ 
+💭 Thinking for 312 characters   
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/package.json ✔ 
+💭 Thinking for 223 characters   
+✏️  Writing /home/user/app/src/seeds.ts ✔ 
+💫 Executing wasp db migrate-dev --name init ✔ 
+💭 Thinking for 281 characters   
+💫 Executing wasp db seed seedData ✔ 
+💭 Thinking for 290 characters   
+🔍 Searching for **/*test* in /home/user/app ✔ 
+🛠️ Tool startBackgroundJob ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+💭 Thinking for 617 characters   
+🎉 Task Completed
+The Warehouse Inventory & Fulfillment Tracker has been successfully built and verified!
+
+### Implementation Details:
+1. **Database Schema (`schema.prisma`)**:
+   - Configured models for `User` (with integer ID, unique username, and password), `Supplier`, `Product`, `Order` (with status `"PENDING"` or `"FULFILLED"`), `OrderItem`, `PurchaseOrder` (with status `"SENT"`), and `Alert`.
+   - Setup relations so that suppliers link to products and purchase orders, products link to order items, purchase orders, and alerts, and orders link to order items.
+
+2. **Wasp Configuration (`main.wasp.ts`)**:
+   - Integrated Username/Password authentication using `User` entity and configured to redirect unauthenticated requests to `/login`.
+   - Setup routes and pages for `/` (`MainPage`, protected), `/login` (`LoginPage`), and `/signup` (`SignupPage`).
+   - Registered queries: `getProducts`, `getOrders`, `getAlerts`, and `getPurchaseOrders` with their required entity associations.
+   - Registered action: `fulfillOrder` with all necessary database entities.
+   - Registered the `seedData` db seed function.
+
+3. **Transaction-Safe Order Fulfillment (`fulfillOrder` action)**:
+   - Built the action using Prisma's interactive transaction (`prisma.$transaction`).
+   - Fetches the order with its items, checking if the order is already fulfilled or non-existent.
+   - Validates stock levels for all items in the order, throwing an error (to trigger a rollback) if any product has insufficient stock.
+   - Decrements stock levels. If stock falls strictly below `lowStockThreshold`, a low-stock alert is created, and a new `PurchaseOrder` is automatically generated for the supplier unless one with status `"SENT"` already exists.
+   - Updates order status to `"FULFILLED"`.
+
+4. **Database Seeding (`seedData`)**:
+   - Implemented an idempotent seed script that creates a manager account (`warehouse_manager` / `password123`) and populates the database with the exact requested suppliers, products, and customer orders.
+
+5. **Interactive React Frontend UI (`MainPage`, `LoginPage`, `SignupPage`)**:
+   - Created beautiful, fully-styled components.
+   - Leveraged Wasp's built-in `LoginForm` and `SignupForm` for easy authentication.
+   - Displayed the product inventory table, customer orders list, active low-stock alerts, and supplier purchase orders.
+   - Wired up all interactive elements with the requested `data-testid` attributes (`products-table`, `product-stock-<sku>`, `orders-list`, `order-card-<id>`, `order-status-<id>`, `fulfill-btn-<id>`, `fulfillment-error`, `alerts-list`, `alert-item`, `purchase-orders-list`, and `purchase-order-item`) to ensure complete test compliance.
+
+The project compiled successfully, the database was migrated and seeded, and the development server is running smoothly on port `3000`.   
+- Waiting for background jobs to complete (timeout: 60000ms)...
+✖ Async wait timeout reached. Remaining: 1 job(s)
+  

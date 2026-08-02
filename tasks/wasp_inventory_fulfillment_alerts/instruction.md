@@ -1,0 +1,117 @@
+# Warehouse Inventory & Fulfillment Tracker with Automated Supplier Ordering
+
+## Background
+Warehouse managers need a robust inventory management platform to track stock levels, safely fulfill customer orders, and automatically trigger supplier purchase orders and low-stock alerts. You will build this platform using the Wasp framework (v0.24.0), which leverages React, Node.js, and Prisma.
+
+## Requirements
+- **Authentication**: Secure the platform so only logged-in users can manage inventory, fulfill orders, and view alerts.
+- **Database Schema**: Store suppliers, products, customer orders, order items, automatic purchase orders, and low-stock alerts.
+- **Transaction-Safe Order Fulfillment**: Implement a custom Wasp Action `fulfillOrder` that processes a pending order. It must decrement the inventory of each product in the order in a transaction-safe manner (using Prisma's `$transaction`). If any product does not have enough stock, the entire transaction must roll back, no stock levels should change, and a clear error must be returned.
+- **Automatic Supplier Reordering**: During order fulfillment, if a product's stock falls below its `lowStockThreshold`:
+  1. Create a low-stock `Alert` record for that product.
+  2. Automatically generate a `PurchaseOrder` to the product's supplier for the product's `reorderQuantity`, **unless** there is already an existing `PurchaseOrder` for that product with status `"SENT"` (to prevent duplicate reorders).
+- **Interactive Frontend UI**: Build a responsive React dashboard displaying products, customer orders, alerts, and supplier purchase orders with appropriate interaction controls.
+
+## Implementation Hints
+- **Project Path**: `/home/user/app`
+- **Start Command**: `wasp start`
+- **Port**: `3000`
+- **Wasp Version**: Target Wasp `^0.24.0` using the TypeScript configuration spec (`main.wasp.ts`).
+- **Database Schema (`schema.prisma`)**:
+  - Define a `User` model with an autoincrementing integer ID, `username` (String, unique), and `password` (String).
+  - Define a `Supplier` model with fields:
+    - `id` (Int, primary key, autoincrement)
+    - `name` (String)
+    - `email` (String)
+    - `products` (Product relation)
+    - `purchaseOrders` (PurchaseOrder relation)
+  - Define a `Product` model with fields:
+    - `id` (Int, primary key, autoincrement)
+    - `sku` (String, unique)
+    - `name` (String)
+    - `stock` (Int)
+    - `lowStockThreshold` (Int)
+    - `reorderQuantity` (Int)
+    - `supplier` (Supplier, relation to `Supplier` via `supplierId`)
+    - `supplierId` (Int)
+    - `orderItems` (OrderItem relation)
+    - `purchaseOrders` (PurchaseOrder relation)
+    - `alerts` (Alert relation)
+  - Define an `Order` model with fields:
+    - `id` (Int, primary key, autoincrement)
+    - `customerName` (String)
+    - `status` (String, must accept `"PENDING"` or `"FULFILLED"`)
+    - `createdAt` (DateTime, default `now()`)
+    - `orderItems` (OrderItem relation)
+  - Define an `OrderItem` model with fields:
+    - `id` (Int, primary key, autoincrement)
+    - `order` (Order, relation to `Order` via `orderId`)
+    - `orderId` (Int)
+    - `product` (Product, relation to `Product` via `productId`)
+    - `productId` (Int)
+    - `quantity` (Int)
+  - Define a `PurchaseOrder` model with fields:
+    - `id` (Int, primary key, autoincrement)
+    - `supplier` (Supplier, relation to `Supplier` via `supplierId`)
+    - `supplierId` (Int)
+    - `product` (Product, relation to `Product` via `productId`)
+    - `productId` (Int)
+    - `quantity` (Int)
+    - `status` (String, must accept `"SENT"`)
+    - `createdAt` (DateTime, default `now()`)
+  - Define an `Alert` model with fields:
+    - `id` (Int, primary key, autoincrement)
+    - `product` (Product, relation to `Product` via `productId`)
+    - `productId` (Int)
+    - `message` (String)
+    - `isRead` (Boolean, default `false`)
+    - `createdAt` (DateTime, default `now()`)
+- **Wasp Configuration (`main.wasp.ts`)**:
+  - Configure username and password authentication with `userEntity: "User"` and `onAuthFailedRedirectTo: "/login"`.
+  - Export routes and pages for `/` (`MainPage`, requires auth), `/login` (`LoginPage`), and `/signup` (`SignupPage`).
+  - Register Queries: `getProducts`, `getOrders`, `getAlerts`, `getPurchaseOrders` (all with appropriate entity associations).
+  - Register Action: `fulfillOrder` (associated with all relevant entities to allow automatic PO/Alert creation and stock updates).
+  - Register a seed function named `seedData` under `db.seeds`.
+- **Operations**:
+  - **Query `getProducts`**: Returns all products including their supplier name.
+  - **Query `getOrders`**: Returns all orders including their items (with product SKU/name).
+  - **Query `getAlerts`**: Returns all alerts.
+  - **Query `getPurchaseOrders`**: Returns all purchase orders including supplier name and product SKU.
+  - **Action `fulfillOrder`**:
+    - Input: `{ orderId: number }`
+    - Behavior: The entire operation must execute inside a Prisma interactive transaction (e.g., `prisma.$transaction(async (tx) => { ... })` where `prisma` is imported from `wasp/server` or `@wasp/dbClient`).
+      1. Fetch the order with its items. If order is already fulfilled, throw an error.
+      2. For each item in the order, check if the product has sufficient stock. If any product stock is less than the requested quantity, throw an error to trigger a full transaction rollback.
+      3. Decrement each product's stock by the ordered quantity.
+      4. For each product, if the new stock level is strictly less than `lowStockThreshold`:
+         - Create an `Alert` record: `"Low stock alert for <Product Name> (SKU: <SKU>). Current stock: <Stock>."`
+         - Check if there is already an existing `PurchaseOrder` for this product with status `"SENT"`. If none exists, create a new `PurchaseOrder` with status `"SENT"` and quantity equal to the product's `reorderQuantity`.
+      5. Set the order status to `"FULFILLED"`.
+- **Database Seeding (`seedData`)**:
+  - Implement a seed function `seedData` that creates a test user with username `warehouse_manager` and password `password123`.
+  - Seed exactly the following 2 Suppliers:
+    1. ID: `1`, Name: `Global Tech Distributors`, Email: `supply@globaltech.com`
+    2. ID: `2`, Name: `Apex Logistics`, Email: `orders@apexlogistics.com`
+  - Seed exactly the following 2 Products:
+    1. SKU: `PROD-001`, Name: `Wireless Mouse`, Stock: `15`, Low Stock Threshold: `10`, Reorder Quantity: `50`, Supplier ID: `1`
+    2. SKU: `PROD-002`, Name: `Mechanical Keyboard`, Stock: `8`, Low Stock Threshold: `5`, Reorder Quantity: `20`, Supplier ID: `2`
+  - Seed exactly the following 2 Customer Orders:
+    - **Order 1** (Status: `"PENDING"`, Customer: `"TechCorp Solutions"`):
+      - Item 1: `PROD-001`, Quantity: `8`
+      - Item 2: `PROD-002`, Quantity: `2`
+    - **Order 2** (Status: `"PENDING"`, Customer: `"RetailHub"`):
+      - Item 1: `PROD-001`, Quantity: `10`
+      - Item 2: `PROD-002`, Quantity: `2`
+- **Frontend UI & Test IDs**:
+  - **`LoginPage` and `SignupPage`**: Use Wasp's built-in `LoginForm` and `SignupForm` components from `wasp/client/auth`.
+  - **`MainPage`**:
+    - Include a logout button.
+    - **Products List**: Table or list container with `data-testid="products-table"`. Each product row must display the SKU, name, current stock, and supplier name. The current stock value for each product must be inside an element with `data-testid="product-stock-<sku>"` (e.g., `data-testid="product-stock-PROD-001"` and `data-testid="product-stock-PROD-002"`).
+    - **Orders List**: Container with `data-testid="orders-list"`. Each order must be in a card/element with `data-testid="order-card-<id>"` (e.g., `data-testid="order-card-1"` and `data-testid="order-card-2"`). Inside each card:
+      - Display the customer name.
+      - Display the order status in an element with `data-testid="order-status-<id>"` (e.g., `data-testid="order-status-1"`).
+      - If the order is `"PENDING"`, render a button `<button data-testid="fulfill-btn-<id>">Fulfill Order</button>` (e.g., `data-testid="fulfill-btn-1"`). Clicking this button calls `fulfillOrder` for that order.
+    - **Fulfillment Error**: Display any action error messages inside an element with `data-testid="fulfillment-error"`.
+    - **Alerts List**: Container with `data-testid="alerts-list"`. Each low-stock alert must be displayed in an element with `data-testid="alert-item"` containing the alert message.
+    - **Purchase Orders List**: Container with `data-testid="purchase-orders-list"`. Each purchase order must be displayed in an element with `data-testid="purchase-order-item"` containing the supplier name, product SKU, and quantity ordered.
+
