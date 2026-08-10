@@ -926,10 +926,10 @@ function TableWrapper({ hasRows, children, viewportRef }: TableWrapperProps) {
 			>
 				{children}
 			</ScrollAreaPrimitive.Viewport>
-			<ScrollBar className="top-11 bottom-2 z-50 h-auto **:data-[slot=scroll-area-thumb]:transition-colors hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/30 active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/45 dark:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/40 dark:active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/70 dark:hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/55" />
+			<ScrollBar className="top-11 bottom-2 z-50 h-auto **:data-[slot=scroll-area-thumb]:transition-colors active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/45 hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/30 dark:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/40 dark:active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/70 dark:hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/55" />
 			<ScrollBar
 				orientation="horizontal"
-				className="z-50 **:data-[slot=scroll-area-thumb]:transition-colors hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/30 active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/45 dark:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/40 dark:active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/70 dark:hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/55"
+				className="z-50 **:data-[slot=scroll-area-thumb]:transition-colors active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/45 hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/30 dark:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/40 dark:active:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/70 dark:hover:**:data-[slot=scroll-area-thumb]:bg-muted-foreground/55"
 			/>
 			<ScrollAreaPrimitive.Corner />
 		</ScrollAreaPrimitive.Root>

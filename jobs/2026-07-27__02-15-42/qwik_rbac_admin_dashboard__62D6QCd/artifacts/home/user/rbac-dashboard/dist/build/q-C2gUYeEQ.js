@@ -1,0 +1,1 @@
+import{_ as r}from"./q-DoNi8vyY.js";import{J as e}from"./q-CeHRC3tv.js";import{E as t,q as s,K as _}from"./q-Dm-n0CeS.js";const n=e(_("s_vefJFQbQKsY")),d=t(s(()=>r(()=>import("./q-D6ybxnff.js").then(o=>o.i),[]),"s_zqOiQexCVbI"));export{d as default,n as useAdminLoader};

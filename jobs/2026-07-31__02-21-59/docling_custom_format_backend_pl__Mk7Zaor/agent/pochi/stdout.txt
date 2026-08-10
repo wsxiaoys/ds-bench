@@ -1,0 +1,540 @@
+- Initializing MCP connections...
+You
+# Teach Docling a New Input Format (RCP/1.0) ## Background Docling is preinstalled in this container (`import docling`, distribution `docling-slim` 2.115.0, `docling-core` 2.87.1, Python 3.12) together with all of its model weights. **The container has no network access**: nothing may be downloaded, and no external or cloud service may be contacted. Only preinstalled packages may be used. A lab publishes its protocols in a small in-house plain-text format called **RCP/1.0** (`.rcp`). Downstream teams want those protocols in the same document model, exports and chunk stream that Docling already produces for its natively supported formats, so RCP must become a first-class Docling input format rather than a side-channel parser. ## The RCP/1.0 format An RCP file is UTF-8 text with LF line endings and is read line by line. 1. The **first line** must be exactly `%RCP/1.0`. 2. Then comes the **header block**: every line has the form `<key>=<value>`, where `<key>` matches `[a-z][a-z0-9_]*` and `<value>` is the rest of the line with surrounding whitespace stripped. The header block ends at the first line that is exactly `%%`. Keys `id` and `title` are required and must have a non-empty value; other keys are allowed and carry no meaning. A repeated key is an error. 3. Everything after the `%%` line is the **body**. Blank lines (empty or whitespace-only) carry no content; they only terminate the block they follow. Every other body line must be exactly one of: * `S<n>> <text>` with `<n>` in `1`..`6` — a section heading of level `<n>`. * `P> <text>` — a paragraph. * `N> <text>` — an ordered step. A run of consecutive `N>` lines is one ordered list. * `B> <text>` — a bullet. A run of consecutive `B>` lines is one unordered list. * `A> <text>` — an annotation. * `F> <ref> :: <caption>` — a figure reference with a caption. * A line starting with `|` — one table row. A run of consecutive table-row lines is one table. The cells of a row are obtained by dropping the leading `|`, then dropping one trailing `|` if present, then splitting on `|` and stripping each cell. The first row of a table is its column-header row, and every row of the same table must yield the same number of cells. A file that violates any rule above (bad magic line, malformed or unterminated header, repeated header key, missing/empty `id` or `title`, unrecognized body line, ragged table) is **malformed**. ## Requirements Fixtures live under `/home/user/project/corpus` (`clean/`, `mixed/`, `malformed/`, `unsupported/`); they are inputs, not templates for your output. ### 1. RCP as a Docling input format Docling's own conversion entry point must handle `.rcp` inputs. Expose `build_converter()` in `/home/user/project/rcp_plugin.py`; it must return a `docling.document_converter.DocumentConverter` instance that: * converts `.rcp` documents given as a filesystem path **and** as an in-memory Docling document stream named `<something>.rcp`, reporting conversion success and returning a Docling document; * still converts natively supported Markdown (`.md`) documents successfully through the same converter instance; * reports a conversion **failure** status for a malformed `.rcp` file instead of letting an exception escape, when the caller asks for errors not to be raised; * does **not** report success for any other input format (e.g. `.csv`). A converted RCP document must carry the following structure: * Its document name is the header `id` value. * Its body starts with a single title element whose text is the header `title` value. * Each `S<n>>` line becomes a section-heading element whose heading level equals `<n>` and whose text is the line's text. A heading is nested inside the closest preceding heading of a smaller level (if any); every content element is nested inside the closest preceding heading. * Each `P>` line becomes a plain text element with that text. * Each `A>` line becomes a plain text element whose text is exactly `NOTE: ` followed by the annotation text. * Each run of `N>` lines becomes one enumerated (ordered) list, each run of `B>` lines one non-enumerated list, with one list item per line, in file order, carrying the line's text. * Each table block becomes one table element with `num_rows` equal to the number of rows in the block, `num_cols` equal to the number of cells per row, cell texts as parsed, and the cells of the first row flagged as column headers. * Each `F>` line becomes one picture element whose caption text is the caption from that line. * Nothing else is added to the document. ### 2. Unified batch CLI `/home/user/project/rcp_convert.py`, run from `/home/user/project` as ``` python rcp_convert.py --input-dir <INPUT_DIR> --output-dir <OUTPUT_DIR> ``` converts a mixed directory in one pass. Both options are required. * Inputs are the regular files **directly** inside `<INPUT_DIR>` whose name ends in `.rcp` or `.md`, processed in ascending file-name order. Subdirectories and every other file are ignored. * `<OUTPUT_DIR>` is created when missing and receives: * `markdown/<stem>.md` — the Markdown export of the converted document (leading/trailing whitespace is not significant); * `json/<stem>.json` — the document's JSON serialization, loadable back into an equivalent Docling document; * `chunks.jsonl` — one JSON object per line, produced by Docling's hierarchical chunking of each converted document, in chunker order, grouped per input file in the same ascending file-name order. Each object has exactly the keys `file` (input file name), `chunk_index` (integer, restarting at 0 for each input file), `headings` (list of strings, the chunk's heading path, empty when there is none), `text` (the chunk text) and `num_chars` (integer, the number of characters in `text`); * `summary.json` — a JSON object with exactly the keys `schema_version` (integer `1`), `counts` and `documents`. `counts` has exactly the keys `total`, `succeeded` and `failed` (integers). `documents` is a list, ordered by `file` ascending, with one object per input file having exactly the keys `file` (file name), `format` (`"rcp"` or `"md"`), `status` (`"success"` or `"failure"`), `num_headings` (number of section-heading elements in the converted document), `num_list_items` (number of list items), `num_tables`, `num_pictures`, `num_chunks` (number of chunk objects written for this file) and `sha256` (lowercase hex SHA-256 of the input file's bytes). * A file that fails to convert gets `"status": "failure"`, zeros in all five numeric fields, no `markdown/` or `json/` output and no line in `chunks.jsonl`; the run still processes every other file. * The last line printed on stdout is exactly `converted=<succeeded> failed=<failed> total=<total>`. * Exit code `0` when every input converted, `1` when at least one input failed to convert, `2` when `<INPUT_DIR>` does not exist or is not a directory (in that case nothing else is required). A Python traceback must never reach stderr. * Re-running the command with the same input and output directories must rewrite byte-identical output files. ## Implementation Hints * Project path: `/home/user/project`; both `rcp_plugin.py` and `rcp_convert.py` live directly in it, and `rcp_plugin` must be importable as a top-level module with `/home/user/project` on `sys.path`. * Command: `python rcp_convert.py --input-dir <INPUT_DIR> --output-dir <OUTPUT_DIR>`, run with `/home/user/project` as the working directory. * Conversion, exports and chunking must be produced by Docling itself from the converted document; hand-written Markdown/JSON/chunk emitters that bypass Docling's conversion entry point are not acceptable. * Everything must run offline on CPU.   
+
+Pochi
+📂 Listing files in . recursively ✔ 
+💭 Thinking for 280 characters   
+📖 Reading corpus/clean/alpha.rcp ✔ 
+📖 Reading corpus/clean/bravo.rcp ✔ 
+📖 Reading corpus/clean/readme.md ✔ 
+💭 Thinking for 308 characters   
+📖 Reading corpus/malformed/bad_magic.rcp ✔ 
+📖 Reading corpus/malformed/no_terminator.rcp ✔ 
+📖 Reading corpus/malformed/missing_title.rcp ✔ 
+📖 Reading corpus/malformed/unknown_marker.rcp ✔ 
+📖 Reading corpus/malformed/ragged_table.rcp ✔ 
+📖 Reading corpus/malformed/dup_key.rcp ✔ 
+💫 Executing python -c "import docling; print(docling.__version__)" ✔ 
+💫 Executing python -c "from docling.document_converter import DocumentConverter; print(DocumentConverter)" ✔ 
+💫 Executing python -c "from docling.document_converter import DocumentConverter; import inspect; print([name for name, _ in inspect.getmembers(DocumentConverter) if not name.startswith('_')])" ✔ 
+💫 Executing python -c "from docling.document_converter import DocumentConverter; import inspect; print(inspect.signature(DocumentConverter.__init__))" ✔ 
+💫 Executing python -c "from docling.datamodel.base_models import InputFormat; print(list(InputFormat))" ✔ 
+💭 Thinking for 329 characters   
+💫 Executing python -c "import inspect; from docling.document_converter import DocumentConverter; print(inspect.getsource(DocumentConverter.initialize_pipeline))" ✔ 
+💫 Executing python -c "import inspect; from docling.document_converter import DocumentConverter; print(inspect.getsource(DocumentConverter._get_pipeline))" ✔ 
+💫 Executing python -c "import inspect; from docling.document_converter import DocumentConverter; print(inspect.getsource(DocumentConverter.__init__))" ✔ 
+💫 Executing python -c "import inspect; from docling.document_converter import _get_default_option; print(inspect.getsource(_get_default_option))" ✔ 
+💫 Executing python -c "import inspect; from docling.document_converter import FormatOption; print(inspect.getsource(FormatOption))" ✔ 
+💫 Executing python -c "import inspect; from docling.datamodel.base_models import BaseFormatOption; print(inspect.getsource(BaseFormatOption))" ✔ 
+💫 Executing python -c "import inspect; from docling.document_converter import MarkdownFormatOption; print(inspect.getsource(MarkdownFormatOption))" ✔ 
+💫 Executing python -c "import inspect; from docling.pipelines.simple_pipeline import SimplePipeline; print(inspect.getsource(SimplePipeline))" ✖ "Command exited with code 1"
+💫 Executing python -c "from docling.document_converter import SimplePipeline; print(SimplePipeline.__module__)" ✔ 
+💫 Executing python -c "import inspect; from docling.pipeline.simple_pipeline import SimplePipeline; print(inspect.getsource(SimplePipeline))" ✔ 
+💫 Executing python -c "import inspect; from docling.backend.abstract_backend import AbstractDocumentBackend; print(inspect.getsource(AbstractDocumentBackend))" ✔ 
+💫 Executing python -c "import inspect; from docling.backend.abstract_backend import DeclarativeDocumentBackend; print(inspect.getsource(DeclarativeDocumentBackend))" ✔ 
+💫 Executing python -c "import inspect; from docling.datamodel.document import InputDocument; print(inspect.getsource(InputDocument))" ✔ 
+💫 Executing python -c "import inspect; from docling.document_converter import DocumentConverter; print(inspect.getsource(DocumentConverter.convert))" ✔ 
+💫 Executing python -c "import inspect; from docling.document_converter import DocumentConverter; print(inspect.getsource(DocumentConverter.convert_all))" ✔ 
+💫 Executing python -c "import inspect; from docling.document_converter import _DocumentConversionInput; print(inspect.getsource(_DocumentConversionInput))" ✔ 
+💫 Executing python -c "import inspect; from docling.datamodel.base_models import InputFormat; print(inspect.getsource(InputFormat))" ✔ 
+💭 Thinking for 627 characters   
+💫 Executing python -c "
+from docling.datamodel.base_models import InputFormat
+# Try to add RCP dynamically
+InputFormat._member_names_.append('RCP')
+InputFormat._member_map_['RCP'] = 'rcp'
+InputFormat._value2member_map_['rcp'] = 'rcp' # Wait, the value is normally an instance of the Enum
+# Actually, let's instantiate it or subclass it or use a helper to dynamically add to Enum
+" ✔ 
+💭 Thinking for 287 characters   
+💫 Executing python -c "
+import enum
+from docling.datamodel.base_models import InputFormat
+
+def add_enum_member(enum_cls, name, value):
+    obj = enum_cls.__new__(enum_cls, value)
+    obj._name_ = name
+    obj._value_ = value
+    enum_cls._member_names_.append(name)
+    enum_cls._member_map_[name] = obj
+    enum_cls._value2member_map_[value] = obj
+    return obj
+
+add_enum_member(InputFormat, 'RCP', 'rcp')
+print(InputFormat.RCP)
+print(InputFormat('rcp'))
+print(list(InputFormat))
+" ✖ "Command exited with code 1"
+💭 Thinking for 305 characters   
+💫 Executing python -c "
+import enum
+from docling.datamodel.base_models import InputFormat
+
+def add_enum_member(enum_cls, name, value):
+    obj = str.__new__(enum_cls, value)
+    obj._name_ = name
+    obj._value_ = value
+    enum_cls._member_names_.append(name)
+    enum_cls._member_map_[name] = obj
+    enum_cls._value2member_map_[value] = obj
+    return obj
+
+add_enum_member(InputFormat, 'RCP', 'rcp')
+print(InputFormat.RCP)
+print(InputFormat('rcp'))
+print(list(InputFormat))
+" ✖ "Command exited with code 1"
+💫 Executing python -c "
+import enum
+from docling.datamodel.base_models import InputFormat
+
+def add_enum_member(enum_cls, name, value):
+    obj = str.__new__(enum_cls, value)
+    obj._name_ = name
+    obj._value_ = value
+    setattr(enum_cls, name, obj)
+    enum_cls._member_names_.append(name)
+    enum_cls._member_map_[name] = obj
+    enum_cls._value2member_map_[value] = obj
+    return obj
+
+add_enum_member(InputFormat, 'RCP', 'rcp')
+print(InputFormat.RCP)
+print(InputFormat('rcp'))
+print(list(InputFormat))
+" ✔ 
+💭 Thinking for 256 characters   
+💫 Executing python -c "from docling.datamodel.base_models import MimeTypeToFormat, FormatToExtensions, FormatToMimeType; print('MimeTypeToFormat:', MimeTypeToFormat); print('FormatToExtensions:', FormatToExtensions); print('FormatToMimeType:', FormatToMimeType)" ✔ 
+💭 Thinking for 3561 characters   
+💫 Executing python -c "import inspect; from docling.backend.docling_json_backend import DoclingJSONBackend; print(inspect.getsource(DoclingJSONBackend))" ✖ "Command exited with code 1"
+💫 Executing python -c "from docling.document_converter import DoclingJSONBackend; print(DoclingJSONBackend.__module__)" ✔ 
+💫 Executing python -c "import inspect; from docling.backend.json.docling_json_backend import DoclingJSONBackend; print(inspect.getsource(DoclingJSONBackend))" ✔ 
+💭 Thinking for 638 characters   
+💫 Executing python -c "from docling.exceptions import DocumentLoadError; print(DocumentLoadError)" ✔ 
+💭 Thinking for 5649 characters   
+💫 Executing python -c "from docling_core.types.doc.document import DoclingDocument; import inspect; print([name for name, _ in inspect.getmembers(DoclingDocument) if not name.startswith('_')])" ✔ 
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+import inspect
+for method in ['add_title', 'add_heading', 'add_text', 'add_ordered_list', 'add_unordered_list', 'add_list_item', 'add_table', 'add_picture']:
+    print(method, inspect.signature(getattr(DoclingDocument, method)))
+" ✔ 
+💭 Thinking for 288 characters   
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+title = doc.add_title('Test Title')
+h1 = doc.add_heading('Heading 1', level=1, parent=title)
+p1 = doc.add_text(label='text', text='Paragraph 1', parent=h1)
+print(doc.export_to_markdown())
+" ✔ 
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+title = doc.add_title('Test Title')
+h1 = doc.add_heading('Heading 1', level=1)
+p1 = doc.add_text(label='text', text='Paragraph 1', parent=h1)
+print(doc.export_to_markdown())
+" ✔ 
+💭 Thinking for 277 characters   
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+title = doc.add_title('Test Title')
+h1 = doc.add_heading('Heading 1', level=1)
+p1 = doc.add_text(label='text', text='Paragraph 1', parent=h1)
+doc.print_element_tree()
+" ✔ 
+💭 Thinking for 254 characters   
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+title = doc.add_title('Test Title')
+h1 = doc.add_heading('Heading 1', level=1)
+p1 = doc.add_text(label='text', text='Paragraph 1')
+doc.print_element_tree()
+" ✔ 
+💭 Thinking for 763 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('corpus/clean/readme.md')
+res.document.print_element_tree()
+" ✔ 
+💭 Thinking for 1845 characters   
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+lst = doc.add_ordered_list()
+item1 = doc.add_list_item(text='Step 1', enumerated=True, parent=lst)
+item2 = doc.add_list_item(text='Step 2', enumerated=True, parent=lst)
+doc.print_element_tree()
+print(doc.export_to_markdown())
+" ✔ 
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+import inspect
+print(inspect.signature(DoclingDocument.add_list_group))
+" ✔ 
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+lst = doc.add_list_group()
+item1 = doc.add_list_item(text='Step 1', enumerated=True, parent=lst)
+item2 = doc.add_list_item(text='Step 2', enumerated=True, parent=lst)
+doc.print_element_tree()
+print(doc.export_to_markdown())
+" ✔ 
+💭 Thinking for 232 characters   
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+lst = doc.add_list_group()
+item1 = doc.add_list_item(text='Bullet 1', enumerated=False, parent=lst)
+item2 = doc.add_list_item(text='Bullet 2', enumerated=False, parent=lst)
+doc.print_element_tree()
+print(doc.export_to_markdown())
+" ✔ 
+💭 Thinking for 253 characters   
+💫 Executing python -c "
+from docling_core.types.doc.items.table.table_data import TableData
+import inspect
+print(inspect.signature(TableData.__init__))
+" ✔ 
+💫 Executing python -c "
+from docling_core.types.doc.items.table.table_data import TableData
+print(TableData.model_fields)
+" ✔ 
+💫 Executing python -c "
+from docling_core.types.doc.items.table.table_data import TableCell
+print(TableCell.model_fields)
+" ✔ 
+💭 Thinking for 297 characters   
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.doc.items.table.table_data import TableData, TableCell
+
+doc = DoclingDocument(name='test')
+cells = [
+    TableCell(text='Header 1', start_row_offset_idx=0, end_row_offset_idx=1, start_col_offset_idx=0, end_col_offset_idx=1, column_header=True),
+    TableCell(text='Header 2', start_row_offset_idx=0, end_row_offset_idx=1, start_col_offset_idx=1, end_col_offset_idx=2, column_header=True),
+    TableCell(text='Row 1 Col 1', start_row_offset_idx=1, end_row_offset_idx=2, start_col_offset_idx=0, end_col_offset_idx=1),
+    TableCell(text='Row 1 Col 2', start_row_offset_idx=1, end_row_offset_idx=2, start_col_offset_idx=1, end_col_offset_idx=2),
+]
+table_data = TableData(table_cells=cells, num_rows=2, num_cols=2)
+doc.add_table(data=table_data)
+print(doc.export_to_markdown())
+" ✔ 
+💭 Thinking for 404 characters   
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+caption_item = doc.add_text(label='caption', text='A nice picture')
+pic = doc.add_picture(caption=caption_item)
+print(doc.export_to_markdown())
+" ✔ 
+💭 Thinking for 316 characters   
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+try:
+    pic = doc.add_picture(caption='A nice picture')
+    print('Success')
+except Exception as e:
+    print('Error:', type(e), e)
+" ✔ 
+💫 Executing python -c "
+from docling_core.types.doc.labels import DocItemLabel
+print(list(DocItemLabel))
+" ✔ 
+💭 Thinking for 268 characters   
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.doc.labels import DocItemLabel
+
+doc = DoclingDocument(name='test')
+h1 = doc.add_heading('Section 1', level=1)
+caption_item = doc.add_text(label=DocItemLabel.CAPTION, text='A nice picture', parent=h1)
+pic = doc.add_picture(caption=caption_item, parent=h1)
+doc.print_element_tree()
+" ✔ 
+💭 Thinking for 6461 characters   
+💫 Executing python -c "
+import re
+import os
+from pathlib import Path
+
+class RCPParser:
+    def __init__(self, content: str):
+        self.headers = {}
+        self.body_elements = []
+        self.parse(content)
+
+    def parse(self, content: str):
+        lines = content.splitlines()
+        if not lines:
+            raise ValueError('File is empty')
+        
+        if lines[0] != '%RCP/1.0':
+            raise ValueError('Invalid magic line')
+        
+        header_ended = False
+        header_lines_count = 0
+        for i in range(1, len(lines)):
+            line = lines[i]
+            if line == '%%':
+                header_ended = True
+                header_lines_count = i
+                break
+            
+            if '=' not in line:
+                raise ValueError(f'Invalid header line: {line}')
+            
+            key, val = line.split('=', 1)
+            if not re.match(r'^[a-z][a-z0-9_]*$', key):
+                raise ValueError(f'Invalid header key: {key}')
+            
+            val = val.strip()
+            if key in self.headers:
+                raise ValueError(f'Duplicate header key: {key}')
+            
+            self.headers[key] = val
+        
+        if not header_ended:
+            raise ValueError('Header block not terminated with %%')
+        
+        if 'id' not in self.headers or not self.headers['id']:
+            raise ValueError('Missing or empty required header id')
+        
+        if 'title' not in self.headers or not self.headers['title']:
+            raise ValueError('Missing or empty required header title')
+        
+        body_lines = lines[header_lines_count + 1:]
+        
+        current_block_type = None
+        current_block_lines = []
+        
+        def flush_block():
+            nonlocal current_block_type, current_block_lines
+            if not current_block_type:
+                return
+            
+            if current_block_type == 'N':
+                items = []
+                for b_line in current_block_lines:
+                    items.append(b_line[3:])
+                self.body_elements.append(('list_ordered', items))
+            elif current_block_type == 'B':
+                items = []
+                for b_line in current_block_lines:
+                    items.append(b_line[3:])
+                self.body_elements.append(('list_unordered', items))
+            elif current_block_type == '|':
+                rows_cells = []
+                for b_line in current_block_lines:
+                    content_part = b_line[1:]
+                    if content_part.endswith('|'):
+                        content_part = content_part[:-1]
+                    cells = [cell.strip() for cell in content_part.split('|')]
+                    rows_cells.append(cells)
+                
+                num_cols = len(rows_cells[0])
+                for row_idx, row in enumerate(rows_cells):
+                    if len(row) != num_cols:
+                        raise ValueError(f'Ragged table at row {row_idx}: expected {num_cols} columns, got {len(row)}')
+                
+                self.body_elements.append(('table', rows_cells))
+            
+            current_block_type = None
+            current_block_lines = []
+
+        for line in body_lines:
+            if not line.strip():
+                flush_block()
+                continue
+            
+            if line.startswith(('S1> ', 'S2> ', 'S3> ', 'S4> ', 'S5> ', 'S6> ')):
+                flush_block()
+                level = int(line[1])
+                text = line[4:]
+                self.body_elements.append(('heading', (level, text)))
+            elif line.startswith('P> '):
+                flush_block()
+                self.body_elements.append(('paragraph', line[3:]))
+            elif line.startswith('A> '):
+                flush_block()
+                self.body_elements.append(('annotation', line[3:]))
+            elif line.startswith('F> '):
+                flush_block()
+                rest = line[3:]
+                if ' :: ' not in rest:
+                    raise ValueError(f'Invalid figure line: {line}')
+                ref, caption = rest.split(' :: ', 1)
+                self.body_elements.append(('figure', (ref, caption)))
+            elif line.startswith('N> '):
+                if current_block_type != 'N':
+                    flush_block()
+                    current_block_type = 'N'
+                current_block_lines.append(line)
+            elif line.startswith('B> '):
+                if current_block_type != 'B':
+                    flush_block()
+                    current_block_type = 'B'
+                current_block_lines.append(line)
+            elif line.startswith('|'):
+                if current_block_type != '|':
+                    flush_block()
+                    current_block_type = '|'
+                current_block_lines.append(line)
+            else:
+                raise ValueError(f'Unrecognized body line: {line}')
+        
+        flush_block()
+
+corpus_dir = Path('corpus')
+for path in sorted(corpus_dir.rglob('*')):
+    if path.is_file() and path.suffix == '.rcp':
+        content = path.read_text(encoding='utf-8')
+        try:
+            parser = RCPParser(content)
+            print(f'SUCCESS: {path}')
+        except Exception as e:
+            print(f'FAILURE: {path} - {e}')
+" ✔ 
+💭 Thinking for 3316 characters   
+💫 Executing python -c "import inspect; from docling.document_converter import DocumentConverter; print(inspect.getsource(DocumentConverter._convert))" ✔ 
+💫 Executing python -c "import inspect; from docling.document_converter import DocumentConverter; print(inspect.getsource(DocumentConverter._process_document))" ✔ 
+💫 Executing python -c "import inspect; from docling.document_converter import DocumentConverter; print(inspect.getsource(DocumentConverter._execute_pipeline))" ✔ 
+💭 Thinking for 1889 characters   
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+doc.add_title('Hello')
+json_data = doc.model_dump_json()
+doc2 = DoclingDocument.model_validate_json(json_data)
+print('Loaded successfully:', doc2.name)
+" ✔ 
+💭 Thinking for 365 characters   
+💫 Executing python -c "
+import docling
+from docling.chunking import HybridChunker
+print(HybridChunker)
+" ✔ 
+💭 Thinking for 256 characters   
+💫 Executing python -c "
+from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
+import inspect
+print(inspect.signature(HybridChunker.__init__))
+print([name for name, _ in inspect.getmembers(HybridChunker) if not name.startswith('_')])
+" ✔ 
+💫 Executing python -c "
+from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
+import inspect
+print(inspect.signature(HybridChunker.chunk))
+" ✔ 
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
+
+doc = DoclingDocument(name='test')
+doc.add_title('Test Title')
+h1 = doc.add_heading('Heading 1', level=1)
+doc.add_text(label='text', text='Paragraph 1', parent=h1)
+
+chunker = HybridChunker()
+chunks = list(chunker.chunk(doc))
+for i, chunk in enumerate(chunks):
+    print(f'Chunk {i}:')
+    print('  text:', repr(chunk.text))
+    print('  meta:', type(chunk))
+    # print all attributes
+    print('  dir:', [name for name in dir(chunk) if not name.startswith('_')])
+" ✔ 
+💭 Thinking for 661 characters   
+💫 Executing python -c "
+from docling_core.types.doc.document import DoclingDocument
+from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
+
+doc = DoclingDocument(name='test')
+doc.add_title('Test Title')
+h1 = doc.add_heading('Heading 1', level=1)
+doc.add_text(label='text', text='Paragraph 1', parent=h1)
+
+chunker = HybridChunker()
+chunks = list(chunker.chunk(doc))
+for i, chunk in enumerate(chunks):
+    print('headings:', chunk.meta.headings)
+    print('doc_items:', chunk.meta.doc_items)
+" ✔ 
+💭 Thinking for 268 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
+
+converter = DocumentConverter()
+res = converter.convert('corpus/clean/readme.md')
+chunker = HybridChunker()
+for chunk in chunker.chunk(res.document):
+    print('text:', repr(chunk.text))
+    print('headings:', chunk.meta.headings)
+" ✔ 
+💭 Thinking for 1042 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc.labels import DocItemLabel
+import rcp_plugin # wait, rcp_plugin is not written yet, let's import DocumentConverter and use it or write a mock
+
+# Let's inspect DoclingDocument items
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+doc.add_title('Title')
+doc.add_heading('H1', level=1)
+doc.add_text(label=DocItemLabel.TEXT, text='hello')
+doc.add_list_item(text='item', enumerated=True)
+doc.add_picture()
+
+# Let's see how we can iterate over all items
+for item, level in doc.iterate_items():
+    print(type(item), getattr(item, 'label', None), getattr(item, 'text', None))
+" ✖ "Command exited with code 1"
+💫 Executing python -c "
+from docling_core.types.doc.labels import DocItemLabel
+from docling_core.types.doc.document import DoclingDocument
+doc = DoclingDocument(name='test')
+doc.add_title('Title')
+doc.add_heading('H1', level=1)
+doc.add_text(label=DocItemLabel.TEXT, text='hello')
+doc.add_list_item(text='item', enumerated=True)
+doc.add_picture()
+
+for item, level in doc.iterate_items():
+    print(type(item).__name__, getattr(item, 'label', None), getattr(item, 'text', None))
+" ✔ 
+💭 Thinking for 367 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc.labels import DocItemLabel
+
+converter = DocumentConverter()
+res = converter.convert('corpus/clean/readme.md')
+doc = res.document
+
+num_headings = 0
+num_list_items = 0
+num_tables = 0
+num_pictures = 0
+
+for item, level in doc.iterate_items():
+    label = getattr(item, 'label', None)
+    if label == DocItemLabel.SECTION_HEADER:
+        num_headings += 1
+    elif label == DocItemLabel.LIST_ITEM:
+        num_list_items += 1
+    elif label == DocItemLabel.TABLE:
+        num_tables += 1
+    elif label == DocItemLabel.PICTURE:
+        num_pictures += 1
+
+print(f'headings={num_headings} list_items={num_list_items} tables={num_tables} pictures={num_pictures}')
+" ✔ 

@@ -1,0 +1,308 @@
+- Initializing MCP connections...
+You
+# Teach Docling a New Input Format (RCP/1.0) ## Background Docling is preinstalled in this container (`import docling`, distribution `docling-slim` 2.115.0, `docling-core` 2.87.1, Python 3.12) together with all of its model weights. **The container has no network access**: nothing may be downloaded, and no external or cloud service may be contacted. Only preinstalled packages may be used. A lab publishes its protocols in a small in-house plain-text format called **RCP/1.0** (`.rcp`). Downstream teams want those protocols in the same document model, exports and chunk stream that Docling already produces for its natively supported formats, so RCP must become a first-class Docling input format rather than a side-channel parser. ## The RCP/1.0 format An RCP file is UTF-8 text with LF line endings and is read line by line. 1. The **first line** must be exactly `%RCP/1.0`. 2. Then comes the **header block**: every line has the form `<key>=<value>`, where `<key>` matches `[a-z][a-z0-9_]*` and `<value>` is the rest of the line with surrounding whitespace stripped. The header block ends at the first line that is exactly `%%`. Keys `id` and `title` are required and must have a non-empty value; other keys are allowed and carry no meaning. A repeated key is an error. 3. Everything after the `%%` line is the **body**. Blank lines (empty or whitespace-only) carry no content; they only terminate the block they follow. Every other body line must be exactly one of: * `S<n>> <text>` with `<n>` in `1`..`6` — a section heading of level `<n>`. * `P> <text>` — a paragraph. * `N> <text>` — an ordered step. A run of consecutive `N>` lines is one ordered list. * `B> <text>` — a bullet. A run of consecutive `B>` lines is one unordered list. * `A> <text>` — an annotation. * `F> <ref> :: <caption>` — a figure reference with a caption. * A line starting with `|` — one table row. A run of consecutive table-row lines is one table. The cells of a row are obtained by dropping the leading `|`, then dropping one trailing `|` if present, then splitting on `|` and stripping each cell. The first row of a table is its column-header row, and every row of the same table must yield the same number of cells. A file that violates any rule above (bad magic line, malformed or unterminated header, repeated header key, missing/empty `id` or `title`, unrecognized body line, ragged table) is **malformed**. ## Requirements Fixtures live under `/home/user/project/corpus` (`clean/`, `mixed/`, `malformed/`, `unsupported/`); they are inputs, not templates for your output. ### 1. RCP as a Docling input format Docling's own conversion entry point must handle `.rcp` inputs. Expose `build_converter()` in `/home/user/project/rcp_plugin.py`; it must return a `docling.document_converter.DocumentConverter` instance that: * converts `.rcp` documents given as a filesystem path **and** as an in-memory Docling document stream named `<something>.rcp`, reporting conversion success and returning a Docling document; * still converts natively supported Markdown (`.md`) documents successfully through the same converter instance; * reports a conversion **failure** status for a malformed `.rcp` file instead of letting an exception escape, when the caller asks for errors not to be raised; * does **not** report success for any other input format (e.g. `.csv`). A converted RCP document must carry the following structure: * Its document name is the header `id` value. * Its body starts with a single title element whose text is the header `title` value. * Each `S<n>>` line becomes a section-heading element whose heading level equals `<n>` and whose text is the line's text. A heading is nested inside the closest preceding heading of a smaller level (if any); every content element is nested inside the closest preceding heading. * Each `P>` line becomes a plain text element with that text. * Each `A>` line becomes a plain text element whose text is exactly `NOTE: ` followed by the annotation text. * Each run of `N>` lines becomes one enumerated (ordered) list, each run of `B>` lines one non-enumerated list, with one list item per line, in file order, carrying the line's text. * Each table block becomes one table element with `num_rows` equal to the number of rows in the block, `num_cols` equal to the number of cells per row, cell texts as parsed, and the cells of the first row flagged as column headers. * Each `F>` line becomes one picture element whose caption text is the caption from that line. * Nothing else is added to the document. ### 2. Unified batch CLI `/home/user/project/rcp_convert.py`, run from `/home/user/project` as ``` python rcp_convert.py --input-dir <INPUT_DIR> --output-dir <OUTPUT_DIR> ``` converts a mixed directory in one pass. Both options are required. * Inputs are the regular files **directly** inside `<INPUT_DIR>` whose name ends in `.rcp` or `.md`, processed in ascending file-name order. Subdirectories and every other file are ignored. * `<OUTPUT_DIR>` is created when missing and receives: * `markdown/<stem>.md` — the Markdown export of the converted document (leading/trailing whitespace is not significant); * `json/<stem>.json` — the document's JSON serialization, loadable back into an equivalent Docling document; * `chunks.jsonl` — one JSON object per line, produced by Docling's hierarchical chunking of each converted document, in chunker order, grouped per input file in the same ascending file-name order. Each object has exactly the keys `file` (input file name), `chunk_index` (integer, restarting at 0 for each input file), `headings` (list of strings, the chunk's heading path, empty when there is none), `text` (the chunk text) and `num_chars` (integer, the number of characters in `text`); * `summary.json` — a JSON object with exactly the keys `schema_version` (integer `1`), `counts` and `documents`. `counts` has exactly the keys `total`, `succeeded` and `failed` (integers). `documents` is a list, ordered by `file` ascending, with one object per input file having exactly the keys `file` (file name), `format` (`"rcp"` or `"md"`), `status` (`"success"` or `"failure"`), `num_headings` (number of section-heading elements in the converted document), `num_list_items` (number of list items), `num_tables`, `num_pictures`, `num_chunks` (number of chunk objects written for this file) and `sha256` (lowercase hex SHA-256 of the input file's bytes). * A file that fails to convert gets `"status": "failure"`, zeros in all five numeric fields, no `markdown/` or `json/` output and no line in `chunks.jsonl`; the run still processes every other file. * The last line printed on stdout is exactly `converted=<succeeded> failed=<failed> total=<total>`. * Exit code `0` when every input converted, `1` when at least one input failed to convert, `2` when `<INPUT_DIR>` does not exist or is not a directory (in that case nothing else is required). A Python traceback must never reach stderr. * Re-running the command with the same input and output directories must rewrite byte-identical output files. ## Implementation Hints * Project path: `/home/user/project`; both `rcp_plugin.py` and `rcp_convert.py` live directly in it, and `rcp_plugin` must be importable as a top-level module with `/home/user/project` on `sys.path`. * Command: `python rcp_convert.py --input-dir <INPUT_DIR> --output-dir <OUTPUT_DIR>`, run with `/home/user/project` as the working directory. * Conversion, exports and chunking must be produced by Docling itself from the converted document; hand-written Markdown/JSON/chunk emitters that bypass Docling's conversion entry point are not acceptable. * Everything must run offline on CPU.   
+
+Pochi
+💭 Thinking for 107 characters   
+💫 Executing python -c "import docling; print(docling.__file__)"; pip show docling-core docling-slim 2>/dev/null | head -50 ✔ 
+📂 Listing files in /home/user/project recursively ✔ 
+💭 Thinking for 134 characters   
+📖 Reading /home/user/project/corpus/clean/alpha.rcp ✔ 
+📖 Reading /home/user/project/corpus/clean/bravo.rcp ✔ 
+📖 Reading /home/user/project/corpus/malformed/bad_magic.rcp ✔ 
+📖 Reading /home/user/project/corpus/malformed/no_terminator.rcp ✔ 
+📖 Reading /home/user/project/corpus/malformed/missing_title.rcp ✔ 
+📖 Reading /home/user/project/corpus/malformed/unknown_marker.rcp ✔ 
+📖 Reading /home/user/project/corpus/malformed/ragged_table.rcp ✔ 
+📖 Reading /home/user/project/corpus/malformed/dup_key.rcp ✔ 
+📖 Reading /home/user/project/corpus/mixed/broken.rcp ✔ 
+💭 Thinking for 366 characters   
+💫 Executing python -c "
+import docling
+import os
+print(os.path.dirname(docling.__file__))
+"
+find /opt/app-root/lib64/python3.12/site-packages/docling -maxdepth 2 -type d ✔ 
+🔍 Searching for class InputFormat|InputFormat\. in *.py files in /opt/app-root/lib64/python3.12/site-packages/docling ✔ 
+💭 Thinking for 1315 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/document_converter.py ✔ 
+💭 Thinking for 211 characters   
+🔍 Searching for def _guess_format|class InputDocument|class _DocumentConversionInput|def docs\( in /opt/app-root/lib64/python3.12/site-packages/docling/datamodel/document.py ✔ 
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/datamodel/document.py ✔ 
+💭 Thinking for 307 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/datamodel/document.py ✔ 
+💭 Thinking for 221 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/datamodel/document.py ✔ 
+💭 Thinking for 3298 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/backend/abstract_backend.py ✔ 
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/pipeline/simple_pipeline.py ✔ 
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/backend/csv_backend.py ✔ 
+💭 Thinking for 1165 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/backend/md_backend.py ✔ 
+💭 Thinking for 663 characters   
+🔍 Searching for def __init__|def is_valid|def supports_pagination|def supported_formats|def convert\( in /opt/app-root/lib64/python3.12/site-packages/docling/backend/md_backend.py ✔ 
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/backend/md_backend.py ✔ 
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/backend/md_backend.py ✔ 
+💭 Thinking for 588 characters   
+💫 Executing python -c "import marko; print(marko.__version__)"; python -c "import docling_core; print(docling_core.__file__)" ✔ 
+💭 Thinking for 409 characters   
+💫 Executing python -c "
+from docling_core.types.doc import DoclingDocument
+import inspect
+methods = [m for m in dir(DoclingDocument) if m.startswith('add_')]
+print(methods)
+"
+ ✔ 
+💫 Executing python - <<'EOF'
+from docling_core.types.doc import DoclingDocument
+import inspect
+for name in ['add_title','add_heading','add_text','add_list_item','add_ordered_list','add_unordered_list','add_list_group','add_table','add_picture','add_group']:
+    try:
+        sig = inspect.signature(getattr(DoclingDocument, name))
+        print(name, sig)
+    except Exception as e:
+        print(name, 'ERR', e)
+EOF
+ ✔ 
+💭 Thinking for 527 characters   
+🔍 Searching for add_picture\(|CAPTION in *.py files in /opt/app-root/lib64/python3.12/site-packages/docling ✔ 
+💭 Thinking for 387 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/backend/boxnote_backend.py ✔ 
+💭 Thinking for 677 characters   
+💫 Executing python - <<'EOF'
+from docling_core.types.doc import DoclingDocument, DocItemLabel, DocumentOrigin
+origin = DocumentOrigin(filename="x.rcp", mimetype="text/plain", binary_hash="0"*8)
+doc = DoclingDocument(name="x", origin=origin)
+doc.add_title("Title")
+cap = doc.add_text(label=DocItemLabel.CAPTION, text="a caption")
+pic = doc.add_picture(caption=cap)
+print(doc.export_to_markdown())
+print('---')
+for item, level in doc.iterate_items():
+    print(level, type(item).__name__, getattr(item,'label',None), getattr(item,'text',None))
+print('---body children---')
+print(doc.body.children)
+EOF
+ ✔ 
+💭 Thinking for 706 characters   
+💫 Executing python - <<'EOF'
+from docling_core.types.doc import PictureItem, TableItem
+import inspect
+print([f for f in PictureItem.model_fields.keys()])
+print([f for f in TableItem.model_fields.keys()])
+EOF
+ ✔ 
+💭 Thinking for 304 characters   
+💫 Executing python - <<'EOF'
+from docling_core.types.doc import DoclingDocument, DocItemLabel, DocumentOrigin
+origin = DocumentOrigin(filename="x.rcp", mimetype="text/plain", binary_hash="0"*8)
+doc = DoclingDocument(name="x", origin=origin)
+doc.add_title("Title")
+pic = doc.add_picture()
+cap = doc.add_text(label=DocItemLabel.CAPTION, text="a caption", parent=pic)
+pic.captions.append(cap.get_ref())
+print(doc.export_to_markdown())
+print('---')
+for item, level in doc.iterate_items():
+    print(level, type(item).__name__, getattr(item,'label',None), getattr(item,'text',None))
+print('---body children---')
+print(doc.body.children)
+print(pic.children)
+print(pic.captions)
+EOF
+ ✔ 
+💭 Thinking for 674 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/backend/asciidoc_backend.py ✔ 
+💭 Thinking for 354 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/backend/msword_backend.py ✔ 
+💭 Thinking for 410 characters   
+💫 Executing python - <<'EOF'
+from docling_core.types.doc import PictureItem, TableItem
+import inspect
+print([m for m in dir(PictureItem) if 'caption' in m.lower()])
+print(inspect.getsource(PictureItem.caption_text)) if hasattr(PictureItem,'caption_text') else None
+EOF
+ ✔ 
+💭 Thinking for 1796 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/datamodel/document.py ✔ 
+💭 Thinking for 343 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/document_converter.py ✔ 
+💭 Thinking for 263 characters   
+🔍 Searching for def _execute_pipeline|in_doc.valid|FAILURE in /opt/app-root/lib64/python3.12/site-packages/docling/document_converter.py ✔ 
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/document_converter.py ✔ 
+💭 Thinking for 2152 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/datamodel/base_models.py ✔ 
+💭 Thinking for 768 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/datamodel/document.py ✔ 
+💭 Thinking for 4092 characters   
+💫 Executing python - <<'EOF'
+from docling_core.types.doc import DocItemLabel
+print(list(DocItemLabel))
+EOF
+ ✔ 
+💭 Thinking for 747 characters   
+💫 Executing python - <<'EOF'
+from docling_core.types.doc import DoclingDocument, DocumentOrigin
+import inspect
+print(inspect.getsource(DoclingDocument.add_heading))
+EOF
+ ✔ 
+💭 Thinking for 1619 characters   
+💫 Executing python - <<'EOF'
+from docling_core.types.doc import DoclingDocument
+import inspect
+print(inspect.getsource(DoclingDocument.add_ordered_list))
+print(inspect.getsource(DoclingDocument.add_list_item))
+EOF
+ ✔ 
+💭 Thinking for 489 characters   
+💫 Executing python - <<'EOF'
+from docling_core.types.doc import DoclingDocument, GroupLabel
+import inspect
+print(list(GroupLabel))
+print(inspect.getsource(DoclingDocument.add_list_group))
+EOF
+ ✔ 
+💭 Thinking for 531 characters   
+💫 Executing python - <<'EOF'
+from docling_core.types.doc import DocumentOrigin
+print(DocumentOrigin.model_fields)
+EOF
+ ✔ 
+💭 Thinking for 302 characters   
+🔍 Searching for def create_file_hash in /opt/app-root/lib64/python3.12/site-packages/docling ✔ 
+💭 Thinking for 241 characters   
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/utils/utils.py ✔ 
+💭 Thinking for 587 characters   
+📂 Listing files in /opt/app-root/lib64/python3.12/site-packages/docling/chunking ✔ 
+📖 Reading /opt/app-root/lib64/python3.12/site-packages/docling/chunking/__init__.py ✔ 
+💫 Executing python - <<'EOF'
+from docling.chunking import HierarchicalChunker, DocChunk, DocMeta
+import inspect
+print(inspect.signature(HierarchicalChunker.chunk))
+print(DocMeta.model_fields.keys())
+EOF
+ ✔ 
+💭 Thinking for 111 characters   
+💫 Executing python - <<'EOF'
+from docling.chunking import DocChunk
+print(DocChunk.model_fields.keys())
+EOF
+ ✔ 
+Now let's look at export methods on DoclingDocument for markdown/json, and check `document_converter`'s ConversionResult / ConversionStatus for use in rcp_convert.py.   
+💫 Executing python - <<'EOF'
+from docling_core.types.doc import DoclingDocument
+import inspect
+print(inspect.signature(DoclingDocument.export_to_markdown))
+print(inspect.signature(DoclingDocument.save_as_json)) if hasattr(DoclingDocument,'save_as_json') else print('no save_as_json')
+print([m for m in dir(DoclingDocument) if 'json' in m.lower()])
+print([m for m in dir(DoclingDocument) if 'load' in m.lower()])
+EOF
+ ✔ 
+💭 Thinking for 1293 characters   
+Now let's implement `rcp_plugin.py`:   
+✏️  Writing /home/user/project/rcp_plugin.py ✔ 
+Now let's test this against the fixtures:   
+💫 Executing cd /home/user/project && python - <<'EOF'
+import sys
+sys.path.insert(0, ".")
+from rcp_plugin import build_converter
+from docling.datamodel.base_models import DocumentStream, InputFormat
+from io import BytesIO
+
+conv = build_converter()
+
+# path conversion
+res = conv.convert("corpus/clean/alpha.rcp")
+print("status", res.status)
+doc = res.document
+print("name", doc.name)
+print(doc.export_to_markdown()[:500])
+print("---counts---")
+from docling_core.types.doc import DocItemLabel
+headings = [t for t in doc.texts if t.label == DocItemLabel.SECTION_HEADER]
+list_items = [t for t in doc.texts if t.label == DocItemLabel.LIST_ITEM]
+print("headings", len(headings), [(h.level,h.text) for h in headings])
+print("list_items", len(list_items))
+print("tables", len(doc.tables))
+print("pictures", len(doc.pictures))
+for p in doc.pictures:
+    print("caption:", p.caption_text(doc))
+EOF
+ ✖ "Command exited with code 1"
+💭 Thinking for 94 characters   
+🔧 Applying diff to /home/user/project/rcp_plugin.py ✔ 
+💫 Executing cd /home/user/project && python - <<'EOF'
+import sys
+sys.path.insert(0, ".")
+from rcp_plugin import build_converter
+from docling.datamodel.base_models import DocumentStream, InputFormat
+from io import BytesIO
+
+conv = build_converter()
+
+# path conversion
+res = conv.convert("corpus/clean/alpha.rcp")
+print("status", res.status)
+doc = res.document
+print("name", doc.name)
+print(doc.export_to_markdown()[:800])
+print("---counts---")
+from docling_core.types.doc import DocItemLabel
+headings = [t for t in doc.texts if t.label == DocItemLabel.SECTION_HEADER]
+list_items = [t for t in doc.texts if t.label == DocItemLabel.LIST_ITEM]
+print("headings", len(headings), [(h.level,h.text) for h in headings])
+print("list_items", len(list_items))
+print("tables", len(doc.tables))
+print("pictures", len(doc.pictures))
+for p in doc.pictures:
+    print("caption:", p.caption_text(doc))
+for t in doc.tables:
+    print("table rows/cols:", t.data.num_rows, t.data.num_cols)
+EOF
+ ✔ 
+Excellent, this works correctly. Now let's test malformed files, stream conversion, .md conversion, and .csv rejection:   
+💫 Executing cd /home/user/project && python - <<'EOF'
+import sys
+sys.path.insert(0, ".")
+from rcp_plugin import build_converter
+from docling.datamodel.base_models import DocumentStream, InputFormat
+from io import BytesIO
+from pathlib import Path
+
+conv = build_converter()
+
+# malformed files, raises_on_error=False
+import glob
+for f in sorted(glob.glob("corpus/malformed/*.rcp")):
+    res = conv.convert(f, raises_on_error=False)
+    print(f, res.status)
+
+# stream conversion
+data = Path("corpus/clean/bravo.rcp").read_bytes()
+stream = DocumentStream(name="mystream.rcp", stream=BytesIO(data))
+res = conv.convert(stream)
+print("stream", res.status, res.document.name)
+
+# md conversion
+res = conv.convert("corpus/clean/readme.md")
+print("md", res.status)
+print(res.document.export_to_markdown()[:200])
+
+# csv rejection
+res = conv.convert("corpus/unsupported/inventory.csv", raises_on_error=False)
+print("csv", res.status)
+
+# raises_on_error=True for malformed should raise
+try:
+    res = conv.convert("corpus/malformed/bad_magic.rcp", raises_on_error=True)
+    print("no raise!", res.status)
+except Exception as e:
+    print("raised as expected:", type(e).__name__, e)
+EOF
+ ✔ 
+Everything works as expected. Now let's build `rcp_convert.py`. Let's check the mixed corpus and unsupported files/nested dirs to confirm expected behavior:   
+📂 Listing files in /home/user/project/corpus/mixed ✔ 
+📖 Reading /home/user/project/corpus/mixed/notes.txt ✔ 
+💭 Thinking for 2477 characters   
+✏️  Writing /home/user/project/rcp_convert.py ✔ 

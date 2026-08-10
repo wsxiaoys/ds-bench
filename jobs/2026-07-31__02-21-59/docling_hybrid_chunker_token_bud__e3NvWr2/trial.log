@@ -1,0 +1,176 @@
+Selected strategy: _DaytonaDirect
+Building environment from /home/kw/code/zealt/docling-benchmark/scratchpad/pending-tasks/docling_hybrid_chunker_token_budget/environment/Dockerfile
+Running command: set -euo pipefail; mkdir -p /logs/agent/pochi && pochi --version
+Command outputs captured
+Running command: mkdir -p ~/.pochi && mkdir -p /logs/agent/pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" -e "s/MINIMAX_API_KEY/${MINIMAX_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    },
+    "minimax": {
+      "kind": "minimax",
+      "apiKey": "MINIMAX_API_KEY",
+      "models": {
+        "MiniMax-M3": {
+          "maxTokens": 10000,
+          "contextWindow": 1000000
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: cat > /tmp/pochi_cmd.sh << 'CMD_EOF'
+set -o pipefail
+pochi --model google/gemini-3.5-flash --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl --experimental-stream-trajectory-strip-duplicates > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Token-Budget-Aware Chunk Packing for Retrieval
+
+## Background
+An offline retrieval service must ingest a small heterogeneous document corpus and turn it into
+embedding-ready chunks. Every chunk has to stay inside a hard token budget of the embedding model,
+must carry its section context and provenance, and the whole artifact has to be byte-for-byte
+reproducible so that downstream index builds can be cached.
+
+The container is fully air-gapped. Docling is pre-installed (CPU only, all model weights baked into
+the image) and a HuggingFace tokenizer directory is baked in as well. Do not install packages,
+download models, or contact any network service.
+
+## Requirements
+Build a single-file command line tool `chunkpack.py` that converts, chunks, and audits the local
+corpus:
+
+- Convert every supported source document in the corpus and split it into chunks whose size is
+  governed by a token budget measured with the baked-in tokenizer.
+- Emit one contextualized chunk record per line into a JSONL artifact, plus an aggregate summary.
+- Guarantee the budget: no emitted chunk may exceed it, including documents that contain a single
+  element far larger than the budget, deeply nested section hierarchies, and tables.
+- Never drop content: every whitespace-separated word of a document's textual content (including
+  table cell values) must appear in that document's emitted chunk texts.
+- Expose a self-audit subcommand that re-validates an existing artifact directory.
+
+## Implementation Hints
+- Project path: `/home/user/chunkforge`. Create `chunkpack.py` there.
+- Corpus (read-only input, do not modify or add files): `/home/user/chunkforge/assets/corpus`.
+- Tokenizer: `/home/user/chunkforge/assets/tokenizer`. This local directory is the only tokenizer
+  allowed; all token counting must be done with it.
+- Commands (always run with the project path as the working directory):
+  - `python3 chunkpack.py pack --corpus <dir> --out <dir> --max-tokens <int> [--no-merge-peers]`
+  - `python3 chunkpack.py verify --out <dir>`
+- `--corpus`, `--out` and `--max-tokens` are mandatory for `pack`. `--no-merge-peers` is optional:
+  by default undersized neighbouring chunks that share the same section context are merged together
+  while staying inside the budget; when the flag is given that merging must be switched off.
+- Source discovery: search `--corpus` recursively. Supported extensions (case-insensitive):
+  `.md`, `.html`, `.docx`, `.pdf`. Every other file is ignored for chunking and recorded as skipped.
+  A source is identified by its POSIX relative path with respect to the `--corpus` directory
+  (e.g. `appendix/omega_notes.md`). All source orderings are ascending by that string.
+- `pack` writes exactly two artifacts into `--out` (creating the directory when missing and
+  replacing any previous content of these two files): `chunks.jsonl` and `summary.json`.
+- `chunks.jsonl` is UTF-8, LF-terminated (no carriage returns), one JSON object per line, with a
+  trailing newline after the last object. Chunks are grouped per source in ascending source order,
+  and inside a source they keep the order in which the document is read. Each object has exactly
+  these nine keys:
+  - `chunk_id` (string): `"<source>#<ordinal>"` where `<ordinal>` is zero-padded to 4 digits
+    (e.g. `alpha_guide.md#0003`).
+  - `index` (integer): 0-based position of the chunk within the whole run; the values on the lines
+    must be `0, 1, 2, ...` in ascending order.
+  - `source` (string): POSIX relative path of the source document.
+  - `ordinal` (integer): 0-based position of the chunk within its own source document.
+  - `heading_path` (array of non-empty strings): the section-title ancestry of the chunk, outermost
+    title first; an empty array when the chunk has no section context.
+  - `page_numbers` (array of integers): ascending, duplicate-free page numbers the chunk's content
+    comes from; an empty array when the source format carries no page provenance.
+  - `token_count` (integer): the number of tokens the baked-in tokenizer produces for the value of
+    `text` (plain tokenization, no special/added tokens counted).
+  - `is_partial_element` (boolean): `true` when the chunk carries only a portion of one single
+    source element whose content had to be divided across several chunks to respect the budget,
+    `false` otherwise.
+  - `text` (string): the contextualized chunk text. When `heading_path` is non-empty the text must
+    begin with those headings, one per line and in order, followed by a newline and then the chunk
+    body; the body must not be empty or whitespace-only. When `heading_path` is empty the text is
+    the body alone.
+- Budget rule: for every emitted chunk `0 < token_count <= --max-tokens`, without exception. You may
+  assume that for the provided corpus and any budget of at least 32 tokens the heading prefix plus
+  one body word always fits.
+- `summary.json` is UTF-8 JSON with exactly these top-level keys:
+  - `tokenizer_path` (string): absolute path of the tokenizer directory used.
+  - `max_tokens` (integer): the budget of this run.
+  - `merge_peers` (boolean): whether peer merging was active in this run.
+  - `documents` (array): one object per successfully chunked source, ascending by `source`, each
+    with exactly the keys `source` (string), `chunk_count` (integer), `token_total` (integer, sum of
+    the document's `token_count` values), `max_chunk_tokens` (integer, 0 when the document produced
+    no chunk), `mean_chunk_tokens` (number, `token_total / chunk_count` rounded to 2 decimals, 0.0
+    when the document produced no chunk), `partial_chunk_count` (integer, number of chunks of that
+    document with `is_partial_element` true), `max_heading_depth` (integer, longest `heading_path`
+    of that document, 0 when none), `page_numbers` (array of integers, ascending duplicate-free
+    union of the document's chunk page numbers).
+  - `totals` (object) with exactly the keys `document_count`, `chunk_count`, `token_total`,
+    `partial_chunk_count` and `budget_violations`, all integers; `budget_violations` counts emitted
+    chunks whose `token_count` exceeds `max_tokens` and must therefore be 0.
+  - `skipped_files` (array of strings): ascending POSIX relative paths of corpus files ignored
+    because of an unsupported extension.
+- On success `pack` exits 0 and the last non-empty line it writes to stdout is exactly
+  `PACKED documents=<D> chunks=<C> max_tokens=<M> merge_peers=<true|false>` with `<D>`, `<C>` and
+  `<M>` matching the summary and the boolean spelled in lowercase.
+- `verify --out <dir>` re-reads `<dir>/chunks.jsonl` together with `<dir>/summary.json` (taking the
+  budget and the tokenizer location from the summary) and re-checks: valid JSON lines carrying
+  exactly the nine required keys; `token_count` equal to a freshly computed token count of `text`;
+  `token_count` within the budget; `index` values forming `0..N-1` in ascending order; per-source
+  ordinals forming `0..k-1` in ascending order; and `chunk_id` matching the `source`/`ordinal`
+  spelling. When everything holds it exits 0 and writes a line starting with `VERIFIED` to stdout.
+  When at least one check fails it exits 3, writes nothing containing `VERIFIED` to stdout, and
+  writes at least one line starting with `VIOLATION` to stderr.
+- Failure handling: exit code 2 with a message beginning with `ERROR` on stderr when the `--corpus`
+  directory does not exist, when `--max-tokens` is not an integer of at least 32, or when `verify`
+  is pointed at a directory that lacks `chunks.jsonl` or `summary.json`. Exit codes 0, 2 and 3 are
+  the only ones the tool may return.
+- Determinism: two runs of the same command must produce byte-identical `chunks.jsonl` and
+  `summary.json`; nothing time-, host- or randomness-dependent may appear in the artifacts.
+- Finally, run the tool once and leave its artifacts in the repository:
+  `python3 chunkpack.py pack --corpus assets/corpus --out out --max-tokens 128`
+  so that `/home/user/chunkforge/out/chunks.jsonl` and `/home/user/chunkforge/out/summary.json`
+  exist and are up to date.
+
+
+EOF
+CMD_EOF
+setsid --wait bash /tmp/pochi_cmd.sh &
+SETSID_PID=$!
+echo $SETSID_PID > /tmp/setsid_bash_pochi_cmd.pid
+wait $SETSID_PID 2>/dev/null
+Command outputs captured
+Running command: if [ -f /tmp/setsid_bash_pochi_cmd.pid ]; then
+SETSID_PID=$(cat /tmp/setsid_bash_pochi_cmd.pid)
+kill -TERM -- -$SETSID_PID 2>/dev/null || true
+sleep 2
+kill -9 -- -$SETSID_PID 2>/dev/null || true
+fi
+rm -f ~/.pochi/config.jsonc /tmp/pochi_cmd.sh /tmp/setsid_bash_pochi_cmd.pid
+Command outputs captured
+Collecting main service artifacts

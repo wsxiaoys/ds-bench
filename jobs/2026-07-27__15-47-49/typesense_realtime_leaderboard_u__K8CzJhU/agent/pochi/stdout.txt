@@ -1,0 +1,288 @@
+- Initializing MCP connections...
+You
+# Realtime Leaderboard Web App backed by Typesense ## Background Build a live leaderboard web application whose ranking is stored in and derived from a **Typesense** search engine (native server, v26.0). A Typesense server is already running locally and reachable at `http://127.0.0.1:8108`; its admin API key is provided in the file `/etc/typesense-api-key`. Your application is the only writer of gameplay scores, but score updates may arrive from many clients at the same time. The app renders a ranked table of players, lets a user submit a score change through a form, and keeps every connected browser's ranking up to date automatically (no manual page reload) as scores change. ## Requirements * Persist all leaderboard state in Typesense. On startup, if the collection does not yet exist, create it and seed it with the initial roster below. The rendered leaderboard and every rank number must be derived from live Typesense state, not from an in-process cache or the seed file. * Show a leaderboard ranked by `score` descending. Ties in `score` are broken by player `name` in ascending (A→Z, case-sensitive lexicographic) order. Every row shows an explicit 1-based rank number; because the tie-break yields a total order, ranks are strictly sequential `1, 2, 3, …` with no gaps or duplicates. * Provide a form that submits an **additive** score change (a signed integer `delta`) for a chosen player. Applying `delta` adds it to that player's current stored score (it does not replace the score). * The visible ranking must re-sort and renumber automatically whenever any player's score changes — including changes triggered by other clients — within 10 seconds and without a full page reload. * Concurrency correctness: when many additive updates for the same player arrive concurrently, none may be lost. After all updates complete, a player's stored score MUST equal the initial score plus the exact sum of every applied `delta`. ### Initial roster (seed exactly these five players) | player\_id | name | score | | ---------- | ----- | ----- | | p1 | Alice | 100 | | p2 | Bob | 100 | | p3 | Carol | 90 | | p4 | Dave | 80 | | p5 | Eve | 70 | ## Implementation Hints * Project path: `/home/user/leaderboard` * Start command: `bash /home/user/leaderboard/start.sh` (run with the project path as the working directory). This command must launch the web app and block while it serves. * Port: the web app listens on `8080` (bind to `0.0.0.0`). * Typesense: connect to host `127.0.0.1`, port `8108`, protocol `http`, using the API key from the file `/etc/typesense-api-key`. * Typesense storage contract (the grader queries Typesense directly): use a collection named exactly `leaderboard`. Store each player as one document whose `id` equals the `player_id`, with a string field `name` and an integer field `score`. * HTTP API: * `GET /` — returns the leaderboard HTML page. * `GET /api/leaderboard` — returns status `200` and a JSON array ordered from best to worst rank; each element has exactly the keys `rank` (1-based integer), `player_id` (string), `name` (string), and `score` (integer). * `POST /api/score` — accepts a JSON body `{"player_id": string, "delta": integer}`, atomically adds `delta` to that player's stored score, and returns status `200` with the updated player as JSON `{"player_id": string, "name": string, "score": integer}`. If `player_id` does not exist, return status `404`. If the body is missing `player_id`, missing `delta`, or `delta` is not an integer, return status `400`. * Browser/DOM contract (the rendered page is graded by a headless browser): * A container element with attribute `data-testid="leaderboard"` holds one row element per player. * Each row has the attribute `data-player-id="<player_id>"`, and rows appear in the DOM in ranked order (rank 1 first). * Each row contains a descendant with `data-testid="rank"` whose text is the 1-based rank number, a descendant with `data-testid="name"` whose text is the player name, and a descendant with `data-testid="score"` whose text is the current integer score. * The update form provides a text input `data-testid="player-id-input"`, a numeric input `data-testid="delta-input"`, and a submit control `data-testid="submit-score"`. Submitting it applies the additive update to the named player and the ranking updates live.   
+
+Pochi
+I'll start by exploring the environment and understanding the available resources.   
+💫 Executing cat /etc/typesense-api-key ✔ 
+💫 Executing curl -s http://127.0.0.1:8108/health ✖ "Command exited with code 7"
+📂 Listing files in /home/user/leaderboard ✖ "Tool call was cancelled because a previous tool call failed."
+💫 Executing curl -s http://127.0.0.1:8108/health 2>&1 || echo "curl failed" ✔ 
+💫 Executing ls -la /home/user/leaderboard 2>&1 || echo "dir not found" ✔ 
+📖 Reading /home/user/leaderboard/players.json ✔ 
+💫 Executing curl -s -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" http://127.0.0.1:8108/health 2>&1 ✖ "Command exited with code 7"
+💫 Executing curl -v http://127.0.0.1:8108/health 2>&1 | head -30 ✔ 
+Typesense isn't running yet. I need to start it. Let me check if it's installed.   
+💫 Executing which typesense-server 2>&1; ls /usr/bin/typesense* 2>&1; ls /opt/typesense* 2>&1; dpkg -l | grep -i typesense 2>&1 ✖ "Command exited with code 1"
+💫 Executing mkdir -p /tmp/typesense-data && typesense-server --api-key=BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a --data-dir=/tmp/typesense-data --listen-port=8108 --enable-cors & ✔ 
+Typesense is now running. Let me verify it's healthy and then build the application.   
+💫 Executing curl -s -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" http://127.0.0.1:8108/health ✔ 
+Typesense is up. Now I'll build the Node.js web application. Let me plan the architecture: 1. **Backend**: Node.js with Express 2. **Typesense integration**: Create collection on startup, seed data, handle score updates 3. **Frontend**: HTML page with Server-Sent Events (SSE) for live updates 4. **Concurrency**: Use Typesense's optimistic locking or the `_version` field for atomic score updates Let me create the project:   
+💫 Executing cd /home/user/leaderboard && npm init -y 2>&1 ✔ 
+💫 Executing cd /home/user/leaderboard && npm install express typesense 2>&1 ✔ 
+Now let me create the server application. I'll use SSE for live updates and Typesense's document update with version-based optimistic concurrency to ensure no score updates are lost.   
+✏️  Writing /home/user/leaderboard/server.js ✔ 
+Now let me create the HTML frontend:   
+✏️  Writing /home/user/leaderboard/index.html ✔ 
+Now create the start script:   
+✏️  Writing /home/user/leaderboard/start.sh ✔ 
+💫 Executing chmod +x /home/user/leaderboard/start.sh ✔ 
+Now let me test the server:   
+🛠️ Tool startBackgroundJob ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+Server is running. Let me test the API endpoints:   
+💫 Executing curl -s http://127.0.0.1:8080/api/leaderboard | python3 -m json.tool ✔ 
+There's an error. Let me check the server logs and debug:   
+🛠️ Tool readBackgroundJobOutput ✔ 
+The issue is that `sort_by` needs to reference the field properly. In Typesense, the `sort_by` parameter requires the field name to exist in the schema. The field is `name` which is a `string` type. Let me check the Typesense API for sorting. The issue might be that `name` needs to be indexed for sorting. Let me check the collection schema and fix it.   
+💫 Executing curl -s -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" http://127.0.0.1:8108/collections/leaderboard | python3 -m json.tool ✔ 
+The `name` field has `sort: false`. I need to update the schema to enable sorting on `name`. Let me delete the collection and recreate it with the proper schema.   
+🛠️ Tool killBackgroundJob ✔ 
+💫 Executing curl -s -X DELETE -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" http://127.0.0.1:8108/collections/leaderboard ✔ 
+Now update the server code to enable `sort: true` on the `name` field:   
+🔧 Applying diff to /home/user/leaderboard/server.js ✔ 
+Now restart the server:   
+🛠️ Tool startBackgroundJob ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+💫 Executing curl -s http://127.0.0.1:8080/api/leaderboard | python3 -m json.tool ✔ 
+Leaderboard is working. Let me test the score update endpoint:   
+💫 Executing curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p1","delta":10}' | python3 -m json.tool ✔ 
+💫 Executing curl -s http://127.0.0.1:8080/api/leaderboard | python3 -m json.tool ✔ 
+Let me test error cases:   
+💫 Executing # Test 404
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"nonexistent","delta":10}'
+echo ""
+# Test 400 - missing delta
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p1"}'
+echo ""
+# Test 400 - missing player_id
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"delta":10}'
+echo ""
+# Test 400 - non-integer delta
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p1","delta":"abc"}'
+echo "" ✔ 
+The 404 case is failing — it's hitting the retry loop and returning a 409 conflict. The issue is that when a document doesn't exist, the `retrieve()` call throws a 404, but my error handling in the retry loop isn't catching it properly. Let me check the error format from Typesense.   
+💫 Executing curl -s -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" http://127.0.0.1:8108/collections/leaderboard/documents/nonexistent ✔ 
+The issue is in the error handling in the retry loop. The Typesense client throws an `ObjectNotFound` error with `httpStatus: 404`. Let me fix the error handling:   
+🔧 Applying diff to /home/user/leaderboard/server.js ✔ 
+Now I also need to remove the unused `https` require that was in the old code. Let me also fix the `http` import — I had `https` instead of `http` in the original code. Let me restart and test:   
+🛠️ Tool killBackgroundJob ✔ 
+🛠️ Tool startBackgroundJob ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+💫 Executing # Test 404
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"nonexistent","delta":10}'
+echo ""
+# Test 400 - missing delta
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p1"}'
+echo ""
+# Test 400 - missing player_id
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"delta":10}'
+echo ""
+# Test 400 - non-integer delta
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p1","delta":"abc"}'
+echo ""
+# Test valid update
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p2","delta":5}'
+echo "" ✔ 
+All endpoints are working correctly. Now let me test concurrency correctness — the key requirement is that no score updates are lost when concurrent updates arrive:   
+💫 Executing # Reset p3 (Carol) to a known score first by reading current score
+CURRENT=$(curl -s http://127.0.0.1:8080/api/leaderboard | python3 -c "import sys,json; data=json.load(sys.stdin); print([p['score'] for p in data if p['player_id']=='p3'][0])")
+echo "Current Carol score: $CURRENT"
+
+# Send 20 concurrent +1 updates
+for i in $(seq 1 20); do
+  curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p3","delta":1}' &
+done
+wait
+
+# Check final score
+FINAL=$(curl -s http://127.0.0.1:8080/api/leaderboard | python3 -c "import sys,json; data=json.load(sys.stdin); print([p['score'] for p in data if p['player_id']=='p3'][0])")
+echo "Final Carol score: $FINAL"
+echo "Expected: $((CURRENT + 20))"
+echo "Match: $([ $FINAL -eq $((CURRENT + 20)) ] && echo YES || echo NO)" ✔ 
+The concurrency is broken — many updates are being lost. The `filter_by` approach with Typesense PATCH is not working as expected. Let me investigate how the PATCH endpoint with `filter_by` works in Typesense:   
+💫 Executing # Test filter_by on PATCH directly
+# First get current score
+curl -s -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" http://127.0.0.1:8108/collections/leaderboard/documents/p3 ✔ 
+💫 Executing # Try PATCH with filter_by matching current score
+curl -s -X PATCH -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" -H "Content-Type: application/json" \
+  "http://127.0.0.1:8108/collections/leaderboard/documents/p3?filter_by=score:96" \
+  -d '{"score":97}' ✔ 
+💫 Executing # Try PATCH with filter_by NOT matching (should fail)
+curl -s -X PATCH -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" -H "Content-Type: application/json" \
+  "http://127.0.0.1:8108/collections/leaderboard/documents/p3?filter_by=score:96" \
+  -d '{"score":98}' ✔ 
+The `filter_by` on PATCH is NOT working as a conditional — it's still updating even when the filter doesn't match. This means Typesense's PATCH endpoint doesn't support conditional updates via `filter_by`. I need a different approach. Let me check if Typesense supports the `_version` field or any optimistic concurrency mechanism:   
+💫 Executing # Check Typesense version
+curl -s http://127.0.0.1:8108/health ✔ 
+💫 Executing # Let me check the Typesense API docs for conditional updates
+# Try using the update (upsert) endpoint with a version field
+curl -s -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" "http://127.0.0.1:8108/collections/leaderboard/documents/p3" | python3 -m json.tool ✔ 
+The approach needs to change. Since Typesense doesn't have built-in optimistic concurrency for PATCH, I'll implement concurrency control differently. The key insight: I can use Typesense's `import` endpoint with `action=update` and rely on the fact that Typesense processes operations sequentially. But for true concurrency safety, I need to use a different strategy. The best approach: use an **in-process mutex/lock** per player_id. Since the Node.js server is single-threaded (event loop), I can use a queue-based approach. But the requirement says "score updates may arrive from many clients at the same time" — this refers to multiple HTTP requests arriving concurrently. Since Node.js processes events sequentially on the event loop, I can use an async mutex pattern. Let me rewrite the approach using a per-player mutex:   
+🛠️ Tool killBackgroundJob ✔ 
+📖 Reading /home/user/leaderboard/server.js ✔ 
+I need to rewrite the server with a proper concurrency approach. Since Typesense doesn't support conditional PATCH updates, I'll use a **per-player mutex** pattern. In Node.js (single-threaded event loop), I can use a promise-based queue to serialize updates per player:   
+✏️  Writing /home/user/leaderboard/server.js ✔ 
+Now let me restart and test concurrency:   
+🛠️ Tool startBackgroundJob ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+💫 Executing # Reset p3 (Carol) first
+CURRENT=$(curl -s http://127.0.0.1:8080/api/leaderboard | python3 -c "import sys,json; data=json.load(sys.stdin); print([p['score'] for p in data if p['player_id']=='p3'][0])")
+echo "Current Carol score: $CURRENT"
+
+# Send 20 concurrent +1 updates
+for i in $(seq 1 20); do
+  curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p3","delta":1}' &
+done
+wait
+
+# Check final score
+FINAL=$(curl -s http://127.0.0.1:8080/api/leaderboard | python3 -c "import sys,json; data=json.load(sys.stdin); print([p['score'] for p in data if p['player_id']=='p3'][0])")
+echo "Final Carol score: $FINAL"
+echo "Expected: $((CURRENT + 20))"
+echo "Match: $([ $FINAL -eq $((CURRENT + 20)) ] && echo YES || echo NO)" ✔ 
+Concurrency is now correct. All 20 concurrent updates were applied, and the final score is exactly `98 + 20 = 118`. Now let me also test concurrent updates across different players (should work in parallel):   
+💫 Executing # Test concurrent updates to different players
+A_BEFORE=$(curl -s http://127.0.0.1:8080/api/leaderboard | python3 -c "import sys,json; data=json.load(sys.stdin); print([p['score'] for p in data if p['player_id']=='p1'][0])")
+B_BEFORE=$(curl -s http://127.0.0.1:8080/api/leaderboard | python3 -c "import sys,json; data=json.load(sys.stdin); print([p['score'] for p in data if p['player_id']=='p2'][0])")
+
+# Send 10 concurrent updates to p1 and 10 to p2
+for i in $(seq 1 10); do
+  curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p1","delta":1}' &
+  curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p2","delta":1}' &
+done
+wait
+
+A_AFTER=$(curl -s http://127.0.0.1:8080/api/leaderboard | python3 -c "import sys,json; data=json.load(sys.stdin); print([p['score'] for p in data if p['player_id']=='p1'][0])")
+B_AFTER=$(curl -s http://127.0.0.1:8080/api/leaderboard | python3 -c "import sys,json; data=json.load(sys.stdin); print([p['score'] for p in data if p['player_id']=='p2'][0])")
+
+echo "p1: $A_BEFORE -> $A_AFTER (expected $((A_BEFORE + 10)))"
+echo "p2: $B_BEFORE -> $B_AFTER (expected $((B_BEFORE + 10)))" ✔ 
+Both players' scores are correct. Let me also verify the HTML page is served correctly and has all the required `data-testid` attributes:   
+💫 Executing curl -s http://127.0.0.1:8080/ | head -5 ✔ 
+Let me verify the HTML has all required test attributes:   
+💫 Executing curl -s http://127.0.0.1:8080/ | grep -o 'data-testid="[^"]*"' | sort -u ✔ 
+All required `data-testid` attributes are present. Let me also verify the final leaderboard state:   
+💫 Executing curl -s http://127.0.0.1:8080/api/leaderboard | python3 -m json.tool ✔ 
+Let me also verify the Typesense collection directly to confirm the data is stored there:   
+💫 Executing curl -s -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" "http://127.0.0.1:8108/collections/leaderboard/documents/search?q=*&query_by=name&sort_by=score:desc,name:asc" | python3 -m json.tool ✔ 
+Everything is working correctly. Let me kill the running server and do a clean reset of the Typesense data for a clean start, then verify the start script works correctly:   
+🛠️ Tool killBackgroundJob ✔ 
+💫 Executing # Delete the collection so it gets recreated fresh on startup
+curl -s -X DELETE -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" http://127.0.0.1:8108/collections/leaderboard ✔ 
+Now let me test the start script to make sure it works from scratch:   
+🛠️ Tool startBackgroundJob ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+💫 Executing curl -s http://127.0.0.1:8080/api/leaderboard | python3 -m json.tool ✔ 
+The server starts correctly from scratch, creates the collection, seeds the initial data, and returns the correct ranked leaderboard. Let me kill the test server:   
+🛠️ Tool killBackgroundJob ✔ 
+Let me do a final review of all the files to make sure everything is clean and correct:   
+📖 Reading /home/user/leaderboard/server.js ✔ 
+📖 Reading /home/user/leaderboard/index.html ✔ 
+📖 Reading /home/user/leaderboard/start.sh ✔ 
+📖 Reading /home/user/leaderboard/package.json ✔ 
+I notice Express v5 was installed. Let me verify it works correctly with the `res.status().json()` syntax — Express 5 has some API changes. Let me check:   
+💫 Executing cd /home/user/leaderboard && node -e "
+const express = require('express');
+console.log('Express loaded successfully');
+const app = express();
+app.use(express.json());
+app.get('/test', (req, res) => res.status(200).json({ok:true}));
+const server = app.listen(0, () => {
+  const port = server.address().port;
+  const http = require('http');
+  http.get('http://127.0.0.1:' + port + '/test', (res) => {
+    let data = '';
+    res.on('data', c => data += c);
+    res.on('end', () => {
+      console.log('Response:', data);
+      server.close();
+    });
+  });
+});
+" ✔ 
+Express 5 works fine. Let me also verify the `res.status(400).json()` pattern works:   
+💫 Executing cd /home/user/leaderboard && node -e "
+const express = require('express');
+const app = express();
+app.use(express.json());
+app.get('/test', (req, res) => {
+  return res.status(400).json({ error: 'test' });
+});
+const server = app.listen(0, () => {
+  const port = server.address().port;
+  const http = require('http');
+  http.get('http://127.0.0.1:' + port + '/test', (res) => {
+    let data = '';
+    res.on('data', c => data += c);
+    res.on('end', () => {
+      console.log('Status:', res.statusCode);
+      console.log('Body:', data);
+      server.close();
+    });
+  });
+});
+" ✔ 
+All good. Let me also verify the project structure is complete:   
+💫 Executing ls -la /home/user/leaderboard/ ✔ 
+Let me do a final clean start-to-finish test — kill any running servers, delete the Typesense collection, and run the start script:   
+💫 Executing # Kill any existing node processes on port 8080
+fuser -k 8080/tcp 2>/dev/null; sleep 1
+
+# Delete the collection
+curl -s -X DELETE -H "X-TYPESENSE-API-KEY: BrLdkKFyT5LHZIBip0OyJ1Fp7Swi477a" http://127.0.0.1:8108/collections/leaderboard 2>/dev/null
+
+echo "Cleaned up. Starting server..." ✔ 
+🛠️ Tool startBackgroundJob ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+💫 Executing # Full integration test
+echo "=== Initial leaderboard ==="
+curl -s http://127.0.0.1:8080/api/leaderboard | python3 -m json.tool
+
+echo ""
+echo "=== Update Alice +50 ==="
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p1","delta":50}' | python3 -m json.tool
+
+echo ""
+echo "=== Update Bob +30 ==="
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p2","delta":30}' | python3 -m json.tool
+
+echo ""
+echo "=== Final leaderboard ==="
+curl -s http://127.0.0.1:8080/api/leaderboard | python3 -m json.tool
+
+echo ""
+echo "=== Error: missing delta ==="
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"p1"}'
+
+echo ""
+echo "=== Error: non-existent player ==="
+curl -s -X POST http://127.0.0.1:8080/api/score -H "Content-Type: application/json" -d '{"player_id":"nonexistent","delta":5}'
+
+echo ""
+echo "=== HTML page has testid attrs ==="
+curl -s http://127.0.0.1:8080/ | grep -c 'data-testid' ✔ 
+All tests pass. Let me clean up the running server:   
+🛠️ Tool killBackgroundJob ✔ 
+🎉 Task Completed
+The leaderboard web application has been built at `/home/user/leaderboard` with the following components:
+
+**Files:**
+- `server.js` — Express server with Typesense integration
+- `index.html` — Frontend with SSE-powered live updates
+- `start.sh` — Start script (`bash /home/user/leaderboard/start.sh`)
+- `package.json` — Dependencies (express, typesense)
+
+**Architecture & Key Design Decisions:**
+
+1. **Typesense-backed ranking**: All leaderboard state is persisted in a `leaderboard` collection in Typesense. On startup, the collection is created if it doesn't exist and seeded with the 5 initial players. Rankings are derived from live Typesense queries sorted by `score:desc,name:asc`.
+
+2. **Concurrency correctness**: Uses a per-player mutex (promise-chain-based lock) to serialize concurrent score updates for the same player. Each update performs a read-modify-write cycle: fetch current document → compute `newScore = currentScore + delta` → update document. The lock ensures no lost updates even under high concurrency (verified with 20 concurrent updates to the same player).
+
+3. **Live updates**: Server-Sent Events (SSE) at `/api/events` notify all connected browsers when any score changes. The frontend listens for SSE events and re-fetches the leaderboard, keeping all clients in sync within seconds without page reloads.
+
+4. **API endpoints**:
+   - `GET /` — HTML page with all required `data-testid` attributes
+   - `GET /api/leaderboard` — JSON array ordered by rank with `rank`, `player_id`, `name`, `score`
+   - `POST /api/score` — Accepts `{"player_id": string, "delta": integer}`, returns updated player; 400 for invalid input, 404 for unknown player   
+  

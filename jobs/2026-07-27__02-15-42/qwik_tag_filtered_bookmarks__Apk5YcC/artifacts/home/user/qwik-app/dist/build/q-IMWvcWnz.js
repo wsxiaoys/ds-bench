@@ -1,0 +1,1 @@
+import{_ as r}from"./q-DoNi8vyY.js";import{K as s,L as t,M as a}from"./q-BgJevJjt.js";import{E as e,q as _,K as o}from"./q-BcX7c-g3.js";const l=s(o("s_fOQvp1Hfj8o")),p=t(o("s_Q6qYiSoS6Fs"),a()),Q=e(_(()=>r(()=>import("./q-CuiwGCZG.js"),[]),"s_buH6QBbKJm4"));export{Q as default,l as useBookmarksLoader,p as useCreateBookmarkAction};

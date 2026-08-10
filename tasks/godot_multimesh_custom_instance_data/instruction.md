@@ -1,0 +1,55 @@
+# GPU Instancing Data Authoring and CPU-Side Culling with Godot MultiMesh
+
+## Background
+You are working in a headless Godot Engine 4.x project. `MultiMesh` is a resource that stores per-instance data (transforms, colors, and custom data) used for efficient GPU instancing. Because that data lives inside the resource, it can be authored, saved, reloaded, and queried on the CPU without any display or GPU. Your job is to author a deterministic field of instances and implement a CPU-side visibility query over that field.
+
+## Requirements
+- Implement a reusable GDScript class that builds a fully-configured `MultiMesh` and performs an axis-aligned culling query over its instances.
+- Configure the `MultiMesh` for 3D transforms with both per-instance color data and per-instance custom data enabled, holding exactly 120 instances.
+- Populate every instance with a deterministic transform, color, and custom data according to the formulas below.
+- Implement a culling routine that returns the instances whose transform origin lies inside a given axis-aligned box, together with aggregates over the visible set.
+- Produce build artifacts: the saved `MultiMesh` resource and a JSON report of one specific query.
+
+## Implementation Hints
+- Godot version: 4.x stable, executed via `godot --headless` (there is no GPU or display).
+- Project path: /home/user/instancing_project
+- Implement the class in `res://instancing/instance_field.gd` with `class_name InstanceField` (extending `RefCounted`).
+
+### Grid and index mapping
+- Exactly 120 instances, indices `i` from 0 to 119.
+- Grid coordinates for index `i`: `gx = i % 6`, `gy = (i / 6) % 5`, `gz = i / 30` (all integer division). The grid is 6 x 5 x 4 with `gx` varying fastest.
+
+### Per-instance data (must be stored in the MultiMesh)
+- Transform origin: `Vector3(-5.0 + 2.0 * gx, 0.5 * gy, -3.0 + 1.5 * gz)`.
+- Transform basis: a rotation of `a = deg_to_rad(30.0 * (gy % 3))` radians about the +Y axis, uniformly scaled by `s = 0.5 + 0.1 * ((gx + gz) % 4)`.
+- Color (RGBA): `Color(gx / 5.0, gy / 4.0, gz / 3.0, 1.0)` (float division).
+- Custom data (RGBA, four floats): `Color(i / 1000.0, float(gx + gy + gz), 1.0 + 0.5 * (i % 7), float((gx + gz) % 2))`.
+
+### Headless execution and readback (important)
+- The solution runs under `godot --headless`, so no GPU-backed rendering server is available. The automated checks read each instance's data back from the `MultiMesh` on the CPU through its instance buffer (the `MultiMesh.buffer` property), and NOT through the per-instance getter methods. Ensure the per-instance data you author is genuinely stored in the `MultiMesh` so that it round-trips through resource save/load and can be read on the CPU under headless execution.
+
+### Class API
+- `func build() -> MultiMesh`: creates, configures (3D transform format, per-instance colors enabled, per-instance custom data enabled, 120 instances), and fully populates a `MultiMesh` as specified above; stores it on the instance and returns it.
+- `func cull(box_min: Vector3, box_max: Vector3) -> Dictionary`: over the instances of the most recently built `MultiMesh`, selects every instance whose transform origin is inside or on the boundary of the closed axis-aligned box defined by `box_min` and `box_max` (inclusive on all six faces, i.e. `box_min[axis] <= origin[axis] <= box_max[axis]` for x, y, and z). Returns a Dictionary with exactly these keys:
+  - `"indices"`: Array of the visible instance indices, sorted in ascending order.
+  - `"count"`: number of visible instances (equal to the size of `"indices"`).
+  - `"weight_sum"`: the sum, over the visible instances, of each instance's custom-data blue channel.
+  - `"flagged_count"`: the number of visible instances whose custom-data alpha channel is >= 0.5.
+
+### Build artifacts (must exist after you run the build)
+- Save the configured and fully-populated `MultiMesh` to `res://build/field.res` using Godot's resource saver.
+- Run the culling query with `box_min = Vector3(-1.0, 0.0, -3.0)` and `box_max = Vector3(5.0, 1.5, 0.0)` and write `res://build/report.json` as a UTF-8 JSON object with exactly these keys and values:
+  - `"instance_count"`: 120
+  - `"transform_format"`: 1
+  - `"use_colors"`: true
+  - `"use_custom_data"`: true
+  - `"query_min"`: [-1.0, 0.0, -3.0]
+  - `"query_max"`: [5.0, 1.5, 0.0]
+  - `"visible_indices"`: the ascending list of visible indices, which must equal [2, 3, 4, 5, 8, 9, 10, 11, 14, 15, 16, 17, 20, 21, 22, 23, 32, 33, 34, 35, 38, 39, 40, 41, 44, 45, 46, 47, 50, 51, 52, 53, 62, 63, 64, 65, 68, 69, 70, 71, 74, 75, 76, 77, 80, 81, 82, 83]
+  - `"visible_count"`: 48
+  - `"weight_sum"`: 123.0
+  - `"flagged_count"`: 24
+- Ensure the build is actually executed so that both `/home/user/instancing_project/build/field.res` and `/home/user/instancing_project/build/report.json` exist.
+
+The automated checks will also instantiate `InstanceField` directly, call `build()` and `cull()` with additional query boxes, and read the per-instance data back from the saved resource, so the class must genuinely populate and query the `MultiMesh`; hardcoding the report is not sufficient.
+

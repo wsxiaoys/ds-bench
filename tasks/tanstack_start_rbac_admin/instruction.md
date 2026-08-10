@@ -1,0 +1,51 @@
+# Role-Based Access Control (RBAC) Admin Console with TanStack Start
+
+## Background
+Build a full-stack web application with **TanStack Start** (the React full-stack framework built on TanStack Router) that implements **role-based access control** from scratch, backed by a local **SQLite** database. Every user has a role — either `admin` or `user`. The application exposes an admin-only area and an admin-only privileged action that mutates persistent state. Authorization MUST be enforced **on the server**: a non-admin who bypasses the UI and calls the privileged action directly MUST be rejected, and the admin area MUST NOT be reachable by non-admins. No hosted or third-party auth provider may be used; everything runs locally with no internet access at run time.
+
+## Requirements
+- Implement **login** and **logout** using a self-managed, cookie-based session (no third-party auth service). A logged-in identity carries its role, and the session must survive a full page reload; logging out must invalidate the session.
+- Persist users (including their role) in the SQLite database. Passwords must be stored only as **salted hashes** — never in plaintext and never in a reversible/unsalted form; two accounts that choose the same password must end up with different stored hashes.
+- Provide an **admin-only route** that is guarded so the guard runs on the server during navigation: an unauthenticated visitor is redirected to the login page, and an authenticated non-admin (`user` role) is denied access to the admin content. Only an `admin` may view it.
+- Provide an **admin-only privileged action** implemented as a TanStack Start Server Function (`createServerFn`) that changes another account's role and **persists** the change to SQLite. Authorization for this action MUST be enforced server-side so that a non-admin invoking it directly (bypassing the UI) is rejected with HTTP `403`, and an unauthenticated caller is rejected with HTTP `401`. The privileged action must be wired into the admin route's UI so an admin can perform it from the browser.
+- Also expose a small stable **JSON API** (server routes) that shares the exact same users, password store, session mechanism, and server-side authorization rules, so the same behavior can be driven programmatically. A session established through the API or the UI must be honored by the other.
+
+## Implementation Hints
+- Project path: `/home/user/project`
+- Start command: `npm run start` (this single command must build the app if a build is required and then serve the running application).
+- Port: the application MUST listen on `http://localhost:34517`.
+- SQLite database file path: `/home/user/project/data/app.sqlite`. The app must create it and its schema on first startup if it does not already exist.
+- The users table MUST be named `users` and MUST include a `TEXT` column named `email` that is unique across accounts, a `TEXT` column named `password_hash`, and a `TEXT` column named `role` whose value is either `admin` or `user`. The plaintext password MUST NOT appear in any column of the `users` table.
+- On first startup, if the `users` table has no rows, the app MUST seed exactly these accounts (email / password / role):
+  - `root@example.com` / `Adm1n!pass9` / `admin`
+  - `member@example.com` / `Us3r!pass42` / `user`
+  - `pat@example.com` / `Us3r!pass42` / `user`
+  - `sam@example.com` / `Us3r!pass42` / `user`
+  - `jordan@example.com` / `Us3r!pass42` / `user`
+- The session cookie MUST be named `rbac_session` and MUST carry the `HttpOnly` attribute and `SameSite=Lax`. (Enable the cookie's `Secure` attribute only under production/HTTPS; during this evaluation the app is served over plain HTTP on `localhost`, so `Secure` must NOT be sent, otherwise the cookie would never be returned by the client.)
+- Browser-facing pages:
+  - `/login`: renders a login form with an email field, a password field, and a submit control. Submitting valid credentials establishes a session and results in the user landing on the admin route when they are an admin. Submitting invalid credentials must not establish a session and must surface a visible error.
+  - `/admin`: the **admin-only page**. When viewed by an authenticated `admin` it MUST display the exact marker text `ADMIN CONSOLE 8842`, list every account's email together with its current role, and provide a control to change a chosen account's role to `admin` or `user` (this control invokes the admin-only Server Function and the resulting role change must persist). A direct navigation to `/admin` by an unauthenticated visitor MUST be redirected by the server to `/login`. An authenticated `user` navigating to `/admin` MUST NOT see the marker text `ADMIN CONSOLE 8842` or the account list; they must be denied (redirected away from the admin content).
+  - A logout control MUST be available to a logged-in user that ends the session and returns to `/login`.
+- JSON API (all requests and responses use `application/json`; the session is carried by the `rbac_session` cookie):
+  - `POST /api/login` with body `{ "email": string, "password": string }`:
+    - On valid credentials: status `200`, sets the `rbac_session` cookie, body `{ "user": { "email": <email>, "role": <role> } }`.
+    - On invalid credentials (unknown email or wrong password): status `401` and no session is established.
+  - `POST /api/logout`: status `200`, body `{ "ok": true }`, and the `rbac_session` cookie is invalidated so it no longer grants access.
+  - `GET /api/me`: for an authenticated caller, status `200` and body `{ "user": { "email": <email>, "role": <role> } }`; for an unauthenticated caller, status `401` and body `{ "user": null }`.
+  - `GET /api/admin/users`: admin-only listing. For an `admin` caller: status `200`, body `{ "users": [ { "email": <email>, "role": <role> }, ... ] }` containing every account. For an authenticated `user` caller: status `403`. For an unauthenticated caller: status `401`.
+  - `POST /api/admin/set-role` with body `{ "email": string, "role": string }`: the admin-only privileged action. For an `admin` caller with a known target email and `role` in {`admin`,`user`}: status `200`, body `{ "user": { "email": <email>, "role": <role> } }`, and the change is persisted to SQLite. If the target email does not exist: status `404`. If `role` is not one of `admin` or `user`: status `400`. For an authenticated `user` caller: status `403` and no change is persisted. For an unauthenticated caller: status `401` and no change is persisted.
+- Dependency versions (pin these EXACT versions in `package.json`):
+  - `react`: `19.2.8`
+  - `react-dom`: `19.2.8`
+  - `@tanstack/react-start`: `1.168.32`
+  - `@tanstack/react-router`: `1.170.18`
+  - `@tanstack/router-plugin`: `1.168.23`
+  - `vite`: `8.1.5`
+  - `@vitejs/plugin-react`: `6.0.4`
+  - `typescript`: `7.0.2`
+  - `zod`: `4.4.3`
+  - `better-sqlite3`: `13.0.1`
+  - `@types/better-sqlite3`: `7.6.13`
+  - `bcryptjs`: `3.0.3`
+

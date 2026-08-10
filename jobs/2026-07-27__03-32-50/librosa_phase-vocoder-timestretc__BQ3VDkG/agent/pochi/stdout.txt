@@ -1,0 +1,342 @@
+- Initializing MCP connections...
+You
+# Transient-Preserving Phase-Vocoder Time-Stretch and Pitch-Shift ## Background Build a command-line audio processor using librosa (with numpy/scipy/soundfile) that time-stretches and pitch-shifts a mono audio file. Phase-vocoder time-scale modification is notorious for smearing percussive/transient events; your processor must keep transients intact while independently changing tempo and pitch. ## Requirements * Read a mono WAV file and produce three artifacts: 1. A time-stretched rendering with a stretch factor of 1.5 (plays 1.5x longer / slower than the input, with pitch unchanged). 2. A pitch-shifted rendering of +7 semitones (12-TET) whose duration is unchanged (equal to the input duration). 3. A JSON analysis report describing the measured output durations and the detected transient locations. * The time-scale/pitch modification must operate in the short-time Fourier domain with correct phase propagation, and must preserve the temporal position and sharpness of transient (broadband onset) events rather than smearing or displacing them. * Transient events in the input must be detected and reported. ## Implementation Hints * Project path: /home/user/project * Command: `python3 run.py --input <input_wav_path> --output-dir <output_dir>` * The program must accept an arbitrary mono WAV via `--input` and write all outputs into the directory given by `--output-dir` (create the directory if it does not exist). * A sample mono WAV is provided at `/home/user/project/input.wav` that you may use for local development; the grader will run your program against its own separate input files. * Fixed parameters: stretch factor = 1.5; pitch shift = +7 semitones (a frequency ratio of 2^(7/12)); detect and report transients using an STFT hop length of 512 samples. * Every output WAV must keep the input's sample rate and be single-channel. * Output files, with these exact names, must be written inside `--output-dir`: * `stretched.wav` — duration approximately 1.5x the input duration; pitch unchanged relative to the input. * `shifted.wav` — duration equal to the input duration (within a few milliseconds); fundamental frequency raised by 7 semitones relative to the input. * `analysis.json` — a JSON object containing exactly these keys: * `sample_rate`: integer sample rate of the audio. * `stretch_factor`: number, equal to 1.5. * `pitch_shift_semitones`: number, equal to 7. * `input_duration_seconds`: number, duration of the input signal in seconds. * `stretched_duration_seconds`: number, measured duration of `stretched.wav`. * `shifted_duration_seconds`: number, measured duration of `shifted.wav`. * `transient_frames`: array of integers — STFT frame indices (using hop length 512) of the transient events detected in the INPUT signal, sorted in ascending order. * `transient_times_seconds`: array of numbers — the corresponding times in seconds, computed as frame\_index \* 512 / sample\_rate, in the same length and order as `transient_frames`. * The duration values written in `analysis.json` must match the actual rendered audio files. * Transient detection must locate the genuine broadband onset events present in the input and must not emit a flood of spurious detections (report essentially one entry per true onset event).   
+
+Pochi
+💭 Thinking for 89 characters   
+📂 Listing files in /home/user/project recursively ✔ 
+💭 Thinking for 75 characters   
+💫 Executing python3 -c "import librosa, numpy, scipy, soundfile; print(librosa.__version__, numpy.__version__, scipy.__version__, soundfile.__version__)" ✔ 
+💫 Executing python3 -c "
+import soundfile as sf
+data, sr = sf.read('/home/user/project/input.wav')
+print(data.shape, sr, data.dtype)
+print(len(data)/sr)
+" ✔ 
+💭 Thinking for 8959 characters   
+💫 Executing python3 -c "
+import librosa, inspect
+print(inspect.getsource(librosa.core.phase_vocoder))
+"
+ ✔ 
+💭 Thinking for 294 characters   
+💫 Executing python3 -c "
+import librosa, inspect
+print(inspect.getsource(librosa.effects.time_stretch))
+print('-----')
+print(inspect.getsource(librosa.effects.pitch_shift))
+"
+ ✔ 
+💭 Thinking for 2579 characters   
+💫 Executing python3 -c "
+import librosa, inspect
+print(inspect.signature(librosa.onset.onset_detect))
+print(inspect.signature(librosa.util.peak_pick))
+"
+ ✔ 
+💭 Thinking for 186 characters   
+💫 Executing python3 -c "
+import librosa, inspect
+print(inspect.getsource(librosa.onset.onset_detect))
+" | head -100
+ ✔ 
+Good, defaults are well-tuned (hyperparameter-optimized). This is suitable for our needs. Now let's test on the sample input to see detection quality.   
+💫 Executing cd /home/user/project && python3 -c "
+import librosa, numpy as np
+y, sr = librosa.load('input.wav', sr=None, mono=True)
+print('sr', sr, 'len', len(y), 'dur', len(y)/sr)
+onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=512)
+onsets = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr, hop_length=512, backtrack=True)
+print('onsets frames', onsets)
+print('onsets times', onsets*512/sr)
+# check amplitude envelope for transient shape
+import numpy as np
+print('max amp', np.max(np.abs(y)))
+"
+ ✔ 
+💭 Thinking for 338 characters   
+💫 Executing cd /home/user/project && python3 -c "
+import librosa, numpy as np
+y, sr = librosa.load('input.wav', sr=None, mono=True)
+# compute short-time energy envelope to find sharp increases
+frame=256
+hop=128
+env = librosa.feature.rms(y=y, frame_length=1024, hop_length=128)[0]
+import numpy as np
+d = np.diff(env)
+peaks = np.argsort(d)[-10:]
+print(sorted(peaks*128/sr))
+print(np.max(np.abs(y)))
+# print segments around start
+print(y[:50])
+"
+ ✔ 
+💭 Thinking for 9216 characters   
+✏️  Writing /home/user/project/run.py ✔ 
+Now let's test the script.   
+💫 Executing cd /home/user/project && python3 run.py --input input.wav --output-dir /tmp/out1 && cat /tmp/out1/analysis.json ✔ 
+Durations are exact (4.5s = 1.5×3.0, 3.0s unchanged). Now let's verify pitch shift accuracy and transient preservation quality with a deeper analysis.   
+💫 Executing cd /home/user/project && python3 -c "
+import numpy as np, librosa, soundfile as sf
+
+y, sr = sf.read('input.wav')
+y = y.astype(np.float32)
+ys, sr2 = sf.read('/tmp/out1/stretched.wav')
+yp, sr3 = sf.read('/tmp/out1/shifted.wav')
+ys = ys.astype(np.float32); yp = yp.astype(np.float32)
+
+# Estimate pitch via autocorrelation-based f0 (yin) on a stable tonal region
+def f0(y, sr):
+    f0s = librosa.yin(y, fmin=50, fmax=2000, sr=sr)
+    f0s = f0s[np.isfinite(f0s)]
+    f0s = f0s[f0s>0]
+    return np.median(f0s)
+
+print('input f0', f0(y, sr))
+print('shifted f0', f0(yp, sr))
+ratio = f0(yp,sr)/f0(y,sr)
+print('ratio', ratio, 'expected', 2**(7/12))
+print('stretched f0 (should match input)', f0(ys, sr))
+"
+ ✔ 
+Pitch shift ratio (1.4972) matches expected 2^(7/12)=1.4983 closely, and stretched pitch matches input exactly. Now let's check transient preservation — that transient peaks land at expected positions and remain sharp (not smeared) in both outputs.   
+💫 Executing cd /home/user/project && python3 -c "
+import numpy as np, librosa, soundfile as sf
+
+y, sr = sf.read('input.wav'); y=y.astype(np.float32)
+ys, _ = sf.read('/tmp/out1/stretched.wav'); ys=ys.astype(np.float32)
+yp, _ = sf.read('/tmp/out1/shifted.wav'); yp=yp.astype(np.float32)
+
+onset_frames = [21,42,62,85,107]
+hop=512
+onset_samples = [f*hop for f in onset_frames]
+print('orig onset samples', onset_samples)
+
+def sharpness_env(y, sr, center, radius_ms=80):
+    r = int(radius_ms/1000*sr)
+    lo = max(0, center-r); hi = min(len(y), center+r)
+    seg = y[lo:hi]
+    env = librosa.feature.rms(y=seg, frame_length=256, hop_length=32)[0]
+    peak_idx = np.argmax(env)
+    return lo, hi, env, peak_idx
+
+for os_ in onset_samples:
+    lo,hi,env,pk = sharpness_env(y, sr, os_)
+    peak_sample = lo + pk*32
+    print('input onset~', os_, 'measured peak sample', peak_sample, 'diff', peak_sample-os_)
+
+print('--- stretched (expect peak near onset*1.5) ---')
+for os_ in onset_samples:
+    target = int(round(os_*1.5))
+    lo,hi,env,pk = sharpness_env(ys, sr, target)
+    peak_sample = lo + pk*32
+    print('target', target, 'measured peak', peak_sample, 'diff_ms', (peak_sample-target)/sr*1000)
+
+print('--- shifted (expect peak near same onset) ---')
+for os_ in onset_samples:
+    lo,hi,env,pk = sharpness_env(yp, sr, os_)
+    peak_sample = lo + pk*32
+    print('target', os_, 'measured peak', peak_sample, 'diff_ms', (peak_sample-os_)/sr*1000)
+"
+ ✔ 
+💭 Thinking for 818 characters   
+💫 Executing cd /home/user/project && python3 -c "
+import numpy as np, librosa, soundfile as sf
+
+y, sr = sf.read('input.wav'); y=y.astype(np.float32)
+ys, _ = sf.read('/tmp/out1/stretched.wav'); ys=ys.astype(np.float32)
+yp, _ = sf.read('/tmp/out1/shifted.wav'); yp=yp.astype(np.float32)
+
+def rise_width(y, sr, center, radius_ms=100):
+    r = int(radius_ms/1000*sr)
+    lo=max(0,center-r); hi=min(len(y),center+r)
+    seg=y[lo:hi]
+    env = librosa.feature.rms(y=seg, frame_length=128, hop_length=16)[0]
+    pk = np.argmax(env)
+    half = env[pk]/2
+    # find width where env>half around pk
+    left=pk
+    while left>0 and env[left]>half: left-=1
+    right=pk
+    while right<len(env)-1 and env[right]>half: right+=1
+    width_samples = (right-left)*16
+    return width_samples/sr*1000
+
+onset_samples=[10752,21504,31744,43520,54784]
+print('input widths(ms):', [round(rise_width(y,sr,o),1) for o in onset_samples])
+print('stretched widths(ms):', [round(rise_width(ys,sr,int(round(o*1.5))),1) for o in onset_samples])
+print('shifted widths(ms):', [round(rise_width(yp,sr,o),1) for o in onset_samples])
+"
+ ✔ 
+💭 Thinking for 1838 characters   
+💫 Executing cd /home/user/project && python3 -c "
+import numpy as np, librosa, soundfile as sf
+y, sr = sf.read('input.wav'); y=y.astype(np.float32)
+center=10752
+r=int(0.1*sr)
+seg = y[center-r:center+r]
+env = librosa.feature.rms(y=seg, frame_length=128, hop_length=16)[0]
+print(env)
+"
+ ✔ 
+💭 Thinking for 1908 characters   
+💫 Executing cd /home/user/project && python3 -c "
+import numpy as np, soundfile as sf
+
+sr = 44100
+dur = 4.0
+n = int(sr*dur)
+t = np.arange(n)/sr
+# background tone
+y = 0.2*np.sin(2*np.pi*440*t)
+# add 4 sharp clicks (single-sample impulses convolved with short exp decay) at known positions
+click_times = [0.5, 1.5, 2.3, 3.2]
+for ct in click_times:
+    idx = int(ct*sr)
+    click_len = int(0.005*sr)
+    decay = np.exp(-np.arange(click_len)/ (click_len/8))
+    noise = (np.random.RandomState(0).randn(click_len))*decay
+    y[idx:idx+click_len] += 0.8*noise
+y = y.astype(np.float32)
+sf.write('/tmp/synth_input.wav', y, sr, subtype='PCM_16')
+print('done', click_times, [int(c*sr) for c in click_times])
+"
+ ✔ 
+💫 Executing cd /home/user/project && python3 run.py --input /tmp/synth_input.wav --output-dir /tmp/out_synth && cat /tmp/out_synth/analysis.json ✔ 
+All 4 synthetic clicks detected correctly (no spurious detections), durations exact. Now check click sharpness/position preservation precisely.   
+💫 Executing cd /home/user/project && python3 -c "
+import numpy as np, soundfile as sf
+
+y, sr = sf.read('/tmp/synth_input.wav'); y=y.astype(np.float32)
+ys, _ = sf.read('/tmp/out_synth/stretched.wav'); ys=ys.astype(np.float32)
+yp, _ = sf.read('/tmp/out_synth/shifted.wav'); yp=yp.astype(np.float32)
+
+click_samples = [22050, 66150, 101429, 141120]
+
+def peak_near(y, center, radius=1000):
+    lo=max(0,center-radius); hi=min(len(y), center+radius)
+    seg = np.abs(y[lo:hi])
+    pk = np.argmax(seg)
+    return lo+pk, seg[pk]
+
+for c in click_samples:
+    p, v = peak_near(y, c)
+    print('input click at', c, 'peak found', p, 'val', v)
+
+print('--- stretched ---')
+for c in click_samples:
+    target = int(round(c*1.5))
+    p, v = peak_near(ys, target)
+    print('target', target, 'peak found', p, 'diff_ms', (p-target)/sr*1000, 'val', v)
+
+print('--- shifted ---')
+for c in click_samples:
+    p, v = peak_near(yp, c)
+    print('target', c, 'peak found', p, 'diff_ms', (p-c)/sr*1000, 'val', v)
+"
+ ✔ 
+💭 Thinking for 1408 characters   
+I'll refine the anchor to use the true peak-amplitude sample within each transient window (for more accurate positional alignment), while keeping the reported `transient_frames`/`transient_times_seconds` based on the standard onset-detection frame (as required).   
+🔧 Applying diff to /home/user/project/run.py ✔ 
+🔧 Applying diff to /home/user/project/run.py ✔ 
+Now let's re-run both tests to confirm improved accuracy and that nothing broke.   
+💫 Executing cd /home/user/project && python3 run.py --input /tmp/synth_input.wav --output-dir /tmp/out_synth2 && cat /tmp/out_synth2/analysis.json && echo --- && python3 -c "
+import numpy as np, soundfile as sf
+y, sr = sf.read('/tmp/synth_input.wav'); y=y.astype(np.float32)
+ys, _ = sf.read('/tmp/out_synth2/stretched.wav'); ys=ys.astype(np.float32)
+yp, _ = sf.read('/tmp/out_synth2/shifted.wav'); yp=yp.astype(np.float32)
+click_samples = [22050, 66150, 101429, 141120]
+def peak_near(y, center, radius=1000):
+    lo=max(0,center-radius); hi=min(len(y), center+radius)
+    seg = np.abs(y[lo:hi])
+    pk = np.argmax(seg)
+    return lo+pk, seg[pk]
+print('--- stretched ---')
+for c in click_samples:
+    target = int(round(c*1.5))
+    p, v = peak_near(ys, target)
+    print('target', target, 'peak found', p, 'diff_ms', (p-target)/sr*1000, 'val', v)
+print('--- shifted ---')
+for c in click_samples:
+    p, v = peak_near(yp, c)
+    print('target', c, 'peak found', p, 'diff_ms', (p-c)/sr*1000, 'val', v)
+"
+ ✔ 
+Now transient peaks land at exactly the expected scaled/original positions with 0.0ms error, and full peak amplitude is preserved (no smearing). Let's verify the original sample input still works and check for edge cases (audio with no transients, very short audio, stereo input safety).   
+💫 Executing cd /home/user/project && python3 run.py --input input.wav --output-dir /tmp/out2 && cat /tmp/out2/analysis.json
+echo "=== test: silence/no-onset audio ==="
+python3 -c "
+import numpy as np, soundfile as sf
+sr=16000
+y = 0.05*np.sin(2*np.pi*300*np.arange(sr*2)/sr).astype(np.float32)
+sf.write('/tmp/tone_only.wav', y, sr, subtype='PCM_16')
+"
+python3 run.py --input /tmp/tone_only.wav --output-dir /tmp/out_tone && cat /tmp/out_tone/analysis.json
+echo "=== test: stereo input safety ==="
+python3 -c "
+import numpy as np, soundfile as sf
+sr=16000
+t=np.arange(sr*1)/sr
+l = 0.3*np.sin(2*np.pi*220*t)
+r = 0.3*np.sin(2*np.pi*220*t)
+y = np.stack([l,r],axis=1).astype(np.float32)
+sf.write('/tmp/stereo_input.wav', y, sr, subtype='PCM_16')
+"
+python3 run.py --input /tmp/stereo_input.wav --output-dir /tmp/out_stereo && python3 -c "
+import soundfile as sf
+info=sf.info('/tmp/out_stereo/stretched.wav')
+print(info)
+info2=sf.info('/tmp/out_stereo/shifted.wav')
+print(info2)
+"
+ ✔ 
+All edge cases handled correctly: single-channel outputs, correct sample rates, exact durations, and even a pure tone with no real onset produces just one spurious detection at the start (from the signal's initial fade-in edge) rather than a flood — acceptable behavior. Let's verify pitch shift accuracy holds for the tone-only test and double check for NaN/clipping issues across all generated files.   
+💫 Executing cd /home/user/project && python3 -c "
+import numpy as np, soundfile as sf, librosa
+for name in ['/tmp/out2/stretched.wav','/tmp/out2/shifted.wav','/tmp/out_synth2/stretched.wav','/tmp/out_synth2/shifted.wav','/tmp/out_tone/stretched.wav','/tmp/out_tone/shifted.wav']:
+    y, sr = sf.read(name)
+    print(name, 'nan?', np.isnan(y).any(), 'max abs', np.max(np.abs(y)))
+
+y, sr = sf.read('/tmp/tone_only.wav')
+yp, _ = sf.read('/tmp/out_tone/shifted.wav')
+def f0(y, sr):
+    f0s = librosa.yin(y.astype(np.float32), fmin=50, fmax=2000, sr=sr)
+    f0s = f0s[np.isfinite(f0s)]
+    return np.median(f0s[f0s>0])
+print('tone input f0', f0(y,sr), 'shifted f0', f0(yp,sr), 'ratio', f0(yp,sr)/f0(y,sr), 'expected', 2**(7/12))
+"
+ ✔ 
+All checks pass: no NaN, no clipping, pitch ratio accurate (1.4981 vs expected 1.4983), durations exact. The implementation is robust and correct.   
+📖 Reading /home/user/project/run.py ✔ 
+The implementation is complete and thoroughly tested. Let's do one final check with a requirements.txt for reproducibility.   
+💫 Executing cd /home/user/project && python3 -c "
+import librosa, numpy, scipy, soundfile
+print('librosa', librosa.__version__)
+print('numpy', numpy.__version__)
+print('scipy', scipy.__version__)
+print('soundfile', soundfile.__version__)
+"
+pip show soxr 2>/dev/null | head -3 ✔ 
+✏️  Writing /home/user/project/requirements.txt ✔ 
+💫 Executing cd /home/user/project && python3 run.py --input input.wav --output-dir /tmp/final_check && ls -la /tmp/final_check && cat /tmp/final_check/analysis.json ✔ 
+🎉 Task Completed
+Implemented `/home/user/project/run.py`, a command-line audio processor satisfying all requirements:
+
+**Architecture (hybrid transient-preserving phase vocoder):**
+1. **Transient detection**: spectral-flux onset-strength envelope (STFT hop=512) + `librosa.onset.onset_detect` with `backtrack=True`, giving one detection per genuine broadband onset (verified: no spurious floods on tone-only or multi-click test signals).
+2. **Segmentation**: the signal is split into alternating "transient" blocks (short window around each onset, 5ms pre / 45ms post) and "stationary" blocks (everything else).
+3. **Stationary blocks** are processed with a true STFT phase vocoder (`librosa.stft` → `librosa.phase_vocoder` → `librosa.istft`, correct phase propagation) to perform the time-stretch (rate = original/target length) or pitch-shift (classic stretch-then-resample technique, phase-vocoder based).
+4. **Transient blocks are copied verbatim** (byte-exact) from the input — this guarantees zero smearing of sharpness. Their placement in the output timeline is computed via anchor alignment (using the true peak-amplitude sample inside the window) so the transient lands exactly at `onset_sample × stretch_factor` (stretch case) or at the original `onset_sample` (pitch-shift case, since duration must stay constant).
+5. Per-segment target lengths are chosen so cumulative output length exactly hits the required total (1.5× for stretch, exact original length for shift) — no post-hoc padding/trimming needed.
+6. Short (3ms) non-overlapping edge tapers avoid boundary clicks without affecting timing.
+
+**Verification performed:**
+- Durations: `stretched.wav` = exactly 1.5× input, `shifted.wav` = exactly equal to input, across multiple test files (provided sample, synthetic multi-click signal, pure-tone edge case, stereo-input safety case).
+- Pitch accuracy: measured via YIN f0 estimation, shift ratio ≈ 1.4972–1.4981 vs expected 2^(7/12) ≈ 1.4983.
+- Transient fidelity: on a synthetic 4-click test, peak amplitude is preserved bit-exact (0.99997 in input and both outputs) and lands at the expected position with **0.0 ms error** in both stretched and shifted outputs after refining the alignment anchor to the true local peak sample.
+- No NaNs, no clipping beyond original range, mono/single-channel output, correct sample rate preserved in all cases.
+- `analysis.json` contains exactly the required keys with correct types and values consistent with the rendered audio files.
+
+Added `requirements.txt` listing the dependencies (librosa, numpy, scipy, soundfile, soxr) with versions confirmed compatible in this environment.
+   
+  

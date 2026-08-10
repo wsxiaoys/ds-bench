@@ -1,0 +1,1 @@
+import{ThemeContext as o,CartContext as r}from"./q--PW6Vdzu.js";import{i as n,m as a,n as t,b as i,S as u}from"./q-BpW22Weo.js";const p=()=>{const e=n("light"),s=a({items:[{id:"sku-1",name:"Keyboard",price:49.99,quantity:1},{id:"sku-2",name:"Mouse",price:19.99,quantity:2}]},{deep:!0});return t(o,e),t(r,s),i(u,null,3,"kD_0")};export{p as s_4oLXS1B0jTs};

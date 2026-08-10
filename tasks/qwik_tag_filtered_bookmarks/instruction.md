@@ -1,0 +1,32 @@
+# Tag-Filtered Bookmark Manager (Qwik City + SQLite)
+
+## Background
+Build a full-stack bookmark manager with the **Qwik** meta-framework (**Qwik City**, `@builder.io/qwik` and `@builder.io/qwik-city` version `1.16.x`). Bookmarks and tags have a **many-to-many** relationship that must be modeled across three tables in a **local SQLite** database. The application must let a user create bookmarks with several tags at once, and filter bookmarks by one or more tags using SQL joins with **AND** semantics (a bookmark matches only when it carries *every* selected tag). Everything runs locally — no external network services, APIs, or cloud dependencies.
+
+## Requirements
+- Persist data in a local SQLite database file with exactly three tables: `bookmarks`, `tags`, and the join table `bookmark_tags`.
+  - `bookmarks` must at least have an integer primary key `id`, a `url` text column, and a `title` text column.
+  - `tags` must at least have an integer primary key `id` and a text column `name`; tag names must be unique (a tag name is stored only once and reused across bookmarks).
+  - `bookmark_tags` must associate bookmarks and tags (foreign keys referencing `bookmarks.id` and `tags.id`).
+- Provide an interactive page at `/` that:
+  - uses a `routeLoader$` to read the repeatable `tag` query parameter from the request URL and render the list of matching bookmarks (AND semantics across all provided tags).
+  - uses a `routeAction$` driven by a Qwik City `<Form>` to create a new bookmark together with its tags.
+- Provide a local JSON API under `/api/bookmarks` (a Qwik City endpoint) for programmatic access, as specified below.
+- Creating a bookmark with tags that already exist must reuse the existing tag rows instead of duplicating them, and duplicate tag names within a single request must be collapsed.
+
+## Implementation Hints
+- Use a Qwik City app scaffolded with the empty starter layout (`src/routes`). Keep all SQLite access inside server-only boundaries (`routeLoader$`, `routeAction$`, and endpoint `onGet`/`onPost` handlers) so no database driver leaks into the client bundle.
+- A local SQLite driver such as `better-sqlite3` works well; create the schema on startup if it does not exist.
+- AND-style tag filtering is naturally expressed by joining `bookmark_tags` and grouping, keeping only bookmarks whose matched-tag count equals the number of distinct requested tags.
+- Project path: /home/user/qwik-app
+- The SQLite database file must be located at `/home/user/qwik-app/data/bookmarks.db`.
+- Start command: `npm run dev -- --host 0.0.0.0 --port 5173` (the server must listen on 0.0.0.0).
+- Port: 5173
+- Page route `/`:
+  - Reads the repeatable query parameter `tag` (e.g. `/?tag=js&tag=web`) and shows only bookmarks that have ALL of the given tags. With no `tag` parameter, it shows every bookmark.
+  - Render each bookmark inside its own element carrying the attribute `data-testid="bookmark-item"`, and inside that element expose the bookmark's title as the text content of an element with attribute `data-testid="bookmark-title"` and its url as the text content of an element with attribute `data-testid="bookmark-url"`.
+  - Include a `<Form>` (bound to a `routeAction$`) with a text input named `url`, a text input named `title`, and an input named `tags` whose value is a comma-separated list of tag names. Submitting it must create the bookmark and its tag associations, after which the newly created bookmark appears in the list.
+- JSON API `/api/bookmarks`:
+  - `GET /api/bookmarks` — accepts the optional repeatable query parameter `tag`. Returns status 200 and a JSON array of bookmark objects, each with exactly the keys `id` (number), `url` (string), `title` (string), and `tags` (array of strings sorted ascending, containing the bookmark's full tag set). Only bookmarks having ALL requested tags are returned (AND semantics); with no `tag` parameter, all bookmarks are returned. The array must be ordered by `id` ascending.
+  - `POST /api/bookmarks` — accepts a JSON body `{ "url": string, "title": string, "tags": string[] }`. On success returns status 201 and the created bookmark object with exactly the keys `id`, `url`, `title`, and `tags` (the `tags` array sorted ascending and de-duplicated). If `url` or `title` is missing or empty, return status 400 and do not create anything. The `tags` array may be empty.
+

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>City Search Autocomplete</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f5f7fa;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .search-container {
+      position: relative;
+      width: 100%;
+      max-width: 500px;
+      margin: 20px;
+    }
+    input#q {
+      width: 100%;
+      padding: 12px 16px;
+      font-size: 16px;
+      border: 1px solid #ccd0d5;
+      border-radius: 8px;
+      box-sizing: border-box;
+      outline: none;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input#q:focus {
+      border-color: #0066cc;
+      box-shadow: 0 0 0 3px rgba(0,102,204,0.15), 0 2px 4px rgba(0,0,0,0.05);
+    }
+    #suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid #ccd0d5;
+      border-radius: 8px;
+      margin-top: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      max-height: 350px;
+      overflow-y: auto;
+      z-index: 1000;
+    }
+    .suggestion {
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f2f5;
+      transition: background-color 0.15s;
+    }
+    .suggestion:last-child {
+      border-bottom: none;
+    }
+    .suggestion:hover, .suggestion.active {
+      background-color: #f0f7ff;
+    }
+    .suggestion-info {
+      font-size: 12px;
+      color: #777;
+      margin-top: 4px;
+    }
+    mark {
+      background-color: #fff3cd;
+      color: #856404;
+      padding: 0 2px;
+      border-radius: 2px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="search-container">
+    <input type="text" id="q" placeholder="Search cities..." autocomplete="off" autofocus>
+    <div id="suggestions"></div>
+  </div>
+
+  <script>
+    const qInput = document.getElementById('q');
+    const suggestionsContainer = document.getElementById('suggestions');
+    let suggestionsList = [];
+    let activeIndex = -1;
+
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function highlightName(name, q) {
+      if (!q || !q.trim()) return escapeHtml(name);
+      
+      const qTokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+      if (qTokens.length === 0) return escapeHtml(name);
+      
+      const parts = name.split(/([a-zA-Z0-9]+)/);
+      
+      const highlightedParts = parts.map(part => {
+        if (!/^[a-zA-Z0-9]+$/.test(part)) {
+          return escapeHtml(part);
+        }
+        
+        const wordLower = part.toLowerCase();
+        let bestMatchLen = 0;
+        
+        for (const qToken of qTokens) {
+          if (qToken.length <= wordLower.length) {
+            const prefix = wordLower.substring(0, qToken.length);
+            let diffs = 0;
+            for (let i = 0; i < qToken.length; i++) {
+              if (qToken[i] !== prefix[i]) {
+                diffs++;
+              }
+            }
+            if (diffs <= 1) {
+              bestMatchLen = Math.max(bestMatchLen, qToken.length);
+            }
+          } else {
+            const qPrefix = qToken.substring(0, wordLower.length);
+            let diffs = 0;
+            for (let i = 0; i < wordLower.length; i++) {
+              if (wordLower[i] !== qPrefix[i]) {
+                diffs++;
+              }
+            }
+            if (diffs <= 1) {
+              bestMatchLen = Math.max(bestMatchLen, wordLower.length);
+            }
+          }
+        }
+        
+        if (bestMatchLen > 0) {
+          const matchPart = part.substring(0, bestMatchLen);
+          const restPart = part.substring(bestMatchLen);
+          return `<mark>${escapeHtml(matchPart)}</mark>${escapeHtml(restPart)}`;
+        }
+        
+        return escapeHtml(part);
+      });
+      
+      return highlightedParts.join('');
+    }
+
+    function clearSuggestions() {
+      suggestionsContainer.innerHTML = '';
+      suggestionsList = [];
+      activeIndex = -1;
+    }
+
+    async function fetchSuggestions(query) {
+      const trimmed = query.trim();
+      if (!trimmed) {
+        clearSuggestions();
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/suggest?q=${encodeURIComponent(trimmed)}`);
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        suggestionsList = await response.json();
+        renderSuggestions(trimmed);
+      } catch (error) {
+        console.error('Error fetching suggestions:', error);
+        clearSuggestions();
+      }
+    }
+
+    function renderSuggestions(query) {
+      suggestionsContainer.innerHTML = '';
+      activeIndex = -1;
+
+      if (suggestionsList.length === 0) {
+        return;
+      }
+
+      suggestionsList.forEach((city, index) => {
+        const div = document.createElement('div');
+        div.className = 'suggestion';
+        div.dataset.id = city.id;
+        div.dataset.index = index;
+
+        const highlighted = highlightName(city.name, query);
+
+        div.innerHTML = `
+          <div class="suggestion-name">${highlighted}</div>
+          <div class="suggestion-info">${escapeHtml(city.country)} &bull; Population: ${city.population.toLocaleString()}</div>
+        `;
+
+        div.addEventListener('click', () => {
+          window.location.href = `/item/${city.id}`;
+        });
+
+        suggestionsContainer.appendChild(div);
+      });
+    }
+
+    function updateActiveSuggestion() {
+      const children = suggestionsContainer.querySelectorAll('.suggestion');
+      children.forEach((child, index) => {
+        if (index === activeIndex) {
+          child.classList.add('active');
+          child.scrollIntoView({ block: 'nearest' });
+        } else {
+          child.classList.remove('active');
+        }
+      });
+    }
+
+    const debouncedFetch = (function(func, wait) {
+      let timeout;
+      return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+      };
+    })(fetchSuggestions, 200);
+
+    qInput.addEventListener('input', (e) => {
+      const value = e.target.value;
+      if (!value.trim()) {
+        clearSuggestions();
+      } else {
+        debouncedFetch(value);
+      }
+    });
+
+    qInput.addEventListener('keydown', (e) => {
+      const children = suggestionsContainer.querySelectorAll('.suggestion');
+      if (children.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (activeIndex === -1) {
+          activeIndex = 0;
+        } else {
+          activeIndex = (activeIndex + 1) % children.length;
+        }
+        updateActiveSuggestion();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (activeIndex === -1) {
+          activeIndex = children.length - 1;
+        } else {
+          activeIndex = (activeIndex - 1 + children.length) % children.length;
+        }
+        updateActiveSuggestion();
+      } else if (e.key === 'Enter') {
+        if (activeIndex !== -1) {
+          e.preventDefault();
+          const activeElem = children[activeIndex];
+          const id = activeElem.dataset.id;
+          window.location.href = `/item/${id}`;
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        clearSuggestions();
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-container')) {
+        clearSuggestions();
+      }
+    });
+  </script>
+</body>
+</html>

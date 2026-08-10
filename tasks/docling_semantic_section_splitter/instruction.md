@@ -1,0 +1,57 @@
+# Semantic Section Splitter for a Structured PDF
+
+## Background
+A long, multi-section technical report is provided as a programmatic PDF at `assets/report.pdf`. Using Docling (Python package `docling`, version `2.107.0`), parse it into a `DoclingDocument` and split it into one Markdown file per top-level section, together with a hierarchical table of contents and working relative cross-links.
+
+The environment is fully offline: all Docling models are pre-baked into the image and the `DOCLING_ARTIFACTS_PATH` environment variable is already set to the local model cache. Do NOT access the network, download models, or use any remote/VLM service.
+
+## Input document format (contract)
+The PDF encodes a multi-level heading hierarchy. Because model-predicted heading levels for PDFs can be flat and unreliable, heading levels are encoded deterministically in the text itself:
+
+- A text line is a **section heading** if and only if it begins with a hierarchical outline number matching the regular expression `^\d+(\.\d+){0,2}\s` (for example `1 Introduction`, `2.1 Data Collection`, `3.2.1 Limitations`).
+- The heading **level** is the number of dot-separated integers in that leading outline number: one component -> level 1 (a top-level "H1" section), two components -> level 2, three components -> level 3. Determine the level **only** from the outline number, never from any model-predicted level.
+- Every other text block is **body content** and belongs, in reading order, to the most recent heading that precedes it.
+- The document also has a single top **title** line that has no outline number; it is NOT a section.
+
+## Requirements
+From `assets/report.pdf`, produce everything under an `output/` directory inside the project:
+1. One Markdown file per H1 (level-1) section, under `output/sections/`, each containing that section and all of its nested subsections and body content in reading order.
+2. A hierarchical `output/toc.json` capturing the full heading tree.
+3. A root `output/index.md` plus back/sibling cross-links between files.
+
+## Output contract
+- Project path: `/home/user/project`
+- Command: `python main.py` (executed with the project path as the working directory) must (re)generate all outputs deterministically from `assets/report.pdf`.
+
+### Slug rule
+Define `slug(s)`: lowercase `s`; replace every maximal run of characters outside `[a-z0-9]` with a single `-`; then strip any leading and trailing `-`. For example `slug("3.2.1 Limitations")` == `3-2-1-limitations`.
+
+### Section files (`output/sections/`)
+- There must be exactly one file per H1 section; the number of section files equals the number of H1 headings in the document.
+- Filename: `<NN>-<slug>.md`, where `<NN>` is the 1-based position of the H1 section in document order, zero-padded to two digits, and `<slug>` is `slug(<full H1 heading text>)` (the full heading text includes its outline number).
+- The file's first Markdown heading line must be `# <full H1 heading text>`.
+- Every descendant subsection heading of that H1 must appear in the file as a Markdown heading, in reading order, with a leading `#`-count equal to its level (level-2 -> `## <full text>`, level-3 -> `### <full text>`), using the full heading text.
+- All body content belonging to the H1 section and its descendants must appear in this file, and in no other section file. No body text may be lost or duplicated across the section files.
+- The file must contain the following relative Markdown links, written as `[text](target)` where `target` is a path relative to the file's own directory that resolves to an existing file:
+  - a link whose text is exactly `Index` and whose target resolves to `output/index.md`;
+  - for every section except the first, a link whose text is exactly `Previous` and whose target resolves to the previous H1 section's file;
+  - for every section except the last, a link whose text is exactly `Next` and whose target resolves to the next H1 section's file.
+
+### `output/index.md`
+- Must contain, in document order, one Markdown link per H1 section, where the link text is exactly the full H1 heading text and the target is `sections/<NN>-<slug>.md` (relative to the `output/` directory) and resolves to the existing section file.
+
+### `output/toc.json`
+A JSON object with:
+- `title` (string): the document's top title text.
+- `sections` (array): the level-1 section nodes, in document order.
+
+Each node is a JSON object with:
+- `title` (string): the full heading text (including its outline number).
+- `level` (integer): 1, 2, or 3.
+- `anchor` (string): `slug(title)`.
+- `page_no` (integer): the 1-based page number on which the heading appears.
+- `children` (array): the child section nodes (of level = this node's level + 1), in document order; an empty array when there are none.
+- `filename` (string): **level-1 nodes ONLY** — the section file path relative to the `output/` directory, i.e. `sections/<NN>-<slug>.md`. Nodes of level 2 or 3 must NOT contain a `filename` key.
+
+The tree must reflect the true nesting implied by the outline numbers: each level-2 section is a child of the level-1 section that precedes it, and each level-3 section is a child of the level-2 section that precedes it.
+

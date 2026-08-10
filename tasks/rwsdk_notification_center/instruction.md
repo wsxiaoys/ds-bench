@@ -1,0 +1,38 @@
+# Real-time Notification Center with RedwoodSDK
+
+## Background
+You are working in an existing RedwoodSDK (rwsdk) project. RedwoodSDK is a server-first React framework for the Cloudflare platform. It ships server functions, a realtime layer backed by Cloudflare Durable Objects, and a locally-emulated SQLite/D1 database — all runnable on the local dev server with no Cloudflare account. Your job is to build a real-time **notification center**: a page where server-originated notifications are broadcast live to every connected client, unread counts stay in sync, read-state is shared and durable, and each client can filter what it sees.
+
+## Requirements
+- Add a route `/notifications` that renders an interactive notification center.
+- Provide three "emit" controls that simulate a server push. Activating one creates a **new notification** of the corresponding severity (`info`, `warning`, or `error`). Creation must happen on the server and the new notification must appear **live** on every client that currently has `/notifications` open, without any manual reload.
+- Render the notifications as a list, **newest first**. Each notification carries a severity (`info` / `warning` / `error`) and a read flag (read / unread).
+- Show an **unread badge** with the current number of unread notifications. It must update live on every connected client as notifications are emitted and as they are marked read.
+- Each notification has its own **"mark read"** control, and there is a single **"mark all read"** control. Read-state is **shared across all clients** (marking a notification read on one client marks it read for everyone) and is **persisted** so it survives a page reload. Marking a notification read must decrement the unread count for every connected client.
+- Provide **filter** controls (all / info / warning / error). Filtering is per-client and shows only notifications of the selected severity ("all" shows everything). A **visible-count** indicator must always reflect the number of notifications currently visible to that client under the active filter.
+- Notifications themselves must also **persist** across a page reload (a client that reloads, or a client that connects after notifications were already emitted, sees the existing notifications and their current read-state; the server is the source of truth).
+- The interactive client components must actually hydrate in the browser (event handlers and effects must run).
+
+## Implementation Hints
+- Project path: /home/user/project
+- Start command: `npm run dev`
+- Port: 5173 (the app must be reachable at `http://localhost:5173/notifications`).
+- Route: `/notifications` renders the notification center.
+- DOM contract — expose these exact, stable selectors so the page can be driven and inspected programmatically:
+  - Emit controls: a control with `data-testid="emit-info"`, one with `data-testid="emit-warning"`, and one with `data-testid="emit-error"`. Activating each creates one notification of that severity.
+  - List container: an element with `data-testid="notif-list"`.
+  - Each notification is an element with `data-testid="notif-<id>"` (where `<id>` is that notification's unique id). It MUST carry attribute `data-severity` whose value is exactly one of `info`, `warning`, or `error`, and attribute `data-read` whose value is exactly `"true"` or `"false"`. Items are ordered newest-first inside the list container.
+  - Unread badge: an element with `data-testid="unread-count"` whose text content is exactly the current number of unread notifications (e.g. `0`, `3`).
+  - Per-item mark-read control: for the notification with id `<id>`, a control with `data-testid="read-<id>"` that marks that notification read.
+  - Mark-all control: a control with `data-testid="read-all"` that marks every notification read.
+  - Filter controls: `data-testid="filter-all"`, `data-testid="filter-info"`, `data-testid="filter-warning"`, `data-testid="filter-error"`. Selecting a severity filter must hide (remove from view) all notifications of other severities; `filter-all` shows all.
+  - Visible-count indicator: an element with `data-testid="visible-count"` whose text content is exactly the number of notification items currently visible under the active filter.
+- Realtime & shared-state behavior (all observable across two independent browser clients on `/notifications`): a notification emitted by client A appears on client B with both unread badges updating; marking a notification read on one client updates its `data-read` and decrements `unread-count` on the other; "mark all read" zeroes the unread count everywhere. After a reload, the notifications and their read-state remain.
+- The realtime primitive may rely on a peer package that is not installed by default; if so, wire up and install whatever the framework requires.
+
+### RedwoodSDK realtime & wiring notes (the approach is up to you)
+- Live cross-client updates are built in: the `useSyncedState` hook from `rwsdk/use-synced-state/client` behaves like `useState` but syncs through a Cloudflare Durable Object, so a change in one client is pushed to every other connected client sharing the same key. The notification list + unread count are global/shared; the active filter is per-client and must stay client-local (do not sync it).
+- Enabling realtime has a setup step that, if skipped, makes it fail silently (a common time sink): in `src/worker.tsx` `export { SyncedStateServer }` and spread `syncedStateRoutes(() => env.SYNCED_STATE_SERVER)` (both from `rwsdk/use-synced-state/worker`) into `defineApp`; in `wrangler.jsonc` add a `durable_objects` binding for `SyncedStateServer` plus a `migrations` entry with `"new_sqlite_classes": ["SyncedStateServer"]`; then run `npm run generate`. The peer package referenced above is typically `capnweb` — install it if the primitive requires it.
+- Synced state is in-memory by default; to make notifications and their read-state survive a reload, persist with `SyncedStateServer.registerSetStateHandler` / `registerGetStateHandler` (mirror to the local SQLite/D1 DB) or keep the authoritative copy in your own Durable Object / database.
+- RedwoodSDK is server-first: the served `Document` must include the client entry (`<script>import("/src/client.tsx")</script>` or equivalent) or nothing hydrates and the controls stay dead.
+

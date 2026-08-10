@@ -15,6 +15,7 @@ A local `nats-server` with JetStream enabled is already running inside the conta
 ## Implementation Hints
 - Project path: `/home/user/myproject`
 - Put your implementation in `/home/user/myproject/solution.py`.
+- The nats-server has been install, you could use it to run a local NATS server listening on 127.0.0.1:4222, MUST stop it after the evaluation.
 - Use the async `nats-py` client (`import nats`) to talk to JetStream, and `lancedb` for storage.
 - Read all configuration from environment variables (the verifier sets them): `NATS_URL`, `JS_STREAM`, `JS_SUBJECT`, `JS_DURABLE`, `LANCEDB_PATH`, `INDEX_BATCH_SIZE`, and `ZEALT_RUN_ID`.
 - The LanceDB table name MUST be exactly `documents_${ZEALT_RUN_ID}` (read `ZEALT_RUN_ID` from the environment and append it). The table lives in the directory given by `LANCEDB_PATH`.

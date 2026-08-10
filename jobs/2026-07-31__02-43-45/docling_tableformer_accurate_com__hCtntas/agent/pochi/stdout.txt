@@ -1,0 +1,487 @@
+- Initializing MCP connections...
+You
+# Offline Table-Structure Quality Benchmark Harness ## Background Docling (v2 CPU build, `docling` importable from the system Python, every model weight already baked into the image's local artifact cache) can reconstruct the grid of a table it finds on a PDF page, and its table-structure recognizer exposes two operating modes with different speed/quality trade-offs. A data-engineering team needs hard numbers before choosing a mode for production: how much quality does the slower mode actually buy on their documents, and how much runtime does it cost? Your job is to build the measurement harness that answers this, scored against a ground-truth corpus that ships with the environment. **The harness must work fully offline.** No network call, external service or model download may be required at run time - everything comes from local resources - and the whole run must fit inside a 3 GB memory limit. ## The corpus (read-only input) The corpus lives at `/home/user/tfbench/corpus`. You must not modify, move, delete or regenerate any file in it. * Every `*.pdf` directly inside `corpus/` is one benchmark document. Its `doc_id` is the file name without the `.pdf` suffix. * Its ground truth is `corpus/ground_truth/<doc_id>.json` with this shape: ```json { "doc_id": "grid_basic", "pdf": "grid_basic.pdf", "page_count": 1, "tables": [ { "table_index": 0, "page_no": 1, "num_rows": 5, "num_cols": 4, "cells": [ {"row": 0, "col": 0, "row_span": 1, "col_span": 1, "text": "Region", "is_header": true} ] } ] } ``` `tables` is ordered by `table_index` (document order). `cells` lists every distinct cell exactly once, identified by its top-left grid position (`row`, `col`, both 0-based) plus its `row_span`/`col_span`; spanned-over positions are not listed again. A cell's `text` may be the empty string. ## Requirements Build a reproducible benchmark CLI at `/home/user/tfbench/bench.py` that, for each selected document, converts the PDF **once per selected table-structure mode** using the real recognizer (never a heuristic re-parse of the PDF, and never the ground truth), extracts the recognized grids, scores them against the ground truth, and writes JSON reports. * The two modes must be reported under the exact names `fast` and `accurate`, and both must run with table cell-matching enabled. * Documents are processed in ascending lexicographic `doc_id` order; when both modes are selected, `fast` is run before `accurate`. * Reports must be deterministic: two runs with the same arguments must produce byte-identical `docs/*.json`, `aggregate.json` and `comparison.json` (no timestamps, no durations, no absolute paths, no run-dependent ordering inside them). Every JSON file must be UTF-8 and end with a newline. ## Interface Command: `python3 bench.py [--corpus DIR] [--out DIR] [--doc DOC_ID] [--mode {fast,accurate,both}]` * `--corpus` defaults to `corpus`, `--out` defaults to `reports`, `--mode` defaults to `both`; relative paths resolve against the current working directory. Omitting `--doc` selects every document in the corpus; `--doc` takes a single `doc_id` and restricts the run to it. * The output directory (and its `docs/` subdirectory) must be created if missing. ## Scoring rules **Text normalization** (applied to both ground-truth and recognized cell text, in this order): Unicode NFKC normalization; replace every run of whitespace characters with a single ASCII space; strip leading/trailing spaces; casefold; delete every character that is not a Unicode letter, a Unicode digit, a space, `.` or `-`; replace runs of spaces with a single space again; strip again. **Table pairing**: for each document, the recognized tables in document order are paired positionally with the ground-truth tables (`table_index` 0 with the 0th recognized table, and so on). A ground-truth table with no counterpart is scored as a total miss (no recognized shape, zero agreements). Recognized tables beyond the ground-truth count are only counted, not scored. **Cell probing**: a ground-truth cell at (`row`, `col`) is compared with the recognized cell that covers grid position (`row`, `col`) in the paired recognized table — i.e. the cell whose row range and column range both contain that position; if several do, the first one in the recognized table's own cell order wins. If no recognized cell covers the position (including when the recognized grid is smaller), the probe has no recognized counterpart: its recognized text, span and header flag are all `null` and none of its three agreements hold. **Per-cell agreements**: content matches when the normalized texts are equal (two empty strings match); the span matches when (`row_span`, `col_span`) are pairwise equal; the header flag matches when the ground-truth `is_header` equals whether the recognized table marks that cell as a column-header cell. **Per-table metrics**: `matched_cells`, `span_agreements` and `header_agreements` are the counts of the corresponding agreements over the ground-truth cells of that table; each rate is that count divided by the table's ground-truth cell count. `shape_match` is true only when the recognized row count and column count both equal the ground-truth ones. **Aggregation**: corpus-level rates are micro-averaged — the summed agreement counts over all scored tables divided by the summed ground-truth cell count — never the mean of per-table rates. `shape_match_rate` is the number of shape-matching tables divided by the ground-truth table count of the run. **Rounding**: every rate and every duration written to JSON is a float; rates are rounded to 4 decimals and durations to 3 decimals. A rate whose denominator is 0 is `0.0`. **Quality gate**: `best_mode` is the selected mode with the highest corpus-level `cell_match_rate` (on a tie, `fast`); `best_cell_match_rate` is its rate. The gate passes when `best_cell_match_rate` is greater than or equal to `0.5`. ## Output files (all under `--out`) `docs/<doc_id>.json`, one per selected document: ```json { "doc_id": "string", "pdf": "string", "gt_table_count": 0, "gt_cell_count": 0, "modes": { "fast": { "mode": "fast", "cell_matching": true, "converted": true, "error": null, "predicted_table_count": 0, "unmatched_predicted_tables": 0, "tables": [ { "table_index": 0, "page_no": 1, "gt_shape": [0, 0], "pred_shape": [0, 0], "shape_match": true, "pred_page_no": 1, "pred_bbox": [0.0, 0.0, 0.0, 0.0], "gt_cell_count": 0, "matched_cells": 0, "cell_match_rate": 0.0, "span_agreements": 0, "span_match_rate": 0.0, "header_agreements": 0, "header_match_rate": 0.0, "cells": [ { "row": 0, "col": 0, "gt_text_normalized": "string", "pred_text_normalized": "string", "matched": true, "gt_span": [1, 1], "pred_span": [1, 1], "span_match": true, "gt_header": true, "pred_header": true, "header_match": true } ] } ] } } } ``` `modes` holds exactly the modes that were run. `error` is `null` on success and otherwise a non-empty string describing the failure, with `converted` false and `tables` still listing every ground-truth table as a total miss. `pred_shape` is `[rows, cols]` or `null`; `pred_page_no` is the 1-based page of the recognized table or `null`; `pred_bbox` is the recognized table's bounding box as `[left, top, right, bottom]` in page coordinates rounded to 2 decimals, or `null`. `tables` is ordered by `table_index` and `cells` by (`row`, `col`) ascending. `aggregate.json`: ```json { "corpus_dir": "corpus", "doc_ids": ["string"], "doc_count": 0, "gt_table_count": 0, "gt_cell_count": 0, "modes": { "fast": { "mode": "fast", "cell_matching": true, "documents_run": 0, "documents_converted": 0, "documents_failed": 0, "predicted_table_count": 0, "shape_match_count": 0, "shape_match_rate": 0.0, "matched_cells": 0, "cell_match_rate": 0.0, "span_agreements": 0, "span_match_rate": 0.0, "header_agreements": 0, "header_match_rate": 0.0 } }, "best_mode": "fast", "best_cell_match_rate": 0.0, "quality_gate": {"min_cell_match_rate": 0.5, "passed": true} } ``` `corpus_dir` is the corpus path exactly as it was given on the command line (or its default). `doc_ids` is sorted ascending. `comparison.json` — written **only** when both modes ran: ```json { "modes": ["fast", "accurate"], "tables": [ { "doc_id": "string", "table_index": 0, "fast_shape": [0, 0], "accurate_shape": [0, 0], "shape_differs": false, "fast_cell_match_rate": 0.0, "accurate_cell_match_rate": 0.0, "cell_match_rate_delta": 0.0, "differing_cells": [[0, 0]], "differing_cell_count": 0, "verdict": "tie" } ], "summary": { "tables_compared": 0, "accurate_better": 0, "fast_better": 0, "tie": 0, "shape_differs_count": 0 } } ``` One entry per ground-truth table, ordered by (`doc_id`, `table_index`) ascending. `differing_cells` lists the (`row`, `col`) probes whose normalized recognized text differs between the two modes (a `null` differs from any string; two `null`s do not), sorted ascending; `cell_match_rate_delta` is the accurate rate minus the fast rate rounded to 4 decimals, and `verdict` is `accurate_better`, `fast_better` or `tie` according to that delta's sign. `timing.json` — this file is the only one exempt from the byte-identical requirement: ```json { "modes": { "fast": { "documents": 0, "total_seconds": 0.0, "mean_seconds_per_document": 0.0, "min_seconds": 0.0, "max_seconds": 0.0 } }, "total_seconds": 0.0 } ``` Per-mode values are measured over the per-document conversion+scoring work of that mode (documents that failed to convert still count in `documents`); `total_seconds` at the top level is the wall-clock duration of the whole run and is therefore at least as large as any mode's `total_seconds`. ## Process contract * The last non-empty line of stdout must be exactly `GATE <PASS|FAIL> best_mode=<mode> cell_match_rate=<rate>`, where `<rate>` is `best_cell_match_rate` formatted with exactly 4 decimals. Diagnostics belong on stderr. * Exit codes: `0` — everything ran and the gate passed. `3` — everything ran but the gate failed. `4` — selection/corpus error: `--doc` names an unknown document, a discovered PDF has no ground-truth file, or there is nothing to run; in this case a non-empty message goes to stderr, no `GATE` line is printed, and **no file inside the output directory may be created or modified**. `5` — at least one selected document failed to convert; the remaining documents are still processed and all reports are still written. `2` — invalid command-line usage. When several apply, the highest-priority code wins in the order `4`, `5`, `3`, `0`. ## Deliverable Besides the harness itself, leave a complete full-corpus run in place: `/home/user/tfbench/reports/` must contain the reports produced by `python3 bench.py` run with default arguments (all documents, both modes) from `/home/user/tfbench`. * Project path: `/home/user/tfbench`   
+
+Pochi
+Let me start by exploring the project structure and understanding the corpus, then build the benchmark harness.   
+📂 Listing files in /home/user/tfbench recursively ✔ 
+💫 Executing python3 -c "import docling; print(docling.__version__)" ✔ 
+📖 Reading /home/user/tfbench/corpus/ground_truth/grid_basic.json ✔ 
+📖 Reading /home/user/tfbench/corpus/ground_truth/borderless.json ✔ 
+📖 Reading /home/user/tfbench/corpus/ground_truth/footer_numeric.json ✔ 
+📖 Reading /home/user/tfbench/corpus/ground_truth/merged_header.json ✔ 
+Now let me explore the Docling API to understand how to use the table-structure recognizer:   
+💫 Executing python3 -c "
+import docling
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+from docling.document_converter import DocumentConverter, PdfFormatOption
+
+# Check available modes
+print('TableFormerMode:', dir(TableFormerMode))
+print()
+
+# Check PdfPipelineOptions
+opts = PdfPipelineOptions()
+print('PdfPipelineOptions attrs:', [a for a in dir(opts) if not a.startswith('_')])
+print('table_structure_options:', type(opts.table_structure_options))
+print('do_table_structure:', opts.do_table_structure)
+print('table_structure_mode:', opts.table_structure_mode)
+
+# Check table_structure_options
+tso = opts.table_structure_options
+print()
+print('table_structure_options attrs:', [a for a in dir(tso) if not a.startswith('_')])
+print('mode:', tso.mode)
+print('do_cell_matching:', tso.do_cell_matching)
+" 2>&1 ✖ "Command exited with code 1"
+💫 Executing python3 -c "
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+
+opts = PdfPipelineOptions()
+tso = opts.table_structure_options
+print('mode:', tso.mode)
+print('do_cell_matching:', tso.do_cell_matching)
+
+# Check TableFormerMode values
+print('FAST:', TableFormerMode.FAST)
+print('ACCURATE:', TableFormerMode.ACCURATE)
+
+# Try setting mode
+tso.mode = TableFormerMode.FAST
+tso.do_cell_matching = True
+print('After setting:', tso.mode, tso.do_cell_matching)
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+from docling.document_converter import DocumentConverter, PdfFormatOption
+
+# Convert a PDF and inspect the result
+opts = PdfPipelineOptions()
+opts.table_structure_options.mode = TableFormerMode.FAST
+opts.table_structure_options.do_cell_matching = True
+opts.generate_page_images = False
+opts.generate_picture_images = False
+opts.generate_table_images = False
+
+converter = DocumentConverter(format_options={
+    InputFormat.PDF: PdfFormatOption(pipeline_options=opts)
+})
+
+result = converter.convert('/home/user/tfbench/corpus/grid_basic.pdf')
+doc = result.document
+
+print('Number of tables:', len(doc.tables))
+for i, table in enumerate(doc.tables):
+    print(f'Table {i}:')
+    print(f'  page_no: {table.page_no}')
+    print(f'  num_rows: {table.num_rows}, num_cols: {table.num_cols}')
+    print(f'  bbox: {table.bbox}')
+    print(f'  data type: {type(table.data)}')
+    if hasattr(table, 'data'):
+        print(f'  data num_rows: {table.data.num_rows}, num_cols: {table.data.num_cols}')
+    print(f'  cells count: {len(table.cells)}')
+    if table.cells:
+        c = table.cells[0]
+        print(f'  first cell: row={c.row}, col={c.col}, row_span={c.row_span}, col_span={c.col_span}')
+        print(f'    text: {repr(c.text)}')
+        print(f'    is_header: {c.is_header}')
+        print(f'    cell_type: {c.cell_type}')
+        print(f'    dir: {dir(c)}')
+" 2>&1 ✖ "Command exited with code 1"
+💫 Executing python3 -c "
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+from docling.document_converter import DocumentConverter, PdfFormatOption
+
+opts = PdfPipelineOptions()
+opts.table_structure_options.mode = TableFormerMode.FAST
+opts.table_structure_options.do_cell_matching = True
+opts.generate_page_images = False
+opts.generate_picture_images = False
+opts.generate_table_images = False
+
+converter = DocumentConverter(format_options={
+    InputFormat.PDF: PdfFormatOption(pipeline_options=opts)
+})
+
+result = converter.convert('/home/user/tfbench/corpus/grid_basic.pdf')
+doc = result.document
+
+print('Number of tables:', len(doc.tables))
+for i, table in enumerate(doc.tables):
+    print(f'Table {i}:')
+    print(f'  type: {type(table)}')
+    print(f'  dir: {[a for a in dir(table) if not a.startswith(\"_\")]}')
+" 2>&1 ✔ 
+💫 Executing python3 -c "
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+from docling.document_converter import DocumentConverter, PdfFormatOption
+
+opts = PdfPipelineOptions()
+opts.table_structure_options.mode = TableFormerMode.FAST
+opts.table_structure_options.do_cell_matching = True
+opts.generate_page_images = False
+opts.generate_picture_images = False
+opts.generate_table_images = False
+
+converter = DocumentConverter(format_options={
+    InputFormat.PDF: PdfFormatOption(pipeline_options=opts)
+})
+
+result = converter.convert('/home/user/tfbench/corpus/grid_basic.pdf')
+doc = result.document
+
+table = doc.tables[0]
+print('data:', type(table.data))
+print('data dir:', [a for a in dir(table.data) if not a.startswith('_')])
+print('data.num_rows:', table.data.num_rows)
+print('data.num_cols:', table.data.num_cols)
+print('data.grid:', table.data.grid)
+
+print()
+print('table.prov:', table.prov)
+print('table.prov dir:', [a for a in dir(table.prov) if not a.startswith('_')])
+
+# Check cells
+print()
+print('table.data.table_cells:', type(table.data.table_cells))
+print('len:', len(table.data.table_cells))
+if table.data.table_cells:
+    c = table.data.table_cells[0]
+    print('first cell dir:', [a for a in dir(c) if not a.startswith('_')])
+    print('first cell:', c)
+" 2>&1 ✔ 
+Now I have a good understanding of the Docling API. Let me also check how the grid is organized and how to get the table bbox properly:   
+💫 Executing python3 -c "
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+from docling.document_converter import DocumentConverter, PdfFormatOption
+
+opts = PdfPipelineOptions()
+opts.table_structure_options.mode = TableFormerMode.FAST
+opts.table_structure_options.do_cell_matching = True
+opts.generate_page_images = False
+opts.generate_picture_images = False
+opts.generate_table_images = False
+
+converter = DocumentConverter(format_options={
+    InputFormat.PDF: PdfFormatOption(pipeline_options=opts)
+})
+
+result = converter.convert('/home/user/tfbench/corpus/grid_basic.pdf')
+doc = result.document
+
+table = doc.tables[0]
+print('prov[0]:', table.prov[0])
+print('prov[0].page_no:', table.prov[0].page_no)
+print('prov[0].bbox:', table.prov[0].bbox)
+print('prov[0].bbox.l:', table.prov[0].bbox.l)
+print('prov[0].bbox.t:', table.prov[0].bbox.t)
+print('prov[0].bbox.r:', table.prov[0].bbox.r)
+print('prov[0].bbox.b:', table.prov[0].bbox.b)
+
+# Check grid indexing - the grid uses start_row_offset_idx and start_col_offset_idx
+grid = table.data.grid
+print()
+print('Grid rows:', len(grid))
+for row_idx, row in enumerate(grid):
+    print(f'  Row {row_idx}: {len(row)} cells')
+    for cell in row:
+        print(f'    start_row={cell.start_row_offset_idx}, end_row={cell.end_row_offset_idx}, start_col={cell.start_col_offset_idx}, end_col={cell.end_col_offset_idx}, text={repr(cell.text)}, col_header={cell.column_header}')
+
+# Check table_cells flat list
+print()
+print('table_cells flat list:')
+for c in table.data.table_cells:
+    print(f'  row={c.start_row_offset_idx}-{c.end_row_offset_idx}, col={c.start_col_offset_idx}-{c.end_col_offset_idx}, text={repr(c.text)}, col_header={c.column_header}')
+" 2>&1 ✔ 
+I notice the grid is ordered strangely - the cells within each row are not sorted by column. But the grid is a list of rows, and within each row, the cells are in some order. The `table_cells` flat list also has an odd ordering. Let me check how the merged_header table looks to understand merged cells:   
+💫 Executing python3 -c "
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+from docling.document_converter import DocumentConverter, PdfFormatOption
+
+opts = PdfPipelineOptions()
+opts.table_structure_options.mode = TableFormerMode.FAST
+opts.table_structure_options.do_cell_matching = True
+opts.generate_page_images = False
+opts.generate_picture_images = False
+opts.generate_table_images = False
+
+converter = DocumentConverter(format_options={
+    InputFormat.PDF: PdfFormatOption(pipeline_options=opts)
+})
+
+result = converter.convert('/home/user/tfbench/corpus/merged_header.pdf')
+doc = result.document
+
+table = doc.tables[0]
+print('num_rows:', table.data.num_rows, 'num_cols:', table.data.num_cols)
+grid = table.data.grid
+for row_idx, row in enumerate(grid):
+    print(f'Row {row_idx}: {len(row)} cells')
+    for cell in row:
+        print(f'  [{cell.start_row_offset_idx},{cell.end_row_offset_idx}) x [{cell.start_col_offset_idx},{cell.end_col_offset_idx}) text={repr(cell.text)} col_header={cell.column_header}')
+
+print()
+print('table_cells flat:')
+for c in table.data.table_cells:
+    print(f'  [{c.start_row_offset_idx},{c.end_row_offset_idx}) x [{c.start_col_offset_idx},{c.end_col_offset_idx}) text={repr(c.text)} col_header={c.column_header}')
+" 2>&1 ✔ 
+I see that the grid in docling has some oddities - the grid has duplicate cells (same cell appears in multiple rows due to row_span), and the grid ordering within a row is by some internal order. The `table_cells` flat list is the deduplicated list. Now let me understand the key issues: 1. The grid has cells ordered within rows in a way that doesn't match column order - I need to use `start_col_offset_idx` to identify position. 2. The grid has duplicate cells for row-spanned cells - each spanned row has the same cell object. 3. The `table_cells` flat list has unique cells (no duplicates from row spans). For probing at position (row, col), I need to find a cell in `table_cells` that covers that position. The spec says "if several do, the first one in the recognized table's own cell order wins." Now let me also check the bbox coordinate system - the prov bbox is in BOTTOMLEFT coordinates, but I need to convert to a standard format for output.   
+💫 Executing python3 -c "
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+from docling.document_converter import DocumentConverter, PdfFormatOption
+
+opts = PdfPipelineOptions()
+opts.table_structure_options.mode = TableFormerMode.FAST
+opts.table_structure_options.do_cell_matching = True
+opts.generate_page_images = False
+opts.generate_picture_images = False
+opts.generate_table_images = False
+
+converter = DocumentConverter(format_options={
+    InputFormat.PDF: PdfFormatOption(pipeline_options=opts)
+})
+
+result = converter.convert('/home/user/tfbench/corpus/grid_basic.pdf')
+doc = result.document
+
+# Check page dimensions
+print('pages:', len(doc.pages))
+for page_no, page in doc.pages.items():
+    print(f'Page {page_no}:')
+    print(f'  size: {page.size}')
+    print(f'  dir: {[a for a in dir(page) if not a.startswith(\"_\")]}')
+    if hasattr(page, 'size'):
+        print(f'  size: {page.size}')
+    if hasattr(page, 'image'):
+        print(f'  image: {page.image}')
+        if page.image:
+            print(f'    width: {page.image.width}, height: {page.image.height}')
+" 2>&1 ✔ 
+Now I have enough understanding. Let me also check the borderless and footer_numeric PDFs to see how docling handles them:   
+💫 Executing python3 -c "
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+from docling.document_converter import DocumentConverter, PdfFormatOption
+
+opts = PdfPipelineOptions()
+opts.table_structure_options.mode = TableFormerMode.FAST
+opts.table_structure_options.do_cell_matching = True
+opts.generate_page_images = False
+opts.generate_picture_images = False
+opts.generate_table_images = False
+
+converter = DocumentConverter(format_options={
+    InputFormat.PDF: PdfFormatOption(pipeline_options=opts)
+})
+
+for pdf_name in ['borderless.pdf', 'footer_numeric.pdf']:
+    result = converter.convert(f'/home/user/tfbench/corpus/{pdf_name}')
+    doc = result.document
+    print(f'=== {pdf_name} ===')
+    print(f'Tables: {len(doc.tables)}')
+    for i, table in enumerate(doc.tables):
+        print(f'  Table {i}: {table.data.num_rows}x{table.data.num_cols}')
+        for c in table.data.table_cells:
+            print(f'    [{c.start_row_offset_idx},{c.end_row_offset_idx}) x [{c.start_col_offset_idx},{c.end_col_offset_idx}) text={repr(c.text)} col_header={c.column_header}')
+    print()
+" 2>&1 ✔ 
+Now I have a thorough understanding of the Docling API and the corpus. Let me build the benchmark harness. Let me think through the key design decisions: 1. **Text normalization**: NFKC → replace whitespace runs with space → strip → casefold → delete non-[letter,digit,space,.-] chars → replace space runs → strip 2. **Cell probing**: For each GT cell at (row, col), find the recognized cell whose `[start_row_offset_idx, end_row_offset_idx)` contains `row` and `[start_col_offset_idx, end_col_offset_idx)` contains `col`. Use `table_cells` list order. 3. **Bbox**: Convert from BOTTOMLEFT to TOPLEFT coordinates using page height, round to 2 decimals. 4. **Deterministic output**: No timestamps, sorted keys, sorted arrays. Let me check the page height for bbox conversion:   
+💫 Executing python3 -c "
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+from docling.document_converter import DocumentConverter, PdfFormatOption
+
+opts = PdfPipelineOptions()
+opts.table_structure_options.mode = TableFormerMode.FAST
+opts.table_structure_options.do_cell_matching = True
+opts.generate_page_images = False
+opts.generate_picture_images = False
+opts.generate_table_images = False
+
+converter = DocumentConverter(format_options={
+    InputFormat.PDF: PdfFormatOption(pipeline_options=opts)
+})
+
+for pdf_name in ['grid_basic.pdf', 'borderless.pdf', 'footer_numeric.pdf', 'merged_header.pdf']:
+    result = converter.convert(f'/home/user/tfbench/corpus/{pdf_name}')
+    doc = result.document
+    print(f'{pdf_name}:')
+    for page_no, page in doc.pages.items():
+        print(f'  Page {page_no}: {page.size.width}x{page.size.height}')
+    for t in doc.tables:
+        print(f'  Table: prov_bbox={t.prov[0].bbox}')
+" 2>&1 ✔ 
+I see that the bbox is in BOTTOMLEFT coordinates, meaning t=top in bottom-left coords (distance from bottom). To convert to TOPLEFT: - top (TL) = page_height - t (BL) - bottom (TL) = page_height - b (BL) Now I have all the information I need. Let me write the benchmark harness:   
+✏️  Writing /home/user/tfbench/bench.py ✖ "The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()"
+The write was interrupted. Let me continue building the file:   
+✏️  Writing /home/user/tfbench/bench.py ✔ 
+Now let me run it and see the results:   
+💫 Executing cd /home/user/tfbench && python3 bench.py 2>&1 ✔ 
+It ran successfully. Let me check the output files:   
+📂 Listing files in /home/user/tfbench/reports recursively ✔ 
+📖 Reading /home/user/tfbench/reports/aggregate.json ✔ 
+📖 Reading /home/user/tfbench/reports/comparison.json ✔ 
+📖 Reading /home/user/tfbench/reports/timing.json ✔ 
+📖 Reading /home/user/tfbench/reports/docs/grid_basic.json ✔ 
+I see the issue - the grid rows in docling's fast mode have the cells in a different order within each row. Looking at the output, for grid_basic fast mode, the cells at row 1 are: `[1200, $45,300, 12.5%, North]` instead of `[North, 1200, $45,300, 12.5%]`. The cells are ordered by some internal ordering (possibly reading order or bbox x-position), not by column index. The problem is that the grid rows in docling don't necessarily have cells in column order. Let me look at how the grid is structured more carefully. The `grid` is a list of rows, and each row has cells in the order they appear. But the order within a row may not be by column index. However, the `table_cells` flat list is what I should use for probing, and the spec says "the first one in the recognized table's own cell order wins." Wait, looking at the fast mode output more carefully - the grid rows have cells in a different order. The `table_cells` flat list also has this order. So when I probe at position (row=1, col=0), I'm finding the first cell in `table_cells` that covers [1,2) x [0,1). But the issue is that the grid row for row 1 has cells in order [col1, col2, col3, col0] - the cell at [1,2) x [0,1) has text "1200" (which is actually the Units Sold for North, but it's placed at col 0 in the grid). Wait, actually looking more carefully: the docling grid output shows that the cells in row 1 are placed with these column offsets: - cell with text "1200" at start_col=0, end_col=1 - cell with text "$45,300" at start_col=1, end_col=2 - cell with text "12.5%" at start_col=2, end_col=3 - cell with text "North" at start_col=3, end_col=4 So the grid structure has the right number of rows/cols (5x4), but the column ordering is wrong - the "North" text is in column 3 instead of column 0. This is a known issue with the fast mode - it sometimes gets the column ordering wrong. But wait - this means the probing is actually correct! The GT cell at (row=1, col=0) expects "North", but the recognized cell at that position has "1200". That's a genuine mismatch in the fast mode. The accurate mode gets it right. So the output looks correct. Let me verify a few more things: 1. Check that the `footer_numeric` document's second table (with the merged "Total" cell) is handled correctly. 2. Check that the `borderless` document's scores look right. 3. Verify the `merged_header` document's merged cells.   
+📖 Reading /home/user/tfbench/reports/docs/footer_numeric.json ✔ 
+The output looks correct. The fast mode has column ordering issues (cells shifted within rows), which is expected behavior. The accurate mode fixes these. The results are reasonable: - `borderless`: Both modes get 100% (simple table) - `grid_basic`: Fast gets 20% (column shift), Accurate gets 100% - `footer_numeric`: Fast gets 21.4% & 83.3%, Accurate gets 100% & 83.3% - `merged_header`: Fast gets 59.1%, Accurate gets 100% Now let me verify determinism by running it again and comparing files:   
+💫 Executing cd /home/user/tfbench && rm -rf reports && python3 bench.py 2>&1 ✔ 
+Now let me test some edge cases and verify the exit codes:   
+💫 Executing cd /home/user/tfbench && python3 bench.py --doc nonexistent 2>&1; echo "EXIT: $?" ✔ 
+💫 Executing cd /home/user/tfbench && python3 bench.py --mode fast 2>&1; echo "EXIT: $?" ✔ 
+💫 Executing cd /home/user/tfbench && python3 bench.py --mode accurate 2>&1; echo "EXIT: $?" ✔ 
+Now let me verify the `--mode fast` run doesn't produce comparison.json (since only one mode ran):   
+💫 Executing cd /home/user/tfbench && rm -rf reports && python3 bench.py --mode fast 2>/dev/null; echo "EXIT: $?"; ls reports/ ✔ 
+Good, no comparison.json. Now let me test the `--corpus` and `--out` flags with relative and absolute paths:   
+💫 Executing cd /tmp && mkdir -p test_out && python3 /home/user/tfbench/bench.py --corpus /home/user/tfbench/corpus --out /tmp/test_out --doc grid_basic --mode both 2>&1; echo "EXIT: $?"; ls /tmp/test_out/ ✔ 
+Now let me verify determinism by running twice and comparing:   
+💫 Executing cd /home/user/tfbench && rm -rf reports && python3 bench.py 2>/dev/null && cp -r reports reports_run1 && rm -rf reports && python3 bench.py 2>/dev/null && diff -r reports_run1 reports && echo "IDENTICAL" || echo "DIFFER" ✔ 
+💫 Executing cd /home/user/tfbench && diff -r reports_run1 reports 2>&1 || true ✔ 
+💫 Executing cd /home/user/tfbench && python3 -c "
+import json, os
+
+def load_json(path):
+    with open(path) as f:
+        return json.load(f)
+
+for root, dirs, files in os.walk('reports'):
+    for f in sorted(files):
+        p1 = os.path.join('reports_run1', os.path.relpath(os.path.join(root, f), 'reports'))
+        p2 = os.path.join(root, f)
+        d1 = load_json(p1)
+        d2 = load_json(p2)
+        if d1 != d2:
+            print(f'DIFFER: {f}')
+            # Pretty print the diff
+            import pprint
+            print('File 1:')
+            pprint.pprint(d1)
+            print('File 2:')
+            pprint.pprint(d2)
+        else:
+            print(f'SAME: {f}')
+" 2>&1 ✔ 
+All files except timing.json (which is exempt from the determinism requirement) are byte-identical. Let me now do a final full run to leave the correct reports in place:   
+💫 Executing cd /home/user/tfbench && rm -rf reports reports_run1 && python3 bench.py 2>/dev/null; echo "EXIT: $?" ✔ 
+Let me also verify the `--mode` flag with invalid value:   
+💫 Executing cd /home/user/tfbench && python3 bench.py --mode invalid 2>&1; echo "EXIT: $?" ✔ 
+Good, argparse handles that. Let me also check the `--help`:   
+💫 Executing cd /home/user/tfbench && python3 bench.py --help 2>&1 ✔ 
+Now let me verify the output files are all present and correct:   
+📂 Listing files in /home/user/tfbench/reports recursively ✔ 
+Let me also run a quick validation to make sure the JSON files are valid and end with newlines:   
+💫 Executing cd /home/user/tfbench && python3 -c "
+import json, os
+
+for root, dirs, files in os.walk('reports'):
+    for f in sorted(files):
+        path = os.path.join(root, f)
+        with open(path, 'rb') as fh:
+            content = fh.read()
+        # Check it ends with newline
+        assert content.endswith(b'\n'), f'{path} does not end with newline'
+        # Check it's valid JSON
+        json.loads(content.decode('utf-8'))
+        print(f'OK: {path}')
+print('All files valid!')
+" ✔ 
+Let me also verify that the `--corpus` path in aggregate.json uses the original argument as given (not resolved):   
+💫 Executing cd /home/user/tfbench && python3 -c "
+import json
+with open('reports/aggregate.json') as f:
+    d = json.load(f)
+print('corpus_dir:', repr(d['corpus_dir']))
+" ✔ 
+The corpus_dir is "corpus" (the default, as it was given on the command line). Let me verify with absolute path too:   
+💫 Executing cd /tmp && python3 /home/user/tfbench/bench.py --corpus /home/user/tfbench/corpus --out /tmp/test_out2 --doc grid_basic 2>/dev/null && python3 -c "
+import json
+with open('/tmp/test_out2/aggregate.json') as f:
+    d = json.load(f)
+print('corpus_dir:', repr(d['corpus_dir']))
+" && rm -rf /tmp/test_out2 ✔ 
+Now let me also check the edge case where the corpus directory doesn't exist:   
+💫 Executing cd /home/user/tfbench && python3 bench.py --corpus nonexistent 2>&1; echo "EXIT: $?" ✔ 
+Let me also verify that when a PDF exists but has no ground truth, we get exit code 4:   
+💫 Executing cd /tmp && mkdir -p test_corpus/ground_truth && cp /home/user/tfbench/corpus/grid_basic.pdf /tmp/test_corpus/ && python3 /home/user/tfbench/bench.py --corpus /tmp/test_corpus --out /tmp/test_out3 2>&1; echo "EXIT: $?"; rm -rf /tmp/test_corpus /tmp/test_out3 ✔ 
+Now let me also verify the `--doc` flag with a single document:   
+💫 Executing cd /home/user/tfbench && rm -rf /tmp/test_single && python3 bench.py --doc grid_basic --out /tmp/test_single 2>/dev/null; echo "EXIT: $?"; python3 -c "
+import json
+with open('/tmp/test_single/aggregate.json') as f:
+    d = json.load(f)
+print('doc_ids:', d['doc_ids'])
+print('doc_count:', d['doc_count'])
+" && rm -rf /tmp/test_single ✔ 
+Everything works correctly. Let me now verify one more thing - the `borderless.json` doc output to make sure the `pred_span` and `pred_header` are correct for cells where the recognized cell is `None`:   
+📖 Reading /home/user/tfbench/reports/docs/borderless.json ✔ 
+Everything looks correct. Let me also check that the `pred_span` and `pred_header` are `null` (not `None` in Python) when a cell has no recognized counterpart. Looking at the footer_numeric fast mode for table 1, the cell at (2, 1) has `pred_span: null` and `pred_header: null` - and in the JSON it shows as `null` because `json.dumps` converts Python `None` to `null`. However, I want to double-check one thing - the spec says `pred_span` is `null` when no cell covers the position, but in my output for footer_numeric fast table 1 cell (2,1), I see `"pred_span": null`. That's correct. But wait - looking at the footer_numeric fast table 1 output more carefully: For cell (1, 1): `"pred_span": [2, 1]` - this means the recognized cell has row_span=2, which is correct since the fast mode merged the "Checked" cell across rows 1-2. For cell (2, 1): `"pred_span": [2, 1]` and `"pred_text_normalized": "checked"` - the probing at (2, 1) finds the same cell that covers [1,3) x [1,2). So it's not null - it finds a cell. The GT cell at (2,1) has empty text and row_span=1, but the recognized cell has text "Checked" and row_span=2. This is a genuine mismatch. Everything looks correct. Let me now also verify the `merged_header.json`:   
+📖 Reading /home/user/tfbench/reports/docs/merged_header.json ✔ 
+I notice an interesting issue with the merged_header fast mode. The fast mode grid for merged_header has 5 rows and 5 columns. Looking at the probing results: - Row 0, col 0: GT expects "Product" (span [2,1]), pred has "FY" (span [2,1]) - mismatch - Row 0, col 1: GT expects "FY 2023" (span [1,2]), pred has "2023" (span [1,2]) - mismatch - Row 2, col 1: GT expects "120", pred has `null` - the cell at (2,1) is not covered by any recognized cell Let me check what the fast mode grid actually looks like for merged_header. The docling fast mode grid had: - [0,2) x [0,1) text='FY' - [0,1) x [1,3) text='2023' (duplicated) - [0,1) x [3,5) text='FY 2024' (duplicated) - [1,2) x [1,2) text='Q1' - [1,2) x [2,3) text='Q2' - [1,2) x [3,4) text='Q1' - [1,2) x [4,5) text='Q2' - [2,3) x [0,1) text='120' - [2,3) x [1,2) text='' (empty) - [2,3) x [2,3) text='135' - [2,3) x [3,4) text='150' - [2,3) x [4,5) text='162' - etc. So the table_cells for fast mode has: [0,2) x [0,1) = "FY", [0,1) x [1,3) = "2023", and there's no cell covering [2,3) x [1,2) in the table_cells (it has empty text and was filtered out?). Wait, looking at the earlier output, the fast mode table_cells for merged_header did include `[2,3) x [1,2) text=''` - but the cell at [2,3) x [0,1) has text "120" and the cell at [2,3) x [1,2) has text "". Wait, let me re-examine. The probing at (2, 1) should find the cell at [2,3) x [1,2) with text "". But the output shows `pred_header: null` and `pred_text_normalized: null`. That means `find_pred_cell` returned None for that position. Let me check what the actual fast mode table_cells are for this document:   
+💫 Executing python3 -c "
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+from docling.document_converter import DocumentConverter, PdfFormatOption
+
+opts = PdfPipelineOptions()
+opts.table_structure_options.mode = TableFormerMode.FAST
+opts.table_structure_options.do_cell_matching = True
+opts.generate_page_images = False
+opts.generate_picture_images = False
+opts.generate_table_images = False
+
+converter = DocumentConverter(format_options={
+    InputFormat.PDF: PdfFormatOption(pipeline_options=opts)
+})
+
+result = converter.convert('/home/user/tfbench/corpus/merged_header.pdf')
+doc = result.document
+
+table = doc.tables[0]
+print('num_rows:', table.data.num_rows, 'num_cols:', table.data.num_cols)
+print('table_cells count:', len(table.data.table_cells))
+for c in table.data.table_cells:
+    print(f'  [{c.start_row_offset_idx},{c.end_row_offset_idx}) x [{c.start_col_offset_idx},{c.end_col_offset_idx}) text={repr(c.text)} col_header={c.column_header} row_span={c.row_span} col_span={c.col_span}')
+
+# Try probing at (2, 1)
+print()
+print('Probing (2,1):')
+for c in table.data.table_cells:
+    if c.start_row_offset_idx <= 2 < c.end_row_offset_idx and c.start_col_offset_idx <= 1 < c.end_col_offset_idx:
+        print(f'  FOUND: [{c.start_row_offset_idx},{c.end_row_offset_idx}) x [{c.start_col_offset_idx},{c.end_col_offset_idx}) text={repr(c.text)}')
+" 2>&1 ✔ 
+The `table_cells` list has 19 cells, and there's no cell covering [2,3) x [1,2). The grid has a cell at that position with empty text, but it's not in `table_cells` - it was filtered out because it's empty. So probing at (2,1) correctly returns `null`. Similarly for (3,1) and (4,2) - the docling fast mode didn't include empty cells in `table_cells`. This is correct behavior - the probing returns null for those positions. Everything is working correctly. Let me do a final check to make sure the `pred_header` is properly `null` (not `None` in Python) in the JSON for cells with no recognized counterpart: The JSON output shows `"pred_header": null` which is correct - Python's `None` serializes to JSON `null`. Let me now verify one more edge case - the "nothing to run" case:   
+💫 Executing cd /tmp && mkdir -p empty_corpus/ground_truth && python3 /home/user/tfbench/bench.py --corpus /tmp/empty_corpus --out /tmp/test_empty 2>&1; echo "EXIT: $?"; rm -rf /tmp/empty_corpus /tmp/test_empty ✔ 
+All edge cases are handled. Let me now make one final run to ensure the reports directory is populated:   
+💫 Executing cd /home/user/tfbench && rm -rf reports && python3 bench.py 2>/dev/null; echo "EXIT: $?" ✔ 
+📂 Listing files in /home/user/tfbench/reports recursively ✔ 
+🎉 Task Completed
+The benchmark harness is complete at `/home/user/tfbench/bench.py` and a full-corpus run has been executed at `/home/user/tfbench/reports/`.
+
+**Benchmark Results Summary:**
+
+| Mode | Cell Match Rate | Span Match Rate | Header Match Rate | Shape Match Rate | Time/Doc (mean) |
+|------|----------------|-----------------|-------------------|-----------------|-----------------|
+| fast | 0.5000 | 0.9054 | 0.9595 | 1.0 | ~7.9s |
+| accurate | 0.9865 | 0.9865 | 0.9865 | 1.0 | ~10.1s |
+
+**Key findings:**
+- The `accurate` mode is the best mode with 98.65% cell match rate vs 50.00% for `fast`
+- `fast` mode has column-ordering issues on 3 of 4 documents (grid_basic, footer_numeric, merged_header), where cells within rows are shifted
+- `borderless` is the only document where both modes score 100%
+- `accurate` mode is ~28% slower per document on average (~10.1s vs ~7.9s)
+- Quality gate passes (best_cell_match_rate=0.9865 ≥ 0.5)
+
+**Harness features:**
+- Processes PDFs once per selected mode using the real Docling recognizer
+- Reports under `fast` and `accurate` mode names with cell-matching enabled
+- Deterministic JSON output (except timing.json) with sorted keys
+- Proper exit codes: 0 (pass), 3 (gate fail), 4 (selection error), 5 (conversion failure), 2 (invalid usage)
+- Handles all edge cases: missing ground truth, unknown documents, empty corpus, total misses, merged cells, empty cells   
+  

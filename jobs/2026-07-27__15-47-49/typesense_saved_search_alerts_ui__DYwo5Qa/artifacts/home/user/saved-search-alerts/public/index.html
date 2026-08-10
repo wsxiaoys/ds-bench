@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Saved Search Alerts</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      padding: 20px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { margin-bottom: 24px; color: #1a1a1a; }
+    h2 { margin: 24px 0 12px; color: #333; font-size: 1.2em; }
+
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .form-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .form-row input, .form-row select {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .form-row input[type="text"] { flex: 1; min-width: 150px; }
+    .form-row input[type="number"] { width: 120px; }
+
+    button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .btn-primary { background: #007bff; color: #fff; }
+    .btn-primary:hover { background: #0069d9; }
+    .btn-success { background: #28a745; color: #fff; }
+    .btn-success:hover { background: #218838; }
+    .btn-warning { background: #ffc107; color: #333; }
+    .btn-warning:hover { background: #e0a800; }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; }
+    th { font-weight: 600; color: #555; font-size: 13px; text-transform: uppercase; }
+    tr:hover { background: #f9f9f9; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      min-width: 24px;
+      text-align: center;
+    }
+    .badge-new { background: #e74c3c; }
+    .badge-zero { background: #95a5a6; }
+    .badge-null { background: #bdc3c7; color: #666; }
+
+    .catalog-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .catalog-item:last-child { border-bottom: none; }
+    .catalog-item .name { flex: 1; font-weight: 500; }
+    .catalog-item .meta { color: #888; font-size: 13px; }
+
+    .message {
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin: 8px 0;
+      font-size: 14px;
+    }
+    .message-success { background: #d4edda; color: #155724; }
+    .message-error { background: #f8d7da; color: #721c24; }
+
+    .actions { display: flex; gap: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Saved Search Alerts</h1>
+
+  <div id="message"></div>
+
+  <!-- Create saved search -->
+  <div class="section">
+    <h2>Create Saved Search</h2>
+    <div class="form-row">
+      <input type="text" id="ss-name" placeholder="Search name">
+      <input type="text" id="ss-q" placeholder="Query text (or * for all)">
+      <input type="text" id="ss-category" placeholder="Category (optional)">
+      <input type="number" id="ss-max-price" placeholder="Max price (optional)" step="0.01">
+      <button class="btn-primary" onclick="createSearch()">Save</button>
+    </div>
+  </div>
+
+  <!-- Saved searches list -->
+  <div class="section">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <h2 style="margin:0;">Saved Searches</h2>
+      <button class="btn-warning" onclick="checkAll()">Check All</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Query</th>
+          <th>Category</th>
+          <th>Max Price</th>
+          <th>Matches</th>
+          <th>New</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="searches-tbody">
+        <tr><td colspan="7" style="text-align:center; color:#999;">No saved searches yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Ingest catalog -->
+  <div class="section">
+    <h2>Ingest Catalog Documents</h2>
+    <div id="catalog-list"></div>
+  </div>
+
+  <script>
+    function showMessage(text, type) {
+      const el = document.getElementById('message');
+      el.innerHTML = `<div class="message message-${type}">${text}</div>`;
+      setTimeout(() => el.innerHTML = '', 3000);
+    }
+
+    async function api(method, url, body) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(url, opts);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      return data;
+    }
+
+    function renderBadge(count) {
+      if (count === null || count === undefined) {
+        return '<span class="badge badge-null">—</span>';
+      }
+      if (count === 0) {
+        return '<span class="badge badge-zero">0</span>';
+      }
+      return `<span class="badge badge-new">${count}</span>`;
+    }
+
+    async function loadSearches() {
+      const searches = await api('GET', '/api/saved-searches');
+      const tbody = document.getElementById('searches-tbody');
+      if (searches.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#999;">No saved searches yet.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = searches.map(s => `
+        <tr>
+          <td><strong>${esc(s.name)}</strong></td>
+          <td>${esc(s.q || '*')}</td>
+          <td>${esc(s.category || '—')}</td>
+          <td>${s.max_price !== null ? '$' + s.max_price : '—'}</td>
+          <td>${s.match_count !== null ? s.match_count : '—'}</td>
+          <td>${renderBadge(s.new_count)}</td>
+          <td class="actions">
+            <button class="btn-success btn-sm" onclick="checkSearch('${s.id}')">Check</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function esc(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function createSearch() {
+      const name = document.getElementById('ss-name').value.trim();
+      const q = document.getElementById('ss-q').value.trim();
+      const category = document.getElementById('ss-category').value.trim();
+      const maxPriceStr = document.getElementById('ss-max-price').value.trim();
+
+      if (!name) { showMessage('Name is required', 'error'); return; }
+
+      const max_price = maxPriceStr ? parseFloat(maxPriceStr) : null;
+
+      try {
+        await api('POST', '/api/saved-searches', { name, q, category, max_price });
+        document.getElementById('ss-name').value = '';
+        document.getElementById('ss-q').value = '';
+        document.getElementById('ss-category').value = '';
+        document.getElementById('ss-max-price').value = '';
+        showMessage('Saved search created', 'success');
+        await loadSearches();
+      } catch (e) {
+        showMessage(e.message, 'error');
+      }
+    }
+
+    async function checkSearch(id) {
+      try {
+        await api('POST', `/api/saved-searches/${id}/check`);
+        await loadSearches();
+      } catch (e) {
+        showMessage(e.message, 'error');
+      }
+    }
+
+    async function checkAll() {
+      try {
+        await api('POST', '/api/check-all');
+        await loadSearches();
+        showMessage('All searches checked', 'success');
+      } catch (e) {
+        showMessage(e.message, 'error');
+      }
+    }
+
+    async function ingestDocument(doc) {
+      try {
+        await api('POST', '/api/ingest', { documents: [doc] });
+        showMessage(`Ingested: ${doc.name}`, 'success');
+        await loadCatalog();
+        await loadSearches();
+      } catch (e) {
+        showMessage(e.message, 'error');
+      }
+    }
+
+    async function loadCatalog() {
+      const catalog = await api('GET', '/api/catalog');
+      const list = document.getElementById('catalog-list');
+      list.innerHTML = catalog.map(doc => `
+        <div class="catalog-item">
+          <span class="name">${esc(doc.name)}</span>
+          <span class="meta">${esc(doc.category)} — $${doc.price}</span>
+          <button class="btn-primary btn-sm" onclick="ingestDocument(${JSON.stringify(doc).replace(/"/g, '&quot;')})">Ingest</button>
+        </div>
+      `).join('');
+    }
+
+    // Initial load
+    loadSearches();
+    loadCatalog();
+  </script>
+</body>
+</html>

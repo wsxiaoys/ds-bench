@@ -1,0 +1,289 @@
+Selected strategy: _DaytonaDirect
+Building environment from /home/kw/code/zealt/docling-benchmark/scratchpad/pending-tasks/docling_tableformer_accurate_compare/environment/Dockerfile
+Running command: set -euo pipefail; mkdir -p /logs/agent/pochi && pochi --version
+Command outputs captured
+Running command: mkdir -p ~/.pochi && mkdir -p /logs/agent/pochi && cat << 'EOF' | sed -e "s/OPENAI_API_KEY/${OPENAI_API_KEY}/g" -e "s/DEEPINFRA_API_KEY/${DEEPINFRA_API_KEY}/g" -e "s/MINIMAX_API_KEY/${MINIMAX_API_KEY}/g" > ~/.pochi/config.jsonc
+{
+  "providers": {
+    "deepinfra": {
+      "kind": "openai",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKey": "DEEPINFRA_API_KEY",
+      "models": {
+        "zai-org/GLM-4.7-Flash": {
+          "name": "glm-4.7-flash"
+        },
+        "moonshotai/Kimi-K2.6": {
+          "name": "kimi-K2.6"
+        },
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "name": "DeepSeek-V4-Pro"
+        }
+      }
+    },
+    "openai": {
+      "kind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        }
+      }
+    },
+    "minimax": {
+      "kind": "minimax",
+      "apiKey": "MINIMAX_API_KEY",
+      "models": {
+        "MiniMax-M3": {
+          "maxTokens": 10000,
+          "contextWindow": 1000000
+        }
+      }
+    }
+  }
+}
+EOF
+Command outputs captured
+Running command: if [ -f /bootstrap/test_initial_state.py ]; then pytest -s --log-cli-level=DEBUG /bootstrap/test_initial_state.py > >(tee /logs/agent/pochi/initial-test-stdout.txt) 2> >(tee /logs/agent/pochi/initial-test-stderr.txt >&2); fi
+Command outputs captured
+Running command: cat > /tmp/pochi_cmd.sh << 'CMD_EOF'
+set -o pipefail
+pochi --model deepseek/deepseek-4-pro --max-steps 200 --max-retries 10 --blobs-dir /logs/agent/pochi/blobs --experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl --experimental-stream-trajectory-strip-duplicates > >(tee /logs/agent/pochi/stdout.txt) 2> >(tee /logs/agent/pochi/stderr.txt >&2) <<'EOF'
+# Offline Table-Structure Quality Benchmark Harness
+
+## Background
+Docling (v2 CPU build, `docling` importable from the system Python, every model weight already baked into the image's local artifact cache) can reconstruct the grid of a table it finds on a PDF page, and its table-structure recognizer exposes two operating modes with different speed/quality trade-offs.
+
+A data-engineering team needs hard numbers before choosing a mode for production: how much quality does the slower mode actually buy on their documents, and how much runtime does it cost? Your job is to build the measurement harness that answers this, scored against a ground-truth corpus that ships with the environment.
+
+**The harness must work fully offline.** No network call, external service or model download may be required at run time - everything comes from local resources - and the whole run must fit inside a 3 GB memory limit.
+
+## The corpus (read-only input)
+The corpus lives at `/home/user/tfbench/corpus`. You must not modify, move, delete or regenerate any file in it.
+
+- Every `*.pdf` directly inside `corpus/` is one benchmark document. Its `doc_id` is the file name without the `.pdf` suffix.
+- Its ground truth is `corpus/ground_truth/<doc_id>.json` with this shape:
+
+```json
+{
+  "doc_id": "grid_basic",
+  "pdf": "grid_basic.pdf",
+  "page_count": 1,
+  "tables": [
+    {
+      "table_index": 0,
+      "page_no": 1,
+      "num_rows": 5,
+      "num_cols": 4,
+      "cells": [
+        {"row": 0, "col": 0, "row_span": 1, "col_span": 1, "text": "Region", "is_header": true}
+      ]
+    }
+  ]
+}
+```
+
+`tables` is ordered by `table_index` (document order). `cells` lists every distinct cell exactly once, identified by its top-left grid position (`row`, `col`, both 0-based) plus its `row_span`/`col_span`; spanned-over positions are not listed again. A cell's `text` may be the empty string.
+
+## Requirements
+Build a reproducible benchmark CLI at `/home/user/tfbench/bench.py` that, for each selected document, converts the PDF **once per selected table-structure mode** using the real recognizer (never a heuristic re-parse of the PDF, and never the ground truth), extracts the recognized grids, scores them against the ground truth, and writes JSON reports.
+
+- The two modes must be reported under the exact names `fast` and `accurate`, and both must run with table cell-matching enabled.
+- Documents are processed in ascending lexicographic `doc_id` order; when both modes are selected, `fast` is run before `accurate`.
+- Reports must be deterministic: two runs with the same arguments must produce byte-identical `docs/*.json`, `aggregate.json` and `comparison.json` (no timestamps, no durations, no absolute paths, no run-dependent ordering inside them). Every JSON file must be UTF-8 and end with a newline.
+
+## Interface
+Command: `python3 bench.py [--corpus DIR] [--out DIR] [--doc DOC_ID] [--mode {fast,accurate,both}]`
+
+- `--corpus` defaults to `corpus`, `--out` defaults to `reports`, `--mode` defaults to `both`; relative paths resolve against the current working directory. Omitting `--doc` selects every document in the corpus; `--doc` takes a single `doc_id` and restricts the run to it.
+- The output directory (and its `docs/` subdirectory) must be created if missing.
+
+## Scoring rules
+
+**Text normalization** (applied to both ground-truth and recognized cell text, in this order): Unicode NFKC normalization; replace every run of whitespace characters with a single ASCII space; strip leading/trailing spaces; casefold; delete every character that is not a Unicode letter, a Unicode digit, a space, `.` or `-`; replace runs of spaces with a single space again; strip again.
+
+**Table pairing**: for each document, the recognized tables in document order are paired positionally with the ground-truth tables (`table_index` 0 with the 0th recognized table, and so on). A ground-truth table with no counterpart is scored as a total miss (no recognized shape, zero agreements). Recognized tables beyond the ground-truth count are only counted, not scored.
+
+**Cell probing**: a ground-truth cell at (`row`, `col`) is compared with the recognized cell that covers grid position (`row`, `col`) in the paired recognized table — i.e. the cell whose row range and column range both contain that position; if several do, the first one in the recognized table's own cell order wins. If no recognized cell covers the position (including when the recognized grid is smaller), the probe has no recognized counterpart: its recognized text, span and header flag are all `null` and none of its three agreements hold.
+
+**Per-cell agreements**: content matches when the normalized texts are equal (two empty strings match); the span matches when (`row_span`, `col_span`) are pairwise equal; the header flag matches when the ground-truth `is_header` equals whether the recognized table marks that cell as a column-header cell.
+
+**Per-table metrics**: `matched_cells`, `span_agreements` and `header_agreements` are the counts of the corresponding agreements over the ground-truth cells of that table; each rate is that count divided by the table's ground-truth cell count. `shape_match` is true only when the recognized row count and column count both equal the ground-truth ones.
+
+**Aggregation**: corpus-level rates are micro-averaged — the summed agreement counts over all scored tables divided by the summed ground-truth cell count — never the mean of per-table rates. `shape_match_rate` is the number of shape-matching tables divided by the ground-truth table count of the run.
+
+**Rounding**: every rate and every duration written to JSON is a float; rates are rounded to 4 decimals and durations to 3 decimals. A rate whose denominator is 0 is `0.0`.
+
+**Quality gate**: `best_mode` is the selected mode with the highest corpus-level `cell_match_rate` (on a tie, `fast`); `best_cell_match_rate` is its rate. The gate passes when `best_cell_match_rate` is greater than or equal to `0.5`.
+
+## Output files (all under `--out`)
+
+`docs/<doc_id>.json`, one per selected document:
+
+```json
+{
+  "doc_id": "string",
+  "pdf": "string",
+  "gt_table_count": 0,
+  "gt_cell_count": 0,
+  "modes": {
+    "fast": {
+      "mode": "fast",
+      "cell_matching": true,
+      "converted": true,
+      "error": null,
+      "predicted_table_count": 0,
+      "unmatched_predicted_tables": 0,
+      "tables": [
+        {
+          "table_index": 0,
+          "page_no": 1,
+          "gt_shape": [0, 0],
+          "pred_shape": [0, 0],
+          "shape_match": true,
+          "pred_page_no": 1,
+          "pred_bbox": [0.0, 0.0, 0.0, 0.0],
+          "gt_cell_count": 0,
+          "matched_cells": 0,
+          "cell_match_rate": 0.0,
+          "span_agreements": 0,
+          "span_match_rate": 0.0,
+          "header_agreements": 0,
+          "header_match_rate": 0.0,
+          "cells": [
+            {
+              "row": 0,
+              "col": 0,
+              "gt_text_normalized": "string",
+              "pred_text_normalized": "string",
+              "matched": true,
+              "gt_span": [1, 1],
+              "pred_span": [1, 1],
+              "span_match": true,
+              "gt_header": true,
+              "pred_header": true,
+              "header_match": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+`modes` holds exactly the modes that were run. `error` is `null` on success and otherwise a non-empty string describing the failure, with `converted` false and `tables` still listing every ground-truth table as a total miss. `pred_shape` is `[rows, cols]` or `null`; `pred_page_no` is the 1-based page of the recognized table or `null`; `pred_bbox` is the recognized table's bounding box as `[left, top, right, bottom]` in page coordinates rounded to 2 decimals, or `null`. `tables` is ordered by `table_index` and `cells` by (`row`, `col`) ascending.
+
+`aggregate.json`:
+
+```json
+{
+  "corpus_dir": "corpus",
+  "doc_ids": ["string"],
+  "doc_count": 0,
+  "gt_table_count": 0,
+  "gt_cell_count": 0,
+  "modes": {
+    "fast": {
+      "mode": "fast",
+      "cell_matching": true,
+      "documents_run": 0,
+      "documents_converted": 0,
+      "documents_failed": 0,
+      "predicted_table_count": 0,
+      "shape_match_count": 0,
+      "shape_match_rate": 0.0,
+      "matched_cells": 0,
+      "cell_match_rate": 0.0,
+      "span_agreements": 0,
+      "span_match_rate": 0.0,
+      "header_agreements": 0,
+      "header_match_rate": 0.0
+    }
+  },
+  "best_mode": "fast",
+  "best_cell_match_rate": 0.0,
+  "quality_gate": {"min_cell_match_rate": 0.5, "passed": true}
+}
+```
+
+`corpus_dir` is the corpus path exactly as it was given on the command line (or its default). `doc_ids` is sorted ascending.
+
+`comparison.json` — written **only** when both modes ran:
+
+```json
+{
+  "modes": ["fast", "accurate"],
+  "tables": [
+    {
+      "doc_id": "string",
+      "table_index": 0,
+      "fast_shape": [0, 0],
+      "accurate_shape": [0, 0],
+      "shape_differs": false,
+      "fast_cell_match_rate": 0.0,
+      "accurate_cell_match_rate": 0.0,
+      "cell_match_rate_delta": 0.0,
+      "differing_cells": [[0, 0]],
+      "differing_cell_count": 0,
+      "verdict": "tie"
+    }
+  ],
+  "summary": {
+    "tables_compared": 0,
+    "accurate_better": 0,
+    "fast_better": 0,
+    "tie": 0,
+    "shape_differs_count": 0
+  }
+}
+```
+
+One entry per ground-truth table, ordered by (`doc_id`, `table_index`) ascending. `differing_cells` lists the (`row`, `col`) probes whose normalized recognized text differs between the two modes (a `null` differs from any string; two `null`s do not), sorted ascending; `cell_match_rate_delta` is the accurate rate minus the fast rate rounded to 4 decimals, and `verdict` is `accurate_better`, `fast_better` or `tie` according to that delta's sign.
+
+`timing.json` — this file is the only one exempt from the byte-identical requirement:
+
+```json
+{
+  "modes": {
+    "fast": {
+      "documents": 0,
+      "total_seconds": 0.0,
+      "mean_seconds_per_document": 0.0,
+      "min_seconds": 0.0,
+      "max_seconds": 0.0
+    }
+  },
+  "total_seconds": 0.0
+}
+```
+
+Per-mode values are measured over the per-document conversion+scoring work of that mode (documents that failed to convert still count in `documents`); `total_seconds` at the top level is the wall-clock duration of the whole run and is therefore at least as large as any mode's `total_seconds`.
+
+## Process contract
+- The last non-empty line of stdout must be exactly `GATE <PASS|FAIL> best_mode=<mode> cell_match_rate=<rate>`, where `<rate>` is `best_cell_match_rate` formatted with exactly 4 decimals. Diagnostics belong on stderr.
+- Exit codes: `0` — everything ran and the gate passed. `3` — everything ran but the gate failed. `4` — selection/corpus error: `--doc` names an unknown document, a discovered PDF has no ground-truth file, or there is nothing to run; in this case a non-empty message goes to stderr, no `GATE` line is printed, and **no file inside the output directory may be created or modified**. `5` — at least one selected document failed to convert; the remaining documents are still processed and all reports are still written. `2` — invalid command-line usage. When several apply, the highest-priority code wins in the order `4`, `5`, `3`, `0`.
+
+## Deliverable
+Besides the harness itself, leave a complete full-corpus run in place: `/home/user/tfbench/reports/` must contain the reports produced by `python3 bench.py` run with default arguments (all documents, both modes) from `/home/user/tfbench`.
+
+- Project path: `/home/user/tfbench`
+
+
+EOF
+CMD_EOF
+setsid --wait bash /tmp/pochi_cmd.sh &
+SETSID_PID=$!
+echo $SETSID_PID > /tmp/setsid_bash_pochi_cmd.pid
+wait $SETSID_PID 2>/dev/null
+Command outputs captured
+Running command: if [ -f /tmp/setsid_bash_pochi_cmd.pid ]; then
+SETSID_PID=$(cat /tmp/setsid_bash_pochi_cmd.pid)
+kill -TERM -- -$SETSID_PID 2>/dev/null || true
+sleep 2
+kill -9 -- -$SETSID_PID 2>/dev/null || true
+fi
+rm -f ~/.pochi/config.jsonc /tmp/pochi_cmd.sh /tmp/setsid_bash_pochi_cmd.pid
+Command outputs captured
+Collecting main service artifacts

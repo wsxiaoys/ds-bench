@@ -1,0 +1,1 @@
+import{I as u,J as t}from"./q-2UhQE6uZ.js";import{j as n,B as l}from"./q-D5dof_24.js";import"./q-CSnWScGr.js";const a=()=>n(t,{children:[l("head",null,null,[l("meta",null,{charSet:"utf-8"},null,3,null),l("title",null,null,"Keyword Tally",3,null)],3,null),l("body",null,{lang:"en"},n(u,null,3,"vC_0"),1,null)]},1,"vC_1");export{a as s_M3WpijamNLQ};

@@ -1,0 +1,1 @@
+import{_ as o}from"./q-DoNi8vyY.js";import{J as r}from"./q-CeHRC3tv.js";import{E as e,q as a,K as s}from"./q-Dm-n0CeS.js";const d=r(s("s_enNI0NeWYqU")),i=e(a(()=>o(()=>import("./q-i5ZMlDTq.js"),[]),"s_WGm41GRlPRA"));export{i as default,d as useDashboardLoader};
