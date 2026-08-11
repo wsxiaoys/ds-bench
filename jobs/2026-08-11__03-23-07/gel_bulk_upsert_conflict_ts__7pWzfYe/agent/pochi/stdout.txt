@@ -1,0 +1,108 @@
+- Initializing MCP connections...
+You
+# Idempotent Bulk Catalog Sync (Gel + TypeScript) ## Background An e-commerce team receives product catalogs from upstream suppliers as batches of JSON records. The catalog itself lives in a local **Gel 6** instance (the graph-relational database formerly known as EdgeDB). Today the import is a hand-written loop that creates duplicate categories, silently doubles products when a batch is replayed, and leaves half-imported data behind when one record is rejected. Your job is to replace it: model the catalog in Gel's schema language, get that schema into the database through Gel's migration engine, and build a re-runnable synchronisation CLI in TypeScript on top of the official `gel` npm client. The CLI must be able to ingest the same batch any number of times without changing the database after the first successful run, and it must tell the operator, per record, what actually happened. ## Requirements - Define the catalog data model in the project's Gel schema and apply it to the running instance through a migration, so that the instance's migration state is in sync with the files on disk. - Implement a batch synchronisation CLI that reads a JSON batch file and, for every record, either creates a product or brings the existing product in line with the record. - Resolve the objects a product points to (its category, its tags) on demand: they are created when they are not there yet, reused otherwise, and never duplicated — no matter how many records in the batch (or how many previous runs) reference the same name. - Classify every record's outcome and report it, together with per-batch totals, as machine-readable output. - Apply the whole batch atomically: either every record in the batch lands, or none does. - Reject malformed batches with a documented, machine-readable error contract, without touching the database. ## Implementation Hints - Project path: `/home/user/catalog-sync`. Work inside it; the Gel project directory (`gel.toml`, `dbschema/`) is already there and already linked to the local instance `local_gel`, so client connection details are discovered from the project directory — do not introduce connection environment variables, DSNs, or credentials of your own. - The local Gel instance is not running when you start. Start it with `/usr/local/bin/gel-start.sh` (idempotent, must be run as `root`; it returns once the instance answers queries, which can take up to ~30 s). - Treat the environment as offline. Every dependency you need is already installed under `/home/user/catalog-sync/node_modules` (including the pinned `gel` client and TypeScript); do not run `npm install`/`npm ci`, do not upgrade anything, and do not add dependencies. - Command: `node dist/sync.js --input <path/to/batch.json>`, executed with the working directory `/home/user/catalog-sync`. `/home/user/catalog-sync/dist/sync.js` must already exist and run as-is — verification never builds the project for you. - Schema: module `default` must contain object types named exactly `Category`, `Tag` and `Product` with these pointers (all names exact, in module `default`): - `Category`: required property `name` of type `str`, unique across all `Category` objects. - `Tag`: required property `label` of type `str`, unique across all `Tag` objects. - `Product`: required property `sku` of type `str`, unique across all `Product` objects; required property `name` of type `str`; required property `price_cents` of type `int64` that rejects negative values; required property `stock` of type `int64` that accepts `0`..`100000` inclusive and rejects any value outside that range; a required single link `category` to `Category`; and a `multi` link `tags` to `Tag`. - Batch file format — a JSON array of record objects: ```json [ { "sku": "non-empty string", "name": "non-empty string", "price_cents": 0, "stock": 0, "category": "non-empty string", "tags": ["non-empty string"] } ] ``` `price_cents` and `stock` are integers `>= 0`. `tags` is optional; when it is absent the record has no tags. An empty array is a valid batch. - Sync semantics: a product is identified by its `sku`; `category` and each entry of `tags` identify a `Category` by `name` and a `Tag` by `label`. After a successful run a product's `tags` links must be exactly the de-duplicated set named by its record — tags no longer named are unlinked, while `Tag` and `Category` objects themselves are never deleted. A record's outcome is `inserted` when no product with that `sku` existed before this run, `updated` when it existed but at least one of `name`, `price_cents`, `stock`, its category name or its tag set differed from the record, and `unchanged` when everything already matched. Consequently, re-running a batch that was already applied must report every record as `unchanged` and must neither create nor modify any object. - The batch must reach the server as set-based work parameterised by the batch data (one JSON parameter for the whole batch), not as one query per record, and it must run inside a client-managed transaction with the client's automatic retry behaviour. - Success output: exit code `0` and exactly one JSON document on stdout (nothing else on stdout; put any human-readable logging on stderr): ```json { "ok": true, "total": 3, "inserted": 2, "updated": 1, "unchanged": 0, "results": [ {"sku": "A-1", "outcome": "inserted", "category": "tools", "tags": ["metal", "sale"]} ] } ``` `total` is the number of records in the batch, `inserted`/`updated`/`unchanged` are the outcome counts, and `results` holds one entry per record sorted by `sku` in ascending lexicographic order, where `outcome` is one of `inserted`/`updated`/`unchanged`, `category` is the record's category name and `tags` is the de-duplicated tag list sorted in ascending lexicographic order. - Failure output: exactly one JSON document on stdout shaped `{"ok": false, "error_code": "<code>", "message": "<non-empty string>"}` plus the matching exit code: - exit `2`, `error_code` `input_unreadable`: no `--input` argument was given, the file does not exist, or its content is not valid JSON. - exit `3`, `error_code` `invalid_record`: the top-level JSON value is not an array, or some record violates the batch format above. Add the key `index` holding the 0-based position of the first offending record, or `null` when the top-level value itself is not an array. - exit `4`, `error_code` `duplicate_sku`: the same `sku` appears in more than one record. Add the key `sku` holding the first `sku` that repeats. Record-format validation takes precedence over duplicate detection. - exit `5`, `error_code` `db_error`: the database rejected the batch (for example a value the schema forbids). In every failure case, including `db_error`, the database contents must be exactly what they were before the invocation. - A batch of 200 records must be processed within 60 seconds.   
+
+Pochi
+💭 Thinking for 349 characters   
+📂 Listing files in /home/user/catalog-sync recursively ✔ 
+📖 Reading home/user/catalog-sync/package.json ✔ 
+📖 Reading home/user/catalog-sync/dbschema/default.gel ✔ 
+💭 Thinking for 317 characters   
+💫 Executing /usr/local/bin/gel-start.sh ✔ 
+💫 Executing gel project info ✔ 
+💭 Thinking for 1181 characters   
+✏️  Writing home/user/catalog-sync/dbschema/default.gel ✔ 
+💫 Executing gel migration create --non-interactive ✔ 
+📂 Listing files in home/user/catalog-sync/dbschema/migrations recursively ✔ 
+💫 Executing gel migrate ✔ 
+💫 Executing gel query "select Category;" ✔ 
+💭 Thinking for 274 characters   
+🔍 Searching for **/*.ts in /home/user/catalog-sync ✔ 
+💭 Thinking for 319 characters   
+📖 Reading home/user/catalog-sync/tsconfig.json ✔ 
+📖 Reading home/user/catalog-sync/examples/batch-example.json ✔ 
+💭 Thinking for 2270 characters   
+💫 Executing gel query "select <array<str>>to_json('[\"a\", \"b\"]');" ✔ 
+💫 Executing gel query "select <array<str>>to_json('null');" ✔ 
+💫 Executing gel query "select <array<str>>to_json('{}')['tags'];" ✖ "Command exited with code 1"
+💭 Thinking for 242 characters   
+💫 Executing gel query "select <array<str>>to_json('{\"tags\": []}')['tags'];" ✔ 
+💭 Thinking for 759 characters   
+💫 Executing gel query "for cat_name in array_unpack(<array<str>>['cat1', 'cat2']) union (insert Category { name := cat_name } unless conflict on .name else Category);" ✔ 
+💫 Executing gel query "for tag_label in array_unpack(<array<str>>['tag1', 'tag2']) union (insert Tag { label := tag_label } unless conflict on .label else Tag);" ✔ 
+💭 Thinking for 2590 characters   
+💫 Executing gel query "insert Category { name := 'test-cat' };" ✔ 
+💫 Executing gel query "insert Tag { label := 'tag-a' }; insert Tag { label := 'tag-b' };" ✔ 
+💫 Executing gel query "insert Product { sku := 'P1', name := 'Prod 1', price_cents := 100, stock := 5, category := (select Category filter .name = 'test-cat'), tags := (select Tag filter .label in {'tag-a', 'tag-b'}) };" ✔ 
+💭 Thinking for 271 characters   
+💫 Executing gel query "select Product { sku, tags_match := (with existing_labels := .tags.label, input_labels := array_unpack(<array<str>>['tag-a', 'tag-b']) select (count(existing_labels) = count(input_labels) and all(existing_labels in input_labels) and all(input_labels in existing_labels))) } filter .sku = 'P1';" ✔ 
+💫 Executing gel query "select Product { sku, tags_match := (with existing_labels := .tags.label, input_labels := array_unpack(<array<str>>['tag-a']) select (count(existing_labels) = count(input_labels) and all(existing_labels in input_labels) and all(input_labels in existing_labels))) } filter .sku = 'P1';" ✔ 
+💫 Executing gel query "select Product { sku, tags_match := (with existing_labels := .tags.label, input_labels := array_unpack(<array<str>>['tag-a', 'tag-c']) select (count(existing_labels) = count(input_labels) and all(existing_labels in input_labels) and all(input_labels in existing_labels))) } filter .sku = 'P1';" ✔ 
+💫 Executing gel query "select Product { sku, tags_match := (with existing_labels := .tags.label, input_labels := array_unpack(<array<str>>['tag-a', 'tag-b', 'tag-c']) select (count(existing_labels) = count(input_labels) and all(existing_labels in input_labels) and all(input_labels in existing_labels))) } filter .sku = 'P1';" ✔ 
+💫 Executing gel query "select Product { sku, tags_match := (with existing_labels := .tags.label, input_labels := array_unpack(<array<str>>['tag-a', 'tag-a', 'tag-b']) select (count(existing_labels) = count(distinct input_labels) and all(existing_labels in input_labels) and all(input_labels in existing_labels))) } filter .sku = 'P1';" ✔ 
+💭 Thinking for 1026 characters   
+💫 Executing gel query "select Product { sku, name, price_cents, stock, category: { name }, tags: { label } };" ✔ 
+💭 Thinking for 242 characters   
+💫 Executing gel query "with batch_str := '[{\"sku\": \"P1\", \"name\": \"Prod 1 Updated\", \"price_cents\": 150, \"stock\": 10, \"category\": \"test-cat\", \"tags\": [\"tag-a\"]}, {\"sku\": \"P2\", \"name\": \"Prod 2 New\", \"price_cents\": 200, \"stock\": 20, \"category\": \"test-cat\", \"tags\": [\"tag-b\"]}]' for r in json_array_unpack(to_json(batch_str)) union (insert Product { sku := <str>r['sku'], name := <str>r['name'], price_cents := <int64>r['price_cents'], stock := <int64>r['stock'], category := (select Category filter .name = <str>r['category']), tags := (select Tag filter .label in array_unpack(<array<str>>r['tags'])) } unless conflict on .sku else (update Product set { name := <str>r['name'], price_cents := <int64>r['price_cents'], stock := <int64>r['stock'], category := (select Category filter .name = <str>r['category']), tags := (select Tag filter .label in array_unpack(<array<str>>r['tags'])) }));" ✔ 
+💫 Executing gel query "select Product { sku, name, price_cents, stock, category: { name }, tags: { label } } order by .sku;" ✔ 
+💭 Thinking for 1588 characters   
+📖 Reading home/user/catalog-sync/node_modules/gel/dist/index.node.d.ts ✔ 
+📖 Reading home/user/catalog-sync/node_modules/gel/dist/baseClient.d.ts ✔ 
+📖 Reading home/user/catalog-sync/node_modules/gel/dist/baseClient.d.ts ✔ 
+📖 Reading home/user/catalog-sync/node_modules/gel/dist/transaction.d.ts ✔ 
+💭 Thinking for 5800 characters   
+💫 Executing gel query "select to_json('{\"a\": 1}');" ✔ 
+💭 Thinking for 2350 characters   
+✏️  Writing home/user/catalog-sync/src/sync.ts ✔ 
+💫 Executing npm run build ✖ "Command exited with code 2"
+💭 Thinking for 689 characters   
+✏️  Writing home/user/catalog-sync/src/sync.ts ✔ 
+💫 Executing npm run build ✔ 
+💭 Thinking for 262 characters   
+💫 Executing node dist/sync.js --input examples/batch-example.json ✔ 
+💭 Thinking for 210 characters   
+💫 Executing node dist/sync.js --input examples/batch-example.json ✔ 
+💭 Thinking for 465 characters   
+✏️  Writing home/user/catalog-sync/test-update.json ✔ 
+💫 Executing node dist/sync.js --input test-update.json ✔ 
+💫 Executing node dist/sync.js --input test-update.json ✔ 
+💫 Executing node dist/sync.js ✖ "Command exited with code 2"
+💫 Executing node dist/sync.js --input non-existent.json ✖ "Command exited with code 2"
+✏️  Writing home/user/catalog-sync/invalid.json ✔ 
+💫 Executing node dist/sync.js --input invalid.json ✖ "Command exited with code 2"
+💭 Thinking for 252 characters   
+✏️  Writing home/user/catalog-sync/not-array.json ✔ 
+💫 Executing node dist/sync.js --input not-array.json ✖ "Command exited with code 3"
+✏️  Writing home/user/catalog-sync/invalid-record.json ✔ 
+💫 Executing node dist/sync.js --input invalid-record.json ✖ "Command exited with code 3"
+✏️  Writing home/user/catalog-sync/negative-stock.json ✔ 
+💫 Executing node dist/sync.js --input negative-stock.json ✖ "Command exited with code 3"
+💭 Thinking for 278 characters   
+✏️  Writing home/user/catalog-sync/duplicate-sku.json ✔ 
+💫 Executing node dist/sync.js --input duplicate-sku.json ✖ "Command exited with code 4"
+💭 Thinking for 252 characters   
+✏️  Writing home/user/catalog-sync/invalid-schema-stock.json ✔ 
+💫 Executing node dist/sync.js --input invalid-schema-stock.json ✖ "Command exited with code 5"
+💫 Executing gel query "select Product filter .sku = 'EXAMPLE-99';" ✔ 
+💭 Thinking for 329 characters   
+💫 Executing rm test-update.json invalid.json not-array.json invalid-record.json negative-stock.json duplicate-sku.json invalid-schema-stock.json ✔ 
+💫 Executing git status ✖ "Command exited with code 128"
+💭 Thinking for 1164 characters   
+🎉 Task Completed
+I have successfully modeled the catalog schema in Gel, applied the migration to the running database instance, and built a highly performant, idempotent, set-based batch synchronization CLI in TypeScript.
+
+Here is a summary of the accomplishments:
+
+1. **Schema definition & Migration**:
+   - Modeled `Category`, `Tag`, and `Product` in `dbschema/default.gel` with the exact required properties, links, constraints (`exclusive`, `min_value`, `max_value`).
+   - Generated and successfully applied the migration to the local Gel instance.
+
+2. **Idempotent Batch Sync CLI**:
+   - Implemented `src/sync.ts` which compiles to `dist/sync.js`.
+   - Reads the input JSON file and validates its structure under the strict error contract (returning `input_unreadable` with exit code 2, `invalid_record` with exit code 3, or `duplicate_sku` with exit code 4).
+   - Resolves and ensures referenced `Category` and `Tag` objects are created on-demand without duplication using set-based EdgeQL queries.
+   - Compares existing products with incoming records within a client-managed transaction to determine outcomes (`inserted`, `updated`, or `unchanged`).
+   - Limits actual updates to only changed/inserted products, guaranteeing that running an already applied batch does not modify any database objects.
+   - Emits exactly one machine-readable JSON document to `stdout` with the correct exit code.
+   - Handles database constraint violations gracefully, reporting a `db_error` with exit code 5 and rolling back the transaction completely.   
+  

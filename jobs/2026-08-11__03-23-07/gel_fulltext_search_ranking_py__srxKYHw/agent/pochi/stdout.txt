@@ -1,0 +1,131 @@
+- Initializing MCP connections...
+You
+# Ranked Full-Text Search over a Gel Knowledge Base ## Background The Orbital Ledger platform team keeps its engineering handbook in **Gel 6.11** (the graph-relational database formerly known as EdgeDB). A local Gel server, the `gel` CLI and a Python 3 environment with the Gel client are already installed in this container, and a bare project skeleton together with the article corpus is waiting for you at `/home/user/kbsearch`. Right now nothing works: the schema is empty, the database holds no data, and there is no search code. Turn the skeleton into a working ranked knowledge-base search: model the articles, migrate the database, load the corpus, and expose an asynchronous Python search API plus a thin command line front end on top of it. ## Requirements ### 1. Schema and migration Declare the handbook model in `dbschema/default.gel` and move the database to that model through the project's migration history. `gel migration status` must report that the database is up to date, and the generated migration file(s) must be present in the project. The model must contain an object type `default::Article` with exactly these properties: * `slug` — required `str`, unique across all articles (a second insert reusing an existing slug must be rejected by the database). * `title` — required `str`. * `summary` — required `str`. * `body` — required `str`. * `status` — required, and typed by a custom enum scalar type `default::ArticleStatus` whose values are `draft`, `published` and `archived`, declared in exactly that order. * `tags` — optional `multi` `str`. `title`, `summary` and `body` must all be searchable, and the searchable definition must make `title` more relevant than `summary`, and `summary` more relevant than `body`. ### 2. Corpus loader `/home/user/kbsearch/seed.py`, executed as `python3 seed.py` from the project directory, must load every record of `/home/user/kbsearch/seed_data.json` into the database. It has to be re-runnable: after any number of runs the database must hold exactly one `Article` per `slug`, with the field values taken from the file (`tags` is a set, its order in the file is not significant). Never edit `seed_data.json`. ### 3. Search service `/home/user/kbsearch/search_service.py` must expose ```python async def search_articles( query: str, *, status: str | None = None, tag: str | None = None, limit: int = 10, offset: int = 0, ) -> dict ``` It has to be usable on its own (`asyncio.run(search_articles("some words"))`) and must return exactly this payload — no extra keys at either level: ```json { "query": "<the query string, exactly as received>", "total": "<how many articles match the query under the given filters, ignoring limit and offset>", "limit": "<the limit that was applied>", "offset": "<the offset that was applied>", "results": [ { "rank": "<1-based position in the full ordered match list; the first object of a page starting at offset N has rank N+1>", "slug": "<the article slug>", "title": "<the article title>", "status": "<draft | published | archived>", "tags": "<the article's tags as a list of strings, sorted ascending>", "score": "<the relevance score, a number strictly greater than 0>", "highlight": "<the article title with matched query words wrapped, see below>" } ] } ``` Behaviour that must hold: * **Matching.** The query is split on whitespace into terms. An article matches when at least one term matches text in its `title`, `summary` or `body`. Matching is case-insensitive and English language aware, so a term also matches morphological variants of the same word (a search for `policies` must find an article whose text only contains `policy`). Articles that do not match must not appear, and every returned object must carry a `score` greater than 0. * **Ranking.** Results are ordered by `score` descending. The same term found in `title` must produce a strictly higher score than when it is found only in `summary`, which in turn must be strictly higher than when it is found only in `body`; and an article matching more of the query terms in a given field must score strictly higher than an article matching fewer of them in that same field. * **Deterministic tie-break.** Articles with equal scores must be ordered by `slug` ascending, so repeated identical calls always return the same order. * **Filters.** `status`, when given, restricts results to articles in that status. `tag`, when given, restricts results to articles carrying that exact tag; an unknown tag simply yields no matches. Both filters must be applied together with the search, and `total` must reflect the filtered match count. * **Pagination.** `offset` skips that many leading matches, `limit` caps how many result objects are returned, and `total` never depends on either. A `limit` of 0 and an `offset` beyond the last match both yield an empty `results` list together with the correct `total`. * **Empty query.** A query that is empty or only whitespace matches nothing: `total` 0 and an empty `results` list, without raising. * **Rejected arguments.** `limit` and `offset` must be non-negative integers and `status`, when given, must be one of the three status values; anything else must raise `ValueError`. * **Highlighting.** `highlight` is the article `title` in which every case-insensitive whole-word occurrence of a query term is wrapped in `<b>` and `</b>`, preserving the original characters of the title. An occurrence counts as whole-word when it is neither directly preceded nor directly followed by an ASCII letter or digit, and only literal occurrences are wrapped (morphological variants are not). Query terms for highlighting are the whitespace-separated pieces of the query with leading and trailing non-alphanumeric characters stripped. If nothing in the title matches, `highlight` is the unchanged title. * **Live data.** Results must reflect the database contents at call time: an article inserted or deleted by another process must be reflected on the very next call, with no rebuild step. ### 4. Command line front end `/home/user/kbsearch/search_cli.py`, executed from the project directory as ``` python3 search_cli.py --query <text> [--status <status>] [--tag <tag>] [--limit <n>] [--offset <n>] ``` must print the payload described above as a single JSON object on stdout and exit 0. When an argument is invalid — an unknown status, a negative or non-integer `limit`/`offset`, or a missing `--query` — it must print nothing on stdout, write a message to stderr, and exit with status 2. `--limit` defaults to 10 and `--offset` defaults to 0. ## Implementation Hints * Project path: `/home/user/kbsearch` (it already contains `gel.toml`, an empty `dbschema/default.gel` and `seed_data.json`). * The local Gel 6.11 server is not running when you start. Run `start-gel.sh` to bring it up; it is idempotent and only returns once the server answers queries. Do not run any other database server. * `GEL_DSN` and `GEL_CLIENT_TLS_SECURITY` are already exported, so the `gel` CLI and the Gel Python client connect to the local instance without any extra arguments or credentials. * The default `python3` already provides the Gel Python client and `pytest`. Everything must work fully offline: no hosted service, no cloud instance, no API key, and no embedding or AI provider. * Schema changes must go through the migration history — a database that has drifted away from `dbschema/` counts as a failure. * Keep the whole solution inside `/home/user/kbsearch`; `seed.py`, `search_service.py` and `search_cli.py` must be importable/runnable with that directory as the working directory.   
+
+Pochi
+📂 Listing files in /home/user/kbsearch ✔ 
+📂 Listing files in /home/user/kbsearch/dbschema ✔ 
+📖 Reading /home/user/kbsearch/dbschema/default.gel ✔ 
+📖 Reading /home/user/kbsearch/seed_data.json ✔ 
+📂 Listing files in /home/user ✔ 
+💭 Thinking for 196 characters   
+💫 Executing start-gel.sh ✔ 
+💫 Executing gel --version ✔ 
+💫 Executing gel instance list ✔ 
+💫 Executing env | grep GEL ✔ 
+💫 Executing gel query "select 1" ✔ 
+💫 Executing gel migration status ✔ 
+💫 Executing gel schema ✖ "Command exited with code 2"
+💫 Executing gel migration log ✖ "Command exited with code 1"
+💫 Executing gel migration log --from-db ✔ 
+💫 Executing gel migration log --from-fs ✔ 
+💭 Thinking for 261 characters   
+🔎 Searching the web for "edgedb" full text search fts index ✔ 
+🔎 Searching the web for "fts::search" site:docs.geldata.com OR site:docs.edgedb.com ✔ 
+🌐 Fetching https://docs.geldata.com/reference/stdlib/fts ✔ 
+💭 Thinking for 612 characters   
+🔎 Searching the web for "scalar type" extending enum edgedb OR gel ✔ 
+💭 Thinking for 292 characters   
+🔎 Searching the web for "multi property" OR "multi" edgedb OR gel schema syntax ✔ 
+💭 Thinking for 587 characters   
+✏️  Writing /home/user/kbsearch/dbschema/default.gel ✔ 
+💫 Executing gel migration create ✔ 
+💫 Executing gel migrate ✔ 
+💫 Executing gel migration status ✔ 
+💭 Thinking for 233 characters   
+🔎 Searching the web for "gel" OR "edgedb" python client async connect insert upsert ✔ 
+💫 Executing python3 -c "import gel; print(gel.__file__)" ✔ 
+💭 Thinking for 329 characters   
+🔎 Searching the web for "unless conflict" edgedb OR gel insert update ✔ 
+💭 Thinking for 236 characters   
+💫 Executing gel query "select array_unpack(<array<str>>[])" ✔ 
+💭 Thinking for 476 characters   
+💫 Executing gel query "insert Article { slug := 'test-slug', title := 'test title', summary := 'test summary', body := 'test body', status := <ArticleStatus>'published', tags := array_unpack(<array<str>>['test', 'tags']) } unless conflict on .slug else ( update Article set { title := 'test title', summary := 'test summary', body := 'test body', status := <ArticleStatus>'published', tags := array_unpack(<array<str>>['test', 'tags']) } )" ✔ 
+💫 Executing gel query "select Article { slug, title, summary, body, status, tags }" ✔ 
+💭 Thinking for 227 characters   
+💫 Executing gel query "insert Article { slug := 'test-slug', title := 'test title', summary := 'test summary', body := 'test body', status := <ArticleStatus>'published', tags := array_unpack(<array<str>>['new-tag']) } unless conflict on .slug else ( update Article set { title := 'test title', summary := 'test summary', body := 'test body', status := <ArticleStatus>'published', tags := array_unpack(<array<str>>['new-tag']) } )" ✔ 
+💫 Executing gel query "select Article { slug, title, summary, body, status, tags }" ✔ 
+💫 Executing gel query "delete Article" ✔ 
+💭 Thinking for 578 characters   
+✏️  Writing /home/user/kbsearch/seed.py ✔ 
+💫 Executing python3 seed.py ✔ 
+💫 Executing python3 seed.py ✔ 
+💫 Executing gel query "select count(Article)" ✔ 
+💭 Thinking for 1022 characters   
+💫 Executing gel query "with res := (select fts::search(Article, 'quokka fleet', language := 'eng')) select res.object { slug, score := res.score }" ✔ 
+💫 Executing gel query "select Article { slug, title, summary, body } filter .slug = 'spare-hardware-notes'" ✔ 
+💭 Thinking for 240 characters   
+💫 Executing gel query "select Article { slug, title, summary, body } filter .title ilike '%policy%' or .summary ilike '%policy%' or .body ilike '%policy%'" ✔ 
+💫 Executing gel query "with res := (select fts::search(Article, 'policies', language := 'eng')) select res.object { slug, score := res.score }" ✔ 
+💭 Thinking for 1577 characters   
+💫 Executing gel query "select Article { slug } filter .tags = 'ops'" ✔ 
+💭 Thinking for 310 characters   
+💫 Executing gel query "select Article { slug } filter 'ops' in .tags" ✔ 
+💫 Executing gel query "select Article { slug } filter any(.tags = 'ops')" ✔ 
+💭 Thinking for 316 characters   
+🔎 Searching the web for "optional" query parameter edgedb OR gel ✔ 
+💭 Thinking for 636 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query('select Article { slug } filter (not exists <optional str>$status or .status = <ArticleStatus><str>$status)', status=None); print(res)" ✖ "Command exited with code 1"
+💭 Thinking for 605 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query('select Article { slug } filter (not exists <optional str>\$status or .status = <ArticleStatus><str>\$status)', status=None); print(res)" ✔ 
+💭 Thinking for 280 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query('select Article { slug } filter (not exists <optional str>\$status or .status = <ArticleStatus><str>\$status)', status='published'); print(len(res))" ✔ 
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query('select Article { slug } filter (not exists <optional str>\$tag or \$tag in .tags)', tag='ops'); print(len(res))" ✖ "Command exited with code 1"
+💭 Thinking for 285 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query('select Article { slug } filter (not exists <optional str>\$tag or <str>\$tag in .tags)', tag='ops'); print(len(res))" ✔ 
+💭 Thinking for 290 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query('select Article { slug } filter (not exists <optional str>\$tag or <str>\$tag in .tags)', tag=None); print(len(res))" ✔ 
+💭 Thinking for 659 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query('with res := (select fts::search(Article, <str>\$query, language := \'eng\')) select res.object { slug, score := res.score } filter (not exists <optional str>\$status or .status = <ArticleStatus><str>\$status) and (not exists <optional str>\$tag or <str>\$tag in .tags) order by res.score desc then .slug asc offset <int64>\$offset limit <int64>\$limit', query='quokka', status=None, tag=None, offset=0, limit=10); print(res)" ✖ "Command exited with code 1"
+💭 Thinking for 574 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query('with res := (select fts::search(Article, <str>\$search_query, language := \'eng\')) select res.object { slug, score := res.score } filter (not exists <optional str>\$status or .status = <ArticleStatus><str>\$status) and (not exists <optional str>\$tag or <str>\$tag in .tags) order by res.score desc then .slug asc offset <int64>\$offset limit <int64>\$limit', search_query='quokka', status=None, tag=None, offset=0, limit=10); print(res)" ✔ 
+💭 Thinking for 904 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query_single('with matches := (select fts::search(Article, <str>\$search_query, language := \'eng\') filter (not exists <optional str>\$status or .object.status = <ArticleStatus><str>\$status) and (not exists <optional str>\$tag or <str>\$tag in .object.tags)), paged_matches := (select matches order by matches.score desc then matches.object.slug asc offset <int64>\$offset limit <int64>\$limit) select { total := count(matches), results := (select paged_matches { slug := .object.slug, title := .object.title, status := .object.status, tags := .object.tags, score := .score } order by paged_matches.score desc then paged_matches.object.slug asc) }', search_query='quokka', status=None, tag=None, offset=0, limit=10); print(res)" ✖ "Command exited with code 1"
+💭 Thinking for 1013 characters   
+💫 Executing gel query "select array_agg(Article.tags)" ✔ 
+💫 Executing gel query "select Article { slug, tags_arr := array_agg(.tags) } limit 3" ✔ 
+💭 Thinking for 464 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query_single('with matches := (select fts::search(Article, <str>\$search_query, language := \'eng\') filter (not exists <optional str>\$status or .object.status = <ArticleStatus><str>\$status) and (not exists <optional str>\$tag or <str>\$tag in .object.tags)), paged_matches := (select matches order by matches.score desc then matches.object.slug asc offset <int64>\$offset limit <int64>\$limit) select { total := count(matches), results := (select paged_matches.object { slug, title, status, tags_arr := array_agg(.tags), score := paged_matches.score } order by paged_matches.score desc then paged_matches.object.slug asc) }', search_query='quokka', status=None, tag=None, offset=0, limit=10); print(res)" ✖ "Command exited with code 1"
+💭 Thinking for 603 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query_single('with matches := (select fts::search(Article, <str>\$search_query, language := \'eng\') filter (not exists <optional str>\$status or .object.status = <ArticleStatus><str>\$status) and (not exists <optional str>\$tag or <str>\$tag in .object.tags)), paged_matches := (select matches order by matches.score desc then matches.object.slug asc offset <int64>\$offset limit <int64>\$limit) select { total := count(matches), results := (select distinct paged_matches.object { slug, title, status, tags_arr := array_agg(.tags), score := paged_matches.score } order by paged_matches.score desc then paged_matches.object.slug asc) }', search_query='quokka', status=None, tag=None, offset=0, limit=10); print(res)" ✖ "Command exited with code 1"
+💭 Thinking for 712 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query_single('with matches := (select fts::search(Article, <str>\$search_query, language := \'eng\') filter (not exists <optional str>\$status or .object.status = <ArticleStatus><str>\$status) and (not exists <optional str>\$tag or <str>\$tag in .object.tags)), paged_matches := (select matches order by matches.score desc then matches.object.slug asc offset <int64>\$offset limit <int64>\$limit) select { total := count(matches), results := (select (slug := paged_matches.object.slug, title := paged_matches.object.title, status := <str>paged_matches.object.status, tags := array_agg(paged_matches.object.tags), score := paged_matches.score) order by paged_matches.score desc then paged_matches.object.slug asc) }', search_query='quokka', status=None, tag=None, offset=0, limit=10); print(res)" ✔ 
+💭 Thinking for 515 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query_single('with matches := (select fts::search(Article, <str>\$search_query, language := \'eng\') filter (not exists <optional str>\$status or .object.status = <ArticleStatus><str>\$status) and (not exists <optional str>\$tag or <str>\$tag in .object.tags)), paged_matches := (select matches order by matches.score desc then matches.object.slug asc offset <int64>\$offset limit <int64>\$limit) select { total := count(matches), results := (select (slug := paged_matches.object.slug, title := paged_matches.object.title, status := <str>paged_matches.object.status, tags := array_agg((select paged_matches.object.tags order by paged_matches.object.tags asc)), score := paged_matches.score) order by paged_matches.score desc then paged_matches.object.slug asc) }', search_query='quokka', status=None, tag=None, offset=0, limit=10); print(res)" ✔ 
+💭 Thinking for 2517 characters   
+💫 Executing python3 -c "import re; s = '\"quokka\"'; print(re.sub(r'^[^a-zA-Z0-9]+', '', re.sub(r'[^a-zA-Z0-9]+$', '', s)))" ✔ 
+💭 Thinking for 1096 characters   
+💫 Executing python3 -c "import re;
+def highlight_title(title: str, query: str) -> str:
+    pieces = query.split()
+    terms = set()
+    for p in pieces:
+        term = re.sub(r'^[^a-zA-Z0-9]+', '', p)
+        term = re.sub(r'[^a-zA-Z0-9]+$', '', term)
+        if term:
+            terms.add(term)
+    if not terms:
+        return title
+    sorted_terms = sorted(list(terms), key=len, reverse=True)
+    pattern = r'(?<![a-zA-Z0-9])(' + '|'.join(re.escape(t) for t in sorted_terms) + r')(?![a-zA-Z0-9])'
+    return re.sub(pattern, r'<b>\1</b>', title, flags=re.IGNORECASE)
+
+print(highlight_title('Quokka cluster provisioning checklist', '\"quokka\"'))
+print(highlight_title('Wombat telemetry pipeline', 'wombat pipeline'))
+print(highlight_title('Wombat telemetry pipeline', 'telemetry'))
+" ✔ 
+💭 Thinking for 750 characters   
+💫 Executing gel query "select array_agg(<str>{})" ✔ 
+💭 Thinking for 531 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query_single('with matches := (select fts::search(Article, <str>\$search_query, language := \'eng\') filter (not exists <optional str>\$status or .object.status = <ArticleStatus><str>\$status) and (not exists <optional str>\$tag or <str>\$tag in .object.tags)), paged_matches := (select matches order by matches.score desc then matches.object.slug asc offset <int64>\$offset limit <int64>\$limit) select { total := count(matches), results := (select (slug := paged_matches.object.slug, title := paged_matches.object.title, status := <str>paged_matches.object.status, tags := array_agg((select paged_matches.object.tags order by paged_matches.object.tags asc)), score := paged_matches.score) order by paged_matches.score desc then paged_matches.object.slug asc) }', search_query='nonexistentwordhere', status=None, tag=None, offset=0, limit=10); print(res)" ✔ 
+💭 Thinking for 764 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query_single('with matches := (select fts::search(Article, <str>\$search_query, language := \'eng\')), paged_matches := (select matches limit 1) select { total := count(matches), results := (select (slug := paged_matches.object.slug, title := paged_matches.object.title, status := <str>paged_matches.object.status, tags := array_agg((select paged_matches.object.tags order by paged_matches.object.tags asc)), score := paged_matches.score)) }', search_query='quokka'); print(type(res.results[0].tags), res.results[0].tags)" ✖ "Command exited with code 1"
+💭 Thinking for 347 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query_single('with matches := (select fts::search(Article, <str>\$search_query, language := \'eng\')), paged_matches := (select matches limit 1) select { total := count(matches), results := (select (slug := paged_matches.object.slug, title := paged_matches.object.title, status := <str>paged_matches.object.status, tags := array_agg((select paged_matches.object.tags order by paged_matches.object.tags asc)), score := paged_matches.score)) }', search_query='quokka'); print(res)" ✔ 
+💭 Thinking for 1272 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query_single('with matches := (select fts::search(Article, <str>\$search_query, language := \'eng\')), paged_matches := (select matches limit 1) select { total := count(matches), multi results := (select (slug := paged_matches.object.slug, title := paged_matches.object.title, status := <str>paged_matches.object.status, tags := array_agg((select paged_matches.object.tags order by paged_matches.object.tags asc)), score := paged_matches.score)) }', search_query='quokka'); print(res)" ✔ 
+💭 Thinking for 260 characters   
+💫 Executing python3 -c "import gel; client = gel.create_client(); res = client.query_single('with matches := (select fts::search(Article, <str>\$search_query, language := \'eng\')), paged_matches := (select matches limit 0) select { total := count(matches), multi results := (select (slug := paged_matches.object.slug, title := paged_matches.object.title, status := <str>paged_matches.object.status, tags := array_agg((select paged_matches.object.tags order by paged_matches.object.tags asc)), score := paged_matches.score)) }', search_query='quokka'); print(res)" ✔ 
+💭 Thinking for 1984 characters   
+✏️  Writing /home/user/kbsearch/search_service.py ✔ 
+💫 Executing python3 search_service.py ✔ 

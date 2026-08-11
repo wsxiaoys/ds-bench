@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Typesense Visual Filter Chip Builder</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Vue 3 CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.js"></script>
+  <style>
+    [v-cloak] { display: none; }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-800 font-sans">
+  <div id="app" v-cloak class="max-w-7xl mx-auto px-4 py-8">
+    
+    <!-- Header -->
+    <header class="mb-8 flex items-center justify-between border-b border-gray-200 pb-4">
+      <div>
+        <h1 class="text-3xl font-extrabold text-blue-900 tracking-tight">Typesense Visual Filter Chip Builder</h1>
+        <p class="text-sm text-gray-500 mt-1">Visually compose complex boolean filter trees and query a Typesense catalog.</p>
+      </div>
+      <div class="flex gap-2">
+        <button @click="loadPreset('preset1')" class="bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold px-3 py-1.5 rounded transition">
+          Preset: Complex Nesting
+        </button>
+        <button @click="loadPreset('preset2')" class="bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold px-3 py-1.5 rounded transition">
+          Preset: Set & Ranges
+        </button>
+        <button @click="resetFilter" class="bg-red-100 hover:bg-red-200 text-red-800 text-xs font-bold px-3 py-1.5 rounded transition">
+          Reset
+        </button>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      
+      <!-- Left Column: Filter Builder (7 cols) -->
+      <div class="lg:col-span-7 space-y-6">
+        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+          <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center justify-between">
+            <span>Filter Tree Builder</span>
+            <span class="text-xs bg-blue-100 text-blue-800 font-semibold px-2.5 py-0.5 rounded-full">Interactive</span>
+          </h2>
+          
+          <!-- Recursive Filter Tree -->
+          <div class="border border-gray-200 rounded p-4 bg-gray-50/50">
+            <filter-node 
+              :node="filterTree" 
+              :is-root="true"
+            />
+          </div>
+
+          <!-- Apply Button -->
+          <div class="mt-6 flex justify-end">
+            <button @click="applyFilter" 
+                    :disabled="loading"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 rounded shadow transition flex items-center gap-2">
+              <span v-if="loading" class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>
+              Apply Composed Filter
+            </button>
+          </div>
+        </div>
+
+        <!-- Composed Filter_By Expression -->
+        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+          <h2 class="text-lg font-bold text-gray-800 mb-2">Composed Typesense filter_by</h2>
+          <div class="bg-slate-900 text-emerald-400 p-4 rounded-lg font-mono text-sm overflow-x-auto break-all shadow-inner">
+            {{ composedFilterBy || '(No filters applied - matches all documents)' }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Results & JSON Payload (5 cols) -->
+      <div class="lg:col-span-5 space-y-6">
+        
+        <!-- Search Results -->
+        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200 flex flex-col h-[500px]">
+          <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center justify-between">
+            <span>Matching Products</span>
+            <span v-if="resultsCount !== null" class="text-sm bg-green-100 text-green-800 font-semibold px-2.5 py-0.5 rounded-full">
+              {{ resultsCount }} Matches
+            </span>
+          </h2>
+
+          <div v-if="loading" class="flex-1 flex flex-col items-center justify-center text-gray-500">
+            <div class="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mb-4"></div>
+            <p>Querying Typesense...</p>
+          </div>
+
+          <div v-else-if="resultsCount === null" class="flex-1 flex flex-col items-center justify-center text-gray-400 text-center p-6">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <p class="font-medium text-gray-600">No filter applied yet</p>
+            <p class="text-xs mt-1">Click "Apply Composed Filter" to query the catalog.</p>
+          </div>
+
+          <div v-else-if="resultsCount === 0" class="flex-1 flex flex-col items-center justify-center text-gray-400 text-center p-6">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p class="font-medium text-gray-600">No matching products</p>
+            <p class="text-xs mt-1">Adjust your filter tree conditions to be less restrictive.</p>
+          </div>
+
+          <div v-else class="flex-1 overflow-y-auto space-y-3 pr-2">
+            <div v-for="prod in matchingProducts" :key="prod.id" class="p-4 bg-gray-50 border border-gray-200 rounded-lg hover:shadow-sm transition">
+              <div class="flex justify-between items-start">
+                <div>
+                  <h3 class="font-bold text-gray-900">{{ prod.name }}</h3>
+                  <p class="text-xs text-gray-500">ID: {{ prod.id }} &bull; Brand: {{ prod.brand }} &bull; Category: {{ prod.category }}</p>
+                </div>
+                <div class="text-right">
+                  <span class="text-sm font-bold text-blue-700">${{ prod.price.toFixed(2) }}</span>
+                  <div class="flex items-center text-yellow-500 text-xs mt-0.5 justify-end">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 fill-current" viewBox="0 0 20 20">
+                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                    </svg>
+                    <span class="ml-1 text-gray-600 font-medium">{{ prod.rating.toFixed(1) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-2 flex flex-wrap gap-1">
+                <span v-for="tag in prod.tags" :key="tag" class="bg-blue-50 text-blue-600 text-[10px] font-semibold px-2 py-0.5 rounded">
+                  {{ tag }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Structured JSON Payload -->
+        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+          <h2 class="text-lg font-bold text-gray-800 mb-2">Structured JSON Description</h2>
+          <pre class="bg-slate-900 text-blue-300 p-4 rounded-lg font-mono text-xs overflow-x-auto shadow-inner max-h-60">{{ JSON.stringify({ filter: filterTree }, null, 2) }}</pre>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Recursive Filter Node Template -->
+  <template id="filter-node-template">
+    <div class="border-l-4 border-blue-500 pl-4 py-2 my-2 bg-white rounded-r shadow-sm border border-gray-200 border-l-0">
+      
+      <!-- If Group Node -->
+      <div v-if="node.op !== undefined" class="space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2 bg-gray-100/80 -ml-4 -mr-4 -mt-2 p-2 px-4 border-b border-gray-200 rounded-tr">
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-gray-700 text-xs uppercase tracking-wider">Group:</span>
+            <div class="inline-flex rounded-md shadow-sm" role="group">
+              <button type="button" 
+                      @click="node.op = 'and'"
+                      :class="node.op === 'and' ? 'bg-blue-600 text-white font-bold' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                      class="px-3 py-1 text-xs rounded-l-md border border-gray-300 transition">
+                AND
+              </button>
+              <button type="button" 
+                      @click="node.op = 'or'"
+                      :class="node.op === 'or' ? 'bg-blue-600 text-white font-bold' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                      class="px-3 py-1 text-xs rounded-r-md border-t border-b border-r border-gray-300 transition">
+                OR
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button @click="addCondition" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-2 py-1 rounded shadow-sm transition">
+              + Condition
+            </button>
+            <button @click="addGroup" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-2 py-1 rounded shadow-sm transition">
+              + Nested Group
+            </button>
+            <button v-if="!isRoot" @click="$emit('delete')" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold px-2 py-1 rounded shadow-sm transition">
+              Remove Group
+            </button>
+          </div>
+        </div>
+
+        <!-- Children List -->
+        <div class="space-y-3">
+          <div v-if="(!node.children || node.children.length === 0)" class="text-xs text-gray-400 italic py-2">
+            No filters in this group (matches everything).
+          </div>
+          <div v-for="(child, index) in node.children" :key="index" class="relative">
+            <filter-node 
+              :node="child" 
+              :is-root="false"
+              @delete="deleteChild(index)"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- If Condition Node -->
+      <div v-else class="flex flex-wrap items-center gap-3 bg-white p-2">
+        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Condition</span>
+        
+        <!-- Field Select -->
+        <div class="flex flex-col">
+          <label class="text-[10px] font-bold text-gray-400 uppercase">Field</label>
+          <select v-model="node.field" @change="onFieldChange" class="bg-gray-50 border border-gray-300 text-gray-900 text-xs rounded-lg p-1.5 focus:ring-blue-500 focus:border-blue-500">
+            <option value="id">ID</option>
+            <option value="name">Name</option>
+            <option value="category">Category</option>
+            <option value="brand">Brand</option>
+            <option value="price">Price</option>
+            <option value="rating">Rating</option>
+            <option value="tags">Tags</option>
+          </select>
+        </div>
+
+        <!-- Comparator Select -->
+        <div class="flex flex-col">
+          <label class="text-[10px] font-bold text-gray-400 uppercase">Operator</label>
+          <select v-model="node.cmp" @change="onCmpChange" class="bg-gray-50 border border-gray-300 text-gray-900 text-xs rounded-lg p-1.5 focus:ring-blue-500 focus:border-blue-500">
+            <option v-for="cmp in availableComparators" :key="cmp.value" :value="cmp.value">
+              {{ cmp.label }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Value Input -->
+        <div class="flex flex-col flex-1 min-w-[200px]">
+          <label class="text-[10px] font-bold text-gray-400 uppercase">Value</label>
+          <div class="flex items-center gap-2">
+            <!-- Between inputs -->
+            <template v-if="node.cmp === 'between'">
+              <input type="number" step="any" v-model.number="node.value[0]" placeholder="Low" class="bg-gray-50 border border-gray-300 text-gray-900 text-xs rounded-lg p-1.5 w-24 focus:ring-blue-500 focus:border-blue-500" />
+              <span class="text-gray-500 text-xs font-bold">and</span>
+              <input type="number" step="any" v-model.number="node.value[1]" placeholder="High" class="bg-gray-50 border border-gray-300 text-gray-900 text-xs rounded-lg p-1.5 w-24 focus:ring-blue-500 focus:border-blue-500" />
+            </template>
+
+            <!-- In set input -->
+            <template v-else-if="node.cmp === 'in'">
+              <input type="text" v-model="inText" @input="onInTextChange" placeholder="e.g. Logi, AudioX (comma-separated)" class="bg-gray-50 border border-gray-300 text-gray-900 text-xs rounded-lg p-1.5 flex-1 focus:ring-blue-500 focus:border-blue-500" />
+            </template>
+
+            <!-- Numeric input -->
+            <template v-else-if="isNumericField">
+              <input type="number" step="any" v-model.number="node.value" placeholder="Value" class="bg-gray-50 border border-gray-300 text-gray-900 text-xs rounded-lg p-1.5 w-32 focus:ring-blue-500 focus:border-blue-500" />
+            </template>
+
+            <!-- Text input -->
+            <template v-else>
+              <input type="text" v-model="node.value" placeholder="Value" class="bg-gray-50 border border-gray-300 text-gray-900 text-xs rounded-lg p-1.5 flex-1 focus:ring-blue-500 focus:border-blue-500" />
+            </template>
+          </div>
+        </div>
+
+        <!-- Delete Button -->
+        <button @click="$emit('delete')" class="self-end mb-1 bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-700 p-1.5 rounded-lg transition" title="Delete Condition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+
+    </div>
+  </template>
+
+  <script>
+    const { createApp } = Vue;
+
+    const defaultTree = () => ({
+      op: 'and',
+      children: [
+        { field: 'category', cmp: 'eq', value: 'Electronics' },
+        { field: 'price', cmp: 'lt', value: 100 }
+      ]
+    });
+
+    const preset1 = () => ({
+      op: 'or',
+      children: [
+        {
+          op: 'and',
+          children: [
+            { field: 'category', cmp: 'eq', value: 'Kitchen' },
+            { field: 'brand', cmp: 'eq', value: 'Smith, Jones & Co.' }
+          ]
+        },
+        {
+          op: 'and',
+          children: [
+            { field: 'category', cmp: 'eq', value: 'Electronics' },
+            { field: 'price', cmp: 'lt', value: 50 }
+          ]
+        }
+      ]
+    });
+
+    const preset2 = () => ({
+      op: 'and',
+      children: [
+        { field: 'tags', cmp: 'in', value: ['gaming', 'accessory'] },
+        { field: 'price', cmp: 'between', value: [10, 100] }
+      ]
+    });
+
+    const app = createApp({
+      data() {
+        return {
+          filterTree: defaultTree(),
+          allProducts: [],
+          matchingIds: [],
+          resultsCount: null,
+          loading: false,
+          composedFilterBy: ''
+        };
+      },
+      computed: {
+        matchingProducts() {
+          if (!this.matchingIds) return [];
+          const idSet = new Set(this.matchingIds);
+          return this.allProducts.filter(p => idSet.has(p.id));
+        }
+      },
+      async created() {
+        await this.loadAllProducts();
+        await this.applyFilter();
+      },
+      methods: {
+        async loadAllProducts() {
+          try {
+            const res = await fetch('/api/products');
+            if (res.ok) {
+              this.allProducts = await res.json();
+            }
+          } catch (err) {
+            console.error('Error loading products:', err);
+          }
+        },
+        async applyFilter() {
+          this.loading = true;
+          try {
+            const res = await fetch('/api/filter', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ filter: this.filterTree })
+            });
+            if (res.ok) {
+              const data = await res.json();
+              this.matchingIds = data.ids;
+              this.resultsCount = data.count;
+              
+              // Generate filter_by string for rendering (we'll fetch it or build it)
+              this.updateComposedFilterBy();
+            } else {
+              const err = await res.json();
+              alert(`Error: ${err.error}`);
+            }
+          } catch (err) {
+            console.error('Error applying filter:', err);
+            alert('Failed to connect to backend server.');
+          } finally {
+            this.loading = false;
+          }
+        },
+        resetFilter() {
+          this.filterTree = defaultTree();
+          this.applyFilter();
+        },
+        loadPreset(type) {
+          if (type === 'preset1') {
+            this.filterTree = preset1();
+          } else if (type === 'preset2') {
+            this.filterTree = preset2();
+          }
+          this.applyFilter();
+        },
+        updateComposedFilterBy() {
+          // Re-create the filter_by logic locally to display in UI
+          const simplified = simplifyTree(this.filterTree);
+          this.composedFilterBy = buildFilterExpression(simplified);
+        }
+      }
+    });
+
+    // Helper functions for local display of filter_by
+    function simplifyTree(node) {
+      if (!node) return null;
+      if (node.field !== undefined) return node;
+      if (node.op !== undefined) {
+        const children = node.children || [];
+        if (children.length === 0) return null;
+        const simplifiedChildren = [];
+        let hasAlwaysTrueChild = false;
+        for (const child of children) {
+          const simplifiedChild = simplifyTree(child);
+          if (simplifiedChild === null) {
+            hasAlwaysTrueChild = true;
+          } else {
+            simplifiedChildren.push(simplifiedChild);
+          }
+        }
+        if (node.op === 'and') {
+          if (simplifiedChildren.length === 0) return null;
+          if (simplifiedChildren.length === 1) return simplifiedChildren[0];
+          return { op: 'and', children: simplifiedChildren };
+        } else if (node.op === 'or') {
+          if (hasAlwaysTrueChild) return null;
+          if (simplifiedChildren.length === 0) return null;
+          if (simplifiedChildren.length === 1) return simplifiedChildren[0];
+          return { op: 'or', children: simplifiedChildren };
+        }
+      }
+      return null;
+    }
+
+    function buildFilterExpression(node) {
+      if (!node) return '';
+      if (node.field !== undefined) {
+        const { field, cmp, value } = node;
+        const escapeVal = (v) => {
+          if (typeof v === 'string') {
+            return `\`${v.replace(/\\/g, '\\\\').replace(/`/g, '\\`')}\``;
+          }
+          return String(v);
+        };
+        switch (cmp) {
+          case 'eq': return `${field}:=${escapeVal(value)}`;
+          case 'ne': return `${field}:!=${escapeVal(value)}`;
+          case 'gt': return `${field}:>${value}`;
+          case 'gte': return `${field}:>=${value}`;
+          case 'lt': return `${field}:<${value}`;
+          case 'lte': return `${field}:<=${value}`;
+          case 'between': return `${field}:[${value[0]}..${value[1]}]`;
+          case 'in': return `${field}:=[${value.map(v => escapeVal(v)).join(', ')}]`;
+        }
+      }
+      if (node.op !== undefined) {
+        const opStr = node.op === 'or' ? ' || ' : ' && ';
+        const childrenExprs = node.children.map(child => buildFilterExpression(child)).filter(Boolean);
+        if (childrenExprs.length === 0) return '';
+        if (childrenExprs.length === 1) return childrenExprs[0];
+        return `(${childrenExprs.join(opStr)})`;
+      }
+      return '';
+    }
+
+    // Register recursive filter-node component
+    app.component('filter-node', {
+      template: '#filter-node-template',
+      props: {
+        node: { type: Object, required: true },
+        isRoot: { type: Boolean, default: false }
+      },
+      data() {
+        return { inText: '' };
+      },
+      computed: {
+        isNumericField() {
+          return this.node.field === 'price' || this.node.field === 'rating';
+        },
+        availableComparators() {
+          const field = this.node.field;
+          if (field === 'tags') {
+            return [{ value: 'in', label: 'contains any of' }];
+          }
+          if (field === 'price' || field === 'rating') {
+            return [
+              { value: 'eq', label: 'equals' },
+              { value: 'ne', label: 'not equals' },
+              { value: 'gt', label: 'greater than (>)' },
+              { value: 'gte', label: 'greater than or equal (>=)' },
+              { value: 'lt', label: 'less than (<)' },
+              { value: 'lte', label: 'less than or equal (<=)' },
+              { value: 'between', label: 'between (range)' },
+              { value: 'in', label: 'is one of (set)' }
+            ];
+          }
+          return [
+            { value: 'eq', label: 'equals' },
+            { value: 'ne', label: 'not equals' },
+            { value: 'in', label: 'is one of (set)' }
+          ];
+        }
+      },
+      created() {
+        if (this.node.cmp === 'in' && Array.isArray(this.node.value)) {
+          this.inText = this.node.value.join(', ');
+        }
+      },
+      watch: {
+        'node.value': {
+          handler(newVal) {
+            if (this.node.cmp === 'in' && Array.isArray(newVal)) {
+              this.inText = newVal.join(', ');
+            }
+          },
+          deep: true
+        }
+      },
+      methods: {
+        addCondition() {
+          this.node.children.push({ field: 'category', cmp: 'eq', value: '' });
+          this.$root.updateComposedFilterBy();
+        },
+        addGroup() {
+          this.node.children.push({ op: 'and', children: [] });
+          this.$root.updateComposedFilterBy();
+        },
+        deleteChild(index) {
+          this.node.children.splice(index, 1);
+          this.$root.updateComposedFilterBy();
+        },
+        onFieldChange() {
+          const field = this.node.field;
+          if (field === 'tags') {
+            this.node.cmp = 'in';
+            this.node.value = [];
+            this.inText = '';
+          } else if (field === 'price' || field === 'rating') {
+            this.node.cmp = 'eq';
+            this.node.value = 0;
+          } else {
+            this.node.cmp = 'eq';
+            this.node.value = '';
+          }
+          this.$root.updateComposedFilterBy();
+        },
+        onCmpChange() {
+          const cmp = this.node.cmp;
+          if (cmp === 'between') {
+            this.node.value = [0, 100];
+          } else if (cmp === 'in') {
+            this.node.value = [];
+            this.inText = '';
+          } else {
+            this.node.value = this.isNumericField ? 0 : '';
+          }
+          this.$root.updateComposedFilterBy();
+        },
+        onInTextChange() {
+          const parts = this.inText.split(',').map(s => s.trim()).filter(Boolean);
+          if (this.isNumericField) {
+            this.node.value = parts.map(p => {
+              const n = Number(p);
+              return isNaN(n) ? 0 : n;
+            });
+          } else {
+            this.node.value = parts;
+          }
+          this.$root.updateComposedFilterBy();
+        }
+      }
+    });
+
+    app.mount('#app');
+  </script>
+</body>
+</html>
