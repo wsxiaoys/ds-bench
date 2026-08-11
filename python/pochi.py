@@ -268,13 +268,11 @@ class Pochi(BaseInstalledAgent):
         steps: list[Step] = []
         step_id = 1
 
-        total_input_tokens = 0
-        total_output_tokens = 0
-        total_cached_tokens = 0
-        session_id = "unknown"
         total_total_tokens = 0
-        total_system_tokens = 0
-        total_tools_tokens = 0
+        total_input_tokens = 0
+        total_cached_read_tokens = 0
+
+        session_id = "unknown"
 
         for line in log_lines:
             if not line.strip():
@@ -310,16 +308,10 @@ class Pochi(BaseInstalledAgent):
 
                 total_tokens = metadata.get("totalTokens", 0)
                 total_total_tokens += total_tokens
-                system_tokens = metadata.get("systemPromptTokens", 0)
-                total_system_tokens += system_tokens
-                tools_tokens = metadata.get("toolsTokens", 0)
-                total_tools_tokens += tools_tokens
-
-                prompt_tokens = system_tokens + tools_tokens
-                completion_tokens = max(total_tokens - prompt_tokens, 0)
-
-                total_input_tokens += prompt_tokens
-                total_output_tokens += completion_tokens
+                cache_read_tokens = metadata.get("cacheReadTokens", 0)
+                total_cache_read_tokens += cache_read_tokens
+                input_tokens = metadata.get("inputTokens", 0)
+                total_input_tokens += input_tokens
 
                 parts = msg.get("parts", [])
 
@@ -413,14 +405,9 @@ class Pochi(BaseInstalledAgent):
 
         final_metrics = FinalMetrics(
             total_prompt_tokens=total_input_tokens,
-            total_completion_tokens=total_output_tokens,
-            total_cached_tokens=total_cached_tokens,
+            total_completion_tokens=total_total_tokens-total_input_tokens,
+            total_cached_tokens=total_cached_read_tokens,
             total_steps=len(steps),
-            extra={
-                "total_tokens": total_total_tokens,
-                "system_tokens": total_system_tokens,
-                "tools_tokens": total_tools_tokens,
-            },
         )
 
         trajectory = Trajectory(
@@ -450,7 +437,7 @@ class Pochi(BaseInstalledAgent):
 
         # Calculate token counts for context
         n_input_tokens = 0
-        n_output_tokens = 0
+        n_total_tokens = 0
         n_cache_tokens = 0
 
         for line in log_lines:
@@ -461,12 +448,14 @@ class Pochi(BaseInstalledAgent):
                 if msg.get("role") == "assistant":
                     metadata = msg.get("metadata", {})
                     # Pochi log only has totalTokens in metadata currently
-                    n_output_tokens += metadata.get("totalTokens", 0)
+                    n_total_tokens += metadata.get("totalTokens", 0)
+                    n_cache_tokens += metadata.get("cacheReadTokens", 0)
+                    n_input_tokens += metadata.get("inputTokens", 0)
             except Exception:
                 continue
 
         context.n_input_tokens = n_input_tokens
-        context.n_output_tokens = n_output_tokens
+        context.n_output_tokens = n_total_tokens - n_input_tokens
         context.n_cache_tokens = n_cache_tokens
 
         try:
