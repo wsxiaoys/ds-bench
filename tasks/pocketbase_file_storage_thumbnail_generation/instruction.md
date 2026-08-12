@@ -13,7 +13,7 @@ PocketBase provides native file storage capabilities, including on-the-fly thumb
   1. Authenticate as the admin.
   2. Upload `input.jpg` to create a new record in the `gallery` collection.
   3. Get the URL for the `100x100` thumbnail of the uploaded image.
-  4. Download the thumbnail and save it as `thumbnail.jpg` in the project directory. The downloaded thumbnail file must be smaller than the original `input.jpg`.
+  4. Download the thumbnail and save it as `thumbnail.jpg` in the project directory.
   5. Write the created record ID to `output.log` in the project directory, formatted exactly as `Record ID: <id>` (where `<id>` is the actual record ID).
 
 ## Implementation Hints

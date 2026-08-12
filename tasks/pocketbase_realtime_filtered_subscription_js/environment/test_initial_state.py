@@ -10,13 +10,16 @@ import pytest
 
 
 PROJECT_DIR = "/home/user/myproject"
-PB_DATA_DIR = "/home/user/pb_data"
 PB_URL = "http://127.0.0.1:8090"
-PB_LOG = "/tmp/pocketbase.log"
-PB_PID_FILE = "/tmp/pocketbase.pid"
 
 
 # ---------------------------- helpers ----------------------------
+# NOTE: PocketBase (superuser bootstrapped, server started, and the
+# `messages` collection created) is fully provisioned by
+# environment/entrypoint.sh before this test runs. Everything below only
+# asserts that provisioning already happened — it must never create the
+# data dir, bootstrap the superuser, start the server, or create the
+# collection itself.
 
 def _http_get(url: str, headers: dict | None = None, timeout: float = 5.0):
     req = urllib.request.Request(url, headers=headers or {})
@@ -50,50 +53,6 @@ def _wait_for_health(timeout_sec: float = 30.0) -> bool:
     return False
 
 
-def _server_already_running() -> bool:
-    try:
-        status, _ = _http_get(f"{PB_URL}/api/health", timeout=1.0)
-        return status == 200
-    except Exception:
-        return False
-
-
-def _bootstrap_superuser() -> None:
-    email = os.environ["PB_ADMIN_EMAIL"]
-    password = os.environ["PB_ADMIN_PASSWORD"]
-    # `pocketbase superuser upsert` is idempotent and non-interactive.
-    result = subprocess.run(
-        ["pocketbase", "superuser", "upsert", email, password, "--dir", PB_DATA_DIR],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert result.returncode == 0, (
-        f"Failed to bootstrap superuser non-interactively. "
-        f"stdout={result.stdout!r} stderr={result.stderr!r}"
-    )
-
-
-def _start_pocketbase() -> None:
-    if _server_already_running():
-        return
-    # Launch detached so it survives test process exit.
-    log_fd = open(PB_LOG, "ab", buffering=0)
-    proc = subprocess.Popen(
-        ["pocketbase", "serve", "--http=0.0.0.0:8090", "--dir", PB_DATA_DIR],
-        stdout=log_fd,
-        stderr=log_fd,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    with open(PB_PID_FILE, "w") as f:
-        f.write(str(proc.pid))
-    if not _wait_for_health(30):
-        with open(PB_LOG, "r", errors="replace") as f:
-            log_tail = f.read()[-2000:]
-        pytest.fail(f"PocketBase server failed to become healthy. Log tail:\n{log_tail}")
-
-
 def _superuser_token() -> str:
     email = os.environ["PB_ADMIN_EMAIL"]
     password = os.environ["PB_ADMIN_PASSWORD"]
@@ -103,60 +62,6 @@ def _superuser_token() -> str:
     )
     assert status == 200, f"Superuser auth failed: status={status} body={body}"
     return json.loads(body)["token"]
-
-
-def _ensure_messages_collection() -> None:
-    token = _superuser_token()
-    # Idempotent: only create if it does not already exist.
-    try:
-        status, body = _http_get(
-            f"{PB_URL}/api/collections/messages",
-            headers={"Authorization": token},
-            timeout=5.0,
-        )
-        if status == 200:
-            return
-    except urllib.error.HTTPError as e:
-        if e.code != 404:
-            raise
-
-    payload = {
-        "name": "messages",
-        "type": "base",
-        "fields": [
-            {"name": "chat", "type": "text", "required": True},
-            {"name": "body", "type": "text", "required": False},
-        ],
-        # Empty rules => publicly accessible for the purposes of this benchmark,
-        # which is required so that an unauthenticated SSE client can receive events.
-        "listRule": "",
-        "viewRule": "",
-        "createRule": "",
-        "updateRule": "",
-        "deleteRule": "",
-    }
-    status, body = _http_post_json(
-        f"{PB_URL}/api/collections",
-        payload,
-        headers={"Authorization": token},
-    )
-    assert status in (200, 201), (
-        f"Failed to create 'messages' collection: status={status} body={body}"
-    )
-
-
-# ---------------------------- fixtures ----------------------------
-
-@pytest.fixture(scope="session", autouse=True)
-def _bootstrap_environment():
-    assert os.environ.get("PB_ADMIN_EMAIL"), "PB_ADMIN_EMAIL env var must be set."
-    assert os.environ.get("PB_ADMIN_PASSWORD"), "PB_ADMIN_PASSWORD env var must be set."
-
-    os.makedirs(PB_DATA_DIR, exist_ok=True)
-    _bootstrap_superuser()
-    _start_pocketbase()
-    _ensure_messages_collection()
-    yield
 
 
 # ---------------------------- tests ----------------------------

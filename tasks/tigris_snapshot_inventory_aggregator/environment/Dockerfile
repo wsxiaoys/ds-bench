@@ -15,7 +15,7 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh
 RUN curl -fsSL https://getpochi.com/install.sh | bash -s ${POCHI_VERSION} && ln -s /root/.pochi/bin/pochi /usr/local/bin/pochi
 
 LABEL Author="any-task-builder"
-LABEL Description="Tigris snapshot-inventory aggregator task environment: Node.js v24, the @tigrisdata/cli installed globally, a pre-initialized /home/user/inv project containing @tigrisdata/agent-kit and an executable setup.sh that recreates six buckets (three with the inv-bench- prefix plus three unrelated buckets) at task start."
+LABEL Description="Tigris snapshot-inventory aggregator task environment: Node.js v24, the @tigrisdata/cli installed globally, a pre-initialized /home/user/inv project containing @tigrisdata/agent-kit, and environment/entrypoint.sh which recreates six buckets (three harbor-inv-* buckets with snapshots plus three unrelated harbor-other-* buckets) at container start."
 
 RUN mkdir -p /home/user && chmod 0755 /home/user
 

@@ -3,7 +3,17 @@
 ## Background
 The Tigris Agent Kit provisions and manages many short-lived buckets on the Tigris control plane. Operators frequently need a quick "what do I currently own?" report — specifically, which evaluation buckets exist and how many point-in-time snapshots each one has. The Tigris CLI (`@tigrisdata/cli`) exposes both pieces via `tigris buckets list --format json` and `tigris snapshots list <bucket> --format json`. Each snapshot has a unique `version` string (a UNIX nanosecond-precision timestamp) that doubles as an ascending creation-time ordering key.
 
-For this task an operator has primed the Tigris account with six buckets. Three of them are evaluation buckets whose names begin with the prefix `harbor-inv-${run_id}-` (and have snapshots enabled); the others have unrelated names and are owned by a separate workflow that must NOT be touched. You must write a Node.js program that walks the account, filters by the `harbor-inv-${run_id}-` prefix, gathers every snapshot version per bucket, persists the result as JSON, and prints a one-line summary.
+For this task, you must first prime the Tigris account with six buckets. Note: do not easily delete buckets since it is limited to recreate them within 15 minutes. Create the following buckets:
+- `harbor-inv-${run_id}-a` (with 2 snapshots)
+- `harbor-inv-${run_id}-b` (with 1 snapshot)
+- `harbor-inv-${run_id}-c` (with 3 snapshots)
+- `harbor-other-${run_id}-x` (with 2 snapshots)
+- `harbor-other-${run_id}-y` (with 0 snapshots)
+- `harbor-other-${run_id}-z` (with 0 snapshots)
+
+You can use the Tigris CLI to create buckets and take snapshots. Note: S3 bucket names can only contain lowercase letters, numbers, dots, and hyphens. You must normalize the prefix by converting it to lowercase and replacing any invalid characters (like underscores) with hyphens.
+
+Then, you must write a Node.js program that walks the account, filters by the `harbor-inv-${run_id}-` prefix, gathers every snapshot version per bucket, persists the result as JSON, and prints a one-line summary.
 
 ## Requirements
 1. Implement a Node.js program at `/home/user/inv/index.js` that, **when invoked with `node index.js` from `/home/user/inv`**, performs the following steps:

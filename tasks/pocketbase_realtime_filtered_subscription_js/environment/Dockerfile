@@ -46,4 +46,5 @@ CMD ["/bin/bash", "-c", "trap : TERM INT; sleep infinity & wait"]
 #   - PocketBase v0.31.0 server binary at /usr/local/bin/pocketbase
 #   - Node.js 22 LTS for the agent's `pocketbase` npm SDK script
 #   - /home/user/myproject: empty project directory the agent must fill in
-#   - /home/user/pb_data: persistent PocketBase data dir (created/seeded by test_initial_state.py)
+#   - /home/user/pb_data: persistent PocketBase data dir (superuser bootstrapped,
+#     server started, and `messages` collection created by environment/entrypoint.sh)

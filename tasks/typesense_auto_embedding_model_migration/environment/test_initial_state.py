@@ -1,10 +1,8 @@
 import json
 import os
 import shutil
-import subprocess
 import time
 
-import pytest
 import requests
 
 PROJECT_DIR = "/home/user/migration"
@@ -23,25 +21,16 @@ def _server_healthy() -> bool:
         return False
 
 
-def _ensure_server_running() -> None:
-    if _server_healthy():
-        return
-    if os.path.exists(START_SCRIPT):
-        subprocess.Popen(
-            ["bash", START_SCRIPT],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    for _ in range(60):
+def _wait_until_healthy(timeout_sec: float = 30.0) -> bool:
+    # The server is started by environment/entrypoint.sh before this test
+    # runs; this only waits for that already-triggered startup to finish
+    # becoming healthy — it never starts the server itself.
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
         if _server_healthy():
-            return
-        time.sleep(1)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def running_server():
-    _ensure_server_running()
-    yield
+            return True
+        time.sleep(0.5)
+    return False
 
 
 def test_requests_importable():
@@ -99,7 +88,7 @@ def test_new_vectors_file_shape():
 
 
 def test_server_healthy():
-    assert _server_healthy(), (
+    assert _wait_until_healthy(), (
         "Typesense server is not healthy on http://localhost:8108."
     )
 
