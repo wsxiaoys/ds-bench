@@ -1,0 +1,1 @@
+import{_ as t}from"./q-DoNi8vyY.js";import{E as r,q as e}from"./q-Dm-n0CeS.js";const _=r(e(()=>t(()=>import("./q-DPjLhUg0.js").then(o=>o.i),[]),"s_iKS70r97dlI")),s={title:"Login - RBAC Dashboard"};export{_ as default,s as head};

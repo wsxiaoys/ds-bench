@@ -1,0 +1,1 @@
+import{_ as r}from"./q-DoNi8vyY.js";import{J as t}from"./q-D8kbDSDX.js";import{E as e,q as a,K as s}from"./q-7TQ8a7Ks.js";const n=t(s("s_Fq4UBK5CV1M")),p=e(a(()=>r(()=>import("./q-D8VqgmIP.js").then(o=>o.i),[]),"s_zqOiQexCVbI"));export{p as default,n as useAdminData};
