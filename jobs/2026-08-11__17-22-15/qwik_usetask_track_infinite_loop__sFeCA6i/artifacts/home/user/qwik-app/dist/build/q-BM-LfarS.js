@@ -1,0 +1,1 @@
+import{H as u,I as r}from"./q-Cb4UOIBk.js";import{b as n,z as l}from"./q-DMmD_FPY.js";const a=()=>n(r,{children:[l("head",null,null,[l("meta",null,{charSet:"utf-8"},null,3,null),l("title",null,null,"Order Summary",3,null)],3,null),l("body",null,{lang:"en"},n(u,null,3,"Sf_0"),1,null)]},1,"Sf_1");export{a as s_06hTRPZlBNE};

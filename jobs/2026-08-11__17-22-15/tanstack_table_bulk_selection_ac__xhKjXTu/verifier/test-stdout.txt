@@ -1,0 +1,107 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.4.0
+rootdir: /tests
+plugins: json-ctrf-0.5.3
+collected 1 item
+
+tests/test_final_state.py F                                              [100%]
+
+=================================== FAILURES ===================================
+________________________________ test_full_flow ________________________________
+
+built_app = True
+
+    def test_full_flow(built_app):
+        server = {"proc": None, "log": None}
+        server["proc"], server["log"] = _start_server()
+        try:
+            _verify_initial_api()
+>           asyncio.run(_browser_flow(server))
+
+tests/test_final_state.py:178: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+server = {'log': '/tmp/app_server_3g_hn403.log', 'proc': <Popen: returncode: -15 args: ['npm', 'start']>}
+
+    async def _browser_flow(server):
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch()
+            context = await browser.new_context()
+            page = await context.new_page()
+            page.set_default_timeout(20000)
+            try:
+                await page.goto(BASE_URL, wait_until="networkidle")
+    
+                # --- truth step 2: cross-page manual selection count ---
+                await expect(page.get_by_test_id("row-1")).to_be_visible()
+                await page.get_by_test_id("row-checkbox-1").check()
+                await page.get_by_test_id("row-checkbox-2").check()
+                await page.get_by_test_id("row-checkbox-3").check()
+                await _wait_int(page, "selection-count", 3)
+    
+                await page.get_by_test_id("next-page").click()
+                await expect(page.get_by_test_id("row-11")).to_be_visible()
+                await page.get_by_test_id("row-checkbox-11").check()
+                await page.get_by_test_id("row-checkbox-12").check()
+                await _wait_int(page, "selection-count", 5)
+    
+                # --- truth step 3: selection persists across pages ---
+                await page.get_by_test_id("prev-page").click()
+                await expect(page.get_by_test_id("row-1")).to_be_visible()
+                await expect(page.get_by_test_id("row-checkbox-1")).to_be_checked()
+                await expect(page.get_by_test_id("row-checkbox-2")).to_be_checked()
+                await expect(page.get_by_test_id("row-checkbox-3")).to_be_checked()
+                await _wait_int(page, "selection-count", 5)
+    
+                # --- truth step 4: clear selection ---
+                await page.get_by_test_id("clear-selection").click()
+                await _wait_int(page, "selection-count", 0)
+                await expect(page.get_by_test_id("bulk-archive")).to_be_disabled()
+    
+                # --- truth step 5: select-all-matching across every page ---
+                await page.get_by_test_id("select-page-checkbox").check()
+                await expect(page.get_by_test_id("select-all-matching")).to_be_enabled()
+                await page.get_by_test_id("select-all-matching").click()
+                await _wait_int(page, "selection-count", 57)
+                assert await _first_int(page, "total-count") == 57, (
+                    "total-count should report 57 items in the active filter."
+                )
+    
+                # --- truth step 6: optimistic bulk archive (delayed network) ---
+                async def _delayed(route):
+                    await asyncio.sleep(1.5)
+                    await route.continue_()
+    
+                await page.route("**/api/items/bulk-archive", _delayed)
+                await page.get_by_test_id("bulk-archive").click()
+                # Before the delayed response can return (well under 1500 ms), the
+                # optimistic update must already have emptied the active view.
+>               await expect(page.get_by_test_id("row-1")).to_have_count(0, timeout=1200)
+E               AssertionError: Locator expected to have count '0'
+E               Actual value: 1 
+E               Call log:
+E                 - Expect "to_have_count" with timeout 1200ms
+E                 - waiting for get_by_test_id("row-1")
+E                   14 × locator resolved to 1 element
+E                      - unexpected value "1"
+
+tests/test_final_state.py:277: AssertionError
+----------------------------- Captured stdout call -----------------------------
+--- final server log ---
+
+> tanstack-bulk-selection@1.0.0 start
+> node server.mjs
+
+Database successfully seeded with 57 items.
+Server is running on port 34517
+
+=========================== short test summary info ============================
+FAILED tests/test_final_state.py::test_full_flow - AssertionError: Locator ex...
+============================== 1 failed in 4.68s ===============================

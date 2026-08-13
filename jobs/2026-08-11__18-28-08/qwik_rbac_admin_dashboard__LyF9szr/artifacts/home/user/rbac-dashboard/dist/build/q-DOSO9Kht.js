@@ -1,0 +1,1 @@
+import{_ as o}from"./q-DoNi8vyY.js";import{J as r}from"./q-D8kbDSDX.js";import{E as a,q as t,K as s}from"./q-7TQ8a7Ks.js";const i=r(s("s_XLH3D43AS0Y")),l=a(t(()=>o(()=>import("./q-B4Ei3pZ-.js"),[]),"s_WGm41GRlPRA"));export{l as default,i as useDashboardData};
