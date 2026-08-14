@@ -1,0 +1,186 @@
+- Initializing MCP connections...
+You
+# A First-Class Money Type for Ash ## Background `/home/user/ledger` is an Elixir 1.18 / OTP 27 project (OTP app `:ledger`) that already depends on `ash` 3.31.0 and `jason`. Every dependency is vendored and pre-compiled, and the project must keep building **entirely offline** — nothing may be fetched. You may not add, remove or upgrade dependencies, and the money libraries `ash_money` / `ex_money` are deliberately unavailable — the value type is yours to build. The project currently contains only the mix project, the config, and an empty Ash domain `Ledger.Billing` (already registered in `config/config.exs`). Everything described below is missing. Build an exact-integer money value, expose it to Ash as a real custom type, and model a small billing domain on top of it. ## Requirements ### 1. The money value — `Ledger.Money` A struct with exactly two fields, `:currency` (an atom) and `:amount` (an integer count of *minor units*). Supported currencies and their minor-unit exponents: | currency | code | exponent | | --- | --- | --- | | `:bhd` | `BHD` | 3 | | `:eur` | `EUR` | 2 | | `:jpy` | `JPY` | 0 | | `:usd` | `USD` | 2 | **Canonical string form**: the uppercase code, one space, then the amount in major units using exactly `exponent` fraction digits (no decimal point at all when the exponent is 0). A negative amount carries a single `-` immediately before the first digit. Examples: `"USD 12.50"`, `"USD -0.05"`, `"USD 0.00"`, `"JPY 500"`, `"JPY -7"`, `"BHD 1.234"`, `"BHD -0.001"`. Public API of `Ledger.Money` (exact names and arities): - `currencies/0` → `[:bhd, :eur, :jpy, :usd]`, in that order. - `exponent/1` — takes a supported currency atom, returns its exponent as an integer. - `new/2` — `new(amount, currency)`; returns `{:ok, money}`, or `{:error, :invalid_amount}` when `amount` is not an integer, or `{:error, :unknown_currency}` when the currency is not supported. - `new!/2` — same arguments, returns the money value or raises `ArgumentError`. - `zero/1` — `zero(currency)` returns the money value with amount `0`. - `add/2` and `subtract/2` — `{:ok, money}`, or `{:error, :currency_mismatch}` when the two operands differ in currency. - `multiply/2` — `multiply(money, factor)`; `{:ok, money}` for an integer factor, `{:error, :invalid_factor}` otherwise. - `sum/2` — `sum(list_of_money, currency)`; `{:ok, money}` (an empty list sums to zero of that currency), or `{:error, :currency_mismatch}` if any element uses a different currency. - `compare/2` — returns `:lt`, `:eq` or `:gt`, and raises `ArgumentError` when the currencies differ. - `to_string/1` — the canonical string form. All arithmetic is exact integer arithmetic; no floats, no rounding, no truncation. ### 2. The Ash type — `Ledger.Money.Type` An `Ash.Type` whose valid instances are `Ledger.Money` structs. Its storage type must be `:map`. **Accepted inputs**, all of which must produce the same value when they denote the same money: - `nil` (which stays `nil`), - a `Ledger.Money` struct, - a map carrying a currency and an amount under *either* the atom keys `:currency` / `:amount` *or* the string keys `"currency"` / `"amount"` (a map missing either one is invalid), - the canonical string form. A currency may be supplied as a supported atom, or as a string whose upcased form is a supported code (`"usd"` and `"USD"` are both accepted). An amount may be supplied as an integer or as a string matching `^-?[0-9]+$`. The currency is resolved **before** the amount: if the currency is unsupported, the currency error is reported even when the amount is also unusable. **Every** cast failure returns `{:error, keyword}` where the keyword starts with `message:` and also carries `reason:`: | situation | `message` | `reason` | extra entry | | --- | --- | --- | --- | | currency not supported | `"unknown currency"` | `:unknown_currency` | `currency:` — the rejected value exactly as it was supplied | | amount is a float, or a string matching `^-?[0-9]+\.[0-9]+$` | `"amount must be a whole number of minor units"` | `:fractional_minor_units` | — | | anything else that cannot be interpreted | `"invalid money format"` | `:invalid_format` | — | A canonical string whose fraction-digit count does not match the currency's exponent is an `:invalid_format` failure. Loading a stored value must accept exactly what the type writes to storage and report `:invalid_format` for anything else. The stored form must round-trip losslessly, and it must still round-trip losslessly after being encoded and decoded with `Jason`. **Constraints** (these exact option names must be supported): - `:currencies` — the list of currency atoms that are allowed, - `:min` and `:max` — inclusive bounds, supplied in any of the accepted input shapes, - `:multiple_of` — a positive integer; the amount must be an exact multiple of it. Constraint violations also return `{:error, keyword}` with `message:` and `reason:`, and the checks are applied in the order `:currencies`, `:multiple_of`, `:min`, `:max` (the first failure wins): | situation | `message` | `reason` | extra entry | | --- | --- | --- | --- | | currency outside `:currencies` | `"currency is not allowed"` | `:currency_not_allowed` | `currency:` — the value's currency atom | | amount is not a multiple | `"must be a multiple of %{multiple_of} minor units"` | `:not_multiple_of` | `multiple_of:` — the constraint value | | below `:min` | `"must be greater than or equal to %{min}"` | `:below_min` | `min:` — the canonical string of the bound | | above `:max` | `"must be less than or equal to %{max}"` | `:above_max` | `max:` — the canonical string of the bound | | a bound's currency differs from the value's | `"cannot compare money in different currencies"` | `:currency_mismatch` | — | The currency-mismatch outcome replaces the corresponding `:min` / `:max` verdict. ### 3. The narrowed type — `Ledger.Money.Usd` An `Ash.Type.NewType` whose subtype is `Ledger.Money.Type` and which bakes in these constraints: only `:usd` is allowed, the inclusive minimum is `USD 0.00`, and the inclusive maximum is `USD 10000.00`. Attributes typed with it must enforce those bounds without repeating them. ### 4. The billing resources Both resources use `Ash.DataLayer.Ets` with **private** tables, and belong to the existing domain `Ledger.Billing`. `Ledger.Billing.Invoice` - Attributes: `:id` (uuid primary key), `:reference` (`:string`, required), `:subtotal` (`Ledger.Money.Type`, required, restricted to `:usd`, `:eur` and `:jpy`), `:adjustments` (an array of `Ledger.Money.Type` defaulting to `[]`, where every element must be a multiple of 5 minor units), `:credit_limit` (`Ledger.Money.Usd`, optional). - A `:payments` relationship to `Ledger.Billing.Payment`. - An aggregate `:paid_minor` — the sum of the payments' stored minor-unit amounts, which is `0` when there are no payments. - A calculation `:total` of type `Ledger.Money.Type` — the subtotal plus every adjustment. - A calculation `:balance` of type `Ledger.Money.Type` — the total minus everything paid. - Every adjustment must use the subtotal's currency. A violation must fail with `Ash.Error.Changes.InvalidAttribute` on field `:adjustments` carrying the message `"must all use the currency of the subtotal"`. - Actions: the default `:read` and `:destroy`; a create action `:issue` accepting `:reference`, `:subtotal`, `:adjustments` and `:credit_limit`; an update action `:apply_adjustment` taking a required argument `:adjustment` of the money type and appending it to `:adjustments`; and a generic action `:price_for` that returns `Ledger.Money.Type` and takes a required `:unit_price` (money) and a required `:units` (`:integer`), returning the unit price multiplied by the unit count. - `:apply_adjustment` must reject an adjustment whose currency differs from the invoice's subtotal with `Ash.Error.Changes.InvalidArgument` on field `:adjustment` carrying the message `"must use the currency of the subtotal"`, and must leave the stored record untouched. `Ledger.Billing.Payment` - Attributes: `:id` (uuid primary key), `:amount` (`Ledger.Money.Type`, required, restricted to `:usd`, `:eur` and `:jpy`), `:amount_minor` (`:integer`), `:amount_currency` (`:atom`), and a required `belongs_to` `:invoice` whose `:invoice_id` is writable. - Actions: the default `:read` and `:destroy`, plus a create action `:record` that accepts only `:amount` and `:invoice_id`. `:amount_minor` and `:amount_currency` are always derived from `:amount` and can never be supplied by the caller. - `:amount_minor` is a plain integer column, so it is filterable and summable with ordinary expressions. ### 5. Domain code interface `Ledger.Billing` must expose these functions: - `issue_invoice(params)` and `issue_invoice!(params)` - `get_invoice(id)` and `get_invoice!(id)` — fetch a single invoice by primary key - `list_invoices()` and `list_invoices!()` - `apply_adjustment(invoice, adjustment)` and `apply_adjustment!(invoice, adjustment)` - `price_for(unit_price, units)` and `price_for!(unit_price, units)` - `record_payment(params)` and `record_payment!(params)` ### 6. Querying Ascending sorting on `:subtotal` must order invoices of one currency by their amount ascending (so `USD 9.00` comes before `USD 100.00`), descending sorting must reverse that, and an equality filter on `:subtotal` against a money value must match only records whose currency *and* amount both agree. ## Implementation Hints - Project path: `/home/user/ledger`. - Do not add, remove, change or fetch dependencies, and do not modify `mix.exs`, `mix.lock` or the `deps/` and `_build/` directories. `ash_money` and `ex_money` must not be used. - Everything lives in the existing OTP app `:ledger` under `/home/user/ledger/lib`, and `mix compile` must succeed from `/home/user/ledger`. - Verification loads the compiled application and drives your modules directly through the public Ash APIs (`Ash.Type.*`, `Ash.Query`, `Ash.load/2`, `Ash.read/1`) and through the `Ledger.Billing` code-interface functions listed above, so those names, arities and result shapes must match exactly. - Error keywords returned by the type are compared entry by entry: the `message` value is compared verbatim, including any `%{...}` placeholder, which is never interpolated by your code. - Money values compare equal only when both the currency and the amount agree.   
+
+Pochi
+📂 Listing files in /home/user/ledger recursively ✔ 
+📖 Reading home/user/ledger/config/config.exs ✔ 
+📖 Reading home/user/ledger/lib/ledger/billing.ex ✔ 
+📂 Listing files in home/user/ledger/lib/ledger recursively ✔ 
+💭 Thinking for 4261 characters   
+✏️  Writing home/user/ledger/lib/ledger/money.ex ✔ 
+💭 Thinking for 223 characters   
+💫 Executing mix compile ✔ 
+💭 Thinking for 315 characters   
+🔧 Applying diff to home/user/ledger/lib/ledger/money.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 220 characters   
+🔍 Searching for defmodule Ash.Type in home/user/ledger/deps/ash ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/integer.ex ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/integer.ex ✔ 
+💭 Thinking for 10401 characters   
+🔍 Searching for def cast_atomic in home/user/ledger/deps/ash/lib/ash/type ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+🔍 Searching for defmacro __using__ in home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+💭 Thinking for 4264 characters   
+✏️  Writing home/user/ledger/lib/ledger/money/type.ex ✔ 
+💫 Executing mix compile ✔ 
+🔧 Applying diff to home/user/ledger/lib/ledger/money/type.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 289 characters   
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/new_type.ex ✔ 
+💭 Thinking for 214 characters   
+✏️  Writing home/user/ledger/lib/ledger/money/usd.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 621 characters   
+🔍 Searching for sum : in home/user/ledger/deps/ash/lib/ash/resource ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/resource/dsl.ex ✔ 
+🔍 Searching for default in home/user/ledger/deps/ash/lib/ash/resource/aggregate.ex ✖ "rg command failed with code 2: rg: /home/user/ledger/deps/ash/lib/ash/resource/aggregate.ex: IO error for operation on /home/user/ledger/deps/ash/lib/ash/resource/aggregate.ex: No such file or directory (os error 2)\n"
+🔍 Searching for *aggregate*.ex in home/user/ledger/deps/ash ✔ 
+🔍 Searching for defmodule Ash.Resource.Aggregate in home/user/ledger/deps/ash ✔ 
+🔍 Searching for default in home/user/ledger/deps/ash/lib/ash/resource/aggregate/aggregate.ex ✔ 
+💭 Thinking for 586 characters   
+🔍 Searching for defmodule Ash.Resource.Calculation in home/user/ledger/deps/ash ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/resource/calculation/concat.ex ✔ 
+💭 Thinking for 1188 characters   
+🔍 Searching for defmodule Ash.Resource.Validation in home/user/ledger/deps/ash ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/resource/validation/byte_size.ex ✔ 
+💭 Thinking for 326 characters   
+🔍 Searching for validate  in home/user/ledger/deps/ash/lib/ash/resource ✔ 
+💭 Thinking for 256 characters   
+🔍 Searching for defmodule Ash.Error.Changes.InvalidAttribute in home/user/ledger/deps/ash ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/error/changes/invalid_attribute.ex ✔ 
+💭 Thinking for 1368 characters   
+🔍 Searching for defmodule Ash.Error.Changes.InvalidArgument in home/user/ledger/deps/ash ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/error/changes/invalid_argument.ex ✔ 
+💭 Thinking for 289 characters   
+🔍 Searching for defmodule Ash.Resource.Actions.Action in home/user/ledger/deps/ash/lib/ash/resource ✔ 
+🔍 Searching for action : in home/user/ledger/deps/ash/lib/ash/resource/dsl.ex ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/resource/dsl.ex ✔ 
+💭 Thinking for 666 characters   
+🔍 Searching for attribute_writable\? in home/user/ledger/deps/ash ✔ 
+💭 Thinking for 1356 characters   
+🔍 Searching for private in home/user/ledger/deps/ash/lib/ash/data_layer ✔ 
+💭 Thinking for 1684 characters   
+✏️  Writing home/user/ledger/lib/ledger/billing/invoice/calculate_total.ex ✔ 
+💭 Thinking for 277 characters   
+✏️  Writing home/user/ledger/lib/ledger/billing/invoice/calculate_balance.ex ✔ 
+💭 Thinking for 245 characters   
+✏️  Writing home/user/ledger/lib/ledger/billing/invoice/validate_adjustments_currency.ex ✔ 
+💭 Thinking for 347 characters   
+✏️  Writing home/user/ledger/lib/ledger/billing/invoice/apply_adjustment_change.ex ✔ 
+✏️  Writing home/user/ledger/lib/ledger/billing/invoice.ex ✔ 
+💭 Thinking for 665 characters   
+✏️  Writing home/user/ledger/lib/ledger/billing/payment/derive_fields.ex ✔ 
+💭 Thinking for 200 characters   
+✏️  Writing home/user/ledger/lib/ledger/billing/payment.ex ✔ 
+💭 Thinking for 1346 characters   
+🔍 Searching for run_action in home/user/ledger/deps/ash ✔ 
+💭 Thinking for 1514 characters   
+✏️  Writing home/user/ledger/lib/ledger/billing.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 306 characters   
+🔧 Applying diff to home/user/ledger/lib/ledger/billing/invoice.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 230 characters   
+🔍 Searching for def compare in home/user/ledger/deps/ash/lib/ash/type ✔ 
+🔍 Searching for compare in home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+🔍 Searching for @callback compare in home/user/ledger/deps/ash/lib/ash/type/type.ex ✔ 
+🔍 Searching for compare in home/user/ledger/deps/ash/lib/ash/sort ✔ 
+🔍 Searching for * in home/user/ledger/deps/ash/lib/ash/sort ✔ 
+🔍 Searching for compare in home/user/ledger/deps/ash/lib/ash/sort/sort.ex ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/sort/sort.ex ✔ 
+🔍 Searching for sort in home/user/ledger/deps/ash/lib/ash/data_layer/ets ✔ 
+🔍 Searching for def runtime_sort in home/user/ledger/deps/ash ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/actions/sort.ex ✔ 
+💭 Thinking for 1268 characters   
+📂 Listing files in home/user/ledger/test recursively ✔ 
+📖 Reading home/user/ledger/test/test_helper.exs ✔ 
+💭 Thinking for 4059 characters   
+✏️  Writing home/user/ledger/test/ledger_billing_test.exs ✔ 
+💫 Executing mix test ✖ "Command exited with code 1"
+💭 Thinking for 1004 characters   
+🔧 Applying diff to home/user/ledger/test/ledger_billing_test.exs ✔ 
+📖 Reading home/user/ledger/test/ledger_billing_test.exs ✔ 
+🔧 Applying diff to home/user/ledger/test/ledger_billing_test.exs ✔ 
+💫 Executing mix test ✖ "Command exited with code 2"
+💭 Thinking for 288 characters   
+🔍 Searching for def for_update in home/user/ledger/deps/ash/lib/ash/changeset ✔ 
+📖 Reading home/user/ledger/deps/ash/lib/ash/changeset/changeset.ex ✔ 
+💭 Thinking for 321 characters   
+🔍 Searching for set_argument in home/user/ledger/deps/ash/lib/ash/changeset/changeset.ex ✔ 
+💭 Thinking for 296 characters   
+🔧 Applying diff to home/user/ledger/lib/ledger/billing.ex ✔ 
+💫 Executing mix test ✔ 
+💭 Thinking for 332 characters   
+🔧 Applying diff to home/user/ledger/test/ledger_billing_test.exs ✔ 
+💫 Executing mix test ✔ 
+💫 Executing mix format ✔ 
+💫 Executing git status ✖ "Command exited with code 128"
+💭 Thinking for 3907 characters   
+🎉 Task Completed
+The first-class Money Type for Ash has been successfully designed, implemented, and fully tested!
+
+Here is a summary of the components created:
+
+### 1. `Ledger.Money` Value Struct (`lib/ledger/money.ex`)
+- Defines a struct with `:amount` (integer minor units) and `:currency` (atom).
+- Implements the complete public API:
+  - `currencies/0` -> `[:bhd, :eur, :jpy, :usd]`.
+  - `exponent/1` -> returns exponent (`0` for `:jpy`, `3` for `:bhd`, `2` for `:eur` and `:usd`).
+  - `new/2` and `new!/2` -> constructs money or errors (resolving currency before amount).
+  - `zero/1` -> returns zero money of that currency.
+  - `add/2` and `subtract/2` -> exact integer addition and subtraction.
+  - `multiply/2` -> exact multiplication of money by an integer factor.
+  - `sum/2` -> sums a list of money of the same currency (empty list returns zero).
+  - `compare/2` -> returns `:lt`, `:eq`, or `:gt` (raises on currency mismatch).
+  - `to_string/1` -> formats money to canonical major-unit string form.
+- Implements the `String.Chars` protocol for seamless integration.
+
+### 2. `Ledger.Money.Type` Ash Type (`lib/ledger/money/type.ex`)
+- Custom `Ash.Type` with storage type `:map`.
+- Handles all accepted input formats (`nil`, `Ledger.Money` struct, maps with string or atom keys, and canonical strings).
+- Performs robust error categorization (`:unknown_currency`, `:fractional_minor_units`, `:invalid_format`) returning exact messages and reason codes as requested.
+- Implements custom round-trip serialization (`dump_to_native/2` and `cast_stored/2`) compatible with `Jason` encoding/decoding.
+- Implements constraints checking (`:currencies`, `:multiple_of`, `:min`, `:max`) in the precise order specified, handling currency mismatch bounds errors.
+
+### 3. `Ledger.Money.Usd` Narrowed Type (`lib/ledger/money/usd.ex`)
+- Implements `Ash.Type.NewType` subtype of `Ledger.Money.Type` with pre-baked constraints: only `:usd` allowed, min: `USD 0.00`, max: `USD 10000.00`.
+
+### 4. Billing Resources (`lib/ledger/billing/invoice.ex` and `lib/ledger/billing/payment.ex`)
+- Both resources use `Ash.DataLayer.Ets` configured with `private? true` tables.
+- **`Ledger.Billing.Invoice`**:
+  - Attributes `:id` (UUID), `:reference` (string), `:subtotal` (money restricted to USD, EUR, JPY), `:adjustments` (array of money requiring multiples of 5 minor units), `:credit_limit` (USD-only money).
+  - Aggregate `:paid_minor` calculates sum of payments' `amount_minor` (defaults to `0`).
+  - Calculations `:total` (sum of subtotal + adjustments) and `:balance` (total - paid_minor) are implemented via custom calculation modules.
+  - Custom validation `Ledger.Billing.Invoice.ValidateAdjustmentsCurrency` ensures adjustments match the subtotal's currency.
+  - Custom change `Ledger.Billing.Invoice.ApplyAdjustmentChange` handles `:apply_adjustment` and validates currency mismatch on the required `:adjustment` argument.
+  - Generic action `:price_for` implements multiplication.
+- **`Ledger.Billing.Payment`**:
+  - Attributes `:id` (UUID), `:amount` (money restricted to USD, EUR, JPY), `:amount_minor` (integer), `:amount_currency` (atom).
+  - Custom change `Ledger.Billing.Payment.DeriveFields` derives and forces `:amount_minor` and `:amount_currency` from `:amount` on creation.
+
+### 5. Domain Code Interface (`lib/ledger/billing.ex`)
+Exposes all required public functions:
+- `issue_invoice/1` and `issue_invoice!/1`
+- `get_invoice/1` and `get_invoice!/1`
+- `list_invoices/0` and `list_invoices!/0`
+- `apply_adjustment/2` and `apply_adjustment!/2`
+- `price_for/2` and `price_for!/2`
+- `record_payment/1` and `record_payment!/1`
+
+### 6. Querying, Sorting & Filtering
+- Sorting by `:subtotal` uses natural structural comparison of `Ledger.Money` structs where `:amount` comes alphabetically before `:currency`, ordering records correctly by their amounts.
+- Equality filtering on `:subtotal` matches only when both currency and amount agree.
+
+### 7. Verification
+A comprehensive test suite of 17 tests covering all requirements has been written to `test/ledger_billing_test.exs` and all tests compile and pass perfectly!   
+  
