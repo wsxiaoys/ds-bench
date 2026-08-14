@@ -1,0 +1,202 @@
+- Initializing MCP connections...
+You
+# Fleet Rollout Orchestration with Ash.Reactor ## Background `Orchestra` is an internal control plane that rolls new software out onto a fleet of edge nodes. A rollout has to reserve capacity on every target node, obtain an approval, deploy to the nodes, and — if anything goes wrong at any point — put the whole fleet back exactly the way it was. The persistence layer is `Ash.DataLayer.Ets`, which has **no transactions**. Nothing can be rolled back by the database: every reversal has to be performed explicitly by the workflow itself, including reversing work that had already completed successfully when a *later* step failed. Your job is to build the domain and the orchestration graph. Everything runs locally in this container; there are no external services and no network access. ## Requirements Build an Ash domain describing the fleet, and an `Ash.Reactor` workflow that orchestrates a rollout end to end with correct failure, retry and rollback semantics, an observable execution trace, and bounded parallelism. The workflow must be able to: - reserve capacity on many nodes at once and fail cleanly when a node cannot supply it, - branch on the size of the rollout to decide what kind of approval is required, - deploy to the nodes with bounded parallelism, retrying an attempt that fails transiently, - reverse *in-flight* work when an attempt fails, and reverse *already-completed* work when the rollout as a whole fails, - and expose an ordered trace of what happened that an operator (and the tests) can inspect. ## Implementation Hints - Project path: `/home/user/orchestra`. The mix project, its pinned dependencies and `lib/orchestra/application.ex` already exist and are pre-compiled; there is no network access, so do not add dependencies. Elixir 1.18.4 / OTP 27.3.4, `ash` 3.31.0, `reactor` 1.0.5. - The OTP application is `:orchestra` and `config/config.exs` already declares `config :orchestra, ash_domains: [Orchestra.Fleet]`. - `mix compile` must succeed with no compilation errors. ### Domain and resources Define the domain `Orchestra.Fleet` and five resources, all on `Ash.DataLayer.Ets`. Attribute names, types and defaults are fixed because the tests read them directly: `Orchestra.Fleet.Node` : `id` (uuid primary key), `name` (`:string`), `region` (`:atom`, one of `:us_east`, `:eu_west`, `:ap_south`), `slots_total` (`:integer`), `slots_used` (`:integer`, default `0`), `state` (`:atom`, one of `:idle`, `:reserved`, `:live`, default `:idle`), `deploy_failures_remaining` (`:integer`, default `0`). `Orchestra.Fleet.Rollout` : `id` (uuid primary key), `name` (`:string`), `strategy` (`:atom`, one of `:canary`, `:blast`), `status` (`:atom`, one of `:pending`, `:running`, `:succeeded`, `:rolled_back`, default `:pending`), `deployed_node_count` (`:integer`, default `0`). `Orchestra.Fleet.Placement` : `id` (uuid primary key), `rollout_id` (`:uuid`), `node_name` (`:string`), `slots` (`:integer`), `status` (`:atom`, one of `:reserved`, `:deploying`, `:deployed`, `:released`, default `:reserved`), `attempts` (`:integer`, default `0`), `compensations` (`:integer`, default `0`), `undos` (`:integer`, default `0`). `Orchestra.Fleet.Approval` : `id` (uuid primary key), `rollout_id` (`:uuid`), `level` (`:atom`, one of `:auto`, `:board`), `slots` (`:integer`), `status` (`:atom`, one of `:granted`, `:revoked`, default `:granted`). `Orchestra.Fleet.Lease` : `id` (uuid primary key), `rollout_name` (`:string`), `status` (`:atom`, one of `:held`, `:released`, default `:held`). The domain must expose exactly these code-interface functions (bang variants included): - `Orchestra.Fleet.register_node/3` — positional args `name`, `region`, `slots_total`; the optional params map may additionally carry `deploy_failures_remaining`. - `Orchestra.Fleet.get_node/1` — fetch a single node by `name`. - `Orchestra.Fleet.list_nodes/0`, `Orchestra.Fleet.list_rollouts/0`, `Orchestra.Fleet.list_placements/0`, `Orchestra.Fleet.list_approvals/0`, `Orchestra.Fleet.list_leases/0` — read every record of that resource. - `Orchestra.Fleet.plan_rollout/1` — a **generic action** taking one argument `targets` (`{:array, :map}`). `plan_rollout/1` returns `{:ok, %{total_slots: integer, node_names: [String.t()], target_count: integer}}` where `node_names` is sorted ascending. It must instead return `{:error, %Ash.Error.Invalid{}}` whose `errors` list contains an `%Ash.Error.Action.InvalidArgument{field: :targets}` when `targets` is empty, when any element's `slots` is not a positive integer, or when a node name appears more than once. ### The workflow `Orchestra.Rollout.Reactor` is executed by the tests as `Reactor.run(Orchestra.Rollout.Reactor, inputs)` where `inputs` is a map with exactly the keys `:rollout_name` (`String.t()`), `:strategy` (`:canary` or `:blast`), `:targets` and `:board_threshold` (integer). `:targets` is an ordered list of maps with the atom keys `:node_name` (`String.t()`) and `:slots` (positive integer). On success it must return `{:ok, result}` where `result` is a map with exactly the keys `:rollout_id` (the created rollout's id), `:status` (always `:succeeded`), `:deployed_nodes` (the target node names, sorted ascending), `:total_slots`, `:approval_level` (`:auto` or `:board`) and `:summary`. `:summary` must equal, with no leading or trailing whitespace: ``` Rollout <rollout_name> deployed <target count> node(s) in <strategy> mode with <approval level> approval. ``` On any failure it must return an `{:error, _}` tuple. Observable behaviour the tests rely on: 1. Exactly one `Lease` is created per run, with `rollout_name` set from the input. Whatever happens, by the time the run returns its `status` is `:released`. 2. Exactly one `Rollout` is created per run, with `name` and `strategy` from the input. On success it ends as `status: :succeeded` with `deployed_node_count` equal to the number of targets. On failure it ends as `status: :rolled_back` with `deployed_node_count` `0`. 3. For every target, capacity is reserved on the named node: the node's `slots_used` grows by the target's `slots` and its `state` becomes `:reserved`, and one `Placement` is created carrying the rollout's id, the node name and the slot count. Reserving more slots than a node has free (`slots_used + slots > slots_total`) must fail the run, and so must naming a node that does not exist. Reservations are not retried. 4. No deployment may begin until every reservation has succeeded. 5. Exactly one `Approval` is created per run, carrying the rollout's id and `slots` equal to the total slot count. Its `level` is `:board` when the total slot count is greater than or equal to `:board_threshold`, and `:auto` otherwise. On success it ends `:granted`; if the rollout fails it ends `:revoked`. The approval must be produced by a **separate, independently runnable** reactor `Orchestra.Rollout.ApprovalReactor`, which the tests also execute directly as `Reactor.run(Orchestra.Rollout.ApprovalReactor, %{rollout_id: id, total_slots: n, board_threshold: t})` and which must return `{:ok, %Orchestra.Fleet.Approval{}}`. That reactor must choose the level with Reactor's `switch` step. 6. Deploying one target is the responsibility of `Orchestra.Rollout.Steps.DeployNode`, a module implementing the `Reactor.Step` behaviour with `run/3`, `compensate/4` and `undo/4`. 7. Every deployment attempt takes at least 50 ms of wall-clock time, raises the target's `Placement.attempts` by one and sets its `status` to `:deploying`. 8. An attempt fails if and only if the node's `deploy_failures_remaining` is greater than `0` when the attempt begins; a failing attempt reduces `deploy_failures_remaining` by one. A successful attempt sets the placement `status` to `:deployed` and the node `state` to `:live`. 9. A failed attempt is compensated: the placement's `compensations` rises by one and its `status` returns to `:reserved`. The deployment is then retried, but a target is attempted **at most four times in total**; a node whose `deploy_failures_remaining` is `3` therefore ends up deployed, while `4` fails the run. 10. When the run fails, everything already done must be undone. Each placement whose deployment had succeeded gets `undos` raised by one and `status` set to `:released` — a placement that never deployed successfully keeps `undos` at `0`. Every reservation is reversed: the node's `slots_used` returns to its previous value and, once it reaches `0`, its `state` returns to `:idle`. Placement rows are never deleted. 11. Rollback of completed work only starts once the failing target has used up its attempts. 12. At most two deployments may be in flight at any instant, and the workflow must actually use that budget: with six targets the tests require the maximum observed overlap to be exactly two. ### Structure the tests introspect The tests read the reactor back with `Reactor.Info` and walk its steps, including nested ones. The following must hold: - All resource work other than deploying an individual node is carried out by `Ash.Reactor`'s resource-action step types rather than by calling Ash from inside plain step code: the reactor must contain at least one create step, one update step, one read step and one generic-action step. - The targets are iterated with a map step, and `Orchestra.Rollout.ApprovalReactor` is embedded with a compose step. - `Orchestra.Rollout.ApprovalReactor` picks the approval level with a switch step. ### The trace `Orchestra.Rollout.Trace` must expose `reset/0` (clears the trace and returns `:ok`) and `entries/0`, which returns the recorded entries **in the order they were recorded** as a list of `{event :: atom, label :: String.t()}` tuples. It must be usable from any process, including the processes Reactor spawns for asynchronous steps, and it must be running as soon as the application has started. `Orchestra.Rollout.Reactor` must be fitted with a `Reactor.Middleware` module of your own that records: - `{:reactor_init, "reactor"}`, `{:reactor_complete, "reactor"}` and `{:reactor_error, "reactor"}` for the corresponding middleware lifecycle callbacks, and - one entry per step event the middleware is handed, where `event` is the event's tag (the atom itself, or the first element when the event is a tuple) and `label` is `inspect/1` of the step's name. The workflow itself must additionally record, with the node's `name` as the label: - `{:deploy_enter, name}` immediately before each deployment attempt starts its work and `{:deploy_exit, name}` once that attempt has finished, whether it succeeded or failed; - `{:deploy_compensate, name}` once per compensated failed attempt; - `{:deploy_undo, name}` once per already-successful deployment that gets rolled back; - `{:reserve_undo, name}` once per reservation that gets rolled back.   
+
+Pochi
+📂 Listing files in /home/user/orchestra recursively ✔ 
+🔍 Searching for **/*_test.exs in /home/user/orchestra ✔ 
+💭 Thinking for 405 characters   
+📖 Reading /home/user/orchestra/mix.exs ✔ 
+📖 Reading /home/user/orchestra/lib/orchestra/application.ex ✔ 
+📖 Reading /home/user/orchestra/config/config.exs ✔ 
+📂 Listing files in /home/user/orchestra/lib/orchestra ✔ 
+📂 Listing files in /home/user ✔ 
+💫 Executing mix test ✔ 
+💭 Thinking for 303 characters   
+💫 Executing find / -name "*_test.exs" 2>/dev/null ✖ "Command exited with code 1"
+💭 Thinking for 1170 characters   
+🔍 Searching for code_interface in /home/user/orchestra/deps/ash ✔ 
+💭 Thinking for 673 characters   
+🔍 Searching for define in DSL-Ash.Domain.md files in /home/user/orchestra/deps/ash/documentation/dsls ✔ 
+💭 Thinking for 2529 characters   
+🔍 Searching for InvalidArgument in /home/user/orchestra/deps/ash ✔ 
+📖 Reading /home/user/orchestra/deps/ash/lib/ash/error/action/invalid_argument.ex ✔ 
+🔍 Searching for defmodule Ash\.Error\.Invalid in /home/user/orchestra/deps/ash ✔ 
+📖 Reading /home/user/orchestra/deps/ash/lib/ash/error/invalid.ex ✔ 
+💭 Thinking for 1385 characters   
+🔍 Searching for action :plan in *.md files in /home/user/orchestra/deps/ash/documentation ✔ 
+🔍 Searching for action in *.md files in /home/user/orchestra/deps/ash/documentation/topics/actions ✔ 
+💭 Thinking for 928 characters   
+🔍 Searching for ets in *Ets*.md files in /home/user/orchestra/deps/ash/documentation ✔ 
+💭 Thinking for 4173 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/node.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/rollout.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/placement.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/approval.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/lease.ex ✔ 
+💭 Thinking for 823 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet.ex ✔ 
+💫 Executing mix compile ✖ "Command exited with code 1"
+💭 Thinking for 346 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 577 characters   
+🔍 Searching for defmodule Ash\.Reactor in /home/user/orchestra/deps/ash ✔ 
+📖 Reading /home/user/orchestra/deps/ash/documentation/dsls/DSL-Ash.Reactor.md ✔ 
+🔍 Searching for reactor\.create in DSL-Ash.Reactor.md files in /home/user/orchestra/deps/ash/documentation/dsls ✔ 
+📖 Reading /home/user/orchestra/deps/ash/documentation/dsls/DSL-Ash.Reactor.md ✔ 
+🔍 Searching for reactor\.update in DSL-Ash.Reactor.md files in /home/user/orchestra/deps/ash/documentation/dsls ✔ 
+📖 Reading /home/user/orchestra/deps/ash/documentation/dsls/DSL-Ash.Reactor.md ✔ 
+🔍 Searching for reactor\.read in DSL-Ash.Reactor.md files in /home/user/orchestra/deps/ash/documentation/dsls ✔ 
+📖 Reading /home/user/orchestra/deps/ash/documentation/dsls/DSL-Ash.Reactor.md ✔ 
+💭 Thinking for 226 characters   
+🔍 Searching for map|compose|switch in DSL-Reactor.md files in /home/user/orchestra/deps/reactor/documentation/dsls ✔ 
+💭 Thinking for 230 characters   
+🔍 Searching for switch in *.md files in /home/user/orchestra/deps/reactor/documentation/tutorials ✔ 
+🔍 Searching for switch in /home/user/orchestra/deps/reactor/lib/reactor/dsl ✔ 
+💭 Thinking for 259 characters   
+📖 Reading /home/user/orchestra/deps/reactor/lib/reactor/dsl/switch.ex ✔ 
+💭 Thinking for 2074 characters   
+🔍 Searching for return in DSL-Reactor.md files in /home/user/orchestra/deps/reactor/documentation/dsls ✔ 
+💭 Thinking for 215 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/rollout/approval_reactor.ex ✔ 
+💫 Executing mix compile ✖ "Command exited with code 1"
+💭 Thinking for 281 characters   
+🔍 Searching for matches\? in /home/user/orchestra/deps/reactor ✔ 
+💭 Thinking for 967 characters   
+📖 Reading /home/user/orchestra/deps/reactor/documentation/how-to/payment-processing.md ✔ 
+💭 Thinking for 263 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/rollout/approval_reactor.ex ✔ 
+💫 Executing mix compile ✖ "Command exited with code 1"
+💭 Thinking for 324 characters   
+🔍 Searching for matches\? in /home/user/orchestra/deps/reactor ✔ 
+📖 Reading /home/user/orchestra/deps/reactor/lib/reactor/dsl/switch.ex ✔ 
+💭 Thinking for 1326 characters   
+📖 Reading /home/user/orchestra/deps/reactor/lib/reactor/dsl/switch/match.ex ✔ 
+💭 Thinking for 669 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/rollout/approval_reactor.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 1271 characters   
+📖 Reading /home/user/orchestra/deps/ash/lib/ash/reactor/steps/create_step.ex ✔ 
+💭 Thinking for 888 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/lease.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/rollout.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 3973 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/rollout/trace.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/application.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 344 characters   
+🔍 Searching for defmodule.*Middleware in /home/user/orchestra/deps/reactor ✔ 
+📖 Reading /home/user/orchestra/deps/reactor/usage-rules.md ✔ 
+📖 Reading /home/user/orchestra/deps/reactor/lib/reactor/middleware.ex ✔ 
+📖 Reading /home/user/orchestra/deps/reactor/lib/reactor/middleware.ex ✔ 
+💭 Thinking for 607 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/rollout/reactor_middleware.ex ✔ 
+💫 Executing mix compile ✔ 
+🔧 Applying diff to /home/user/orchestra/lib/orchestra/rollout/reactor_middleware.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 819 characters   
+🔍 Searching for def compensate in /home/user/orchestra/deps/reactor ✔ 
+💭 Thinking for 314 characters   
+🔍 Searching for retry|retryable in 02-error-handling.md files in /home/user/orchestra/deps/reactor/documentation/tutorials ✔ 
+💭 Thinking for 212 characters   
+🔍 Searching for max_retries in DSL-Reactor.md files in /home/user/orchestra/deps/reactor/documentation/dsls ✔ 
+💭 Thinking for 730 characters   
+🔍 Searching for concurrency in /home/user/orchestra/deps/reactor ✔ 
+💭 Thinking for 712 characters   
+🔍 Searching for max_concurrency in /home/user/orchestra/deps/reactor ✔ 
+💭 Thinking for 219 characters   
+🔍 Searching for def run\( in /home/user/orchestra/deps/reactor ✔ 
+💭 Thinking for 312 characters   
+🔍 Searching for defmodule.*DSL in /home/user/orchestra/deps/reactor/lib ✔ 
+🔍 Searching for defmacro __using__ in /home/user/orchestra/deps/reactor/lib ✔ 
+🔍 Searching for __using__ in /home/user/orchestra/deps/ash/lib/ash/reactor ✔ 
+📖 Reading /home/user/orchestra/deps/ash/lib/ash/reactor/reactor.ex ✔ 
+🔍 Searching for defmacro __using__ in /home/user/orchestra/deps/reactor ✔ 
+📖 Reading /home/user/orchestra/deps/reactor/lib/reactor.ex ✔ 
+💭 Thinking for 5281 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/approval.ex ✔ 
+💭 Thinking for 644 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/rollout/approval_reactor.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 294 characters   
+📖 Reading /home/user/orchestra/deps/ash/lib/ash/reactor/builders/create.ex ✔ 
+💭 Thinking for 511 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/approval.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/rollout.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/lease.ex ✔ 
+💫 Executing mix compile ✖ "Command exited with code 1"
+💭 Thinking for 290 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/approval.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/rollout.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/lease.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 651 characters   
+📖 Reading /home/user/orchestra/lib/orchestra/fleet/node.ex ✔ 
+💭 Thinking for 548 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/node.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 391 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/node.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 297 characters   
+🔍 Searching for @callback undo in /home/user/orchestra/deps/reactor ✔ 
+📖 Reading /home/user/orchestra/deps/reactor/lib/reactor/step.ex ✔ 
+💭 Thinking for 2153 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/rollout/steps/reserve_targets.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 1458 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/rollout/steps/deploy_node.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 5236 characters   
+🔍 Searching for element\( in /home/user/orchestra/deps/reactor ✔ 
+💭 Thinking for 241 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/rollout/reactor.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 665 characters   
+✏️  Writing /home/user/orchestra/test/orchestra_test.exs ✔ 
+💫 Executing mix test ✖ "Command exited with code 1"
+✏️  Writing /home/user/orchestra/test/test_helper.exs ✔ 
+💫 Executing mix test ✖ "Command exited with code 2"
+💭 Thinking for 660 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/node.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/rollout.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/placement.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/approval.ex ✔ 
+✏️  Writing /home/user/orchestra/lib/orchestra/fleet/lease.ex ✔ 
+💫 Executing mix compile ✔ 
+💫 Executing mix test ✖ "Command exited with code 2"
+💭 Thinking for 1242 characters   
+✏️  Writing /home/user/orchestra/lib/orchestra/rollout/steps/reserve_targets.ex ✔ 
+✏️  Writing /home/user/orchestra/test/orchestra_test.exs ✔ 
+💫 Executing mix test ✔ 
+💭 Thinking for 899 characters   
+💫 Executing git status ✖ "Command exited with code 128"
+💫 Executing mix compile --force ✔ 
+💫 Executing mix test ✔ 
+💭 Thinking for 131 characters   
+🎉 Task Completed
+I have built the fleet rollout orchestration system using Ash and Reactor.
+
+### Key Implementations:
+
+1. **Domain and Resources (`Orchestra.Fleet`)**:
+   - Defined `Orchestra.Fleet` domain and registered five resources (`Node`, `Rollout`, `Placement`, `Approval`, `Lease`) using `Ash.DataLayer.Ets` with attributes, constraints, defaults, and public access.
+   - Implemented the required code-interface functions on the domain module: `register_node/3`, `get_node/1`, `list_nodes/0`, `list_rollouts/0`, `list_placements/0`, `list_approvals/0`, `list_leases/0`, and the generic action `plan_rollout/1` with its validation logic.
+
+2. **Workflows and Reactors**:
+   - **`Orchestra.Rollout.Reactor`**: End-to-end orchestration workflow built using `Ash.Reactor` with resource-action steps (`create`, `update`, `read`, `action`). It creates the rollout lease, executes the generic action to plan/validate targets, creates the rollout, composes the approval reactor, reserves target nodes, deploys nodes using a `map` step with bounded parallelism (`batch_size 2` and `allow_async? true`), and updates the status of the rollout and lease upon completion or failure.
+   - **`Orchestra.Rollout.ApprovalReactor`**: Embedded via a `compose` step, picking the approval level using a `switch` step and returning the created `Approval` record on success or revoking it on failure.
+
+3. **Custom Step Modules**:
+   - **`Orchestra.Rollout.Steps.ReserveTargets`**: Reserves slots on target nodes sequentially, handles failures cleanly by rolling back any partial reservations made, and reverts all reservations if the rollout as a whole fails.
+   - **`Orchestra.Rollout.Steps.DeployNode`**: Deploys a single target node. Takes at least 50ms, increments attempt count, and handles transient failures by rising the compensation count and retrying up to 4 total attempts (`max_retries 3`). If the rollout fails, it rolls back successfully deployed nodes by marking them as `:released` and incrementing `undos`.
+
+4. **Trace and Middleware**:
+   - **`Orchestra.Rollout.Trace`**: An Agent-based trace recorder started with the application.
+   - **`Orchestra.Rollout.ReactorMiddleware`**: Integrates with the reactor lifecycle and records the required events (`:reactor_init`, `:reactor_complete`, `:reactor_error`, and step-level execution events).
+   - Trace events are accurately captured for deploy attempts (`:deploy_enter`, `:deploy_exit`, `:deploy_compensate`, `:deploy_undo`, and `:reserve_undo`).
+
+All tests pass successfully.   
+  
