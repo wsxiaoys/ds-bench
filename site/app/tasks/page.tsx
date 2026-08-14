@@ -26,6 +26,11 @@ type RawTaskTrial = {
 		agent_exec?: number | null;
 		verifier?: number | null;
 	};
+	tokens?: {
+		input?: number;
+		output?: number;
+		cache?: number;
+	};
 };
 
 type RawTaskRecord = {
@@ -57,6 +62,11 @@ function toCompactTrial(
 		agent_exec: trial.latency_breakdown?.agent_exec ?? null,
 		verifier: trial.latency_breakdown?.verifier ?? null,
 	};
+	const tokens = {
+		input: trial.tokens?.input ?? 0,
+		output: trial.tokens?.output ?? 0,
+		cache: trial.tokens?.cache ?? 0,
+	};
 
 	return {
 		job_name: trial.job_name,
@@ -70,6 +80,7 @@ function toCompactTrial(
 		error: trial.error ?? false,
 		latency_sec: trial.latency_sec ?? null,
 		latency_breakdown: latencyBreakdown,
+		tokens,
 		taskName: canonicalTaskName,
 		exec_duration: latencyBreakdown.agent_exec ?? trial.latency_sec ?? 0,
 	};

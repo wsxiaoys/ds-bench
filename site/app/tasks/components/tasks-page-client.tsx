@@ -72,6 +72,11 @@ export type CompactTrial = {
 		agent_exec: number | null;
 		verifier: number | null;
 	};
+	tokens: {
+		input: number;
+		output: number;
+		cache: number;
+	};
 	taskName: string;
 	exec_duration: number;
 };
