@@ -1,0 +1,371 @@
+- Initializing MCP connections...
+You
+# HTML Ingestion Audit: Structural Fidelity and Resource-Fetch Policy (Docling) ## Background A documentation platform ingests HTML authored by many different tools. Before the HTML pipeline can be trusted, the platform team needs a repeatable **audit tool** that answers two questions about **Docling**'s HTML backend (the `docling` Python package and all of its dependencies are already installed in this environment): 1. **Structural fidelity** — how does the backend turn awkward real-world HTML (ordered lists with hostile `start` attributes, description lists, tables nested inside list items, deeply nested tables carrying images, line breaks, preformatted text, content that precedes the first heading, page footers) into a `DoclingDocument`? 2. **Resource-fetch policy** — when an HTML document references an external or local resource, which locations does the backend resolve, which does it refuse, and under which switches? The audit must be reproducible and run **fully offline**: the tool must neither perform nor require any network I/O, and it must produce the same report on an air-gapped machine. Every "remote" case in the matrix below is deliberately chosen so that a correct implementation refuses it *before* any connection would be attempted, or is an IP literal that needs no name resolution. ## Requirements * Convert every `*.html` fixture in a given directory with Docling's HTML backend, using the backend's **default** HTML backend options, and record structural facts about each resulting document: two markdown views (BODY content layer only, and BODY plus FURNITURE), table count, table shapes, table cell texts, and picture count. * Run a fixed matrix of **resource-location resolutions** through the same resolution logic the HTML backend uses for locations found in a document, and record for each probe whether the location was resolved (and to what) or rejected (and with which error). * Run a fixed matrix of **image-data loads** through the backend's image-loading logic under specific fetch switches, and record whether the data was loaded (and its size), skipped without data, or blocked (and with which error). * Run a fixed set of URLs through the backend's remote-URL safety validation and record which are accepted and which are refused. * Aggregate everything into a single JSON report. * All facts in the report must be produced by actually exercising Docling in the current environment. The tool is a general audit tool: it will be pointed at different fixture directories and different local resource trees, and it must produce the correct report for whatever it is given. ## Implementation Hints * Project path: `/home/user/project` * Everything needed is already installed; do not install packages. The audit tool itself must not perform any network I/O. * Fixture corpus (already present): `/home/user/project/assets/html/` contains the `*.html` files to audit. * Local resource tree (already present): `/home/user/project/assets/local/` contains `page.html`, `images/tiny.png` and `images/diagram.svg`. * Command (rerunnable): `python main.py --html-dir <html_dir> --local-root <local_root> --report <report_path>` * It will be invoked from the project directory as: `python main.py --html-dir assets/html --local-root assets/local --report output/report.json` * All three flags are required. Paths may be relative to the working directory or absolute. Create parent directories of the report if they do not exist. On success, exit with code `0`. * If `--html-dir` or `--local-root` does not exist as a directory, write no report, print a diagnostic to stderr, and exit with code `2`. * Two named base locations are used by the probe matrices below: * `LOCAL_BASE` — the **absolute** path of `<local_root>/page.html`. * `REMOTE_BASE` — the literal string `https://cdn.example.com/docs/page.html`. ### Report format The report is a single UTF-8 JSON object with exactly these top-level keys, in this order: `documents`, `resolution_probes`, `fetch_probes`, `url_safety_probes`, `summary`. **`documents`** — one object per `*.html` file located directly in `<html_dir>` (non-recursive), ordered ascending by file name (Unicode code-point order). Each object has exactly these keys, in this order: * `name` (string): the file name including its extension. * `body_lines` (array of strings): take the document's markdown export restricted to the BODY content layer; split it on `"\n"`; right-strip every line; drop every line that is empty after stripping. * `body_blocks` (array of strings): take the same BODY markdown; split it on `"\n\n"`; strip every element; drop every element that is empty after stripping. * `full_lines` (array of strings): identical derivation to `body_lines`, but computed from the markdown export that includes **both** the BODY and the FURNITURE content layers. * `tables` (integer): the number of tables in the converted document. * `table_shapes` (array): one `[num_rows, num_cols]` integer pair per table, in document order. * `table_cell_texts` (array): one array per table, in document order, containing the text of each of that table's cells verbatim (in the table's own cell order, no trimming, no substitutions). * `pictures` (integer): the number of picture items in the converted document. **`resolution_probes`** — one object per probe below, ordered ascending by `id`. Each probe resolves the given location against the given base location exactly as the HTML backend resolves locations it encounters in a document. Keys, in this order: `id` (string), `outcome` (string, `"resolved"` or `"rejected"`), `resolved` (the returned location string when resolved, otherwise `null`), `error_type` (the raised exception's class name when rejected, otherwise `null`), `error_message` (the raised exception rendered as a string when rejected, otherwise `null`). | `id` | location | base location | | ---------------------- | -------------------------------- | ------------- | | `abs_posix` | `/etc/passwd` | `LOCAL_BASE` | | `file_uri` | `file:///etc/passwd` | `LOCAL_BASE` | | `fragment` | `#section-2` | `LOCAL_BASE` | | `local_relative` | `images/tiny.png` | `LOCAL_BASE` | | `protocol_relative` | `//cdn.example.com/img/a.png` | `REMOTE_BASE` | | `remote_relative` | `img/a.png` | `REMOTE_BASE` | | `remote_root_relative` | `/img/a.png` | `REMOTE_BASE` | | `traversal` | `../../../../etc/passwd` | `LOCAL_BASE` | | `traversal_sneaky` | `images/../../../../etc/passwd` | `LOCAL_BASE` | | `windows_drive` | `C:\Windows\System32\config\sam` | `LOCAL_BASE` | **`fetch_probes`** — one object per probe below, ordered ascending by `id`. Each probe hands the given source string, **as-is** (it is not resolved again), to the backend's image-data loading step, with the given base location and the given switches in effect. Any switch not mentioned keeps its default value. Keys, in this order: `id` (string), `outcome` (string: `"loaded"` if image bytes were returned, `"skipped"` if the load completed without returning data and without raising, `"blocked"` if it raised), `num_bytes` (integer length of the returned bytes when loaded, otherwise `null`), `error_type` (the raised exception's class name when blocked, otherwise `null`), `error_message` (the raised exception rendered as a string when blocked, otherwise `null`). | `id` | source | base location | switches | | -------------------- | ------------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------- | | `data_uri_ok` | `data:image/png;base64,` followed by the base64 encoding of the exact bytes of `<local_root>/images/tiny.png` | none | maximum accepted base64 image payload: `1024` bytes | | `data_uri_too_large` | `data:image/png;base64,` followed by the base64 encoding of 2048 NUL bytes (`b"\x00" * 2048`) | none | maximum accepted base64 image payload: `1024` bytes | | `local_disabled` | the absolute path of `<local_root>/images/tiny.png` | `LOCAL_BASE` | defaults only | | `local_enabled` | the absolute path of `<local_root>/images/tiny.png` | `LOCAL_BASE` | local resource fetching enabled | | `local_no_base_path` | `images/tiny.png` | none | local resource fetching enabled | | `remote_disabled` | `https://cdn.example.com/img/a.png` | none | defaults only | | `svg_skipped` | the absolute path of `<local_root>/images/diagram.svg` | `LOCAL_BASE` | local resource fetching enabled | **`url_safety_probes`** — one object per probe below, ordered ascending by `id`. Each probe submits the URL to the backend's remote-URL safety validation. Keys, in this order: `id` (string), `url` (string, exactly as listed), `outcome` (string, `"allowed"` if validation passed, `"rejected"` if it raised), `error_type` (the raised exception's class name when rejected, otherwise `null`), `error_message` (the raised exception rendered as a string when rejected, otherwise `null`). | `id` | url | | --------------------- | ----------------------------------------- | | `link_local_metadata` | `http://169.254.169.254/latest/meta-data` | | `loopback` | `http://127.0.0.1/image.png` | | `private_a` | `http://10.0.0.1/image.png` | | `private_c` | `http://192.168.1.1/image.png` | | `public_literal` | `https://93.184.216.34/image.png` | **`summary`** — an object with exactly these integer keys, in this order: * `num_documents`: the number of entries in `documents`. * `num_tables`: the sum of `tables` over all entries in `documents`. * `num_pictures`: the sum of `pictures` over all entries in `documents`. * `num_rejected_resolutions`: the number of `resolution_probes` entries whose `outcome` is `"rejected"`. * `num_blocked_fetches`: the number of `fetch_probes` entries whose `outcome` is `"blocked"`. * `num_rejected_urls`: the number of `url_safety_probes` entries whose `outcome` is `"rejected"`. ### Additional constraints * Some fixtures intentionally contain unusual or private-use characters and malformed markup. Report the markdown exactly as Docling produces it; do not clean, normalize, re-wrap, or otherwise post-process it beyond the splitting/stripping rules stated above. * Warnings printed by the conversion are acceptable; they must not change the exit code. * Running the command twice with the same arguments must produce byte-identical reports.   
+
+Pochi
+💭 Thinking for 243 characters   
+📂 Listing files in . ✔ 
+📂 Listing files in assets recursively ✔ 
+💭 Thinking for 301 characters   
+💫 Executing python -c "import docling; print(docling.__file__); print(docling.__version__)" ✔ 
+💫 Executing python -c "import docling; from docling.datamodel.base_models import InputFormat; print(InputFormat.HTML)" ✔ 
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+converter = DocumentConverter()
+res = converter.convert('assets/html/br_paragraph.html')
+print(type(res))
+print(res.document.export_to_markdown())
+" ✔ 
+💭 Thinking for 367 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('assets/html/br_paragraph.html')
+doc = res.document
+import inspect
+print(inspect.signature(doc.export_to_markdown))
+" ✔ 
+💫 Executing python -c "
+from docling_core.types.doc.common.content_layer import ContentLayer
+for x in ContentLayer:
+    print(x)
+" ✔ 
+💭 Thinking for 297 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc.common.content_layer import ContentLayer
+converter = DocumentConverter()
+res = converter.convert('assets/html/furniture_footer.html')
+doc = res.document
+print('--- BODY ONLY ---')
+print(doc.export_to_markdown(included_content_layers={ContentLayer.BODY}))
+print('--- BODY + FURNITURE ---')
+print(doc.export_to_markdown(included_content_layers={ContentLayer.BODY, ContentLayer.FURNITURE}))
+" ✔ 
+💭 Thinking for 601 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('assets/html/nested_table_images.html')
+doc = res.document
+print(dir(doc))
+print('tables:', list(doc.tables))
+print('pictures:', list(doc.pictures))
+" ✔ 
+💭 Thinking for 269 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('assets/html/nested_table_images.html')
+doc = res.document
+for table in doc.tables:
+    print('shape:', [table.data.num_rows, table.data.num_cols])
+    print('cells:', [cell.text for cell in table.data.table_cells])
+" ✔ 
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('assets/html/br_table.html')
+doc = res.document
+for table in doc.tables:
+    print('shape:', [table.data.num_rows, table.data.num_cols])
+    print('cells:', [cell.text for cell in table.data.table_cells])
+" ✔ 
+💭 Thinking for 648 characters   
+💫 Executing python -c "
+import docling
+from docling.backend.html_backend import HTMLBackend
+print(HTMLBackend.__file__)
+" ✖ "Command exited with code 1"
+💫 Executing python -c "
+import docling.backend.html_backend as hb
+print(dir(hb))
+" ✔ 
+💭 Thinking for 215 characters   
+💫 Executing python -c "
+from docling.backend.html_backend import HTMLDocumentBackend, ImageResourceLoader
+import inspect
+print('HTMLDocumentBackend methods:')
+for name, member in inspect.getmembers(HTMLDocumentBackend):
+    if not name.startswith('_'):
+        print(name)
+print('\nImageResourceLoader methods:')
+for name, member in inspect.getmembers(ImageResourceLoader):
+    if not name.startswith('_'):
+        print(name)
+" ✔ 
+💫 Executing python -c "
+import inspect
+from docling.backend.html_backend import ImageResourceLoader
+print(inspect.getsource(ImageResourceLoader))
+" ✔ 
+💭 Thinking for 327 characters   
+💫 Executing python -c "
+import inspect
+from docling.backend.html_backend import validate_url_safety, OperationNotAllowed
+print(validate_url_safety.__module__)
+print(OperationNotAllowed.__module__)
+" ✖ "Command exited with code 1"
+💭 Thinking for 204 characters   
+💫 Executing python -c "
+with open('/opt/app-root/lib64/python3.12/site-packages/docling/backend/html_backend.py') as f:
+    for line in f:
+        if 'validate_url_safety' in line or 'OperationNotAllowed' in line:
+            print(line.strip())
+" ✔ 
+💫 Executing python -c "
+with open('/opt/app-root/lib64/python3.12/site-packages/docling/backend/html_backend.py') as f:
+    for line in f:
+        if 'safety' in line or 'allowed' in line or 'Allowed' in line or 'validate' in line or 'Validate' in line:
+            print(line.strip())
+" ✔ 
+💭 Thinking for 276 characters   
+💫 Executing python -c "
+with open('/opt/app-root/lib64/python3.12/site-packages/docling/backend/html_backend.py') as f:
+    for i in range(100):
+        print(f.readline(), end='')
+" ✔ 
+💫 Executing python -c "
+import inspect
+from docling.backend.utils.image_resource_loader import ImageResourceLoader
+print(inspect.getsource(ImageResourceLoader))
+" ✔ 
+💭 Thinking for 291 characters   
+💫 Executing python -c "
+with open('/opt/app-root/lib64/python3.12/site-packages/docling/backend/utils/image_resource_loader.py') as f:
+    for i in range(50):
+        print(f.readline(), end='')
+" ✔ 
+💫 Executing python -c "
+import inspect
+from docling.backend.utils.image_resource_loader import validate_url_safety
+print(inspect.getsource(validate_url_safety))
+" ✔ 
+💭 Thinking for 292 characters   
+💫 Executing python -c "
+from docling.backend.utils.image_resource_loader import validate_url_safety
+urls = {
+  'link_local_metadata': 'http://169.254.169.254/latest/meta-data',
+  'loopback': 'http://127.0.0.1/image.png',
+  'private_a': 'http://10.0.0.1/image.png',
+  'private_c': 'http://192.168.1.1/image.png',
+  'public_literal': 'https://93.184.216.34/image.png'
+}
+for name, url in urls.items():
+    try:
+        validate_url_safety(url)
+        print(f'{name}: allowed')
+    except Exception as e:
+        print(f'{name}: rejected with {type(e).__name__}: {e}')
+" ✔ 
+💭 Thinking for 855 characters   
+💫 Executing python -c "
+import os
+from docling.backend.utils.image_resource_loader import ImageResourceLoader
+loader = ImageResourceLoader()
+LOCAL_BASE = os.path.abspath('assets/local/page.html')
+REMOTE_BASE = 'https://cdn.example.com/docs/page.html'
+
+probes = [
+    ('abs_posix', '/etc/passwd', LOCAL_BASE),
+    ('file_uri', 'file:///etc/passwd', LOCAL_BASE),
+    ('fragment', '#section-2', LOCAL_BASE),
+    ('local_relative', 'images/tiny.png', LOCAL_BASE),
+    ('protocol_relative', '//cdn.example.com/img/a.png', REMOTE_BASE),
+    ('remote_relative', 'img/a.png', REMOTE_BASE),
+    ('remote_root_relative', '/img/a.png', REMOTE_BASE),
+    ('traversal', '../../../../etc/passwd', LOCAL_BASE),
+    ('traversal_sneaky', 'images/../../../../etc/passwd', LOCAL_BASE),
+    ('windows_drive', 'C:\\Windows\\System32\\config\\sam', LOCAL_BASE)
+]
+
+for pid, loc, base in probes:
+    try:
+        res = loader.resolve_relative_path(loc, base)
+        print(f'{pid}: resolved to {res}')
+    except Exception as e:
+        print(f'{pid}: rejected with {type(e).__name__}: {e}')
+" ✔ 
+💭 Thinking for 1764 characters   
+💫 Executing python -c "
+import base64
+with open('assets/local/images/tiny.png', 'rb') as f:
+    data = f.read()
+print(len(data))
+print(base64.b64encode(data)[:50])
+" ✔ 
+💭 Thinking for 371 characters   
+💫 Executing python -c "
+import base64
+import os
+from docling.backend.utils.image_resource_loader import ImageResourceLoader
+
+LOCAL_BASE = os.path.abspath('assets/local/page.html')
+with open('assets/local/images/tiny.png', 'rb') as f:
+    tiny_bytes = f.read()
+
+data_uri_ok_src = 'data:image/png;base64,' + base64.b64encode(tiny_bytes).decode('utf-8')
+data_uri_too_large_src = 'data:image/png;base64,' + base64.b64encode(b'\x00' * 2048).decode('utf-8')
+tiny_abs_path = os.path.abspath('assets/local/images/tiny.png')
+svg_abs_path = os.path.abspath('assets/local/images/diagram.svg')
+
+probes = [
+    ('data_uri_ok', data_uri_ok_src, None, {'max_image_data_base64_bytes': 1024}),
+    ('data_uri_too_large', data_uri_too_large_src, None, {'max_image_data_base64_bytes': 1024}),
+    ('local_disabled', tiny_abs_path, LOCAL_BASE, {}),
+    ('local_enabled', tiny_abs_path, LOCAL_BASE, {'enable_local_fetch': True}),
+    ('local_no_base_path', 'images/tiny.png', None, {'enable_local_fetch': True}),
+    ('remote_disabled', 'https://cdn.example.com/img/a.png', None, {}),
+    ('svg_skipped', svg_abs_path, LOCAL_BASE, {'enable_local_fetch': True})
+]
+
+for pid, src, base, switches in probes:
+    loader = ImageResourceLoader(**switches)
+    try:
+        res = loader.load_image_data(src, base)
+        if res is None:
+            print(f'{pid}: skipped')
+        else:
+            print(f'{pid}: loaded {len(res)} bytes')
+    except Exception as e:
+        print(f'{pid}: blocked with {type(e).__name__}: {e}')
+" ✔ 
+💭 Thinking for 2075 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+from docling_core.types.doc.common.content_layer import ContentLayer
+converter = DocumentConverter()
+res = converter.convert('assets/html/br_paragraph.html')
+doc = res.document
+body_markdown = doc.export_to_markdown(included_content_layers={ContentLayer.BODY})
+
+body_lines = [line.rstrip() for line in body_markdown.split('\n')]
+body_lines = [line for line in body_lines if line != '']
+
+body_blocks = [block.strip() for block in body_markdown.split('\n\n')]
+body_blocks = [block for block in body_blocks if block != '']
+
+print('--- body_lines ---')
+for line in body_lines[:5]:
+    print(repr(line))
+
+print('--- body_blocks ---')
+for block in body_blocks[:3]:
+    print(repr(block))
+" ✔ 
+💭 Thinking for 225 characters   
+💫 Executing python -c "
+import os
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+html_dir = 'assets/html'
+for f in sorted(os.listdir(html_dir)):
+    if f.endswith('.html'):
+        res = converter.convert(os.path.join(html_dir, f))
+        doc = res.document
+        print(f'{f}: tables={len(list(doc.tables))}, pictures={len(list(doc.pictures))}')
+" ✔ 
+💭 Thinking for 186 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+import inspect
+print(inspect.signature(DocumentConverter.__init__))
+" ✔ 
+💭 Thinking for 268 characters   
+💫 Executing python -c "
+from docling.datamodel.backend_options import HTMLBackendOptions
+import inspect
+print(inspect.signature(HTMLBackendOptions.__init__))
+" ✔ 
+💫 Executing python -c "
+from docling.datamodel.backend_options import HTMLBackendOptions
+print(HTMLBackendOptions.model_fields)
+" ✔ 
+💭 Thinking for 4570 characters   
+💫 Executing git status ✖ "Command exited with code 128"
+💭 Thinking for 670 characters   
+💫 Executing python -c "
+from docling_core.types.doc import TableData
+print(TableData.model_fields)
+" ✔ 
+💭 Thinking for 261 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('assets/html/nested_table_images.html')
+doc = res.document
+for i, table in enumerate(doc.tables):
+    print(f'Table {i}: shape={[table.data.num_rows, table.data.num_cols]}, cells={[cell.text for cell in table.data.table_cells]}')
+" ✔ 
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+for f in ['nested_table_in_dd.html', 'nested_table_in_li.html', 'table_rowspan_header.html']:
+    res = converter.convert('assets/html/' + f)
+    doc = res.document
+    print(f)
+    for i, table in enumerate(doc.tables):
+        print(f'  Table {i}: shape={[table.data.num_rows, table.data.num_cols]}, cells={[cell.text for cell in table.data.table_cells]}')
+" ✔ 
+💭 Thinking for 381 characters   
+💫 Executing python -c "
+from docling.document_converter import DocumentConverter
+converter = DocumentConverter()
+res = converter.convert('assets/html/table_rowspan_header.html')
+doc = res.document
+table = list(doc.tables)[0]
+print(table.data.grid)
+" ✔ 
+💭 Thinking for 2032 characters   
+✏️  Writing main.py ✔ 
+💫 Executing python main.py --html-dir assets/html --local-root assets/local --report output/report.json ✔ 
+📖 Reading output/report.json ✔ 
+📖 Reading output/report.json ✔ 
+💭 Thinking for 254 characters   
+💫 Executing python main.py ✖ "Command exited with code 2"
+💫 Executing python main.py --html-dir non_existent --local-root assets/local --report output/report.json ✖ "Command exited with code 2"
+💫 Executing python main.py --html-dir assets/html --local-root non_existent --report output/report.json ✖ "Command exited with code 2"
+💭 Thinking for 322 characters   
+💫 Executing python main.py --html-dir assets/html --local-root assets/local --report output/report1.json && python main.py --html-dir assets/html --local-root assets/local --report output/report2.json && cmp output/report1.json output/report2.json && echo "Byte-identical!" ✖ "Command exited with code 127"
+💫 Executing python -c "
+with open('output/report1.json', 'rb') as f1, open('output/report2.json', 'rb') as f2:
+    print('Identical:', f1.read() == f2.read())
+" ✔ 
+💭 Thinking for 296 characters   
+💫 Executing rm output/report1.json output/report2.json ✔ 
+💫 Executing ls -l output/report.json ✔ 
+💭 Thinking for 166 characters   
+🎉 Task Completed
+The HTML Ingestion Audit Tool has been successfully implemented in `main.py`.
+
+### Features of the Implementation
+1. **Structural Fidelity Assessment**:
+   - Parses each HTML fixture in the specified directory using Docling's default HTML backend.
+   - Extracts two markdown views: `body_lines` (BODY content layer only) and `full_lines` (BODY plus FURNITURE), following the exact splitting and stripping rules.
+   - Extracts `body_blocks` by splitting the BODY markdown on `"\n\n"` and stripping each element.
+   - Records table count, table shapes (`[num_rows, num_cols]`), verbatim table cell texts, and picture count.
+
+2. **Resource-Location Resolution Probes**:
+   - Executes a fixed matrix of 10 resource-location resolution probes against `LOCAL_BASE` (absolute path of `<local_root>/page.html`) and `REMOTE_BASE` (`https://cdn.example.com/docs/page.html`).
+   - Uses Docling's internal `ImageResourceLoader.resolve_relative_path` logic.
+   - Records the outcome (`resolved` or `rejected`), the resolved string, and details of any exceptions raised.
+
+3. **Fetch Probes**:
+   - Executes a fixed matrix of 7 image-data load probes under specific switches (e.g., `enable_local_fetch`, `enable_remote_fetch`, `max_image_data_base64_bytes`).
+   - Uses Docling's internal `ImageResourceLoader.load_image_data` step.
+   - Records the outcome (`loaded`, `skipped`, or `blocked`), the size of the returned bytes, and details of any exceptions raised.
+
+4. **URL Safety Probes**:
+   - Executes a fixed matrix of 5 remote-URL safety validation probes.
+   - Uses Docling's internal `validate_url_safety` check.
+   - Records whether the URL is `allowed` or `rejected`, along with exception details.
+
+5. **Summary**:
+   - Aggregates the totals for all documents, tables, pictures, rejected resolutions, blocked fetches, and rejected URLs.
+
+### Verification and Compliance
+- The command `python main.py --html-dir assets/html --local-root assets/local --report output/report.json` executes fully offline, prints no unexpected stdout on success, and exits with code `0`.
+- Missing required flags or pointing to non-existent directories correctly writes a diagnostic message to `stderr` and exits with code `2`.
+- Running the command multiple times produces byte-identical reports.   
+  

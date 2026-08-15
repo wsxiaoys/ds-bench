@@ -1,0 +1,211 @@
+- Initializing MCP connections...
+You
+# PollRoom: Realtime, Database-Backed Poll Voting over WebSockets ## Background `/home/user/app` contains a freshly created, minimal **Wasp 0.25.0** project (dependencies already installed). Turn it into **PollRoom**: a multi-user voting app where polls are created over HTTP and voted on in real time over WebSockets, with every subscriber receiving live, personalized results. All poll, option and vote data must live in the app's database. Keep the project's existing SQLite datasource and its `DATABASE_URL` configuration exactly as they are, and make sure the database schema is migrated so the app starts cleanly. ## Requirements ### 1. Authentication * Enable Wasp's username & password authentication with the user entity named `User`. * Wasp's default auth HTTP endpoints must stay available and unchanged: `POST /auth/username/signup` and `POST /auth/username/login` (accepting `{"username": string, "password": string}`). * The poll page requires an authenticated user; unauthenticated visitors of that page must end up on `/login`. ### 2. Data model (`schema.prisma`) Define at least these models, with exactly these model names and field names (extra fields are allowed): * `Poll`: `id` (Int, autoincrement, primary key), `slug` (String, unique), `question` (String), `isClosed` (Boolean, default `false`), `revision` (Int, default `0`), `creatorId` (Int, relation to `User`). * `PollOption`: `id` (Int, autoincrement, primary key), `pollId` (Int, relation to `Poll`), `label` (String), `position` (Int). A poll may never contain two options with the same `position`, enforced by a database-level unique constraint over (`pollId`, `position`). * `Vote`: `id` (Int, autoincrement, primary key), `pollId` (Int, relation to `Poll`), `optionId` (Int, relation to `PollOption`), `userId` (Int, relation to `User`). A user may never hold more than one vote in the same poll, enforced by a database-level unique constraint over (`pollId`, `userId`). `revision` is the poll's mutation counter. It starts at `0` when the poll is created and increases by exactly `1` for every *accepted* mutation of that poll (a new vote, a changed vote, a retracted vote, or the poll being closed). Rejected requests and no-op requests must never change it. Concurrent accepted mutations must never lose an increment: after N accepted mutations the poll's `revision` must equal N. ### 3. HTTP API #### `POST /api/polls` Creates a poll owned by the authenticated user. The caller authenticates with the session id returned by the login endpoint, sent as `Authorization: Bearer <sessionId>`. Request body: ```json { "slug": string, "question": string, "options": string[] } ``` Responses: * `401` with body `{"error": "UNAUTHENTICATED"}` when the request carries no valid session. * `400` with body `{"error": "INVALID_PAYLOAD"}` when `slug` does not match `^[a-z0-9-]{1,32}$`, or `question` is not a non-empty string, or `options` is not an array of 2 to 8 non-empty strings, or `options` contains duplicate values. * `409` with body `{"error": "SLUG_TAKEN"}` when a poll with that `slug` already exists. * `201` with body: ```json { "slug": string, "question": string, "isClosed": false, "revision": 0, "creator": string, "options": [{ "id": number, "label": string, "position": number }] } ``` `creator` is the username of the authenticated caller. Options are stored in request order, receive `position` values `0, 1, 2, ...` in that order, and are returned ordered by `position` ascending. Validation is checked in the order given above (`401`, then `400`, then `409`), and a rejected request must not create anything. #### `GET /api/polls/:slug/results` Public endpoint, must work with no authentication at all. * `404` with body `{"error": "POLL_NOT_FOUND"}` when no poll has that slug. * `200` with body: ```json { "slug": string, "question": string, "isClosed": boolean, "revision": number, "totalVotes": number, "leaderOptionId": number | null, "options": [ { "id": number, "label": string, "position": number, "votes": number, "voters": string[] } ] } ``` * `options` is ordered by `position` ascending. * `votes` is the number of votes currently held by that option; `totalVotes` is the sum over all options. * `voters` is the list of usernames of the users currently voting for that option, sorted ascending by Unicode code point. * `leaderOptionId` is `null` when the poll has no votes; otherwise it is the `id` of the option with the most votes, ties broken in favor of the smallest `position`. ### 4. WebSocket protocol The app must expose Wasp's WebSocket support on the server (same origin/port as the HTTP server). All events below use a single JSON object as their only argument. Events accepted from clients: | Event | Payload | | ------------------ | ---------------------------------------- | | `poll:subscribe` | `{ "slug": string }` | | `poll:unsubscribe` | `{ "slug": string }` | | `poll:vote` | `{ "slug": string, "optionId": number }` | | `poll:retract` | `{ "slug": string }` | | `poll:close` | `{ "slug": string }` | Events emitted by the server: * `poll:state`, whose payload is **personalized per receiving connection**: ```json { "slug": string, "question": string, "isClosed": boolean, "revision": number, "totalVotes": number, "leaderOptionId": number | null, "myVoteOptionId": number | null, "options": [ { "id": number, "label": string, "position": number, "votes": number, "voters": string[] } ] } ``` All fields follow the same rules as `GET /api/polls/:slug/results`; `myVoteOptionId` is the id of the option the *receiving* connection's user currently votes for in this poll, or `null` if that user has no vote in it. * `poll:error`, with payload `{ "code": string, "message": string }`, where `message` is a non-empty human-readable string. It is delivered only to the connection that sent the offending event, and it never changes any stored state. Behaviour: * `poll:subscribe` makes the connection a subscriber of that poll and replies with `poll:state` to that connection only. Subscribing again while already subscribed is allowed and behaves the same way. A connection may be subscribed to several polls at once. * `poll:unsubscribe` removes the connection from that poll's subscribers and emits nothing back. The connection must stop receiving that poll's broadcasts. * `poll:vote` records (or moves) the calling user's single vote in that poll onto `optionId`. If the user already votes for that exact option, the request is a no-op: `revision` must not change and `poll:state` must be sent to the requesting connection only. Otherwise the mutation is accepted. * `poll:retract` removes the calling user's vote from that poll. * `poll:close` marks the poll closed. Only the poll's creator may close it. A closed poll accepts no further votes or retractions, but stays readable and subscribable. * Every accepted mutation (`poll:vote` that changes state, `poll:retract`, `poll:close`) must send an up-to-date, individually personalized `poll:state` to **every** connection currently subscribed to that poll, including the connection that triggered it and including several connections belonging to the same user. Connections that are not subscribed to that poll must receive nothing. Error codes, checked in this exact precedence order for every event: 1. `UNAUTHENTICATED` — the connection has no authenticated user. 2. `INVALID_PAYLOAD` — the payload is missing, is not an object, `slug` is not a non-empty string, or (for `poll:vote`) `optionId` is not an integer number. 3. `POLL_NOT_FOUND` — no poll exists with that slug. 4. `NOT_SUBSCRIBED` — for `poll:vote`, `poll:retract` and `poll:close`: the connection has not subscribed to that poll (`poll:subscribe` and `poll:unsubscribe` never produce this code). Then, per event: * `poll:vote`: `POLL_CLOSED` when the poll is closed, then `OPTION_NOT_FOUND` when `optionId` is not an option of that poll. * `poll:retract`: `POLL_CLOSED` when the poll is closed, then `NO_ACTIVE_VOTE` when the user holds no vote in that poll. * `poll:close`: `NOT_POLL_CREATOR` when the caller is not the poll's creator, then `ALREADY_CLOSED` when the poll is already closed. ### 5. Poll page (client) A page mounted at the route path `/poll/:slug`, requiring authentication, that renders live poll results using the WebSocket protocol above and updates itself without a page reload whenever anybody else votes, retracts or closes the poll. For an existing poll the page must render these elements, identified by their `data-testid` attribute: * `poll-question`: the poll's question text. * `poll-status`: exactly `open` or `closed`. * `poll-revision`: the current `revision`, digits only. * `poll-total-votes`: the current `totalVotes`, digits only. * `poll-leader`: the current `leaderOptionId`, digits only, or exactly `none` when there is none. * `poll-my-vote`: the id of the option the logged-in user currently votes for, digits only, or exactly `none`. * For every option, in `position` ascending document order: `option-label-<optionId>` (its label), `option-votes-<optionId>` (its vote count, digits only), `option-voters-<optionId>` (its voters' usernames joined with `,` and no spaces, in the same order as the protocol defines, or an empty string when nobody voted for it), and a clickable element `option-vote-<optionId>` that casts the logged-in user's vote for that option. * A clickable element `poll-retract` that retracts the logged-in user's vote in this poll. For a slug that has no poll, the page must render an element with `data-testid` `poll-missing` and none of the elements listed above. ### 6. Login page (client) A page mounted at the route path `/login` containing a username field with `data-testid` `login-username`, a password field with `data-testid` `login-password`, and a clickable element with `data-testid` `login-submit`. Submitting valid credentials logs the user in and keeps them logged in on subsequent navigation within the app. ## Implementation Hints * Project path: `/home/user/app`. * Start command: `wasp start`, executed from the project path. It must bring up the whole app with the server on port `3001` and the client on port `3000`; the app is verified through both of them while it runs in development mode. * Keep Wasp `0.25.0` and the existing SQLite datasource; the schema changes you make must be migrated (the app must start without pending-migration errors). * HTTP responses of the two endpoints above must be JSON with exactly the documented keys and status codes; no other route may be changed. * The WebSocket server must be reachable on the same host and port as the HTTP server, on the default Socket.IO path, and the events, payload keys, sorting rules, tie-break rule and error codes above must be honoured literally. * The vote counts, voter lists, leader, revision and per-user vote reported over HTTP and over WebSocket must always agree with each other and with what is stored in the database.   
+
+Pochi
+💭 Thinking for 238 characters   
+📂 Listing files in /home/user/app recursively ✔ 
+📖 Reading /home/user/app/main.wasp.ts ✔ 
+💭 Thinking for 272 characters   
+📖 Reading /home/user/app/schema.prisma ✔ 
+📖 Reading /home/user/app/package.json ✔ 
+💭 Thinking for 306 characters   
+💫 Executing wasp --help ✖ "Command exited with code 1"
+💫 Executing wasp version ✔ 
+💭 Thinking for 270 characters   
+📂 Listing files in /home/user/app/.wasp/spec recursively ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/index.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/index.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/constructors.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+💭 Thinking for 350 characters   
+🔍 Searching for interface Api  in /home/user/app/.wasp/spec/dist/src/spec/publicApi ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+💭 Thinking for 678 characters   
+💫 Executing wasp compile ✔ 
+💭 Thinking for 289 characters   
+🔍 Searching for **/*.ts in /home/user/app/.wasp/out/sdk/wasp ✔ 
+💭 Thinking for 668 characters   
+🔍 Searching for userEntity in /home/user/app/.wasp ✔ 
+🔎 Searching the web for "wasp" auth "User" schema.prisma ✔ 
+💭 Thinking for 252 characters   
+🔎 Searching the web for "wasp" getUsername user auth ✔ 
+💭 Thinking for 1595 characters   
+✏️  Writing /home/user/app/schema.prisma ✔ 
+💭 Thinking for 310 characters   
+🔍 Searching for interface Page  in /home/user/app/.wasp/spec/dist/src/spec/publicApi ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+💭 Thinking for 907 characters   
+🔎 Searching the web for "wasp" api auth context.user ✔ 
+💭 Thinking for 1035 characters   
+✏️  Writing /home/user/app/main.wasp.ts ✔ 
+💭 Thinking for 240 characters   
+💫 Executing wasp db migrate-dev --name init ✖ "Command exited with code 1"
+💭 Thinking for 242 characters   
+📖 Reading /home/user/app/src/MainPage.tsx ✔ 
+💭 Thinking for 325 characters   
+✏️  Writing /home/user/app/src/apis.ts ✔ 
+✏️  Writing /home/user/app/src/webSocket.ts ✔ 
+✏️  Writing /home/user/app/src/LoginPage.tsx ✔ 
+✏️  Writing /home/user/app/src/PollPage.tsx ✔ 
+💫 Executing wasp db migrate-dev --name init ✔ 
+💭 Thinking for 257 characters   
+🔍 Searching for auth/**/*.ts in /home/user/app/.wasp/out/sdk/wasp/server ✔ 
+💭 Thinking for 338 characters   
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/server/auth/index.ts ✔ 
+🔍 Searching for getUsername in /home/user/app/.wasp/out/sdk/wasp ✔ 
+📖 Reading /home/user/app/tsconfig.json ✔ 
+📖 Reading /home/user/app/tsconfig.src.json ✔ 
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/package.json ✔ 
+💭 Thinking for 2947 characters   
+📖 Reading /home/user/app/.wasp/out/db/schema.prisma ✔ 
+💭 Thinking for 252 characters   
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/auth/user.ts ✔ 
+💭 Thinking for 283 characters   
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/server/auth/user.ts ✔ 
+💭 Thinking for 2359 characters   
+✏️  Writing /home/user/app/src/apis.ts ✔ 
+💭 Thinking for 3410 characters   
+🔍 Searching for prisma in /home/user/app/.wasp/out/sdk/wasp/server ✔ 
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/server/index.ts ✔ 
+💭 Thinking for 3271 characters   
+
+Pochi
+💭 Thinking for 238 characters   
+📂 Listing files in /home/user/app recursively ✔ 
+📖 Reading /home/user/app/main.wasp.ts ✔ 
+💭 Thinking for 272 characters   
+📖 Reading /home/user/app/schema.prisma ✔ 
+📖 Reading /home/user/app/package.json ✔ 
+💭 Thinking for 306 characters   
+💫 Executing wasp --help ✖ "Command exited with code 1"
+💫 Executing wasp version ✔ 
+💭 Thinking for 270 characters   
+📂 Listing files in /home/user/app/.wasp/spec recursively ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/index.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/index.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/constructors.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+💭 Thinking for 350 characters   
+🔍 Searching for interface Api  in /home/user/app/.wasp/spec/dist/src/spec/publicApi ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+💭 Thinking for 678 characters   
+💫 Executing wasp compile ✔ 
+💭 Thinking for 289 characters   
+🔍 Searching for **/*.ts in /home/user/app/.wasp/out/sdk/wasp ✔ 
+💭 Thinking for 668 characters   
+🔍 Searching for userEntity in /home/user/app/.wasp ✔ 
+🔎 Searching the web for "wasp" auth "User" schema.prisma ✔ 
+💭 Thinking for 252 characters   
+🔎 Searching the web for "wasp" getUsername user auth ✔ 
+💭 Thinking for 1595 characters   
+✏️  Writing /home/user/app/schema.prisma ✔ 
+💭 Thinking for 310 characters   
+🔍 Searching for interface Page  in /home/user/app/.wasp/spec/dist/src/spec/publicApi ✔ 
+📖 Reading /home/user/app/.wasp/spec/dist/src/spec/publicApi/waspSpec.d.ts ✔ 
+💭 Thinking for 907 characters   
+🔎 Searching the web for "wasp" api auth context.user ✔ 
+💭 Thinking for 1035 characters   
+✏️  Writing /home/user/app/main.wasp.ts ✔ 
+💭 Thinking for 240 characters   
+💫 Executing wasp db migrate-dev --name init ✖ "Command exited with code 1"
+💭 Thinking for 242 characters   
+📖 Reading /home/user/app/src/MainPage.tsx ✔ 
+💭 Thinking for 325 characters   
+✏️  Writing /home/user/app/src/apis.ts ✔ 
+✏️  Writing /home/user/app/src/webSocket.ts ✔ 
+✏️  Writing /home/user/app/src/LoginPage.tsx ✔ 
+✏️  Writing /home/user/app/src/PollPage.tsx ✔ 
+💫 Executing wasp db migrate-dev --name init ✔ 
+💭 Thinking for 257 characters   
+🔍 Searching for auth/**/*.ts in /home/user/app/.wasp/out/sdk/wasp/server ✔ 
+💭 Thinking for 338 characters   
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/server/auth/index.ts ✔ 
+🔍 Searching for getUsername in /home/user/app/.wasp/out/sdk/wasp ✔ 
+📖 Reading /home/user/app/tsconfig.json ✔ 
+📖 Reading /home/user/app/tsconfig.src.json ✔ 
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/package.json ✔ 
+💭 Thinking for 2947 characters   
+📖 Reading /home/user/app/.wasp/out/db/schema.prisma ✔ 
+💭 Thinking for 252 characters   
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/auth/user.ts ✔ 
+💭 Thinking for 283 characters   
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/server/auth/user.ts ✔ 
+💭 Thinking for 2359 characters   
+✏️  Writing /home/user/app/src/apis.ts ✔ 
+💭 Thinking for 3410 characters   
+🔍 Searching for prisma in /home/user/app/.wasp/out/sdk/wasp/server ✔ 
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/server/index.ts ✔ 
+💭 Thinking for 3271 characters   
+💭 Thinking for 2552 characters   
+✏️  Writing /home/user/app/src/webSocket.ts ✔ 
+💭 Thinking for 361 characters   
+🔍 Searching for **/*.ts in /home/user/app/.wasp/out/sdk/wasp/client/auth ✔ 
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/client/auth/index.ts ✔ 
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/client/auth/username.ts ✔ 
+🔍 Searching for export const login|export function login in /home/user/app/.wasp/out/sdk/wasp/auth ✔ 
+🔍 Searching for login in /home/user/app/.wasp/out/sdk/wasp/auth ✔ 
+💭 Thinking for 289 characters   
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/auth/useAuth.ts ✔ 
+💭 Thinking for 1301 characters   
+✏️  Writing /home/user/app/src/LoginPage.tsx ✔ 
+💭 Thinking for 533 characters   
+🔍 Searching for useSocket|socket in /home/user/app/.wasp/out/sdk/wasp/client ✔ 
+📖 Reading /home/user/app/.wasp/out/sdk/wasp/client/webSocket/index.ts ✔ 
+💭 Thinking for 325 characters   
+🔍 Searching for ServerToClientEvents in /home/user/app/.wasp/out/sdk/wasp ✔ 
+💭 Thinking for 3735 characters   
+✏️  Writing /home/user/app/src/PollPage.tsx ✔ 
+💭 Thinking for 271 characters   
+💫 Executing wasp compile ✖ "Command exited with code 1"
+💭 Thinking for 271 characters   
+📖 Reading /home/user/app/src/webSocket.ts ✔ 
+🔧 Applying diff to /home/user/app/src/webSocket.ts ✔ 
+💫 Executing wasp compile ✔ 
+🛠️ Tool startBackgroundJob ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+🛠️ Tool readBackgroundJobOutput ✔ 
+💭 Thinking for 1948 characters   
+🎉 Task Completed
+The task has been successfully completed. I have fully turned the Wasp 0.25.0 project in `/home/user/app` into **PollRoom**, a real-time, database-backed poll voting application over WebSockets.
+
+Here is a summary of the accomplishments:
+
+1. **Authentication**:
+   - Configured Wasp's username and password authentication with the user entity named `User`.
+   - The route `/poll/:slug` is protected and requires an authenticated user; unauthenticated visitors are automatically redirected to `/login`.
+
+2. **Data Model (`schema.prisma`)**:
+   - Implemented exact schemas for `User`, `Poll`, `PollOption`, and `Vote` with the requested fields, unique constraints, and relations.
+   - Ran `wasp db migrate-dev` to apply the migrations and synchronize the SQLite database.
+
+3. **HTTP API**:
+   - `POST /api/polls`: Validates authentication (`401`), payload structure (`400`), and slug uniqueness (`409`), then creates a poll and its ordered options, returning a status of `201`.
+   - `GET /api/polls/:slug/results`: A public endpoint retrieving poll results, total votes, leader option ID (with tie-breaking logic), and option-level votes/voters.
+
+4. **WebSocket Protocol**:
+   - Implemented complete server-side handlers in `src/webSocket.ts` using Wasp's built-in Socket.IO support, mapping events like `poll:subscribe`, `poll:unsubscribe`, `poll:vote`, `poll:retract`, and `poll:close`.
+   - Handled error precedence rules exactly as documented (`UNAUTHENTICATED` -> `INVALID_PAYLOAD` -> `POLL_NOT_FOUND` -> `NOT_SUBSCRIBED` -> etc.).
+   - Utilized strict database transactions (`prisma.$transaction`) to handle concurrent votes, retractions, or closures safely without losing `revision` increments.
+   - Broadcast personalized `poll:state` events containing `myVoteOptionId` to each subscribed connection individually.
+
+5. **Client UI (Poll & Login Pages)**:
+   - Built a complete `LoginPage` mounted at `/login` with the exact requested `data-testid` elements.
+   - Built a real-time `PollPage` mounted at `/poll/:slug` that establishes a WebSocket subscription, listens to `poll:state` broadcasts, and renders all required data elements with the exact `data-testid` attributes.
+
+6. **Build and Verification**:
+   - Compiled the Wasp application with zero errors.
+   - Successfully started the development server on port `3001` and the client on port `3000`.   
+- Waiting for background jobs to complete (timeout: 60000ms)...
+✖ Async wait timeout reached. Remaining: 1 job(s)
+  
