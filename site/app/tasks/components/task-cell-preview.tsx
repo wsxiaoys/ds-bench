@@ -21,7 +21,7 @@ type CellPreviewShowDetail = {
 const CellPreviewShowEvent = "tasks-cell-preview:show";
 const CellPreviewHideEvent = "tasks-cell-preview:hide";
 const SHOW_DELAY_MS = 300;
-const HIDE_DELAY_MS = 150;
+const HIDE_DELAY_MS = 300;
 
 export function showCellPreview(
 	target: HTMLElement,
@@ -236,6 +236,8 @@ function TaskCellPreview({
 				"fade-in-0 zoom-in-90 animate-in",
 				"data-[side=bottom]:slide-in-from-top-3 data-[side=top]:slide-in-from-bottom-3",
 				preview.placement === "top" && "-translate-y-full",
+				"after:absolute after:left-0 after:right-0 after:h-4 after:content-['']",
+				preview.placement === "top" ? "after:-bottom-4" : "after:-top-4",
 			)}
 			data-side={preview.placement}
 			style={{ left: preview.left, top: preview.top }}
