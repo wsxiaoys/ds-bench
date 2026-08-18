@@ -212,7 +212,7 @@ class Pochi(BaseInstalledAgent):
         )
 
         pochi_command = (
-            "pochi "
+            "cat <<'EOF' | pochi "
             f"--model {model} "
             "--max-steps 200 "
             "--max-retries 10 "
@@ -220,8 +220,7 @@ class Pochi(BaseInstalledAgent):
             "--experimental-stream-trajectory /logs/agent/pochi/trajectory.jsonl "
             f"{strip_duplicates_flag}"
             "> >(tee /logs/agent/pochi/stdout.txt) "
-            "2> >(tee /logs/agent/pochi/stderr.txt >&2) "
-            "<<'EOF'\n"
+            "2> >(tee /logs/agent/pochi/stderr.txt >&2)\n"
             f"{instruction}\n"
             "EOF"
         )
