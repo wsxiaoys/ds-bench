@@ -1,0 +1,222 @@
+- Initializing MCP connections...
+You
+# Docling JSON Round-Trip Audit CLI ## Background A document-processing team stores `DoclingDocument` JSON files (Docling's own lossless JSON serialization) as the hand-off format between an extraction cluster and a downstream RAG indexer. The drops arrive corrupted in several different ways, and the indexer currently crashes on the first bad file. You must build an offline auditing CLI on top of the pre-installed Docling stack (`docling-slim` 2.115.0 with `docling-core` 2.87.1, Python 3.12) that ingests a whole drop directory, classifies every file, repairs what is repairable, re-emits canonical artifacts, and produces a deterministic machine-readable report. The container has **no network access**: everything must work with the locally installed libraries and the local files only. ## Requirements - Implement a rerunnable command-line tool that audits a directory of candidate Docling JSON files. - Every candidate must end up with exactly one classification, and files that only declare an incompatible document-schema version must be recovered instead of rejected. - Every successfully ingested document must be re-emitted as a canonical JSON artifact and as a Markdown artifact, and both the path-vs-stream ingestion parity and the JSON round-trip stability of each ingested document must be recorded. - The tool must produce a single JSON report and an exit code that summarizes the audit outcome, and repeated runs over unchanged inputs must produce byte-identical outputs. ## Implementation Hints - Project path: `/home/user/project`. The audited drop directory that already exists in the project is `assets/inbox`. - Command: `python -m docaudit.cli --input-dir <dir> --out-dir <dir>`, executed with `/home/user/project` as the working directory. Both options are required and their values may be relative to the working directory or absolute. Create `<out-dir>` (and any parents) if it does not exist. - Candidates are exactly the files whose name ends with `.json` located directly inside `--input-dir`; sub-directories are not descended into and every other file is ignored. - The drop directory is read-only input: a run must not modify, add or remove any file inside `--input-dir`. - Classification statuses, evaluated per candidate in this order, are: - `malformed_json` — the file's bytes are not valid UTF-8 or do not parse as JSON. - `not_an_object` — the file parses as JSON but its top-level value is not a JSON object. - `version_mismatch` — the top-level JSON object cannot be ingested as a `DoclingDocument` because of a document-schema validation failure, and its top-level `version` member is a string whose major component (the text before its first `.`) differs from the major component of the schema version of the installed Docling document model. - `schema_invalid` — the top-level JSON object cannot be ingested as a `DoclingDocument` because of a document-schema validation failure that is not a `version_mismatch`. - `unreadable` — the top-level JSON object cannot be ingested as a `DoclingDocument` for any other reason. - `ok` — the file is ingested as a `DoclingDocument` without any change to its bytes. - Recovery: a `version_mismatch` candidate must be retried once, with its top-level `version` member replaced by the schema version of the installed Docling document model and the rest of the JSON object left untouched. A candidate whose retry is ingested successfully keeps the status `version_mismatch`, is marked as recovered, and from then on is treated exactly like an `ok` candidate (artifacts, parity, round-trip, counts). Recovery must not modify the input file. - Emitted artifacts, for each candidate that was ingested successfully (whether directly or after recovery), where `<stem>` is the candidate's file name without its `.json` suffix: - `<out-dir>/normalized/<stem>.json` whose content is the ingested document's exported dictionary serialized as JSON with 2-space indentation, with object keys sorted at every level, with non-ASCII characters kept verbatim (not escaped), and terminated by exactly one trailing newline. - `<out-dir>/markdown/<stem>.md` whose content is the ingested document's Markdown export with all trailing newlines stripped and then exactly one trailing newline appended. - Report: `<out-dir>/audit_report.json`, a JSON object with exactly the keys `schema_version`, `input_dir`, `total`, `ok`, `recovered`, `failed`, `status_counts`, `documents`. - `schema_version` (string): the document-schema version that the installed Docling document model produces for documents it creates. - `input_dir` (string): the `--input-dir` value exactly as passed on the command line. - `total` (integer): number of audited candidates. - `ok` (integer): number of candidates with status `ok`. - `recovered` (integer): number of candidates marked as recovered. - `failed` (integer): `total` minus `ok`. - `status_counts` (object): exactly the keys `ok`, `malformed_json`, `not_an_object`, `version_mismatch`, `schema_invalid`, `unreadable`, each an integer that is present even when it is zero. - `documents` (array): one entry per candidate, ordered by the entry's `file` value in ascending Unicode code-point order. - Each `documents` entry is a JSON object with exactly the keys `file`, `status`, `sha256`, `size_bytes`, `declared_version`, `document_version`, `name`, `counts`, `stream_parity`, `roundtrip_stable`, `recovered`, `normalized_path`, `markdown_path`, `error`: - `file` (string): the candidate's file name, without any directory component. - `status` (string): one of the classification statuses above. - `sha256` (string): lowercase hexadecimal SHA-256 digest of the candidate's bytes as they are on disk. - `size_bytes` (integer): the candidate's size on disk in bytes. - `declared_version` (string or null): the value of the top-level `version` member of the candidate's JSON as found in the file, if the file parses as a JSON object and that member is a string; otherwise `null`. - `document_version` (string or null): the schema version reported by the ingested document, or `null` when the candidate was never ingested successfully. - `name` (string or null): the ingested document's name, or `null` when the candidate was never ingested successfully. - `counts` (object or null): for an ingested candidate, an object with exactly the integer keys `texts`, `tables`, `pictures`, `groups`, `pages`, each the number of items of that kind held by the ingested document; otherwise `null`. - `stream_parity` (boolean): `true` when ingesting the very same JSON bytes from an in-memory byte stream instead of from a file path yields a document with an identical exported dictionary; `false` for candidates that were never ingested successfully. - `roundtrip_stable` (boolean): `true` when re-ingesting the emitted `normalized/<stem>.json` artifact yields a document with an exported dictionary identical to that of the ingested document; `false` for candidates that were never ingested successfully. - `recovered` (boolean): `true` only for candidates that were ingested after the version retry described above. - `normalized_path` (string or null): `normalized/<stem>.json` for ingested candidates, otherwise `null`. - `markdown_path` (string or null): `markdown/<stem>.md` for ingested candidates, otherwise `null`. - `error` (string or null): a non-empty diagnostic string for every candidate whose status is not `ok`, and `null` for candidates whose status is `ok`. - Standard output: the last non-empty line printed on stdout must be exactly `AUDIT total=<total> ok=<ok> recovered=<recovered> failed=<failed>`, using the report's integer values. - Exit codes: - `5` when `--input-dir` does not exist or holds no candidate; in that case no report and no artifacts are written and nothing is printed on stdout. - `4` when at least one ingested candidate has `stream_parity` or `roundtrip_stable` false. - `3` when neither of the above applies and `failed` is greater than zero. - `0` otherwise. - Reruns must be self-consistent: auditing the same inputs into the same output directory twice in a row must leave byte-identical `audit_report.json`, `normalized/` and `markdown/` artifacts.   
+
+Pochi
+📂 Listing files in . ✔ 
+📂 Listing files in assets ✔ 
+📂 Listing files in assets/inbox ✔ 
+💭 Thinking for 234 characters   
+💫 Executing python -c "import docling, docling_core; print('docling:', docling.__version__ if hasattr(docling, '__version__') else 'unknown'); print('docling_core:', docling_core.__version__ if hasattr(docling_core, '__version__') else 'unknown')" ✔ 
+💭 Thinking for 306 characters   
+💫 Executing python -c "from docling_core.types.doc import DoclingDocument; print(DoclingDocument)" ✔ 
+💫 Executing python -c "from docling_core.types.doc import DoclingDocument; import json; print(dir(DoclingDocument))" ✔ 
+💭 Thinking for 319 characters   
+💫 Executing python -c "from docling_core.types.doc import DoclingDocument; doc = DoclingDocument(); print('version of instance:', getattr(doc, 'version', 'no version attr')); print('schema version:', doc.model_fields.get('version'))" ✖ "Command exited with code 1"
+💫 Executing python -c "from docling_core.types.doc import DoclingDocument; doc = DoclingDocument(name='test'); print('version:', doc.version)" ✔ 
+💫 Executing python -c "from docling_core.types.doc import DoclingDocument; print(DoclingDocument.model_fields['version'].default)" ✔ 
+💭 Thinking for 316 characters   
+💫 Executing python -c "from docling_core.types.doc import DoclingDocument; print(DoclingDocument.load_from_json.__doc__)" ✔ 
+💭 Thinking for 327 characters   
+💫 Executing python -c "from docling_core.types.doc import DoclingDocument; import json; print(list(DoclingDocument.model_fields.keys()))" ✔ 
+💭 Thinking for 271 characters   
+💫 Executing python -c "from docling_core.types.doc import DoclingDocument; import pydantic;
+try:
+    DoclingDocument.model_validate({})
+except Exception as e:
+    print(type(e), e)" ✔ 
+💭 Thinking for 393 characters   
+📖 Reading assets/inbox/alpha_report.json ✔ 
+💭 Thinking for 285 characters   
+💫 Executing python -c "
+import os, json
+from docling_core.types.doc import DoclingDocument
+
+inbox = 'assets/inbox'
+for f in sorted(os.listdir(inbox)):
+    if not f.endswith('.json'):
+        continue
+    p = os.path.join(inbox, f)
+    print('---', f, '---')
+    try:
+        with open(p, 'rb') as fp:
+            data = fp.read()
+        print('Bytes length:', len(data))
+        # check utf-8 and json parse
+        try:
+            js = json.loads(data.decode('utf-8'))
+            print('JSON type:', type(js))
+            if isinstance(js, dict):
+                print('version member:', js.get('version'))
+        except Exception as je:
+            print('JSON parse error:', type(je), je)
+    except Exception as e:
+        print('Error:', type(e), e)
+" ✔ 
+💭 Thinking for 623 characters   
+💫 Executing python -c "
+import os, json
+from docling_core.types.doc import DoclingDocument
+import pydantic
+
+inbox = 'assets/inbox'
+for f in sorted(os.listdir(inbox)):
+    if not f.endswith('.json'):
+        continue
+    p = os.path.join(inbox, f)
+    print('---', f, '---')
+    try:
+        with open(p, 'rb') as fp:
+            data = fp.read()
+        try:
+            js = json.loads(data.decode('utf-8'))
+            if not isinstance(js, dict):
+                print('Not a dict')
+                continue
+            try:
+                doc = DoclingDocument.model_validate(js)
+                print('Successfully validated ok!')
+            except pydantic.ValidationError as ve:
+                print('ValidationError:', ve)
+            except Exception as ex:
+                print('Other error:', type(ex), ex)
+        except Exception as je:
+            print('JSON parse error:', je)
+    except Exception as e:
+        print('Error:', e)
+" ✔ 
+💭 Thinking for 2676 characters   
+💫 Executing python -c "
+from pathlib import Path
+from docling_core.types.doc import DoclingDocument
+import json
+
+p = Path('assets/inbox/alpha_report.json')
+doc1 = DoclingDocument.load_from_json(p)
+with open(p, 'r', encoding='utf-8') as f:
+    js = json.load(f)
+doc2 = DoclingDocument.model_validate(js)
+print('doc1 type:', type(doc1))
+print('doc2 type:', type(doc2))
+print('dicts equal:', doc1.export_to_dict() == doc2.export_to_dict())
+" ✔ 
+💭 Thinking for 946 characters   
+💫 Executing python -c "import inspect; from docling_core.types.doc import DoclingDocument; print(inspect.getsource(DoclingDocument.load_from_json))" ✔ 
+💭 Thinking for 950 characters   
+💫 Executing python -c "import inspect; from docling_core.types.doc import DoclingDocument; print(inspect.getsource(DoclingDocument.parse_file))" ✔ 
+💫 Executing python -c "import inspect; from docling_core.types.doc import DoclingDocument; print(inspect.getsource(DoclingDocument.parse_raw))" ✔ 
+💭 Thinking for 1242 characters   
+💫 Executing python -c "
+from pathlib import Path
+import io
+from docling_core.types.doc import DoclingDocument
+p = Path('assets/inbox/alpha_report.json')
+bytes_data = p.read_bytes()
+doc_path = DoclingDocument.load_from_json(p)
+stream = io.BytesIO(bytes_data)
+doc_stream = DoclingDocument.model_validate_json(stream.read())
+print('Equal:', doc_path.export_to_dict() == doc_stream.export_to_dict())
+" ✔ 
+💭 Thinking for 2129 characters   
+💫 Executing python -c "import json; d = {'b': 1, 'a': {'d': 2, 'c': 3}}; print(json.dumps(d, sort_keys=True))" ✔ 
+💭 Thinking for 287 characters   
+💫 Executing python -c "from docling_core.types.doc import DoclingDocument; doc = DoclingDocument.load_from_json('assets/inbox/alpha_report.json'); print(type(doc.export_to_dict()))" ✔ 
+💭 Thinking for 178 characters   
+💫 Executing python -c "from docling_core.types.doc import DoclingDocument; doc = DoclingDocument.load_from_json('assets/inbox/alpha_report.json'); print(type(doc.export_to_markdown()))" ✔ 
+💭 Thinking for 313 characters   
+💫 Executing python -c "from docling_core.types.doc import DoclingDocument; doc = DoclingDocument.load_from_json('assets/inbox/beta_notes.json'); print(doc.export_to_markdown()[:200])" ✔ 
+💭 Thinking for 4324 characters   
+💫 Executing python -c "
+from docling_core.types.doc import DoclingDocument
+doc = DoclingDocument.load_from_json('assets/inbox/alpha_report.json')
+print('texts:', len(doc.texts))
+print('tables:', len(doc.tables))
+print('pictures:', len(doc.pictures))
+print('groups:', len(doc.groups))
+print('pages:', len(doc.pages) if doc.pages else 0)
+" ✔ 
+💭 Thinking for 335 characters   
+💫 Executing python -c "
+from docling_core.types.doc import DoclingDocument
+doc = DoclingDocument(name='dummy')
+print('texts:', type(doc.texts), doc.texts)
+print('tables:', type(doc.tables), doc.tables)
+print('pictures:', type(doc.pictures), doc.pictures)
+print('groups:', type(doc.groups), doc.groups)
+print('pages:', type(doc.pages), doc.pages)
+" ✔ 
+💭 Thinking for 419 characters   
+💫 Executing python -c "
+from docling_core.types.doc import DoclingDocument
+doc = DoclingDocument.load_from_json('assets/inbox/alpha_report.json')
+print('pages type:', type(doc.pages))
+print('pages:', doc.pages)
+" ✔ 
+💭 Thinking for 11273 characters   
+💫 Executing python -c "import json; print(json.dumps({'a': 'Résumé'}, ensure_ascii=False))" ✔ 
+💭 Thinking for 6456 characters   
+✏️  Writing docaudit/__init__.py ✔ 
+✏️  Writing docaudit/cli.py ✔ 
+💫 Executing python -m docaudit.cli --input-dir assets/inbox --out-dir assets/output ✖ "Command exited with code 3"
+📂 Listing files in assets/output ✔ 
+📖 Reading assets/output/audit_report.json ✔ 
+💭 Thinking for 596 characters   
+💫 Executing python -m docaudit.cli --input-dir non_existent_dir --out-dir assets/output; echo "Exit code: $?" ✔ 
+💫 Executing python -m docaudit.cli --input-dir assets --out-dir assets/output; echo "Exit code: $?" ✔ 
+💭 Thinking for 207 characters   
+💫 Executing python -m docaudit.cli --input-dir assets/inbox --out-dir assets/output1 && python -m docaudit.cli --input-dir assets/inbox --out-dir assets/output2 && diff -r assets/output1 assets/output2; echo "Diff exit code: $?" ✔ 
+💭 Thinking for 323 characters   
+💫 Executing python -m docaudit.cli --input-dir assets/inbox --out-dir assets/output1; python -m docaudit.cli --input-dir assets/inbox --out-dir assets/output2; diff -r assets/output1 assets/output2; echo "Diff exit code: $?" ✔ 
+💭 Thinking for 198 characters   
+💫 Executing python -c "
+import os, filecmp
+
+def are_dirs_identical(dir1, dir2):
+    comparison = filecmp.dircmp(dir1, dir2)
+    if comparison.left_only or comparison.right_only or comparison.funny_files:
+        print('Differences in file list:', comparison.left_only, comparison.right_only)
+        return False
+    match, mismatch, errors = filecmp.cmpfiles(dir1, dir2, comparison.common_files, shallow=False)
+    if mismatch or errors:
+        print('Mismatched files:', mismatch, errors)
+        return False
+    for subdir in comparison.common_dirs:
+        if not are_dirs_identical(os.path.join(dir1, subdir), os.path.join(dir2, subdir)):
+            return False
+    return True
+
+print('Identical:', are_dirs_identical('assets/output1', 'assets/output2'))
+" ✔ 
+💫 Executing git status ✖ "Command exited with code 128"
+💫 Executing rm -rf assets/output1 assets/output2 ✔ 
+💫 Executing rm -rf assets/output ✔ 
+💭 Thinking for 1069 characters   
+📂 Listing files in . recursively ✔ 
+💭 Thinking for 1782 characters   
+🎉 Task Completed
+I have successfully developed and verified the offline auditing CLI for Docling JSON files.
+
+### Implementation Details
+
+1. **CLI Module**: Created the `docaudit` package under `/home/user/project` with `docaudit/__init__.py` and `docaudit/cli.py`.
+2. **Command**: Supports executing `python -m docaudit.cli --input-dir <dir> --out-dir <dir>`.
+3. **Classification & Recovery**:
+   - Classifies every `.json` file in `--input-dir` in the exact order specified: `malformed_json`, `not_an_object`, `version_mismatch`, `schema_invalid`, `unreadable`, and `ok`.
+   - Recovers `version_mismatch` candidates by replacing the top-level `version` member with the installed Docling document schema version (`1.10.0`), retrying validation, and treating successfully recovered candidates like `ok` candidates for artifact generation, counts, and parity checks.
+4. **Artifact Generation**:
+   - `normalized/<stem>.json`: Emits canonical JSON serialized with sorted keys, 2-space indentation, non-ASCII characters kept verbatim, and exactly one trailing newline.
+   - `markdown/<stem>.md`: Emits Markdown with all trailing newlines stripped and exactly one trailing newline appended.
+5. **Checks & Parity**:
+   - **Path-vs-Stream Parity**: Ingests from a file path (using a temp file for recovered candidates) and from an in-memory byte stream, then compares their exported dicts.
+   - **Round-Trip Stability**: Re-ingests the emitted normalized JSON artifact and verifies that its exported dict matches the original.
+6. **Deterministic Machine-Readable Report**:
+   - Emits `<out-dir>/audit_report.json` containing the exact keys and structures defined, sorted by filename.
+   - Outputs the final summary line on stdout: `AUDIT total=<total> ok=<ok> recovered=<recovered> failed=<failed>`.
+7. **Exit Codes**:
+   - `5` when `--input-dir` does not exist or has no candidate files (yielding no stdout or filesystem modifications).
+   - `4` if any parity or round-trip stability check fails.
+   - `3` if any candidate fails (and no parity/round-trip stability check fails).
+   - `0` otherwise.
+
+The CLI has been rigorously tested and is fully self-consistent and deterministic across reruns.   
+  

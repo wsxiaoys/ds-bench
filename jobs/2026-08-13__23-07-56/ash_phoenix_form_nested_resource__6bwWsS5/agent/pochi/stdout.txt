@@ -1,0 +1,202 @@
+- Initializing MCP connections...
+You
+# Server-driven nested order forms with Ash Framework v3 ## Background `Catering` is an Elixir application built on **Ash Framework 3.31.0** with the **ash_phoenix 2.3.24** form layer. Its domain `Catering.Orders` already models a catering order graph and is fully implemented — do **not** change it: - `Catering.Orders.Order` — attributes `reference` (string, required), `note` (string), `delivery_windows` (list of the embedded resource `Catering.Orders.DeliveryWindow`) and `fulfillment` (a tagged union whose members are the embedded resources `Catering.Orders.CourierDrop` and `Catering.Orders.CounterPickup`); a `belongs_to :customer` and a `has_many :line_items`. Its create action is `:place` and its update action is `:revise`. - `Catering.Orders.LineItem` — `dish` (string, required), `quantity` (integer, must be positive), `position` (integer); `belongs_to :order`, `has_many :modifiers`. - `Catering.Orders.Modifier` — `label` (string, required), `surcharge_cents` (integer, must not be negative), `position` (integer); `belongs_to :line_item`. - `Catering.Orders.Customer` — `name` and `email` (both strings, required). The `:place` and `:revise` actions already manage the whole `Order -> LineItem -> Modifier` graph, the embedded delivery windows, the fulfillment union and the customer (which may either be created inline from its attributes or matched to an already stored customer) from a single set of submitted parameters, and they derive each child's `position` from the order in which the children are submitted. The LiveView layer that will consume this is not part of this task: everything must be reachable through plain function calls, with no HTTP server and no browser. ## Requirements Create `Catering.Forms`, a single facade module that a LiveView would use to build, mutate, inspect and submit the whole nested order form. It must expose exactly these functions: 1. `new_order_form/0` — a blank create form for the order graph. 2. `edit_order_form/1` — takes an order id and returns an update form for the stored order, including nested forms for its existing line items and their modifiers. 3. `to_phoenix_form/1` — the `%Phoenix.HTML.Form{}` for a form. 4. `change/2` and `change/3` — revalidate a form against a fresh parameter map, with an optional keyword list of validation options. 5. `add_nested/2` and `add_nested/3` — add a nested form at a path, with an optional keyword list of options. 6. `remove_nested/2` — remove the nested form at a path. 7. `reorder/3` — reorder the nested list at a path, given the new ordering as a list of the current zero-based indices. 8. `move/3` — move the single nested form at a path one slot earlier (`:up`) or later (`:down`). 9. `submitted_params/1` — the parameter map that would be sent to the underlying action. 10. `hidden_inputs/2` — the hidden inputs required to render the form at a path. 11. `error_map/1` — the user-facing errors of the whole form tree. 12. `raw_error_list/2` — the untranslated errors of the form at a path. 13. `serialize/1` — a deterministic, plain-data snapshot of the whole form tree. 14. `save/2` — submit the form and persist the whole graph. ## Implementation Hints - Project path: `/home/user/catering`. Write the module to `/home/user/catering/lib/catering/forms.ex`. A stub of that file already exists; replace it. Do not add or remove dependencies, and do not modify anything under `/home/user/catering/lib/catering/orders/` or `/home/user/catering/lib/catering/orders.ex`. The environment is offline; everything needed is already vendored and compiled. - Every form-valued function returns an `%AshPhoenix.Form{}` struct (never a `%Phoenix.HTML.Form{}`), except `to_phoenix_form/1`. - The root form is named `order`: `form.name` and `form.id` are both `"order"`, so its nested forms are named `order[line_items][0]`, `order[line_items][0][modifiers][1]`, `order[delivery_windows][0]`, `order[customer]` and `order[fulfillment]`. A blank `new_order_form/0` must expose exactly the nested-form keys `:customer`, `:delivery_windows`, `:fulfillment` and `:line_items`. - Every `path` argument of `add_nested`, `remove_nested`, `reorder`, `move`, `hidden_inputs` and `raw_error_list` is one of those full HTML names as a `String.t()`, rooted at `"order"` — for example `"order[line_items]"`, `"order[line_items][0][modifiers]"` or `"order[line_items][0][modifiers][1]"`. `"order"` itself refers to the root form. Paths at any depth must work. - `new_order_form/0` builds a create form for `Catering.Orders.Order`'s `:place` action; `edit_order_form/1` builds an update form for the `:revise` action of the order with that id. - The third argument of `change/3` and `add_nested/3` is a keyword list that must be forwarded unchanged to the underlying ash_phoenix operation; callers rely on options that hide errors, restrict validation to touched fields, seed the new nested form with parameters, insert it at the front of the list, or give it a non-default action type. Both functions must also be callable at the lower arity with the options defaulting to `[]`. - `reorder/3` and `move/3` change the visible order **and** the order that will be submitted: the reordered children must appear in the new order in `submitted_params/1`, they must be renamed to their new indices, and `save/2` must persist the new order. `move/3` at either boundary of a list is a no-op. - `edit_order_form/1` must present nested children in ascending stored `position`, independently of the order the storage engine happens to return them in. - Removing a nested form from an edit form and saving must destroy exactly that stored record, leaving unrelated records untouched. - `save/2` takes the form and either a parameter map (which must be validated into the form before submitting) or `nil` (submit what the form already holds). On success it returns `{:ok, order}` where `order` is the persisted `Catering.Orders.Order` struct with `customer`, `line_items` and each line item's `modifiers` already loaded, and with the line items and the modifiers in ascending `position`. On failure it returns `{:error, form}` where `form` is the re-usable `%AshPhoenix.Form{}` carrying the errors, and nothing has been written. - `hidden_inputs/2` returns a `%{String.t() => String.t()}` map: every hidden input key (including the form-type marker `_form_type`, the touched-field marker `_touched`, the primary key of an existing record, and the union member marker `_union_type`) mapped to its string value. - `error_map/1` returns a `%{String.t() => [[String.t()]]}` map, keyed by the **HTML name of the form that owns the errors** (`"order"`, `"order[line_items][0]"`, …). Each value is the list of that form's own errors as two-element lists `[field_name, message]`, sorted ascending. Forms without errors must be absent from the map. - `raw_error_list/2` returns the errors of the form at `path` as a list of `{field :: atom(), message :: String.t(), vars :: keyword()}` tuples with the message left untranslated (substitution variables not interpolated), sorted ascending by field name and then by message. - `serialize/1` returns, for the form it is given and recursively for every nested form, a map with exactly these string keys: - `"name"` — the form's HTML name. - `"id"` — the form's HTML id. - `"type"` — `"create"`, `"update"` or `"read"`. - `"resource"` — the form's resource module rendered with `inspect/1`, e.g. `"Catering.Orders.LineItem"`. - `"valid"` — the form's validity as a boolean. - `"hidden"` — the same map as `hidden_inputs/2` would return for this form, but **without** the `_touched` entry. - `"values"` — a map from field name to the form's current value for that field, rendered with `to_string/1`, or `nil` when the value is `nil`. The fields are, per resource: `Order` → `reference`, `note`; `LineItem` → `dish`, `quantity`; `Modifier` → `label`, `surcharge_cents`; `Customer` → `name`, `email`; `DeliveryWindow` → `label`, `starts_at_minute`, `ends_at_minute`; `CourierDrop` → `street`, `postcode`; `CounterPickup` → `counter`. - `"errors"` — this form's own errors as two-element lists `[field_name, message]`, sorted ascending. - `"nested"` — a map whose keys are the string names of the nested-form keys that this form currently holds forms for, and whose values are the serialized child (for a single nested form), the list of serialized children in order (for a list of nested forms), or `nil`.   
+
+Pochi
+📂 Listing files in /home/user/catering recursively ✔ 
+💭 Thinking for 286 characters   
+📖 Reading lib/catering/orders/order.ex ✔ 
+💭 Thinking for 283 characters   
+📖 Reading lib/catering/orders/customer.ex ✔ 
+📖 Reading lib/catering/orders/delivery_window.ex ✔ 
+📖 Reading lib/catering/orders/fulfillment.ex ✔ 
+📖 Reading lib/catering/orders/line_item.ex ✔ 
+💭 Thinking for 261 characters   
+📖 Reading lib/catering/orders/modifier.ex ✔ 
+📖 Reading lib/catering/orders.ex ✔ 
+📖 Reading lib/catering/forms.ex ✔ 
+🔍 Searching for **/*test* in /home/user/catering ✔ 
+🔍 Searching for **/*.exs in /home/user/catering ✔ 
+📖 Reading mix.exs ✔ 
+💫 Executing mix compile ✔ 
+📖 Reading config/config.exs ✔ 
+📖 Reading deps/ash_phoenix/usage-rules/nested_forms.md ✔ 
+📖 Reading deps/ash_phoenix/documentation/topics/nested-forms.md ✔ 
+💭 Thinking for 195 characters   
+🔍 Searching for **/*union* in /home/user/catering/deps/ash_phoenix ✔ 
+📖 Reading deps/ash_phoenix/usage-rules/union_forms.md ✔ 
+📖 Reading deps/ash_phoenix/documentation/topics/union-forms.md ✔ 
+💭 Thinking for 269 characters   
+🔍 Searching for def for_create in form.ex files in /home/user/catering/deps/ash_phoenix/lib/ash_phoenix ✔ 
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form/form.ex ✔ 
+💭 Thinking for 629 characters   
+💫 Executing mix run -e "AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: \"order\") |> IO.inspect(structs: false)" ✔ 
+💭 Thinking for 1138 characters   
+🔍 Searching for def forms in form.ex files in /home/user/catering/deps/ash_phoenix/lib/ash_phoenix ✔ 
+🔍 Searching for def  in form.ex files in /home/user/catering/deps/ash_phoenix/lib/ash_phoenix ✔ 
+💭 Thinking for 285 characters   
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form/form.ex ✔ 
+💭 Thinking for 302 characters   
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form/form.ex ✔ 
+💭 Thinking for 346 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order"); IO.inspect(AshPhoenix.Form.parse_path!(form, "order[line_items][0][modifiers]"))' ✖ "Command exited with code 1"
+💭 Thinking for 289 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[line_items]"); IO.inspect(AshPhoenix.Form.parse_path!(form, "order[line_items][0][modifiers]"))' ✔ 
+💭 Thinking for 660 characters   
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form/form.ex ✔ 
+🔍 Searching for @add_form_opts in form.ex files in /home/user/catering/deps/ash_phoenix/lib/ash_phoenix ✔ 
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form/form.ex ✔ 
+💭 Thinking for 980 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order"); IO.inspect(form.forms)' ✔ 
+💭 Thinking for 224 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]"); IO.inspect(Map.keys(form.forms))' ✔ 
+💭 Thinking for 312 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]"); IO.inspect(form.forms[:customer], structs: false)' ✔ 
+💭 Thinking for 312 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]"); IO.inspect(is_list(form.forms[:customer]))' ✔ 
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[line_items]"); IO.inspect(is_list(form.forms[:line_items]))' ✔ 
+💭 Thinking for 481 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]"); IO.inspect(AshPhoenix.Form.hidden_fields(form))' ✔ 
+💭 Thinking for 272 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]"); customer_form = AshPhoenix.Form.get_form(form, "order[customer]"); IO.inspect(AshPhoenix.Form.hidden_fields(customer_form))' ✔ 
+💭 Thinking for 620 characters   
+🔍 Searching for def hidden_fields in form.ex files in /home/user/catering/deps/ash_phoenix/lib/ash_phoenix ✔ 
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form/form.ex ✔ 
+💭 Thinking for 3284 characters   
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form/form.ex ✔ 
+💭 Thinking for 1344 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish A"}) |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish B"}); sorted = AshPhoenix.Form.sort_forms(form, "order[line_items]", [1, 0]); IO.inspect(sorted.forms[:line_items] |> Enum.map(& &1.params))' ✖ "Command exited with code 1"
+💭 Thinking for 1494 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish A"}) |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish B"}); parsed_path = AshPhoenix.Form.parse_path!(form, "order[line_items]"); sorted = AshPhoenix.Form.sort_forms(form, parsed_path, [1, 0]); IO.inspect(sorted.forms[:line_items] |> Enum.map(& &1.params))' ✔ 
+💭 Thinking for 209 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish A"}) |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish B"}); parsed_path = AshPhoenix.Form.parse_path!(form, "order[line_items]"); sorted = AshPhoenix.Form.sort_forms(form, parsed_path, [1, 0]); IO.inspect(sorted.forms[:line_items] |> Enum.map(& &1.name))' ✔ 
+💭 Thinking for 282 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish A"}) |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish B"}); parsed_path = AshPhoenix.Form.parse_path!(form, "order[line_items]"); sorted = AshPhoenix.Form.sort_forms(form, parsed_path, [1, 0]); IO.inspect(AshPhoenix.Form.params(sorted))' ✔ 
+💭 Thinking for 307 characters   
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form/form.ex ✔ 
+💭 Thinking for 1049 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish A"}) |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish B"}) |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish C"}); parsed_item_path = AshPhoenix.Form.parse_path!(form, "order[line_items][1]"); sorted_up = AshPhoenix.Form.sort_forms(form, parsed_item_path, :decrement); IO.inspect(sorted_up.forms[:line_items] |> Enum.map(& &1.params["dish"]), label: "move up"); sorted_down = AshPhoenix.Form.sort_forms(form, parsed_item_path, :increment); IO.inspect(sorted_down.forms[:line_items] |> Enum.map(& &1.params["dish"]), label: "move down")' ✔ 
+💭 Thinking for 299 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish A"}) |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish B"}) |> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish C"}); parsed_item_path_0 = AshPhoenix.Form.parse_path!(form, "order[line_items][0]"); sorted_up = AshPhoenix.Form.sort_forms(form, parsed_item_path_0, :decrement); IO.inspect(sorted_up.forms[:line_items] |> Enum.map(& &1.params["dish"]), label: "move first up"); parsed_item_path_2 = AshPhoenix.Form.parse_path!(form, "order[line_items][2]"); sorted_down = AshPhoenix.Form.sort_forms(form, parsed_item_path_2, :increment); IO.inspect(sorted_down.forms[:line_items] |> Enum.map(& &1.params["dish"]), label: "move last down")' ✔ 
+💭 Thinking for 1515 characters   
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form/form.ex ✔ 
+💭 Thinking for 302 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order"); IO.inspect(AshPhoenix.Form.get_form(form, "order") == form)' ✔ 
+💭 Thinking for 644 characters   
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form/form.ex ✔ 
+💭 Thinking for 290 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]") |> AshPhoenix.Form.validate(%{"order" => %{"reference" => ""}}); IO.inspect(AshPhoenix.Form.errors(form, for_path: :all))' ✔ 
+💭 Thinking for 384 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]") |> AshPhoenix.Form.validate(%{"order" => %{"reference" => "REF123", "customer" => %{"name" => "", "email" => ""}}}); IO.inspect(AshPhoenix.Form.errors(form, for_path: :all))' ✔ 
+💭 Thinking for 398 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]") |> AshPhoenix.Form.validate(%{"reference" => "REF123", "customer" => %{"name" => "", "email" => ""}}); IO.inspect(AshPhoenix.Form.errors(form, for_path: :all))' ✔ 
+💭 Thinking for 289 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]") |> AshPhoenix.Form.validate(%{"reference" => "REF123", "customer" => %{"name" => "", "email" => ""}}); nested_form = AshPhoenix.Form.get_form(form, [:customer]); IO.inspect(nested_form.name)' ✔ 
+💭 Thinking for 1097 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]") |> AshPhoenix.Form.validate(%{"reference" => "REF123", "customer" => %{"name" => "", "email" => ""}}); errors = AshPhoenix.Form.errors(form, for_path: :all); IO.inspect(errors)' ✔ 
+💭 Thinking for 323 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]") |> AshPhoenix.Form.validate(%{"reference" => "REF123", "customer" => %{"name" => "", "email" => ""}}); parsed_path = AshPhoenix.Form.parse_path!(form, "order[customer]"); IO.inspect(AshPhoenix.Form.raw_errors(form, for_path: parsed_path))' ✔ 
+💭 Thinking for 242 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]") |> AshPhoenix.Form.validate(%{"reference" => "REF123", "customer" => %{"name" => "", "email" => ""}}); parsed_path = AshPhoenix.Form.parse_path!(form, "order[customer]"); error = hd(AshPhoenix.Form.raw_errors(form, for_path: parsed_path)); IO.inspect(Map.from_struct(error))' ✔ 
+💭 Thinking for 277 characters   
+🔍 Searching for defimpl.*Error in *.ex files in /home/user/catering/deps/ash_phoenix/lib/ash_phoenix ✔ 
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form_data/error.ex ✔ 
+📖 Reading deps/ash_phoenix/lib/ash_phoenix/form_data/error.ex ✔ 
+💭 Thinking for 288 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]") |> AshPhoenix.Form.validate(%{"reference" => "REF123", "customer" => %{"name" => "", "email" => ""}}); parsed_path = AshPhoenix.Form.parse_path!(form, "order[customer]"); [err1, err2] = AshPhoenix.Form.raw_errors(form, for_path: parsed_path); IO.inspect(AshPhoenix.FormData.Error.to_form_error(err1))' ✔ 
+💭 Thinking for 565 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]") |> AshPhoenix.Form.validate(%{"reference" => "REF123", "customer" => %{"name" => "", "email" => ""}}); parsed_path = AshPhoenix.Form.parse_path!(form, "order[customer]"); raw_errors = AshPhoenix.Form.raw_errors(form, for_path: parsed_path); tuples = Enum.flat_map(raw_errors, fn err -> case AshPhoenix.FormData.Error.to_form_error(err) do t when is_tuple(t) -> [t]; l when is_list(list) -> l end end); sorted = Enum.sort_by(tuples, fn {f, m, _} -> {f, m} end); IO.inspect(sorted)' ✖ "Command exited with code 1"
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.add_form("order[customer]") |> AshPhoenix.Form.validate(%{"reference" => "REF123", "customer" => %{"name" => "", "email" => ""}}); parsed_path = AshPhoenix.Form.parse_path!(form, "order[customer]"); raw_errors = AshPhoenix.Form.raw_errors(form, for_path: parsed_path); tuples = Enum.flat_map(raw_errors, fn err -> case AshPhoenix.FormData.Error.to_form_error(err) do t when is_tuple(t) -> [t]; l when is_list(l) -> l end end); sorted = Enum.sort_by(tuples, fn {f, m, _} -> {f, m} end); IO.inspect(sorted)' ✔ 
+💭 Thinking for 971 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.validate(%{"reference" => "REF123"}); IO.inspect(AshPhoenix.Form.value(form, :reference))' ✔ 
+💭 Thinking for 4128 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.validate(%{"reference" => "REF123"}); IO.inspect(AshPhoenix.Form.submit(form))' ✔ 
+💭 Thinking for 270 characters   
+💫 Executing mix run -e 'form = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order") |> AshPhoenix.Form.validate(%{"reference" => "REF123"}); IO.inspect(AshPhoenix.Form.submit(form, params: nil))' ✔ 
+💭 Thinking for 304 characters   
+💫 Executing mix run -e '
+# 1. Create order
+{:ok, order} = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order")
+|> AshPhoenix.Form.validate(%{"reference" => "REF123"})
+|> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish A"})
+|> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish B"})
+|> AshPhoenix.Form.submit(params: nil)
+
+# Load order and create edit form
+order = Ash.get!(Catering.Orders.Order, order.id, load: [:customer, line_items: [:modifiers]])
+form = AshPhoenix.Form.for_update(order, :revise, as: "order")
+
+# Remove Dish A (which is at index 0)
+removed_form = AshPhoenix.Form.remove_form(form, "order[line_items][0]")
+
+# Save
+{:ok, updated_order} = AshPhoenix.Form.submit(removed_form, params: nil)
+
+# Check remaining line items
+IO.inspect(updated_order.line_items |> Enum.map(& &1.dish), label: "remaining line items")
+
+# Check if Dish A is actually deleted from database
+all_line_items = Ash.read!(Catering.Orders.LineItem)
+IO.inspect(all_line_items |> Enum.map(& &1.dish), label: "all database line items")
+' ✔ 
+💭 Thinking for 294 characters   
+💫 Executing mix run -e '
+{:ok, order} = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order")
+|> AshPhoenix.Form.validate(%{"reference" => "REF123"})
+|> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish A"})
+|> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish B"})
+|> AshPhoenix.Form.submit(params: nil)
+
+order = Ash.load!(order, [:customer, line_items: [:modifiers]])
+IO.inspect(order.line_items |> Enum.map(&{&1.dish, &1.position}))
+' ✔ 
+💭 Thinking for 242 characters   
+💫 Executing mix run -e '
+# 1. Create order
+{:ok, order} = AshPhoenix.Form.for_create(Catering.Orders.Order, :place, as: "order")
+|> AshPhoenix.Form.validate(%{"reference" => "REF123"})
+|> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish A"})
+|> AshPhoenix.Form.add_form("order[line_items]", params: %{"dish" => "Dish B"})
+|> AshPhoenix.Form.submit(params: nil)
+
+# Load order and sort relationships
+order = Ash.get!(Catering.Orders.Order, order.id, load: [:customer, line_items: [:modifiers]])
+sorted_line_items = Enum.sort_by(order.line_items, & &1.position)
+order = Map.put(order, :line_items, sorted_line_items)
+
+# Create edit form
+form = AshPhoenix.Form.for_update(order, :revise, as: "order")
+
+# Verify order of forms
+IO.inspect(form.forms[:line_items] |> Enum.map(& &1.source.data.dish), label: "initial form order")
+
+# Remove Dish A (which should now be at index 0 because of sorting)
+removed_form = AshPhoenix.Form.remove_form(form, "order[line_items][0]")
+
+# Save
+{:ok, updated_order} = AshPhoenix.Form.submit(removed_form, params: nil)
+
+# Check remaining line items
+IO.inspect(updated_order.line_items |> Enum.map(& &1.dish), label: "remaining line items")
+
+# Check if Dish A is actually deleted from database
+all_line_items = Ash.read!(Catering.Orders.LineItem)
+IO.inspect(all_line_items |> Enum.map(& &1.dish), label: "all database line items")
+' ✔ 
+💭 Thinking for 2744 characters   
+✏️  Writing lib/catering/forms.ex ✔ 
+💫 Executing mix compile ✔ 
+💭 Thinking for 314 characters   
+✏️  Writing test/test_helper.exs ✔ 
+💭 Thinking for 694 characters   
+✏️  Writing test/catering/forms_test.exs ✔ 
+💫 Executing mix test ✔ 
+💫 Executing mix test ✔ 
+💫 Executing mix test ✔ 
+💫 Executing mix test ✔ 
+💫 Executing mix test ✔ 
+💫 Executing mix test ✔ 
+💫 Executing mix test ✔ 
+💫 Executing mix test ✔ 
+💫 Executing MIX_ENV=test mix compile ✔ 
+💫 Executing df -h ✔ 

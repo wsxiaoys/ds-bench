@@ -1,0 +1,1 @@
+import{_ as o}from"./q-DoNi8vyY.js";import{J as r}from"./q-D5uk4H0T.js";import{E as t,q as a,K as e}from"./q-Dm-n0CeS.js";const i=r(e("s_LV17a0MV1FU")),l=t(a(()=>o(()=>import("./q-Bdu8swNC.js"),[]),"s_WGm41GRlPRA")),d={title:"Home - RBAC Dashboard"};export{l as default,d as head,i as useHomeData};

@@ -4,17 +4,13 @@ import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { type ClassValue, clsx } from "clsx";
 import {
-	AlertTriangle,
 	ArrowDown,
 	ArrowUp,
 	ArrowUpDown,
-	Check,
-	Clock,
 	ExternalLink,
 	Filter,
 	Search,
 	X,
-	X as XIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -91,9 +87,33 @@ export type CompactTask = {
 type TableTask = {
 	taskName: string;
 	tags?: string[];
-	comboMap: Record<string, CompactTrial>;
+	comboMap: Record<string, CompactTrial[]>;
 	avgDuration: number;
 };
+
+/**
+ * Percentage-based color tiers for a pass rate (0..1). Thresholds are
+ * percentage-driven (not tied to a fixed number of runs) so this keeps
+ * working whether a task was run once, 4 times, 10 times, etc.
+ */
+export function getPassRateStyle(rate: number): {
+	dot: string;
+	text: string;
+} {
+	if (rate >= 1) {
+		return { dot: "bg-emerald-500", text: "text-emerald-500" };
+	}
+	if (rate >= 0.75) {
+		return { dot: "bg-lime-500", text: "text-lime-500" };
+	}
+	if (rate >= 0.5) {
+		return { dot: "bg-amber-500", text: "text-amber-500" };
+	}
+	if (rate > 0) {
+		return { dot: "bg-orange-500", text: "text-orange-500" };
+	}
+	return { dot: "bg-red-500", text: "text-red-500" };
+}
 
 type TasksPageClientProps = {
 	tasksData: CompactTask[];
@@ -365,7 +385,7 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 				.map((task) => ({
 					taskName: task.taskName,
 					tags: task.tags,
-					comboMap: {} as Record<string, CompactTrial>,
+					comboMap: {} as Record<string, CompactTrial[]>,
 					avgDuration: 0,
 				}))
 				.sort((a, b) =>
@@ -377,37 +397,40 @@ export function TasksPageClient({ tasksData }: TasksPageClientProps) {
 
 		const result = filteredByTags
 			.map((task) => {
-				const comboMap: Record<string, CompactTrial> = {};
+				const comboMap: Record<string, CompactTrial[]> = {};
 				let hasMatchingTrial = false;
 
 				task.trials.forEach((trial) => {
 					const comboKey = `${trial.model} (${trial.agent})`;
 					if (!activeCombos.includes(comboKey)) return;
 
-					let matchesStatus = true;
+					let matchesStatus = selectedStatuses.length === 0;
 					if (selectedStatuses.length > 0) {
 						if (selectedStatuses.includes("passed") && trial.passed) {
 							matchesStatus = true;
-						} else if (
+						}
+						if (
 							selectedStatuses.includes("failed") &&
 							!trial.passed &&
 							!trial.error
 						) {
 							matchesStatus = true;
-						} else if (selectedStatuses.includes("error") && trial.error) {
+						}
+						if (selectedStatuses.includes("error") && trial.error) {
 							matchesStatus = true;
-						} else {
-							matchesStatus = false;
 						}
 					}
 
 					if (matchesStatus) {
-						comboMap[comboKey] = trial;
+						if (!comboMap[comboKey]) {
+							comboMap[comboKey] = [];
+						}
+						comboMap[comboKey].push(trial);
 						hasMatchingTrial = true;
 					}
 				});
 
-				const comboTrials = Object.values(comboMap);
+				const comboTrials = Object.values(comboMap).flat();
 				const avgDuration =
 					comboTrials.length > 0
 						? comboTrials.reduce((sum, t) => sum + t.exec_duration, 0) /
@@ -941,6 +964,81 @@ function TableWrapper({ hasRows, children, viewportRef }: TableWrapperProps) {
 	);
 }
 
+function PassRateBadge({
+	passed,
+	total,
+	rate,
+}: {
+	passed: number;
+	total: number;
+	rate: number;
+}) {
+	const style = getPassRateStyle(rate);
+	return (
+		<span className="flex items-center gap-1.5 md:gap-2">
+			<span
+				className={cn("h-2.5 w-2.5 shrink-0 rounded-full", style.dot)}
+				aria-hidden
+			/>
+			<span
+				className={cn(
+					"font-mono text-xs transition-colors md:text-sm",
+					style.text,
+				)}
+			>
+				{passed}/{total}
+			</span>
+		</span>
+	);
+}
+
+/**
+ * Renders a single task x model/agent cell. A task can have been evaluated
+ * multiple times (multiple trials) with the same model/agent combo, so this
+ * shows an aggregate pass-rate circle + "passed/total" fraction. When
+ * there's only one trial, clicking the cell opens its trajectory directly.
+ * When there are several, hovering the cell reveals a preview listing every
+ * trial — moving the pointer into that preview and clicking a trial opens
+ * its trajectory (see TaskCellPreviewLayer).
+ */
+function TaskComboCell({ trials }: { trials: CompactTrial[] }) {
+	const total = trials.length;
+	const passed = trials.filter((t) => t.passed).length;
+	const rate = total > 0 ? passed / total : 0;
+
+	if (total === 1) {
+		const trial = trials[0];
+		return (
+			<Link
+				href={`/jobs/${encodeURIComponent(trial.job_name)}/${encodeURIComponent(trial.trial_name)}/run`}
+				target="_blank"
+				rel="noopener noreferrer"
+				className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-pointer items-center justify-start gap-1.5 border-none bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/50 focus:outline-none sm:px-6 md:gap-2"
+				onPointerEnter={(event) => showCellPreview(event.currentTarget, trials)}
+				onPointerLeave={hideCellPreview}
+				onFocus={(event) => showCellPreview(event.currentTarget, trials)}
+				onBlur={hideCellPreview}
+				onClick={hideCellPreview}
+			>
+				<PassRateBadge passed={passed} total={total} rate={rate} />
+			</Link>
+		);
+	}
+
+	return (
+		<button
+			type="button"
+			className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-default items-center justify-start gap-1.5 border-none bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/50 focus:outline-none sm:px-6 md:gap-2"
+			onPointerEnter={(event) => showCellPreview(event.currentTarget, trials)}
+			onPointerLeave={hideCellPreview}
+			onFocus={(event) => showCellPreview(event.currentTarget, trials)}
+			onBlur={hideCellPreview}
+		>
+			<PassRateBadge passed={passed} total={total} rate={rate} />
+		</button>
+	);
+}
+
 type VirtualTaskRowProps = {
 	task: TableTask;
 	rowIndex: number;
@@ -993,7 +1091,7 @@ const VirtualTaskRow = memo(function VirtualTaskRow({
 				</button>
 			</td>
 			{activeCombos.map((combo, index) => {
-				const trial = task.comboMap[combo];
+				const trials = task.comboMap[combo];
 				return (
 					<td
 						key={combo}
@@ -1002,51 +1100,8 @@ const VirtualTaskRow = memo(function VirtualTaskRow({
 							index > 0 && "border-border/50 border-l",
 						)}
 					>
-						{trial ? (
-							<Link
-								href={`/jobs/${encodeURIComponent(trial.job_name)}/${encodeURIComponent(trial.trial_name)}/run`}
-								target="_blank"
-								rel="noopener noreferrer"
-								className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-pointer items-center justify-start gap-1.5 border-none bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/50 focus:outline-none sm:px-6 md:gap-2"
-								onPointerEnter={(event) =>
-									showCellPreview(event.currentTarget, trial)
-								}
-								onPointerLeave={hideCellPreview}
-								onFocus={(event) => showCellPreview(event.currentTarget, trial)}
-								onBlur={hideCellPreview}
-								onClick={hideCellPreview}
-							>
-								{trial.passed ? (
-									<Check
-										className="h-3.5 w-3.5 shrink-0 text-emerald-500/90 md:h-4 md:w-4"
-										strokeWidth={3}
-									/>
-								) : (
-									<XIcon
-										className="h-3.5 w-3.5 shrink-0 text-amber-500/90 md:h-4 md:w-4"
-										strokeWidth={3}
-									/>
-								)}
-								{trial.error === "AgentTimeoutError" ? (
-									<span title="AgentTimeoutError">
-										<Clock className="h-3.5 w-3.5 shrink-0 text-red-400/80 md:h-4 md:w-4" />
-									</span>
-								) : trial.error ? (
-									<span
-										title={
-											typeof trial.error === "string" ? trial.error : "Error"
-										}
-									>
-										<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-400/80 md:h-4 md:w-4" />
-									</span>
-								) : (
-									<span className="font-mono text-muted-foreground/80 text-xs transition-colors group-hover/cell:text-foreground group-hover/cell:underline md:text-sm">
-										{trial.exec_duration
-											? `${trial.exec_duration.toFixed(1)}s`
-											: "-"}
-									</span>
-								)}
-							</Link>
+						{trials && trials.length > 0 ? (
+							<TaskComboCell trials={trials} />
 						) : (
 							<div
 								className="group/cell absolute inset-0 m-0 flex h-full w-full cursor-help items-center justify-start bg-transparent p-0 px-3 text-left transition-colors hover:bg-secondary/20 focus:outline-none sm:px-6"

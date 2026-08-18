@@ -1,0 +1,115 @@
+- Initializing MCP connections...
+You
+# Offline GFM Table Edge-Case Audit with Docling ## Background A documentation-ingestion team feeds hand-written Markdown into a docling-based pipeline. Real-world Markdown tables are messy: pipes at the edges are optional, header cells are bold or links, rows are ragged, cells contain escaped pipes, and paragraphs that merely mention a `|` must never be mistaken for tables. The team needs a reproducible audit that reports, per document, exactly what a GFM-conformant reader should see, materialized through docling's Markdown backend (docling 2.x, `InputFormat.MD`). The corpus lives in `assets/corpus` inside the project. It is fixed at image build time and contains valid UTF-8 documents plus one file that is not valid UTF-8. Everything must run fully offline: the environment has no network access at run time. ## Requirements Build a command-line audit program that converts every Markdown document of a corpus directory with docling and writes a single deterministic JSON report describing: - every GFM table, normalized to a rectangular grid with per-column alignments; - every fenced code block with the code language docling detected for it; - every embedded image, honouring a caller-supplied byte cap on embedded image data; - every non-table source line that contains a pipe character; - every corpus file that could not be processed. ## Implementation Hints - Project path: `/home/user/md_table_audit` - Command: `python main.py --corpus <corpus_dir> --out <report_path> --max-image-bytes <int>`; all three options are required, the process must exit with status `0` on success, must create the parent directories of `<report_path>`, and must overwrite an existing report. - The program must be re-runnable with different `--corpus`, `--out` and `--max-image-bytes` values; nothing may be hard-coded to one corpus or one cap. - Documents are the `*.md` files located directly in `<corpus_dir>` (no recursion), processed in ascending file-name order. A file whose bytes are not valid UTF-8 must not abort the run: it is reported as failed with reason `decode_error` and is excluded from `documents`. - The conversion itself must be performed by docling's Markdown backend on the real document content; the reported tables must exist as real `TableItem`s of the `DoclingDocument` your program produced. - No network access at run time. ### Report format `<report_path>` is UTF-8 JSON with exactly these top-level keys: ```json { "schema_version": "1.0", "max_image_bytes": <int, echo of the CLI value>, "documents": [<document object>, ...], "failed": [{"name": <string>, "reason": "decode_error"}, ...], "totals": { "documents": <int>, "failed": <int>, "tables": <int>, "table_cells": <int>, "code_blocks": <int>, "images": <int>, "images_decoded": <int> } } ``` `documents` and `failed` are ordered by `name` ascending, where `name` is the file name without the `.md` suffix. `totals.table_cells` is the sum of every table's `cell_count`, `totals.images_decoded` counts images with `"decoded": true`; the other totals are plain counts. A document object has exactly these keys: ```json { "name": <string>, "tables": [<table object>, ...], "pipe_prose": [<string>, ...], "code_blocks": [{"index": <int>, "language": <string>, "chars": <int>}, ...], "images": [{"index": <int>, "data_bytes": <int|null>, "decoded": <bool>, "width": <int|null>, "height": <int|null>, "reason": <string|null>}, ...], "image_size_warnings": <int> } ``` A table object has exactly these keys: ```json { "index": <int>, "self_ref": <string>, "num_rows": <int>, "num_cols": <int>, "cell_count": <int>, "docling_cell_count": <int>, "alignments": [<string>, ...], "grid": [[<string>, ...], ...] } ``` `tables`, `code_blocks` and `images` are in document order and their `index` is their 0-based position in that list. ### Table recognition (GFM) Lines inside fenced code blocks (fences are lines whose stripped form starts with ```` ``` ````) are never part of a table and never produce prose entries. Outside fences, a table block starts at a line `H` when `H` is non-blank, does not start with `#` or a fence, contains at least one pipe, and the immediately following line `D` splits into the same number of cells as `H` with every cell matching `^:?-+:?$` after trimming. The table's body rows are the lines after `D`, up to (excluding) the first blank line, end of file, line starting with `#`, or fence line. Rows are split on pipe characters that are not preceded by a backslash. If the trimmed line starts with an unescaped pipe, its leading empty cell is dropped; if it ends with an unescaped pipe, its trailing empty cell is dropped. A `\|` sequence is a literal pipe belonging to the cell text. Each cell's reported text is derived from the raw cell by replacing every `[text](url)` link with `text`, deleting every `*` and backtick character, collapsing whitespace runs to a single space, and stripping. Empty cells are reported as `""`. `num_cols` is the number of cells of `H`; `num_rows` is `1 +` the number of body rows; `grid[0]` is the header row. Body rows with fewer cells than `num_cols` are padded on the right with `""`, and cells beyond `num_cols` are dropped, so `grid` is always exactly `num_rows` x `num_cols` and `cell_count` is `num_rows * num_cols`. `alignments` has `num_cols` entries derived from the cells of `D`: `"center"` when the trimmed cell starts and ends with `:`, `"left"` when it only starts with `:`, `"right"` when it only ends with `:`, `"none"` otherwise. `self_ref` and `docling_cell_count` must be read back from the docling `TableItem` / `TableData` that carries the table (`self_ref` is therefore of the form `#/tables/<index>`), and `docling_cell_count` must equal `cell_count`. The reported `grid` must be the cell texts of that same `TableData` in row-major order, after undoing any transport-safe encoding you applied to make the content survive the backend. `pipe_prose` lists, in source order, the stripped text of every source line that contains at least one pipe character and is neither inside a fenced code block nor part of a recognized table block. ### Code blocks and images `code_blocks` covers only fenced code blocks, in document order; `language` is the code-language label docling assigned to that block, as its label string value (for example `Python`, `SQL`, `unknown`); `chars` is the number of characters of the block's code content (fence lines and info string excluded, no trailing newline). `images` covers every Markdown image of the document, in document order. `data_bytes` is the size in bytes of the decoded payload of a `data:` URI image, or `null` for an image whose source is not a base64 `data:` URI. Embedded image data must actually be decoded during the conversion, subject to the `--max-image-bytes` cap: for a decoded image, `decoded` is `true`, `width` and `height` are the decoded pixel dimensions and `reason` is `null`; for an image the conversion refused to decode because its data exceeds the cap, `decoded` is `false`, `width` and `height` are `null` and `reason` is `"size_limit"`; for an image whose source is not a base64 `data:` URI, `decoded` is `false`, `width` and `height` are `null` and `reason` is `"unsupported_source"`. `image_size_warnings` is the number of warning events raised while converting that document whose message contains `exceeds size limit`; every such event must be counted, so repeated identical warnings must not be suppressed.   
+
+Pochi
+📂 Listing files in . ✔ 
+📂 Listing files in assets recursively ✔ 
+📖 Reading assets/corpus/01_alignments.md ✔ 
+📖 Reading assets/corpus/02_formatted_headers.md ✔ 
+📖 Reading assets/corpus/03_ragged_cells.md ✔ 
+📖 Reading assets/corpus/04_pipes_in_prose.md ✔ 
+📖 Reading assets/corpus/05_code_and_images.md ✔ 
+📖 Reading assets/corpus/06_broken_encoding.md ✔ 
+📂 Listing files in . recursively ✔ 
+💭 Thinking for 295 characters   
+💫 Executing python -c "import docling; print(docling.__version__)" ✔ 
+💭 Thinking for 255 characters   
+💫 Executing python -c "from docling.datamodel.base_models import InputFormat; print([x.name for x in InputFormat])" ✔ 
+💫 Executing python -c "from docling.document_converter import DocumentConverter; print(DocumentConverter)" ✔ 
+💭 Thinking for 298 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter; converter = DocumentConverter(); result = converter.convert('assets/corpus/01_alignments.md'); print(result.document)" ✔ 
+💭 Thinking for 933 characters   
+💫 Executing python -c "from docling.backend.markdown_backend import MarkdownBackend; print(MarkdownBackend)" ✖ "Command exited with code 1"
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); print(c.converter_registry)" ✖ "Command exited with code 1"
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); print(dir(c))" ✔ 
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); print(c.format_to_options)" ✔ 
+💫 Executing python -c "from docling.document_converter import DocumentConverter, InputFormat; c = DocumentConverter(); print(c.format_to_options[InputFormat.MD])" ✔ 
+💭 Thinking for 298 characters   
+💫 Executing python -c "import inspect; from docling.backend.md_backend import MarkdownDocumentBackend; print(inspect.getsource(MarkdownDocumentBackend))" ✔ 
+💭 Thinking for 12152 characters   
+💫 Executing python -c "from html import unescape; print(unescape('&vert;'))" ✔ 
+💭 Thinking for 5656 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); res = c.convert('assets/corpus/05_code_and_images.md'); print(res.document.pictures)" ✔ 
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); res = c.convert('assets/corpus/05_code_and_images.md'); p = res.document.pictures[0]; print(dir(p)); print(p.image)" ✔ 
+💭 Thinking for 352 characters   
+💫 Executing python -c "from docling.datamodel.pipeline_options import ConvertPipelineOptions; print(ConvertPipelineOptions)" ✔ 
+💫 Executing python -c "from docling.backend.md_backend import MarkdownBackendOptions; print(MarkdownBackendOptions.model_fields)" ✔ 
+💭 Thinking for 290 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter, InputFormat; from docling.backend.md_backend import MarkdownBackendOptions; c = DocumentConverter(); c.format_to_options[InputFormat.MD].backend_options = MarkdownBackendOptions(fetch_images=True); res = c.convert('assets/corpus/05_code_and_images.md'); p = res.document.pictures[0]; print(p.image)" ✔ 
+💫 Executing python -c "from docling.document_converter import DocumentConverter, InputFormat; from docling.backend.md_backend import MarkdownBackendOptions; c = DocumentConverter(); c.format_to_options[InputFormat.MD].backend_options = MarkdownBackendOptions(fetch_images=True); res = c.convert('assets/corpus/05_code_and_images.md'); p = res.document.pictures[0]; print(dir(p.image))" ✔ 
+💫 Executing python -c "from docling.document_converter import DocumentConverter, InputFormat; from docling.backend.md_backend import MarkdownBackendOptions; c = DocumentConverter(); c.format_to_options[InputFormat.MD].backend_options = MarkdownBackendOptions(fetch_images=True); res = c.convert('assets/corpus/05_code_and_images.md'); [print(i, p.image.uri, p.image.size) for i, p in enumerate(res.document.pictures)]" ✔ 
+💭 Thinking for 700 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter, InputFormat; from docling.backend.md_backend import MarkdownBackendOptions; c = DocumentConverter(); c.format_to_options[InputFormat.MD].backend_options = MarkdownBackendOptions(fetch_images=True, max_image_data_base64_bytes=100); res = c.convert('assets/corpus/05_code_and_images.md'); [print(i, p.image) for i, p in enumerate(res.document.pictures)]" ✔ 
+💭 Thinking for 2282 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter, InputFormat; from docling.backend.md_backend import MarkdownBackendOptions; c = DocumentConverter(); c.format_to_options[InputFormat.MD].backend_options = MarkdownBackendOptions(fetch_images=True); res = c.convert('assets/corpus/05_code_and_images.md'); p = res.document.pictures[0]; print(p.source)" ✔ 
+💭 Thinking for 2261 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter, InputFormat; from docling.backend.md_backend import MarkdownBackendOptions; c = DocumentConverter(); res = c.convert('assets/corpus/05_code_and_images.md'); [print(type(item), item) for item in res.document.body.children]" ✔ 
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); res = c.convert('assets/corpus/05_code_and_images.md'); [print(i, type(item), item.label, getattr(item, 'code_language', None), item.text) for i, item in enumerate(res.document.texts)]" ✔ 
+💭 Thinking for 440 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); res = c.convert('assets/corpus/02_formatted_headers.md'); [print(type(item), item.label, getattr(item, 'code_language', None), item.text) for item in res.document.texts]" ✔ 
+💭 Thinking for 4173 characters   
+✏️  Writing test_parser.py ✔ 
+💫 Executing python test_parser.py ✔ 
+💭 Thinking for 1647 characters   
+✏️  Writing test_clean.py ✔ 
+💫 Executing python test_clean.py ✔ 
+💭 Thinking for 1867 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); res = c.convert('assets/corpus/05_code_and_images.md'); item = res.document.texts[1]; print(type(item.label), item.label, item.label.value, item.label == 'code')" ✔ 
+💭 Thinking for 292 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); res = c.convert('assets/corpus/05_code_and_images.md'); item = res.document.tables[0]; print(item.label, item.label == 'table')" ✔ 
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); res = c.convert('assets/corpus/05_code_and_images.md'); item = res.document.pictures[0]; print(item.label, item.label == 'picture')" ✔ 
+💭 Thinking for 5490 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter; import inspect; print(inspect.getsource(DocumentConverter.convert_string))" ✔ 
+💭 Thinking for 298 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter, InputFormat; from docling.backend.md_backend import MarkdownBackendOptions; c = DocumentConverter(); c.format_to_options[InputFormat.MD].backend_options = MarkdownBackendOptions(fetch_images=True, max_image_data_base64_bytes=100); res = c.convert_string('# Title\nSome text.', format=InputFormat.MD, name='test'); print(res.document)" ✔ 
+💭 Thinking for 980 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); res = c.convert('assets/corpus/05_code_and_images.md'); item = res.document.texts[1]; print(type(item.code_language), repr(item.code_language))" ✔ 
+💭 Thinking for 250 characters   
+💫 Executing python -c "from docling.document_converter import DocumentConverter; c = DocumentConverter(); res = c.convert('assets/corpus/05_code_and_images.md'); item = res.document.texts[1]; print(str(item.code_language), repr(item.code_language.value))" ✔ 
+💭 Thinking for 979 characters   
+✏️  Writing main.py ✔ 
+💫 Executing python main.py --corpus assets/corpus --out report.json --max-image-bytes 100 ✖ "Command exited with code 1"
+💭 Thinking for 311 characters   
+📖 Reading main.py ✔ 
+🔧 Applying diff to main.py ✔ 
+💫 Executing python main.py --corpus assets/corpus --out report.json --max-image-bytes 100 ✔ 
+📖 Reading report.json ✔ 
+💭 Thinking for 526 characters   
+📖 Reading main.py ✔ 
+📖 Reading main.py ✔ 
+💭 Thinking for 311 characters   
+🔧 Applying diff to main.py ✔ 
+📖 Reading main.py ✔ 
+🔧 Applying diff to main.py ✔ 
+💫 Executing python main.py --corpus assets/corpus --out report.json --max-image-bytes 100 ✔ 
+📖 Reading report.json ✔ 
+💭 Thinking for 1005 characters   
+💫 Executing python main.py --corpus assets/corpus --out report.json --max-image-bytes 80 ✔ 
+📖 Reading report.json ✔ 
+💭 Thinking for 238 characters   
+💫 Executing rm test_parser.py test_clean.py ✔ 
+💫 Executing git status ✖ "Command exited with code 128"
+💭 Thinking for 211 characters   
+🎉 Task Completed
+I have successfully built and verified the offline GFM table edge-case audit program using Docling 2.x.
+
+### Summary of Implementation:
+- **`main.py`**: A robust, CLI-compliant Python program that accepts `--corpus`, `--out`, and `--max-image-bytes` arguments.
+- **GFM Table Parser & Preprocessor**:
+  - Correctly parses GFM-compliant tables (with or without leading/trailing edge pipes).
+  - Handles cell normalization (removing markdown formatting, resolving links, collapsing whitespace, and replacing escaped pipes `\|` with literal `|`).
+  - Supports ragged row normalization (padding on the right with `""` or truncating to match `num_cols`).
+  - Applies a transport-safe encoding to prevent table cells from breaking the Docling Markdown backend, then reconstructs the exact original layout and content when reading from Docling's `TableItem` / `TableData`.
+- **Fenced Code Blocks**: Detects fenced code blocks using the custom line-by-line parser and matches them against Docling's `CodeItem`s to extract the exact detected language and exact character counts.
+- **Embedded Images**:
+  - Detects all markdown images inside the document in document order.
+  - Passes the image byte cap to Docling's `max_image_data_base64_bytes` option.
+  - Decodes base64 `data:` URI images and extracts their pixel dimensions.
+  - Flags images exceeding the byte cap as `decoded: false` with reason `"size_limit"`.
+  - Accurately captures and counts all warning events containing `exceeds size limit` using Python's `warnings` framework.
+- **Error Handling**: Detects non-UTF-8 files and reports them in the `failed` list with reason `"decode_error"` without interrupting the audit run.
+- **Totals & Determinism**: Computes all metrics over the entire corpus and outputs a deterministic JSON report with sorted lists.
+
+The program was successfully tested on the provided corpus under different image byte caps and performs flawlessly.   
+  

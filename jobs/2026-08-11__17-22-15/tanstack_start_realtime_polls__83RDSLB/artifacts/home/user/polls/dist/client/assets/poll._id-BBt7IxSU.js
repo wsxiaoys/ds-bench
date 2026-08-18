@@ -1,0 +1,1 @@
+import{j as o,L as e}from"./index-CFx4iF_O.js";const n=()=>o.jsxs("div",{children:[o.jsx("h2",{children:"Poll Not Found"}),o.jsx("p",{children:"The poll you are looking for does not exist or has been deleted."}),o.jsx(e,{to:"/",style:{color:"#007bff"},children:"Go back to home page"})]});export{n as errorComponent};

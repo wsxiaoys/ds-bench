@@ -1,0 +1,28 @@
+import { env } from "cloudflare:workers";
+import { render, route } from "rwsdk/router";
+import { defineApp } from "rwsdk/worker";
+import { syncedStateRoutes } from "rwsdk/use-synced-state/worker";
+
+import { Document } from "@/app/document";
+import { setCommonHeaders } from "@/app/headers";
+import { Home } from "@/app/pages/home";
+import { AuctionRoom } from "@/app/pages/auction";
+
+export type AppContext = {};
+
+// Export Durable Objects so wrangler can find and bind them
+export { SyncedStateServer } from "./synced-state-server";
+export { AuctionDb } from "./db";
+
+export default defineApp([
+  setCommonHeaders(),
+  ({ ctx }) => {
+    // setup ctx here
+    ctx;
+  },
+  ...syncedStateRoutes(() => env.SYNCED_STATE_SERVER),
+  render(Document, [
+    route("/", Home),
+    route("/auction/:itemId", AuctionRoom),
+  ]),
+]);
