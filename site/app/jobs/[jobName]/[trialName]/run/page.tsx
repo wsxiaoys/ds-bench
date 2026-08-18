@@ -8,6 +8,11 @@ import {
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { BackToLeaderboard } from "@/components/back-to-leaderboard";
+import {
+	HoverCard,
+	HoverCardContent,
+	HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import zealtConfig from "@/zealt/config.json";
 import tasksData from "@/zealt/tasks.json";
 import type {
@@ -35,6 +40,11 @@ type TrialEntry = {
 		agent_setup?: number | null;
 		agent_exec?: number | null;
 		verifier?: number | null;
+	};
+	tokens?: {
+		input?: number;
+		output?: number;
+		cache?: number;
 	};
 	trajectory_id?: string;
 	browser_verification_cases?: string[];
@@ -79,6 +89,17 @@ function formatDuration(durationSec: number | null | undefined): string {
 	const minutes = Math.floor(durationSec / 60);
 	const seconds = durationSec % 60;
 	return `${minutes}m ${seconds.toFixed(1)}s`;
+}
+
+function formatTokenCount(value: number | null | undefined): string {
+	const num = value ?? 0;
+	if (num >= 1_000_000) {
+		return `${(num / 1_000_000).toFixed(2)}M`;
+	}
+	if (num >= 1_000) {
+		return `${(num / 1_000).toFixed(1)}K`;
+	}
+	return num.toLocaleString();
 }
 
 function getTrialStatus(
@@ -329,6 +350,12 @@ export default async function TrajectoryRoutePage({
 	const executionDurationLabel = formatDuration(
 		trialEntry?.latency_breakdown?.agent_exec ?? null,
 	);
+	const inputTokens = trialEntry?.tokens?.input ?? 0;
+	const outputTokens = trialEntry?.tokens?.output ?? 0;
+	const cacheTokens = trialEntry?.tokens?.cache ?? 0;
+	const totalTokens = inputTokens + outputTokens;
+	const hasTokenUsage =
+		Boolean(trialEntry?.tokens) && totalTokens + cacheTokens > 0;
 	const trialStatus = getTrialStatus(trialEntry);
 	const statusMeta = getStatusMeta(trialStatus);
 	const StatusIcon = statusMeta.Icon;
@@ -471,6 +498,45 @@ export default async function TrajectoryRoutePage({
 								<span className="truncate text-muted-foreground">
 									Duration: {executionDurationLabel}
 								</span>
+								{hasTokenUsage && (
+									<HoverCard openDelay={100} closeDelay={50}>
+										<HoverCardTrigger asChild>
+											<span className="w-fit cursor-default truncate text-muted-foreground underline decoration-dotted underline-offset-2">
+												Tokens: {formatTokenCount(totalTokens)}
+											</span>
+										</HoverCardTrigger>
+										<HoverCardContent className="w-56" align="start">
+											<div className="space-y-2 text-xs">
+												<div className="flex items-center justify-between border-border/50 border-b pb-2 font-medium">
+													<span className="text-foreground">
+														Total (Input + Output)
+													</span>
+													<span className="font-mono text-primary">
+														{formatTokenCount(totalTokens)}
+													</span>
+												</div>
+												<div className="flex items-center justify-between">
+													<span className="text-muted-foreground">Input</span>
+													<span className="font-mono">
+														{formatTokenCount(inputTokens)}
+													</span>
+												</div>
+												<div className="flex items-center justify-between">
+													<span className="text-muted-foreground">Cache</span>
+													<span className="font-mono">
+														{formatTokenCount(cacheTokens)}
+													</span>
+												</div>
+												<div className="flex items-center justify-between">
+													<span className="text-muted-foreground">Output</span>
+													<span className="font-mono">
+														{formatTokenCount(outputTokens)}
+													</span>
+												</div>
+											</div>
+										</HoverCardContent>
+									</HoverCard>
+								)}
 								{(trialEntry?.model || trialEntry?.agent) && (
 									<span className="flex items-center gap-2 truncate text-muted-foreground before:hidden before:content-['•'] sm:before:block">
 										{trialEntry.model && (

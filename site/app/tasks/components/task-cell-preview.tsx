@@ -118,9 +118,38 @@ function CellPreviewContent({ trial }: { trial: CompactTrial | null }) {
 						{trial.latency_breakdown.verifier?.toFixed(1) || "-"}s
 					</span>
 				</div>
+				<div className="-mx-2 mt-1 flex items-center justify-between rounded bg-secondary/40 px-2 py-1.5 font-medium">
+					<span className="text-foreground">Total Tokens</span>
+					<span className="font-mono text-primary">
+						{formatTokenCount(trial.tokens.input + trial.tokens.output)}
+					</span>
+				</div>
+				<div className="flex items-center justify-between pl-2">
+					<span className="text-muted-foreground">Input</span>
+					<span className="font-mono">
+						{formatTokenCount(trial.tokens.input)}
+					</span>
+				</div>
+				<div className="flex items-center justify-between pl-2">
+					<span className="text-muted-foreground">Cache</span>
+					<span className="font-mono">
+						{formatTokenCount(trial.tokens.cache)}
+					</span>
+				</div>
+				<div className="flex items-center justify-between pl-2">
+					<span className="text-muted-foreground">Output</span>
+					<span className="font-mono">
+						{formatTokenCount(trial.tokens.output)}
+					</span>
+				</div>
 			</div>
 		</>
 	);
+}
+
+function formatTokenCount(value: number): string {
+	if (!value) return "0";
+	return value.toLocaleString();
 }
 
 function TaskCellPreview({ preview }: { preview: CellPreview }) {
