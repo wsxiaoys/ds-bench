@@ -1,1 +1,0 @@
-import{H as u,I as t}from"./q-DRv0wJ4n.js";import{b as n,z as l}from"./q-d2acPgd_.js";const a=()=>n(t,{children:[l("head",null,null,[l("meta",null,{charSet:"utf-8"},null,3,null),l("title",null,null,"Qwik Hybrid Catalog",3,null)],3,null),l("body",null,{lang:"en"},n(u,null,3,"Vb_0"),1,null)]},1,"Vb_1");export{a as s_HVMXTWZkliY};

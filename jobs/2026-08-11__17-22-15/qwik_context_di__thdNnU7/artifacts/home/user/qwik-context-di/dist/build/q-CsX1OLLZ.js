@@ -1,1 +1,0 @@
-import{T as o,C as r}from"./q-BompFuke.js";import{i as a,m as n,n as t,b as i,S as u}from"./q-C7b-IMoC.js";const p=()=>{const e=a("light"),s=n({items:[{id:"sku-1",name:"Keyboard",price:49.99,quantity:1},{id:"sku-2",name:"Mouse",price:19.99,quantity:2}]},{deep:!0});return t(o,e),t(r,s),i(u,null,3,"kD_0")};export{p as s_4oLXS1B0jTs};

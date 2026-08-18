@@ -1,1 +1,0 @@
-import{H as n,I as t}from"./q-D5uk4H0T.js";import{b as u,z as l}from"./q-Dm-n0CeS.js";const e=()=>u(t,{children:[l("head",null,null,[l("meta",null,{charSet:"utf-8"},null,3,null),l("title",null,null,"RBAC Dashboard",3,null)],3,null),l("body",null,null,u(n,null,3,"ac_0"),1,null)]},1,"ac_1");export{e as s_cMw2FeW1RhQ};

@@ -1,1 +1,0 @@
-import{d as f}from"./q-Cr7apnTa.js";import{c as p}from"./q-Cr7apnTa.js";const u=({track:t})=>{const[s,i,a,v]=f();t(()=>v.url.pathname);const o=a.onQVisible$;if(o){const e=new CustomEvent("qvisible");Array.isArray(o)?o.flat(10).forEach(c=>c==null?void 0:c(e,s.value)):o==null||o(e,s.value)}s.value&&(i==null||i(void 0,s.value))};export{p as _hW,u as s_2nM5c7PYcwA};

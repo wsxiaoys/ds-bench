@@ -1,1 +1,0 @@
-import{J as n,K as t}from"./q-DH_OJLcj.js";import{j as u,A as l}from"./q-Q_bSOTos.js";const o=()=>u(t,{children:[l("head",null,null,[l("meta",null,{charSet:"utf-8"},null,3,null),l("title",null,null,"Qwik Search",3,null)],3,null),l("body",null,null,u(n,null,3,"GL_0"),1,null)]},1,"GL_1");export{o as s_f08jBuuwkg0};

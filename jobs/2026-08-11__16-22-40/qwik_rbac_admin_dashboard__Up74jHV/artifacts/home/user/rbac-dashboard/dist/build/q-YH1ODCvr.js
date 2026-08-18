@@ -1,1 +1,0 @@
-import{_ as t}from"./q-DoNi8vyY.js";import{J as e}from"./q-D5uk4H0T.js";import{E as r,q as a,K as s}from"./q-Dm-n0CeS.js";const _=e(s("s_Fq4UBK5CV1M")),d=r(a(()=>t(()=>import("./q-D825OcpM.js").then(o=>o.i),[]),"s_zqOiQexCVbI")),l={title:"Admin - User Management"};export{d as default,l as head,_ as useAdminData};
