@@ -1,0 +1,1 @@
+import{H as u,I as t}from"./q-DadPY5hT.js";import{b as n,z as l}from"./q-Cr7apnTa.js";const o=()=>n(t,{children:[l("head",null,null,[l("meta",null,{charSet:"utf-8"},null,3,null),l("title",null,null,"Qwik Context DI",3,null)],3,null),l("body",null,{lang:"en"},n(u,null,3,"NF_0"),1,null)]},1,"NF_1");export{o as s_wwUdeaulivM};

@@ -1,0 +1,1 @@
+import{d as v}from"./q-By5wSw0A.js";import{c as m}from"./q-By5wSw0A.js";const l=({track:c})=>{const[s,i,a,r]=v();c(()=>r.url.pathname);const o=a.onQVisible$;if(o){const t=new CustomEvent("qvisible");Array.isArray(o)?o.flat(10).forEach(e=>e==null?void 0:e(t,s.value)):o==null||o(t,s.value)}s.value&&(i==null||i(void 0,s.value))};export{m as _hW,l as s_TzRNXrlCEkc};

@@ -1,0 +1,41 @@
+import { app, page, route, query, action } from "@wasp.sh/spec";
+import { MainPage } from "./src/MainPage" with { type: "ref" };
+import { LoginPage } from "./src/LoginPage" with { type: "ref" };
+import { SignupPage } from "./src/SignupPage" with { type: "ref" };
+import { webSocketFn } from "./src/webSocket" with { type: "ref" };
+import {
+  getNotifications,
+  batchUpdateNotificationStatus,
+  getNotificationPreferences,
+  updateNotificationPreferences,
+  triggerNotificationEvent,
+} from "./src/operations" with { type: "ref" };
+
+export default app({
+  name: "app",
+  title: "app",
+  wasp: { version: "^0.24.0" },
+  head: ["<link rel='icon' href='/favicon.ico' />"],
+  auth: {
+    userEntity: "User",
+    methods: {
+      usernameAndPassword: {},
+    },
+    onAuthFailedRedirectTo: "/login",
+  },
+  webSocket: {
+    fn: webSocketFn,
+    autoConnect: true,
+  },
+  spec: [
+    route("RootRoute", "/", page(MainPage, { authRequired: true })),
+    route("LoginRoute", "/login", page(LoginPage)),
+    route("SignupRoute", "/signup", page(SignupPage)),
+
+    query(getNotifications, { entities: ["Notification"] }),
+    action(batchUpdateNotificationStatus, { entities: ["Notification"] }),
+    query(getNotificationPreferences, { entities: ["NotificationPreference"] }),
+    action(updateNotificationPreferences, { entities: ["NotificationPreference", "User"] }),
+    action(triggerNotificationEvent, { entities: ["Notification", "NotificationPreference", "User"] }),
+  ],
+});

@@ -1,0 +1,1 @@
+import{d as c}from"./q-aoxkLUbQ.js";import{c as f}from"./q-aoxkLUbQ.js";const u=({track:t,cleanup:o})=>{const[s,n]=c();if(!t(()=>s.value))return;const a=setInterval(()=>{const e=n.items.find(r=>r.id==="mouse");e&&e.quantity++},500);o(()=>clearInterval(a))};export{f as _hW,u as s_0yAK88Qc1zI};
